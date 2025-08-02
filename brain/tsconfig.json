@@ -1,0 +1,29 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["node"],
+    "baseUrl": "../",
+    "paths": {
+      "@brain/*": ["./brain/src/*"],
+      "@brain/core/*": ["./brain/core/*"],
+      "@brain/modules/*": ["./brain/modules/*"],
+      "@brain/integrations/*": ["./brain/integrations/*"],
+      "@brain/utils/*": ["./brain/utils/*"],
+      "@brain/types/*": ["./brain/types/*"],
+      "@/*": ["./src/*"],
+      "@cipher/*": ["./lib/cipher/*"],
+      "@components/*": ["./src/components/*"],
+      "@maestro-brain": ["./MaestroBrain"]
+    }
+  },
+  "include": ["../MaestroBrain.ts", "./**/*.ts", "./**/*.tsx"],
+  "exclude": ["node_modules", "dist", "tests/**/*.test.ts", "../node_modules"]
+}

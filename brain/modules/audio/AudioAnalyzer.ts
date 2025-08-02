@@ -1,0 +1,764 @@
+/**
+ * AudioAnalyzer.ts - Advanced Real-time Audio Processing
+ * 🔊 Comprehensive audio analysis engine for Maestro.ai
+ * Part of Maestro.ai Brain System
+ */
+
+import { generateId } from "../../shared/utils";
+import {
+  AudioFeatures,
+  Key,
+  MusicGenre,
+  BrainModule,
+  ChordAnalysisResult,
+  AudioAnalysisResult,
+  MusicTheoryHarmonyAnalysis,
+  RhythmAnalysis,
+  GenreAnalysis,
+} from "../../shared/types";
+
+// Import brain modules for integration
+import { MusicTheoryEngine } from "../composition/MusicTheoryEngine";
+import { ChordAnalyzer } from "../guitar/ChordAnalyzer";
+
+// Import advanced audio processing utilities
+import {
+  AdvancedPitchDetector,
+  SpectralAnalyzer,
+  HarmonicAnalyzer,
+  OnsetDetector,
+  AudioUtils,
+  startAudioAnimationLoop,
+  stopAudioAnimationLoop,
+  type FFTResult,
+  type SpectralFeatures,
+  type HarmonicAnalysis,
+  type OnsetDetection,
+} from "../../shared/audioSyncUtils";
+
+// Audio Analysis Configuration
+export interface AudioAnalyzerConfig {
+  sampleRate?: number;
+  bufferSize?: number;
+  enableAdvancedAnalysis?: boolean;
+  enableChordDetection?: boolean;
+  enableKeyDetection?: boolean;
+  enableTempoDetection?: boolean;
+  enableGenreClassification?: boolean;
+  confidenceThreshold?: number;
+  analysisInterval?: number; // ms
+}
+
+// Real-time Analysis State
+export interface AudioAnalysisState {
+  isAnalyzing: boolean;
+  currentKey: Key | null;
+  currentTempo: number;
+  currentLoudness: number;
+  recentChords: string[];
+  confidenceLevel: number;
+  lastAnalysis: number; // timestamp
+}
+
+// Analysis Results Cache
+export interface AnalysisCache {
+  audioFeatures: AudioFeatures | null;
+  chordAnalysis: ChordAnalysisResult | null;
+  harmonyAnalysis: MusicTheoryHarmonyAnalysis | null;
+  rhythmAnalysis: RhythmAnalysis | null;
+  genreAnalysis: GenreAnalysis | null;
+  timestamp: number;
+}
+
+/**
+ * AudioAnalyzer - Comprehensive real-time audio analysis engine
+ * Integrates with the entire Maestro.ai brain system
+ */
+export class AudioAnalyzer implements BrainModule {
+  public readonly name: string = "AudioAnalyzer";
+  public readonly version: string = "1.0.0";
+  public initialized: boolean = false;
+  private sessionId: string = generateId("audio-session");
+
+  // Core configuration
+  private config: Required<AudioAnalyzerConfig>;
+  private state: AudioAnalysisState;
+  private cache: AnalysisCache;
+
+  // Audio processing components
+  private audioContext: AudioContext | null = null;
+  private analyzerNode: AnalyserNode | null = null;
+  private pitchDetector: AdvancedPitchDetector | null = null;
+  private onsetDetector: OnsetDetector | null = null;
+
+  // Brain module integrations
+  private musicTheory: MusicTheoryEngine;
+  private chordAnalyzer: ChordAnalyzer;
+
+  // Real-time processing
+  private animationLoopActive = false;
+  private audioBuffer: Float32Array | null = null;
+  private frequencyData: Uint8Array | null = null;
+
+  // Event callbacks
+  private onAnalysisUpdate?: (result: AudioAnalysisResult) => void;
+  private onChordDetected?: (chord: string, confidence: number) => void;
+  private onKeyDetected?: (key: Key, confidence: number) => void;
+  private onTempoDetected?: (tempo: number, confidence: number) => void;
+
+  constructor(config: AudioAnalyzerConfig = {}) {
+    // Initialize configuration with defaults
+    this.config = {
+      sampleRate: config.sampleRate || 44100,
+      bufferSize: config.bufferSize || 4096,
+      enableAdvancedAnalysis: config.enableAdvancedAnalysis ?? true,
+      enableChordDetection: config.enableChordDetection ?? true,
+      enableKeyDetection: config.enableKeyDetection ?? true,
+      enableTempoDetection: config.enableTempoDetection ?? true,
+      enableGenreClassification: config.enableGenreClassification ?? true,
+      confidenceThreshold: config.confidenceThreshold || 0.6,
+      analysisInterval: config.analysisInterval || 100, // 10 FPS
+    };
+
+    // Initialize state
+    this.state = {
+      isAnalyzing: false,
+      currentKey: null,
+      currentTempo: 120,
+      currentLoudness: -20,
+      recentChords: [],
+      confidenceLevel: 0,
+      lastAnalysis: 0,
+    };
+
+    // Initialize cache
+    this.cache = {
+      audioFeatures: null,
+      chordAnalysis: null,
+      harmonyAnalysis: null,
+      rhythmAnalysis: null,
+      genreAnalysis: null,
+      timestamp: 0,
+    };
+
+    // Initialize brain modules
+    this.musicTheory = new MusicTheoryEngine();
+    this.chordAnalyzer = new ChordAnalyzer();
+  }
+
+  /**
+   * Initialize the AudioAnalyzer with Web Audio API
+   */
+  async initialize(): Promise<void> {
+    try {
+      console.log("🔊 Initializing AudioAnalyzer...");
+
+      // Initialize Web Audio API
+      this.audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)({
+        sampleRate: this.config.sampleRate,
+      });
+
+      // Create analyzer node
+      this.analyzerNode = this.audioContext.createAnalyser();
+      this.analyzerNode.fftSize = this.config.bufferSize;
+      this.analyzerNode.smoothingTimeConstant = 0.8;
+
+      // Initialize audio processing components
+      this.pitchDetector = new AdvancedPitchDetector(
+        this.config.sampleRate,
+        this.config.bufferSize
+      );
+      this.onsetDetector = new OnsetDetector();
+
+      // Initialize audio buffers
+      this.audioBuffer = new Float32Array(this.analyzerNode.frequencyBinCount);
+      this.frequencyData = new Uint8Array(this.analyzerNode.frequencyBinCount);
+
+      this.initialized = true;
+      console.log("✅ AudioAnalyzer initialized successfully");
+    } catch (error) {
+      console.error("❌ Failed to initialize AudioAnalyzer:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current status of the AudioAnalyzer
+   */
+  getStatus(): any {
+    return {
+      initialized: this.initialized,
+      isAnalyzing: this.state.isAnalyzing,
+      animationLoopActive: this.animationLoopActive,
+      currentTempo: this.state.currentTempo,
+      currentKey: this.state.currentKey,
+      confidenceLevel: this.state.confidenceLevel,
+      config: this.config,
+    };
+  }
+
+  /**
+   * Connect to an audio source (microphone, media element, etc.)
+   */
+  async connectAudioSource(
+    source: MediaStreamAudioSourceNode | MediaElementAudioSourceNode
+  ): Promise<void> {
+    if (!this.initialized || !this.analyzerNode) {
+      throw new Error("AudioAnalyzer not initialized");
+    }
+
+    // Connect audio source to analyzer
+    source.connect(this.analyzerNode);
+    console.log("🎤 Audio source connected");
+  }
+
+  /**
+   * Start real-time audio analysis
+   */
+  async startAnalysis(): Promise<void> {
+    if (!this.initialized || !this.audioContext || !this.analyzerNode) {
+      throw new Error("AudioAnalyzer not initialized");
+    }
+
+    if (this.state.isAnalyzing) {
+      console.warn("⚠️ Analysis already running");
+      return;
+    }
+
+    console.log("🎵 Starting real-time audio analysis...");
+    this.state.isAnalyzing = true;
+
+    // Resume audio context if needed
+    if (this.audioContext.state === "suspended") {
+      await this.audioContext.resume();
+    }
+
+    // Start animation loop for real-time processing
+    this.startAnimationLoop();
+  }
+
+  /**
+   * Stop real-time audio analysis
+   */
+  stopAnalysis(): void {
+    console.log("🛑 Stopping audio analysis...");
+    this.state.isAnalyzing = false;
+    this.stopAnimationLoop();
+  }
+
+  /**
+   * Analyze a single audio buffer (for file analysis)
+   */
+  async analyzeAudio(audioData: ArrayBuffer): Promise<AudioAnalysisResult> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    console.log("🔍 Analyzing audio buffer...");
+
+    try {
+      // Convert ArrayBuffer to Float32Array
+      const audioBuffer = await this.decodeAudioData(audioData);
+      const channelData = audioBuffer.getChannelData(0); // Use first channel
+
+      // Perform comprehensive analysis
+      const audioFeatures = await this.extractAudioFeatures(
+        channelData,
+        audioBuffer.sampleRate
+      );
+      const harmonyAnalysis = this.config.enableAdvancedAnalysis
+        ? await this.analyzeHarmony(channelData, audioBuffer.sampleRate)
+        : null;
+      const rhythmAnalysis = this.config.enableTempoDetection
+        ? await this.analyzeRhythm(channelData, audioBuffer.sampleRate)
+        : null;
+      const genreAnalysis = this.config.enableGenreClassification
+        ? await this.classifyGenre(audioFeatures, harmonyAnalysis)
+        : null;
+
+      const result: AudioAnalysisResult = {
+        features: audioFeatures,
+        harmonyAnalysis: harmonyAnalysis || this.createDefaultHarmonyAnalysis(),
+        rhythmAnalysis: rhythmAnalysis || this.createDefaultRhythmAnalysis(),
+        genreAnalysis: genreAnalysis || this.createDefaultGenreAnalysis(),
+        timestamp: Date.now(),
+      };
+
+      // Cache results
+      this.updateCache(result);
+
+      console.log("✅ Audio analysis complete");
+      return result;
+    } catch (error) {
+      console.error("❌ Audio analysis failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set event callbacks for real-time updates
+   */
+  setEventCallbacks(callbacks: {
+    onAnalysisUpdate?: (result: AudioAnalysisResult) => void;
+    onChordDetected?: (chord: string, confidence: number) => void;
+    onKeyDetected?: (key: Key, confidence: number) => void;
+    onTempoDetected?: (tempo: number, confidence: number) => void;
+  }): void {
+    this.onAnalysisUpdate = callbacks.onAnalysisUpdate;
+    this.onChordDetected = callbacks.onChordDetected;
+    this.onKeyDetected = callbacks.onKeyDetected;
+    this.onTempoDetected = callbacks.onTempoDetected;
+  }
+
+  /**
+   * Get current audio features (real-time)
+   */
+  getCurrentAudioFeatures(): AudioFeatures | null {
+    return this.cache.audioFeatures;
+  }
+
+  /**
+   * Get recent chord analysis
+   */
+  getRecentChordAnalysis(): ChordAnalysisResult | null {
+    return this.cache.chordAnalysis;
+  }
+
+  // ========================================
+  // 🎵 Private Analysis Methods
+  // ========================================
+
+  /**
+   * Start the animation loop for real-time processing
+   */
+  private startAnimationLoop(): void {
+    if (!this.analyzerNode || this.animationLoopActive) return;
+
+    this.animationLoopActive = true;
+
+    const stopLoop = startAudioAnimationLoop({
+      fps: 1000 / this.config.analysisInterval,
+      analyzerNode: this.analyzerNode,
+      audioContext: this.audioContext!,
+      enableAdvancedAnalysis: this.config.enableAdvancedAnalysis,
+      onFrame: this.handleRealtimeFrame.bind(this),
+      onSpectralData: this.handleSpectralData.bind(this),
+      onSpectralFeatures: this.handleSpectralFeatures.bind(this),
+      onHarmonicData: this.handleHarmonicData.bind(this),
+      onOnsetData: this.handleOnsetData.bind(this),
+    });
+
+    // Store stop function for cleanup
+    this.stopAnimationLoop = () => {
+      this.animationLoopActive = false;
+      stopLoop();
+    };
+  }
+
+  /**
+   * Stop the animation loop
+   */
+  private stopAnimationLoop(): void {
+    this.animationLoopActive = false;
+    stopAudioAnimationLoop();
+  }
+
+  /**
+   * Handle real-time audio frame
+   */
+  private async handleRealtimeFrame(
+    audioData: Float32Array,
+    timestamp: number
+  ): Promise<void> {
+    if (!this.state.isAnalyzing) return;
+
+    try {
+      // Update basic audio features
+      const loudness = AudioUtils.calculateRMS(audioData);
+      this.state.currentLoudness = 20 * Math.log10(loudness + 1e-10); // Convert to dB
+
+      // Perform chord detection if enabled
+      if (this.config.enableChordDetection && this.chordAnalyzer) {
+        const chordResult = await this.chordAnalyzer.analyzeAudioForChords(
+          audioData,
+          this.config.sampleRate
+        );
+
+        if (
+          chordResult.detectedChord &&
+          chordResult.confidence > this.config.confidenceThreshold
+        ) {
+          this.handleChordDetection(
+            chordResult.detectedChord.name,
+            chordResult.confidence
+          );
+        }
+
+        this.cache.chordAnalysis = chordResult;
+      }
+
+      // Update analysis timestamp
+      this.state.lastAnalysis = timestamp;
+    } catch (error) {
+      console.error("🚨 Real-time analysis error:", error);
+    }
+  }
+
+  /**
+   * Handle spectral data updates
+   */
+  private handleSpectralData(spectralData: FFTResult): void {
+    if (!this.state.isAnalyzing) return;
+
+    // Update cached spectral information
+    // This could trigger additional analysis if needed
+  }
+
+  /**
+   * Handle spectral features updates
+   */
+  private handleSpectralFeatures(features: SpectralFeatures): void {
+    if (!this.state.isAnalyzing) return;
+
+    // Update audio features cache
+    const audioFeatures: AudioFeatures = {
+      tempo: this.state.currentTempo,
+      key: this.state.currentKey?.tonic || "C",
+      loudness: this.state.currentLoudness,
+      pitch: [features.spectralCentroid], // Use spectral centroid as pitch estimate
+      rhythm: ["4/4"], // Default rhythm
+      confidence: this.state.confidenceLevel,
+      duration: 0,
+      frequency: features.spectralCentroid,
+      spectralCentroid: features.spectralCentroid,
+      zeroCrossingRate: features.zeroCrossingRate,
+      mfcc: features.mfcc,
+    };
+
+    this.cache.audioFeatures = audioFeatures;
+  }
+
+  /**
+   * Handle harmonic analysis updates
+   */
+  private handleHarmonicData(harmonics: HarmonicAnalysis): void {
+    if (!this.state.isAnalyzing) return;
+
+    // Use harmonic analysis for key detection
+    if (this.config.enableKeyDetection && harmonics.fundamentalFreq > 0) {
+      // Convert fundamental frequency to note and potentially detect key
+      this.analyzeKeyFromHarmonics(harmonics);
+    }
+  }
+
+  /**
+   * Handle onset detection updates
+   */
+  private handleOnsetData(onsets: OnsetDetection): void {
+    if (!this.state.isAnalyzing) return;
+
+    // Update tempo from onset detection
+    if (
+      this.config.enableTempoDetection &&
+      onsets.tempo > 0 &&
+      onsets.confidence > 0.5
+    ) {
+      const oldTempo = this.state.currentTempo;
+      this.state.currentTempo = onsets.tempo;
+
+      if (Math.abs(onsets.tempo - oldTempo) > 5) {
+        // Significant tempo change
+        this.onTempoDetected?.(onsets.tempo, onsets.confidence);
+      }
+    }
+  }
+
+  /**
+   * Extract comprehensive audio features from audio data
+   */
+  private async extractAudioFeatures(
+    audioData: Float32Array,
+    sampleRate: number
+  ): Promise<AudioFeatures> {
+    // Use pitch detector for fundamental analysis
+    const pitchResult = this.pitchDetector?.detectPitch(audioData) || {
+      frequency: 0,
+      confidence: 0,
+      algorithm: "none",
+      candidates: [],
+    };
+
+    // Get spectral analysis
+    const fftResult = this.pitchDetector?.computeFFT(Array.from(audioData)) || {
+      frequencies: new Float32Array(0),
+      magnitudes: new Float32Array(0),
+      phases: new Float32Array(0),
+      sampleRate,
+      binSize: 0,
+    };
+
+    const spectralFeatures =
+      SpectralAnalyzer.computeSpectralFeatures(fftResult);
+
+    // Calculate additional features
+    const loudness =
+      20 * Math.log10(AudioUtils.calculateRMS(audioData) + 1e-10);
+    const pitchCandidates = pitchResult.candidates.map((c) => c.freq);
+
+    return {
+      tempo: this.state.currentTempo,
+      key: this.state.currentKey?.tonic || "C",
+      loudness,
+      pitch: pitchCandidates,
+      rhythm: ["4/4"],
+      confidence: pitchResult.confidence,
+      duration: audioData.length / sampleRate,
+      frequency: pitchResult.frequency,
+      spectralCentroid: spectralFeatures.spectralCentroid,
+      zeroCrossingRate: spectralFeatures.zeroCrossingRate,
+      mfcc: spectralFeatures.mfcc,
+    };
+  }
+
+  /**
+   * Analyze harmony using the music theory engine
+   */
+  private async analyzeHarmony(
+    audioData: Float32Array,
+    sampleRate: number
+  ): Promise<MusicTheoryHarmonyAnalysis | null> {
+    try {
+      // Use chord analyzer to detect chords
+      const chordResult = await this.chordAnalyzer.analyzeAudioForChords(
+        audioData,
+        sampleRate
+      );
+
+      if (chordResult.detectedChord) {
+        const chords = [chordResult.detectedChord.name];
+
+        // Use music theory engine for harmonic analysis
+        return this.musicTheory.analyzeHarmony(chords);
+      }
+
+      return null;
+    } catch (error) {
+      console.error("🚨 Harmony analysis error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Analyze rhythm and tempo
+   */
+  private async analyzeRhythm(
+    audioData: Float32Array,
+    sampleRate: number
+  ): Promise<RhythmAnalysis | null> {
+    try {
+      // Use onset detector for rhythm analysis
+      const onsetData = this.onsetDetector?.detectOnsets(
+        audioData,
+        sampleRate,
+        Date.now()
+      ) || {
+        onsets: [],
+        strength: [],
+        tempo: 120,
+        confidence: 0,
+      };
+
+      return {
+        timeSignature: "4/4",
+        tempo: onsetData.tempo,
+        rhythmicPattern: [],
+        syncopation: false,
+        complexity: onsetData.tempo > 140 ? "complex" : "moderate",
+      };
+    } catch (error) {
+      console.error("🚨 Rhythm analysis error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Classify musical genre based on features
+   */
+  private async classifyGenre(
+    audioFeatures: AudioFeatures,
+    harmonyAnalysis: MusicTheoryHarmonyAnalysis | null
+  ): Promise<GenreAnalysis | null> {
+    try {
+      // Simple genre classification based on tempo and harmony
+      let primaryGenre: MusicGenre = MusicGenre.ROCK;
+      let confidence = 0.5;
+
+      // Tempo-based classification
+      if (audioFeatures.tempo < 80) {
+        primaryGenre = MusicGenre.BLUES;
+      } else if (audioFeatures.tempo > 140) {
+        primaryGenre = MusicGenre.METAL;
+      } else if (audioFeatures.tempo > 120) {
+        primaryGenre = MusicGenre.ROCK;
+      } else {
+        primaryGenre = MusicGenre.POP;
+      }
+
+      // Harmony-based adjustments
+      if (harmonyAnalysis?.key.mode === "minor") {
+        if (primaryGenre === MusicGenre.ROCK) primaryGenre = MusicGenre.METAL;
+        confidence += 0.1;
+      }
+
+      return {
+        primaryGenre,
+        confidence,
+        characteristics: this.musicTheory.getGenreCharacteristics(primaryGenre),
+        subgenres: [],
+      };
+    } catch (error) {
+      console.error("🚨 Genre classification error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Handle chord detection events
+   */
+  private handleChordDetection(chord: string, confidence: number): void {
+    // Add to recent chords
+    this.state.recentChords.push(chord);
+    if (this.state.recentChords.length > 10) {
+      this.state.recentChords.shift();
+    }
+
+    // Update confidence level
+    this.state.confidenceLevel = confidence;
+
+    // Trigger callback
+    this.onChordDetected?.(chord, confidence);
+
+    // Analyze key from recent chords
+    if (this.config.enableKeyDetection && this.state.recentChords.length >= 3) {
+      this.analyzeKeyFromChords();
+    }
+  }
+
+  /**
+   * Analyze key from recent chord progressions
+   */
+  private analyzeKeyFromChords(): void {
+    try {
+      const detectedKey = this.musicTheory.detectKey(this.state.recentChords);
+
+      if (
+        detectedKey &&
+        (!this.state.currentKey ||
+          detectedKey.tonic !== this.state.currentKey.tonic)
+      ) {
+        this.state.currentKey = detectedKey;
+        this.onKeyDetected?.(detectedKey, this.state.confidenceLevel);
+      }
+    } catch (error) {
+      console.error("🚨 Key detection error:", error);
+    }
+  }
+
+  /**
+   * Analyze key from harmonic content
+   */
+  private analyzeKeyFromHarmonics(harmonics: HarmonicAnalysis): void {
+    // Simplified key detection from harmonics
+    // In a full implementation, this would analyze the harmonic series
+    // to determine the most likely key center
+  }
+
+  /**
+   * Decode audio data from ArrayBuffer
+   */
+  private async decodeAudioData(audioData: ArrayBuffer): Promise<AudioBuffer> {
+    if (!this.audioContext) {
+      throw new Error("AudioContext not initialized");
+    }
+
+    return await this.audioContext.decodeAudioData(audioData.slice(0));
+  }
+
+  /**
+   * Update analysis cache
+   */
+  private updateCache(result: AudioAnalysisResult): void {
+    this.cache = {
+      audioFeatures: result.features,
+      chordAnalysis: null, // Will be set by real-time analysis
+      harmonyAnalysis: result.harmonyAnalysis,
+      rhythmAnalysis: result.rhythmAnalysis,
+      genreAnalysis: result.genreAnalysis,
+      timestamp: result.timestamp,
+    };
+  }
+
+  /**
+   * Create default harmony analysis
+   */
+  private createDefaultHarmonyAnalysis(): MusicTheoryHarmonyAnalysis {
+    return {
+      key: { tonic: "C", mode: "major", signature: "0" },
+      chords: [],
+      numerals: [],
+      functions: [],
+      cadences: [],
+      modulations: [],
+      nonChordTones: [],
+      confidence: 0,
+    };
+  }
+
+  /**
+   * Create default rhythm analysis
+   */
+  private createDefaultRhythmAnalysis(): RhythmAnalysis {
+    return {
+      timeSignature: "4/4",
+      tempo: 120,
+      rhythmicPattern: [],
+      syncopation: false,
+      complexity: "moderate",
+    };
+  }
+
+  /**
+   * Create default genre analysis
+   */
+  private createDefaultGenreAnalysis(): GenreAnalysis {
+    return {
+      primaryGenre: MusicGenre.ROCK,
+      confidence: 0.5,
+      characteristics: this.musicTheory.getGenreCharacteristics(
+        MusicGenre.ROCK
+      ),
+      subgenres: [],
+    };
+  }
+
+  /**
+   * Cleanup resources
+   */
+  async dispose(): Promise<void> {
+    console.log("🧹 Disposing AudioAnalyzer...");
+
+    this.stopAnalysis();
+
+    if (this.audioContext && this.audioContext.state !== "closed") {
+      await this.audioContext.close();
+    }
+
+    this.initialized = false;
+    console.log("✅ AudioAnalyzer disposed");
+  }
+}
+
+// Export default instance for easy use
+export const audioAnalyzer = new AudioAnalyzer();
+export default AudioAnalyzer;

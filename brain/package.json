@@ -1,0 +1,38 @@
+{
+  "name": "@maestro/brain",
+  "version": "1.0.0",
+  "description": "MaestroBrain - AI-powered music composition and collaboration intelligence",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "tsc --watch",
+    "test": "echo \"Tests coming soon\"",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "rimraf": "^5.0.0"
+  },
+  "peerDependencies": {
+    "next": ">=15.0.0",
+    "react": ">=18.0.0"
+  }
+}
