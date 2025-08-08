@@ -1,25 +1,22 @@
-import KeyCircle from './KeyCircle';
-import ScaleMenu from './ScaleMenu';
-import Fretboard from './Fretboard';
-import ChordSuggestor from './ChordSuggestor';
+// src/store/KeySwitcherStore.tsx
 import { create } from 'zustand';
-import { KeyModeState } from '@/types/keySwitcher';
 
-<KeyScaleSwitcher /> // Inject dynamically into TunerPanel or Practice view
-export default function KeyScaleSwitcher() {
-    return (
-        <div className="p-4 space-y-4">
-            <KeyCircle />
-            <ScaleMenu />
-            <ChordSuggestor />
-            <Fretboard />
-        </div>
-    );
+export interface KeyModeState {
+    key: string;
+    mode: string;
+    scale: string;
+    isKeyLocked: boolean;
+    isChordLocked: boolean;
+    showFretLabels: boolean;
+    setKey: (key: string) => void;
+    setMode: (mode: string) => void;
+    setScale: (scale: string) => void;
+    toggleKeyLock: () => void;
+    toggleChordLock: () => void;
+    toggleFretLabels: () => void;
 }
 
-// src/store/keySwitcherStore.ts
-import { create } from 'zustand';
-
+// ✅ Store definition only - no component here
 export const useKeySwitcherStore = create<KeyModeState>((set) => ({
     key: 'C',
     mode: 'Mixolydian',
@@ -27,7 +24,6 @@ export const useKeySwitcherStore = create<KeyModeState>((set) => ({
     isKeyLocked: false,
     isChordLocked: false,
     showFretLabels: true,
-
     setKey: (key) => set({ key }),
     setMode: (mode) => set({ mode }),
     setScale: (scale) => set({ scale }),
