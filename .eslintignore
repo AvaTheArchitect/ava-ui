@@ -1,0 +1,17 @@
+# Backup directories
+backup-*/
+**/backup-*/
+
+# Old project versions
+cipher-engine-clean-v2/
+**/cipher-engine-*/
+
+# Archive directories
+old-*/
+archive/
+
+# Node modules and build outputs
+node_modules/
+.next/
+dist/
+build/
