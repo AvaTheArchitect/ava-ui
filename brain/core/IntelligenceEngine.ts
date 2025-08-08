@@ -17,9 +17,9 @@ import { AudioAnalyzer } from "../modules/audio/AudioAnalyzer";
 import { GuitarAI } from "../modules/guitar/GuitarAI";
 import { VocalAI } from "../modules/vocal/VocalAI";
 import { MusicTheoryEngine } from "../modules/composition/MusicTheoryEngine";
-import { PatternRecognizer } from "../learning/PatternRecognizer";
-import { PersonalizationEngine } from "../learning/PersonalizationEngine";
-import { AdaptiveLearning } from "../learning/AdaptiveLearning";
+import { PatternRecognizer } from "../modules/learning/PatternRecognizer";
+import { PersonalizationEngine } from "../modules/learning/PersonalizationEngine";
+import { AdaptiveLearning } from "../modules/learning/AdaptiveLearning";
 
 // =============================================================================
 // 🏷️ INTELLIGENCE ENGINE INTERFACES
@@ -389,6 +389,7 @@ export class IntelligenceEngine {
 
       // Transform MaestroBrain UserProfile to PersonalizationEngine UserProfile
       const personalizationProfile = {
+        userId: "current-user",
         skill_level: mappedSkillLevel,
         instruments: context.userProfile.instruments,
         practice_goals: context.userProfile.practice_goals,

@@ -2,8 +2,10 @@
 
 # dependencies
 /node_modules
+node_modules/
 /.pnp
 .pnp.*
+.pnpm-debug.log*
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -39,3 +41,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Build outputs
+.next/
+dist/
+build/
+
+# Cache files
+.eslintcache
+*.tsbuildinfo
+
+# Backup files (if you have any)
+backup-*/
+*.backupava/
