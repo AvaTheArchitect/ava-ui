@@ -1,32 +1,10 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import {
-  Guitar,
-  Mic,
-  Music,
-  Settings,
-  Headphones,
-  Home,
-  Users,
-  User,
-  GraduationCap,
-  Wrench,
-  Brain,
-  Timer,
-  Printer,
-  ChevronDown,
-  X,
-  Sun,
-  Moon,
-  Palette,
-  Play,
-  Pause,
-  Volume2
-} from "lucide-react"
+import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause } from "lucide-react"
 
 // ✅ Fixed Import Path (case sensitive)
-import TunerDial from '@/components/Cipher/TunerDial'
+import TunerDial from '@/components/tuner/TunerDial'
 
 export type TabId = "home" | "songs" | "setlist" | "tools" | "profile"
 export type ModuleId = "practice" | "singers" | "jam" | "lessons" | "build" | "ai-tab"
@@ -707,7 +685,7 @@ export default function MaestroApp(): React.JSX.Element {
             onClick={() => setActiveTool('none')}
           >
             <div onClick={(e) => e.stopPropagation()}>
-              <TunerDial freq={440} cents={0} />
+              <TunerDial onClose={() => setActiveTool('none')} />
             </div>
           </div>
         )}

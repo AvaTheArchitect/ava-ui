@@ -1,6 +1,9 @@
 'use client';
 
-import StageFlow from '@/components/Cipher/StageFlow';
+import React from 'react';
+
+
+import StageFlow from '@/components/ui/layout/StageFlow';
 
 export default function StagePage() {
     return (

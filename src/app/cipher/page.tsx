@@ -1,10 +1,13 @@
-// src/app/cipher/page.tsx
-
 'use client';
 
-import CipherConsole from '@/components/Cipher/CipherConsole';
-import PracticePanel from '@/components/Cipher/PracticePanel';
-import VisionPanel from '@/components/Cipher/VisionPanel';
+import React from 'react';
+
+// src/app/cipher/page.tsx
+
+
+import CipherConsole from '@/components/dev/CipherConsole';
+import PracticePanel from '@/components/practice/PracticePanel';
+import VisionPanel from '@/components/dev/VisionPanel';
 
 export default function CipherPage() {
     return (
