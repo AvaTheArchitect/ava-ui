@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "brainFixer.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1755294168303,
+    "environment": "1.103.1",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1755294168305,
+  "musicApp": true,
+  "dualBrainActive": false
+}

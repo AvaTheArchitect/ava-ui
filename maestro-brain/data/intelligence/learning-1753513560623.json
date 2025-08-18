@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "train-on-file",
+    "result": "training-data",
+    "timestamp": 1753513560607,
+    "context": {
+      "fileName": "createVisualRouteMapHandler.ts",
+      "fileType": ".ts",
+      "codeLength": 73417,
+      "hasReactComponents": false,
+      "hasTypeScript": true,
+      "hasAudioComponents": true,
+      "hasGuitarComponents": true
+    }
+  },
+  "timestamp": 1753513560607,
+  "musicApp": true,
+  "dualBrainActive": false
+}

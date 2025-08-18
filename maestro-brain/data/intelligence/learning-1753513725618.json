@@ -1,0 +1,12 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "test-learning",
+    "result": "success",
+    "timestamp": 1753513725604
+  },
+  "timestamp": 1753513725604,
+  "musicApp": true,
+  "dualBrainActive": false
+}

@@ -1,0 +1,22 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "autofix-training-complete",
+    "context": {
+      "result": "success",
+      "context": {
+        "fixesApplied": 8,
+        "avgMatchScore": 0.7,
+        "duration": 6160,
+        "handlerName": "TrainBrainRunner",
+        "sessionId": "autofix-1755474143889"
+      }
+    },
+    "timestamp": 1755474150065,
+    "frequency": 1
+  },
+  "timestamp": 1755474150065,
+  "musicApp": true,
+  "dualBrainActive": false
+}

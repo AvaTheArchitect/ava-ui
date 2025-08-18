@@ -1,0 +1,26 @@
+{
+    "folders": [
+        {
+            "name": "Maestro AI",
+            "path": "."
+        }
+    ],
+    "extensions": {
+        "recommendations": [
+            "cipher-ai.cipher-autonomous-dev"
+        ]
+    },
+    "settings": {
+        "files.exclude": {
+            "**/node_modules": true,
+            "**/out": true,
+            "**/dist": true,
+            "**/.vscode-test": true,
+            "**/cipher-reports": true,
+            "**/maestro-reports": true
+        },
+        "search.exclude": {
+            "**/cipher-engine-clean-v2/.vscode-extensions": true
+        }
+    }
+}

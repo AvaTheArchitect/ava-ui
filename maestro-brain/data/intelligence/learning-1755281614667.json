@@ -1,0 +1,17 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "showTrainingReport",
+    "result": "success",
+    "timestamp": 1755281613928,
+    "context": {
+      "args": 0,
+      "timestamp": 1755281613295,
+      "commandName": "showTrainingReport"
+    }
+  },
+  "timestamp": 1755281613928,
+  "musicApp": true,
+  "dualBrainActive": false
+}

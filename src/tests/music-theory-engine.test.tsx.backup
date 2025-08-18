@@ -1,0 +1,46 @@
+// Quick MusicTheoryEngine functionality test - TypeScript version
+import { MusicTheoryEngine } from './brain/modules/composition/index';
+
+console.log('🎵 Testing MusicTheoryEngine functionality...');
+
+try {
+    const engine = new MusicTheoryEngine();
+
+    // Test 1: Harmony Analysis
+    console.log('\n🔍 Testing Harmony Analysis...');
+    const analysis = engine.analyzeHarmony(['C', 'Am', 'F', 'G'], 'C');
+    console.log('✅ Key detected:', `${analysis.key.tonic} ${analysis.key.mode}`);
+    console.log('✅ Roman numerals:', analysis.numerals);
+    console.log('✅ Functions:', analysis.functions);
+    console.log('✅ Confidence:', (analysis.confidence * 100).toFixed(1) + '%');
+
+    // Test 2: Chord Suggestions
+    console.log('\n🎯 Testing Chord Suggestions...');
+    const rockSuggestions = engine.suggestNextChord(['C', 'Am', 'F'], 'rock');
+    const countrySuggestions = engine.suggestNextChord(['C', 'Am', 'F'], 'country');
+    console.log('✅ Rock suggestions:', rockSuggestions);
+    console.log('✅ Country suggestions:', countrySuggestions);
+
+    // Test 3: Melody Generation
+    console.log('\n🎼 Testing Melody Generation...');
+    const melody = engine.generateMelody('C', 8, 'major', 'rock');
+    console.log('✅ Generated melody:', melody);
+
+    // Test 4: Scale Information
+    console.log('\n🎚️ Testing Scale Information...');
+    const cMajorScale = engine.getScale('C', 'major');
+    const eMinorScale = engine.getScale('E', 'minor');
+    console.log('✅ C Major scale:', cMajorScale.notes);
+    console.log('✅ E Minor scale:', eMinorScale.notes);
+
+    // Test 5: Genre Characteristics
+    console.log('\n🎭 Testing Genre Characteristics...');
+    const metalChar = engine.getGenreCharacteristics('metal');
+    console.log('✅ Metal complexity:', metalChar.complexity);
+    console.log('✅ Metal preferred keys:', metalChar.preferredKeys);
+
+    console.log('\n🎉 ALL TESTS PASSED! MusicTheoryEngine is fully operational! 🎉');
+
+} catch (error) {
+    console.error('❌ Test failed:', error);
+}

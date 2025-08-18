@@ -1,0 +1,23 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "autofix-missing-deps",
+    "context": {
+      "result": "success",
+      "context": {
+        "errorType": "missing-deps",
+        "confidence": 0.85,
+        "handlerName": "BrainFixer-v20-UNIFIED",
+        "version": "v20-2025-08-15",
+        "linesChanged": 1,
+        "timeToFix": 14
+      }
+    },
+    "timestamp": 1755474143953,
+    "frequency": 1
+  },
+  "timestamp": 1755474143954,
+  "musicApp": true,
+  "dualBrainActive": false
+}

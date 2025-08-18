@@ -1,0 +1,22 @@
+# Popular Chord Progressions for Guitar Practice
+
+## I-V-vi-IV (Classic Pop)
+C G Am F | C G Am F
+
+## vi-IV-I-V (Pop Punk)  
+Am F C G | Am F C G
+
+## Wonderwall (Em7-G-D-C)
+Em7 G D C | Em7 G D C
+
+## 12-Bar Blues in E
+E E E E | A A E E | B7 A E B7
+
+## Hotel California (Bm-F#-A-E-G-D-Em-F#)
+Bm F# A E | G D Em F#
+
+## Sweet Child O' Mine
+D C G D | D C G D
+
+## Nothing Else Matters
+Em Am C D G B7 Em | Em Am C D G B7 Em

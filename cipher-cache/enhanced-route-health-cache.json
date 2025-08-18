@@ -1,0 +1,3437 @@
+{
+  "timestamp": "2025-08-03T19:59:34.703Z",
+  "audit": {
+    "overall": "warning",
+    "score": 83,
+    "issues": [
+      "1 routes are completely non-functional",
+      "4 routes have performance or maintainability issues",
+      "5 routes lack test coverage",
+      "13 routes lack documentation"
+    ],
+    "recommendations": [
+      "🚨 URGENT: Fix critical routes immediately using Auto-Fix Routes",
+      "🧠 Brain suggests: Review route file structure and naming conventions",
+      "🧪 Implement comprehensive route testing",
+      "📚 Add route documentation and error handling",
+      "🧠 Brain insight: Consider route organization patterns",
+      "🔍 Resolve 120 duplicate files to prevent confusion",
+      "🧠 Brain suggests: Implement file deduplication strategy"
+    ],
+    "routes": [
+      {
+        "path": "/about",
+        "component": "about/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/about",
+          "component": "about/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 126,
+          "lastModified": "2025-08-03T19:59:27.158Z"
+        },
+        "lastChecked": 1754251168153,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /about route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/cipher",
+        "component": "cipher/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/cipher",
+          "component": "cipher/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 547,
+          "lastModified": "2025-08-03T19:59:27.881Z"
+        },
+        "lastChecked": 1754251168741,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "warning",
+        "healthScore": 65,
+        "recommendations": [
+          "Add tests for /cipher route",
+          "Add documentation for /cipher route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": false,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/contact",
+        "component": "contact/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/contact",
+          "component": "contact/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 162,
+          "lastModified": "2025-08-03T19:59:28.045Z"
+        },
+        "lastChecked": 1754251169077,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /contact route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/guitar",
+        "component": "guitar/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/guitar",
+          "component": "guitar/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 290,
+          "lastModified": "2025-08-03T19:59:28.047Z"
+        },
+        "lastChecked": 1754251169523,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /guitar route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/home",
+        "component": "home/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/home",
+          "component": "home/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 148,
+          "lastModified": "2025-08-03T19:59:28.053Z"
+        },
+        "lastChecked": 1754251169718,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /home route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/jam",
+        "component": "jam/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/jam",
+          "component": "jam/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 149,
+          "lastModified": "2025-08-03T19:59:28.059Z"
+        },
+        "lastChecked": 1754251169824,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "warning",
+        "healthScore": 65,
+        "recommendations": [
+          "Add tests for /jam route",
+          "Add documentation for /jam route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": false,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/music",
+        "component": "music/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/music",
+          "component": "music/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 150,
+          "lastModified": "2025-08-03T19:59:28.065Z"
+        },
+        "lastChecked": 1754251169958,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /music route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/practice",
+        "component": "practice/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/practice",
+          "component": "practice/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 167,
+          "lastModified": "2025-08-03T19:59:28.072Z"
+        },
+        "lastChecked": 1754251170085,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "healthy",
+        "healthScore": 100,
+        "recommendations": [],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": true,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/simon",
+        "component": "simon/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/simon",
+          "component": "simon/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": false,
+          "status": "working",
+          "issues": [],
+          "fileSize": 2953,
+          "lastModified": "2025-08-03T19:59:28.079Z"
+        },
+        "lastChecked": 1754251170175,
+        "issues": [],
+        "musicRoute": false,
+        "isMusicRoute": false,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /simon route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "good"
+        }
+      },
+      {
+        "path": "/stage",
+        "component": "stage/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/stage",
+          "component": "stage/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 331,
+          "lastModified": "2025-08-03T19:59:28.084Z"
+        },
+        "lastChecked": 1754251170266,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "warning",
+        "healthScore": 65,
+        "recommendations": [
+          "Add tests for /stage route",
+          "Add documentation for /stage route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": false,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/tabs",
+        "component": "",
+        "status": "missing",
+        "route": {
+          "path": "/tabs",
+          "component": "",
+          "exists": false,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "missing",
+          "issues": [
+            "Missing page.tsx file",
+            "Route /tabs is missing page.tsx file"
+          ],
+          "fileSize": 0,
+          "lastModified": null
+        },
+        "lastChecked": 1754251170335,
+        "issues": [
+          "Missing page.tsx file",
+          "Route /tabs is missing page.tsx file"
+        ],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "critical",
+        "healthScore": 0,
+        "recommendations": [
+          "Create /tabs/page.tsx file"
+        ],
+        "checks": {
+          "exists": false,
+          "accessible": false,
+          "hasTests": false,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/theory",
+        "component": "theory/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/theory",
+          "component": "theory/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 155,
+          "lastModified": "2025-08-03T19:59:28.102Z"
+        },
+        "lastChecked": 1754251170335,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /theory route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      },
+      {
+        "path": "/tuner",
+        "component": "tuner/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/tuner",
+          "component": "tuner/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 1104,
+          "lastModified": "2025-08-03T19:59:28.105Z"
+        },
+        "lastChecked": 1754251170446,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "warning",
+        "healthScore": 65,
+        "recommendations": [
+          "Add tests for /tuner route",
+          "Add documentation for /tuner route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": false,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "good"
+        }
+      },
+      {
+        "path": "/vocal",
+        "component": "vocal/page.tsx",
+        "status": "working",
+        "route": {
+          "path": "/vocal",
+          "component": "vocal/page.tsx",
+          "exists": true,
+          "type": "app-router",
+          "isMusicRoute": true,
+          "status": "working",
+          "issues": [],
+          "fileSize": 147,
+          "lastModified": "2025-08-03T19:59:28.111Z"
+        },
+        "lastChecked": 1754251170602,
+        "issues": [],
+        "musicRoute": true,
+        "isMusicRoute": true,
+        "health": "healthy",
+        "healthScore": 85,
+        "recommendations": [
+          "Add documentation for /vocal route"
+        ],
+        "checks": {
+          "exists": true,
+          "accessible": true,
+          "hasTests": true,
+          "hasDocumentation": false,
+          "performance": 95,
+          "accessibility": 90,
+          "bestPractices": 85,
+          "performanceRating": "excellent"
+        }
+      }
+    ],
+    "overallHealth": "healthy",
+    "routeHealth": [],
+    "criticalIssues": [
+      "Critical routes need immediate attention"
+    ],
+    "musicRouteCount": 8,
+    "timestamp": "2025-08-03T19:59:28.137Z"
+  },
+  "duplicateFiles": [
+    {
+      "fileName": "page.tsx",
+      "paths": [
+        "backups/.backup-app-imports/page.tsx",
+        "backups/.backup-app-imports/jam/page.tsx",
+        "backups/.backup-app-imports/practice/page.tsx",
+        "backups/.backup-app-imports/stage/page.tsx",
+        "backups/.backup-app-imports/about/page.tsx",
+        "backups/.backup-app-imports/vocal/page.tsx",
+        "backups/.backup-app-imports/cipher/page.tsx",
+        "backups/.backup-app-imports/guitar/page.tsx",
+        "backups/.backup-app-imports/contact/page.tsx",
+        "backups/.backup-app-imports/tuner/page.tsx",
+        "backups/.backup-app-imports/theory/page.tsx",
+        "backups/.backup-app-imports/music/page.tsx",
+        "backups/.backup-app-imports/home/page.tsx",
+        "backups/.backup-new-imports/page.tsx",
+        "backups/.backup-final-app-imports/page.tsx",
+        "backups/.backup-imports/page.tsx",
+        "src/app/page.tsx",
+        "src/app/jam/page.tsx",
+        "src/app/practice/page.tsx",
+        "src/app/stage/page.tsx",
+        "src/app/vocal/page.tsx",
+        "src/app/about/page.tsx",
+        "src/app/simon/page.tsx",
+        "src/app/guitar/page.tsx",
+        "src/app/cipher/page.tsx",
+        "src/app/contact/page.tsx",
+        "src/app/theory/page.tsx",
+        "src/app/tuner/page.tsx",
+        "src/app/home/page.tsx",
+        "src/app/music/page.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        39014,
+        188,
+        162,
+        331,
+        121,
+        145,
+        557,
+        294,
+        157,
+        1108,
+        152,
+        147,
+        143,
+        39014,
+        188,
+        39015,
+        39014,
+        149,
+        167,
+        331,
+        147,
+        126,
+        2953,
+        290,
+        547,
+        162,
+        155,
+        1104,
+        148,
+        150
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "PracticeGenerator.tsx",
+      "paths": [
+        "backups/.backup-practice-generator/PracticeGenerator.tsx",
+        "backups/.backup-component-imports/PracticeGenerator.tsx",
+        "backups/.backup-new-imports/PracticeGenerator.tsx",
+        "backups/.backup-force-fix/PracticeGenerator.tsx",
+        "backups/.backup-module-mirror/practice/PracticeGenerator.tsx",
+        "backups/.backup-component-fix/PracticeGenerator.tsx",
+        "backups/.backup-imports/PracticeGenerator.tsx",
+        "src/components/practice/PracticeGenerator.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6011,
+        6011,
+        6011,
+        6011,
+        6011,
+        6011,
+        6010,
+        6014
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "layout.tsx",
+      "paths": [
+        "backups/.backup-app-imports/layout.tsx",
+        "backups/.backup-new-imports/layout.tsx",
+        "src/app/layout.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        679,
+        679,
+        679
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "KeySwitcherStore.tsx",
+      "paths": [
+        "src/store/KeySwitcherStore.tsx",
+        "backups/.backup-new-imports/KeySwitcherStore.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1077,
+        1077
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "AvaConsole.tsx",
+      "paths": [
+        "backups/.backup-ava-rebuild/AvaConsole.tsx",
+        "backups/.backup-state-types/AvaConsole.tsx",
+        "backups/.backup-codemirror-fix/AvaConsole.tsx",
+        "backups/.backup-function-types/AvaConsole.tsx",
+        "backups/.backup-ava-recreate/AvaConsole.tsx",
+        "backups/.backup-ava-fix/AvaConsole.tsx",
+        "ava/src/components/AvaConsole.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3732,
+        3722,
+        3693,
+        3693,
+        4871,
+        3692,
+        5048
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "practice.tsx",
+      "paths": [
+        "backups/.backup-component-imports/practice.tsx",
+        "backups/.backup-new-imports/practice.tsx",
+        "src/components/practice/practice.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        9604,
+        9604,
+        9612
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "PracticePanel.tsx",
+      "paths": [
+        "backups/.backup-final-fix/PracticePanel.tsx",
+        "backups/.backup-new-imports/PracticePanel.tsx",
+        "backups/.backup-component-fix/PracticePanel.tsx",
+        "src/components/practice/PracticePanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        304,
+        304,
+        307,
+        293
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "vocal.tsx",
+      "paths": [
+        "backups/.backup-final-fix/vocal.tsx",
+        "backups/.backup-new-imports/vocal.tsx",
+        "backups/.backup-component-fix/vocal.tsx",
+        "src/components/vocal/vocal.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        9845,
+        9845,
+        9844,
+        9850
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "chordUtils.ts",
+      "paths": [
+        "backups/.backup-guitar-fixes-20250727-163421/chordUtils.ts",
+        "backups/.backup-new-imports/chordUtils.ts",
+        "backups/.backup-chord-suggester/chordUtils.ts",
+        "backups/.backup-chord-signature-20250727-163844/chordUtils.ts",
+        "backups/.backup-chord-readonly/chordUtils.ts",
+        "src/lib/guitar/chordUtils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        12659,
+        10933,
+        10933,
+        11000,
+        12645,
+        11015
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "useMusicAnalyzer.ts",
+      "paths": [
+        "backups/.backup-guitar-fixes-20250727-163421/useMusicAnalyzer.ts",
+        "backups/.backup-new-imports/useMusicAnalyzer.ts",
+        "backups/.backup-music-analyzer/useMusicAnalyzer.ts",
+        "src/hooks/audio/useMusicAnalyzer.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1975,
+        1967,
+        1967,
+        1982
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "ChordProgressionEngine.ts",
+      "paths": [
+        "backups/.backup-module-mirror/ChordProgressionEngine.ts",
+        "backups/.backup-new-imports/ChordProgressionEngine.ts",
+        "src/modules/practice/ChordProgressionEngine.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2189,
+        2189,
+        2189
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "guitar.tsx",
+      "paths": [
+        "backups/.backup-component-imports/guitar.tsx",
+        "backups/.backup-new-imports/guitar.tsx",
+        "src/components/guitar/guitar.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        10032,
+        10032,
+        10038
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "music.tsx",
+      "paths": [
+        "backups/.backup-component-imports/music.tsx",
+        "backups/.backup-new-imports/music.tsx",
+        "src/components/theory/music.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        7979,
+        7979,
+        7985
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "JamEngine.tsx",
+      "paths": [
+        "backups/.backup-module-mirror/JamEngine.tsx",
+        "backups/.backup-new-imports/JamEngine.tsx",
+        "src/modules/jam/JamEngine.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        12595,
+        12595,
+        12595
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "tab-display.tsx",
+      "paths": [
+        "backups/.backup-new-imports/tab-display.tsx",
+        "src/components/guitar/tab-display.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6228,
+        6228
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "rhythmUtils.ts",
+      "paths": [
+        "backups/.backup-new-imports/rhythmUtils.ts",
+        "src/lib/rhythm/rhythmUtils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        0,
+        16750
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "TunerDial.tsx",
+      "paths": [
+        "backups/.backup-new-imports/TunerDial.tsx",
+        "backups/.backup-ultimate-fix/TunerDial.tsx",
+        "src/components/tuner/TunerDial.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        17900,
+        17900,
+        17909
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "music.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/music.test.tsx",
+        "src/tests/music.test.tsx",
+        ".backup-test-fix/music.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1098,
+        323,
+        1098
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "useSettings.ts",
+      "paths": [
+        "backups/.backup-new-imports/useSettings.ts",
+        "src/hooks/ui/useSettings.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2065,
+        2065
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "FullGuitarPractice.tsx",
+      "paths": [
+        "backups/.backup-new-imports/FullGuitarPractice.tsx",
+        "src/components/guitar/FullGuitarPractice.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        10664,
+        10664
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useAbout.ts",
+      "paths": [
+        "backups/.backup-new-imports/useAbout.ts",
+        "src/hooks/ui/useAbout.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        731,
+        731
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "ToolPanel.tsx",
+      "paths": [
+        "backups/.backup-new-imports/ToolPanel.tsx",
+        "backups/.backup-imports/ToolPanel.tsx",
+        "src/components/tools/ToolPanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1261,
+        18088,
+        1261
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "Metronome.tsx",
+      "paths": [
+        "backups/.backup-new-imports/Metronome.tsx",
+        "src/components/metronome/Metronome.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2798,
+        2798
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useVocal.ts",
+      "paths": [
+        "backups/.backup-new-imports/useVocal.ts",
+        "src/hooks/vocal/useVocal.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        782,
+        782
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "track-isolator.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/track-isolator.test.tsx",
+        "src/components/audio/track-isolator.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1310,
+        1279
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useBaseComponent.ts",
+      "paths": [
+        "backups/.backup-new-imports/useBaseComponent.ts",
+        "src/hooks/ui/useBaseComponent.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        702,
+        702
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useGuitarAnalyzer.ts",
+      "paths": [
+        "backups/.backup-new-imports/useGuitarAnalyzer.ts",
+        "backups/.backup-guitar-analyzer/useGuitarAnalyzer.ts",
+        "src/hooks/guitar/useGuitarAnalyzer.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        7865,
+        7865,
+        7872
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "OverlayTrail.tsx",
+      "paths": [
+        "backups/.backup-new-imports/OverlayTrail.tsx",
+        "src/components/ui/effects/OverlayTrail.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        729,
+        729
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "PlayerTransport.ts",
+      "paths": [
+        "backups/.backup-new-imports/PlayerTransport.ts",
+        "src/modules/practice/PlayerTransport.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3376,
+        3376
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "VisionPanel.tsx",
+      "paths": [
+        "backups/.backup-new-imports/VisionPanel.tsx",
+        "backups/.backup-absolute-final/VisionPanel.tsx",
+        "backups/.backup-exact-final/VisionPanel.tsx",
+        "src/components/dev/VisionPanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        311,
+        311,
+        311,
+        315
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "useDashboard.ts",
+      "paths": [
+        "backups/.backup-new-imports/useDashboard.ts",
+        "src/hooks/ui/useDashboard.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        852,
+        852
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useTheory.ts",
+      "paths": [
+        "backups/.backup-new-imports/useTheory.ts",
+        "src/hooks/theory/useTheory.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1847,
+        1847
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useProfile.ts",
+      "paths": [
+        "backups/.backup-new-imports/useProfile.ts",
+        "src/hooks/ui/useProfile.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1443,
+        1443
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useAccessibilityToggles.ts",
+      "paths": [
+        "backups/.backup-new-imports/useAccessibilityToggles.ts",
+        "src/hooks/ui/useAccessibilityToggles.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        11711,
+        11711
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useAudioEngine.ts",
+      "paths": [
+        "backups/.backup-new-imports/useAudioEngine.ts",
+        "src/hooks/audio/useAudioEngine.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6675,
+        7227
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "JamZone.tsx",
+      "paths": [
+        "backups/.backup-new-imports/JamZone.tsx",
+        "backups/.backup-imports/JamZone.tsx",
+        "src/components/jam/JamZone.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2916,
+        2913,
+        2850
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useHome.ts",
+      "paths": [
+        "backups/.backup-new-imports/useHome.ts",
+        "src/hooks/ui/useHome.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        841,
+        841
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "guitar-js.d.ts",
+      "paths": [
+        "backups/.backup-new-imports/guitar-js.d.ts",
+        "src/types/guitar-js.d.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        405,
+        405
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useMetronome.ts",
+      "paths": [
+        "backups/.backup-new-imports/useMetronome.ts",
+        "src/hooks/metronome/useMetronome.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1518,
+        1518
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useVocalAnalyzer.ts",
+      "paths": [
+        "backups/.backup-new-imports/useVocalAnalyzer.ts",
+        "backups/.backup-vocal-analyzer/useVocalAnalyzer.ts",
+        "src/hooks/vocal/useVocalAnalyzer.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2864,
+        2864,
+        2871
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "useAudioEngine.test.ts",
+      "paths": [
+        "backups/.backup-new-imports/useAudioEngine.test.ts",
+        "src/hooks/audio/useAudioEngine.test.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2122,
+        2122
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "track-isolator.tsx",
+      "paths": [
+        "backups/.backup-new-imports/track-isolator.tsx",
+        "src/components/audio/track-isolator.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8935,
+        8935
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "musicTheory.ts",
+      "paths": [
+        "backups/.backup-new-imports/musicTheory.ts",
+        "src/utils/musicTheory.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        26877,
+        26877
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "audio-controller.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/audio-controller.test.tsx",
+        "src/components/audio/audio-controller.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1377,
+        1338
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "Profile.tsx",
+      "paths": [
+        "backups/.backup-new-imports/Profile.tsx",
+        "src/components/ui/profile/Profile.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2057,
+        2057
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "contact.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/contact.test.tsx",
+        "src/tests/contact.test.tsx",
+        ".backup-test-fix/contact.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1118,
+        333,
+        1118
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "sessionManagement.ts",
+      "paths": [
+        "backups/.backup-new-imports/sessionManagement.ts",
+        "backups/.backup-session-imports-20250727-164923/sessionManagement.ts",
+        "src/utils/sessionManagement.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        32393,
+        32393,
+        32412
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "CipherConsole.tsx",
+      "paths": [
+        "backups/.backup-new-imports/CipherConsole.tsx",
+        "backups/.backup-imports/CipherConsole.tsx",
+        "src/components/dev/CipherConsole.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        778,
+        779,
+        13206
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "StageFlow.tsx",
+      "paths": [
+        "backups/.backup-new-imports/StageFlow.tsx",
+        "backups/.backup-absolute-final/StageFlow.tsx",
+        "backups/.backup-exact-final/StageFlow.tsx",
+        "backups/.backup-final-import/StageFlow.tsx",
+        "src/components/ui/layout/StageFlow.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1455,
+        1454,
+        1454,
+        1461,
+        1475
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "usePitchAnalyzer.ts",
+      "paths": [
+        "backups/.backup-new-imports/usePitchAnalyzer.ts",
+        "src/hooks/audio/usePitchAnalyzer.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8790,
+        8790
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "useGuitar.ts",
+      "paths": [
+        "backups/.backup-new-imports/useGuitar.ts",
+        "src/hooks/guitar/useGuitar.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2015,
+        2015
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "KeyCircle.tsx",
+      "paths": [
+        "backups/.backup-new-imports/KeyCircle.tsx",
+        "src/components/guitar/KeyCircle.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6714,
+        6714
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "chord-overlay.tsx",
+      "paths": [
+        "backups/.backup-new-imports/chord-overlay.tsx",
+        "src/components/guitar/chord-overlay.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8799,
+        8799
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "speech.d.ts",
+      "paths": [
+        "backups/.backup-new-imports/speech.d.ts",
+        "src/types/speech.d.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        153,
+        10643
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "guitar.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/guitar.test.tsx",
+        "src/tests/guitar.test.tsx",
+        ".backup-test-fix/guitar.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1108,
+        328,
+        1115
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "tabParser.test.ts",
+      "paths": [
+        "backups/.backup-new-imports/tabParser.test.ts",
+        "src/utils/tabParser.test.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3931,
+        5259
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "keySwitcher.ts",
+      "paths": [
+        "backups/.backup-new-imports/keySwitcher.ts",
+        "src/types/keySwitcher.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3190,
+        3190
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useJam.ts",
+      "paths": [
+        "backups/.backup-new-imports/useJam.ts",
+        "src/hooks/jam/useJam.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1180,
+        1180
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "theory.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/theory.test.tsx",
+        "src/tests/theory.test.tsx",
+        ".backup-test-fix/theory.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1108,
+        328,
+        1108
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "useTuner.ts",
+      "paths": [
+        "backups/.backup-new-imports/useTuner.ts",
+        "src/hooks/tuner/useTuner.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3501,
+        3501
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "ScaleMenu.tsx",
+      "paths": [
+        "backups/.backup-new-imports/ScaleMenu.tsx",
+        "src/components/guitar/ScaleMenu.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1713,
+        1713
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "FretboardOverlay.tsx",
+      "paths": [
+        "backups/.backup-new-imports/FretboardOverlay.tsx",
+        "src/components/guitar/FretboardOverlay.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        5008,
+        5008
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "VocalModule.tsx",
+      "paths": [
+        "backups/.backup-new-imports/VocalModule.tsx",
+        "backups/.backup-component-fix/VocalModule.tsx",
+        "src/modules/vocal/VocalModule.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        11869,
+        11869,
+        11869
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "contact.tsx",
+      "paths": [
+        "backups/.backup-new-imports/contact.tsx",
+        "backups/.backup-final-hooks/contact.tsx",
+        "src/components/ui/pages/contact.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        9123,
+        9123,
+        9125
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "about.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/about.test.tsx",
+        "src/tests/about.test.tsx",
+        ".backup-test-fix/about.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1098,
+        348,
+        1098
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "home.tsx",
+      "paths": [
+        "backups/.backup-new-imports/home.tsx",
+        "backups/.backup-final-hooks/home.tsx",
+        "src/components/ui/pages/home.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        7419,
+        7419,
+        7421
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "audioAnalysis.ts",
+      "paths": [
+        "backups/.backup-new-imports/audioAnalysis.ts",
+        "src/utils/audioAnalysis.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        19780,
+        19779
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "about.tsx",
+      "paths": [
+        "backups/.backup-new-imports/about.tsx",
+        "backups/.backup-final-hooks/about.tsx",
+        "src/components/ui/pages/about.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6275,
+        6275,
+        6277
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "home.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/home.test.tsx",
+        "src/tests/home.test.tsx",
+        ".backup-test-fix/home.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1088,
+        318,
+        1088
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "musicUtils.ts",
+      "paths": [
+        "backups/.backup-new-imports/musicUtils.ts",
+        "src/lib/music/musicUtils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2437,
+        2437
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "VisualFeedbackPanel.tsx",
+      "paths": [
+        "backups/.backup-new-imports/VisualFeedbackPanel.tsx",
+        "src/components/ui/feedback/VisualFeedbackPanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1387,
+        1387
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "VisualPracticeHUD.tsx",
+      "paths": [
+        "backups/.backup-new-imports/VisualPracticeHUD.tsx",
+        "backups/.backup-component-fix/VisualPracticeHUD.tsx",
+        "src/components/practice/VisualPracticeHUD.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6551,
+        6551,
+        6551
+      ],
+      "isStub": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "AutoLoopPanel.tsx",
+      "paths": [
+        "backups/.backup-new-imports/AutoLoopPanel.tsx",
+        "src/components/audio/AutoLoopPanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        823,
+        823
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "TunerPanel.tsx",
+      "paths": [
+        "backups/.backup-new-imports/TunerPanel.tsx",
+        "src/components/tuner/TunerPanel.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2474,
+        2480
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "practice.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/practice.test.tsx",
+        "src/tests/practice.test.tsx",
+        ".backup-test-fix/practice.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1128,
+        338,
+        1128
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "ChordSuggester.tsx",
+      "paths": [
+        "backups/.backup-new-imports/ChordSuggester.tsx",
+        "backups/.backup-chord-suggester/ChordSuggester.tsx",
+        "backups/.backup-chord-signature-20250727-163844/ChordSuggester.tsx",
+        "backups/.backup-imports/ChordSuggester.tsx",
+        "src/components/guitar/ChordSuggester.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1382,
+        1382,
+        1382,
+        1382,
+        1382
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useMusic.ts",
+      "paths": [
+        "backups/.backup-new-imports/useMusic.ts",
+        "src/hooks/theory/useMusic.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1282,
+        1282
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "jamUtils.ts",
+      "paths": [
+        "backups/.backup-new-imports/jamUtils.ts",
+        "src/lib/jam/jamUtils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1474,
+        1474
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "useContact.ts",
+      "paths": [
+        "backups/.backup-new-imports/useContact.ts",
+        "src/hooks/ui/useContact.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        909,
+        909
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "theory.tsx",
+      "paths": [
+        "backups/.backup-new-imports/theory.tsx",
+        "src/components/theory/theory.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8889,
+        8895
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "fretUtils.ts",
+      "paths": [
+        "backups/.backup-new-imports/fretUtils.ts",
+        "src/lib/guitar/fretUtils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        0,
+        15962
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "voiceTunerCommands.ts",
+      "paths": [
+        "backups/.backup-new-imports/voiceTunerCommands.ts",
+        "src/modules/vocal/voiceTunerCommands.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        420,
+        420
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "tabParser.ts",
+      "paths": [
+        "backups/.backup-new-imports/tabParser.ts",
+        "src/utils/tabParser.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        11896,
+        13655
+      ],
+      "isStub": [
+        false,
+        true
+      ]
+    },
+    {
+      "fileName": "voiceAccessibilityMap.ts",
+      "paths": [
+        "backups/.backup-new-imports/voiceAccessibilityMap.ts",
+        "src/modules/vocal/voiceAccessibilityMap.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        458,
+        458
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "audio-controller.tsx",
+      "paths": [
+        "backups/.backup-new-imports/audio-controller.tsx",
+        "src/components/audio/audio-controller.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        11592,
+        11581
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "guitar-tab-song-parser.d.ts",
+      "paths": [
+        "backups/.backup-new-imports/guitar-tab-song-parser.d.ts",
+        "src/types/guitar-tab-song-parser.d.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        362,
+        362
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "tab-display.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/tab-display.test.tsx",
+        "src/components/guitar/tab-display.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1462,
+        1428
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "usePractice.ts",
+      "paths": [
+        "backups/.backup-new-imports/usePractice.ts",
+        "src/hooks/practice/usePractice.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1338,
+        1338
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "Settings.tsx",
+      "paths": [
+        "backups/.backup-new-imports/Settings.tsx",
+        "src/components/ui/profile/Settings.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2066,
+        2066
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "vocal.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/vocal.test.tsx",
+        "src/tests/vocal.test.tsx",
+        ".backup-test-fix/vocal.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1098,
+        323,
+        1098
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "chord-overlay.test.tsx",
+      "paths": [
+        "backups/.backup-new-imports/chord-overlay.test.tsx",
+        "src/components/guitar/chord-overlay.test.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1343,
+        1322
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "index.ts",
+      "paths": [
+        "brain/interfaces/index.ts",
+        "cipher-engine-clean-v2/src/aiops/index.ts",
+        "brain/index.ts",
+        "brain/modules/audio/index.ts",
+        "brain/modules/vocal/index.ts",
+        "brain/modules/guitar/index.ts",
+        "brain/integrations/external/index.ts",
+        "brain/integrations/cipher/index.ts",
+        "brain/modules/learning/index.ts",
+        "brain/integrations/maestro/index.ts",
+        "brain/modules/collaboration/index.ts",
+        "brain/core/index.ts",
+        "brain/modules/analysis/index.ts",
+        "brain/modules/composition/index.ts",
+        "maestro-ecosystem-sync/index.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8010,
+        1382,
+        12133,
+        2812,
+        2775,
+        2110,
+        34,
+        37,
+        3122,
+        1367,
+        42,
+        1835,
+        35,
+        17251,
+        10260
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "fileName": "next-env.d.ts",
+      "paths": [
+        "cipher-engine-clean-v2/next-env.d.ts",
+        "next-env.d.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        213,
+        211
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "interception-route-rewrite-manifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/interception-route-rewrite-manifest.js",
+        ".next/server/interception-route-rewrite-manifest.js",
+        "ava/.next/server/interception-route-rewrite-manifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        47,
+        48,
+        47
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "_error.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/_error.js",
+        "cipher-engine-clean-v2/.next/static/chunks/_error.js",
+        "cipher-engine-clean-v2/.next/server/pages/_error.js",
+        "cipher-engine-clean-v2/.next/static/chunks/fallback/pages/_error.js",
+        "cipher-engine-clean-v2/.next/static/chunks/pages/_error.js",
+        ".next/server/pages/_error.js",
+        "ava/.next/static/chunks/pages/_error.js",
+        "ava/.next/server/pages/_error.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        17811,
+        4167,
+        17638,
+        3449,
+        3446,
+        9461,
+        3457,
+        14296
+      ],
+      "isStub": [
+        false,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "next-font-manifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/next-font-manifest.js",
+        ".next/server/next-font-manifest.js",
+        "ava/.next/server/next-font-manifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        113,
+        249,
+        113
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "middleware-react-loadable-manifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/middleware-react-loadable-manifest.js",
+        ".next/server/middleware-react-loadable-manifest.js",
+        "ava/.next/server/middleware-react-loadable-manifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        35,
+        36,
+        940
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "middleware-build-manifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/middleware-build-manifest.js",
+        ".next/server/middleware-build-manifest.js",
+        "ava/.next/server/middleware-build-manifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        719,
+        921,
+        839
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "main.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/chunks/main.js",
+        "cipher-engine-clean-v2/.next/static/chunks/fallback/main.js",
+        "ava/.next/static/chunks/main.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6067541,
+        6067355,
+        6068562
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "react-refresh.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/chunks/react-refresh.js",
+        "cipher-engine-clean-v2/.next/static/chunks/fallback/react-refresh.js",
+        "ava/.next/static/chunks/react-refresh.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        79619,
+        79619,
+        79524
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "polyfills.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/chunks/polyfills.js",
+        "ava/.next/static/chunks/polyfills.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        112594,
+        112594
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "_document.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/pages/_document.js",
+        ".next/server/pages/_document.js",
+        "ava/.next/server/pages/_document.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2099,
+        378,
+        2100
+      ],
+      "isStub": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "_app.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/pages/_app.js",
+        "cipher-engine-clean-v2/.next/static/chunks/fallback/pages/_app.js",
+        "cipher-engine-clean-v2/.next/static/chunks/pages/_app.js",
+        ".next/server/pages/_app.js",
+        "ava/.next/static/chunks/pages/_app.js",
+        "ava/.next/server/pages/_app.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        4737,
+        3469,
+        44794,
+        3357,
+        3478,
+        1514
+      ],
+      "isStub": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "webpack.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/chunks/webpack.js",
+        "cipher-engine-clean-v2/.next/static/chunks/fallback/webpack.js",
+        "ava/.next/static/chunks/webpack.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        47064,
+        46738,
+        51616
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "next.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/vendor-chunks/next.js",
+        "ava/.next/server/vendor-chunks/next.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        999531,
+        535784
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "webpack-runtime.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/webpack-runtime.js",
+        ".next/server/webpack-runtime.js",
+        "ava/.next/server/webpack-runtime.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6639,
+        1469,
+        6639
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "CodeEditor.tsx",
+      "paths": [
+        "cipher-engine-clean-v2/src/components/CodeEditor.tsx",
+        "ava/src/components/CodeEditor.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1079,
+        1541
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "FileExplorer.tsx",
+      "paths": [
+        "cipher-engine-clean-v2/src/components/FileExplorer.tsx",
+        "ava/src/components/FileExplorer.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        7190,
+        2020
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "CodeMirrorEditor.tsx",
+      "paths": [
+        "cipher-engine-clean-v2/src/components/CodeMirrorEditor.tsx",
+        "ava/src/components/CodeMirrorEditor.tsx"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        6123,
+        1377
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "_buildManifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/development/_buildManifest.js",
+        ".next/static/zrszECcZI9oRDNI1ru6DM/_buildManifest.js",
+        "ava/.next/static/development/_buildManifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        312,
+        1109,
+        373
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "_ssgManifest.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/static/development/_ssgManifest.js",
+        ".next/static/zrszECcZI9oRDNI1ru6DM/_ssgManifest.js",
+        "ava/.next/static/development/_ssgManifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        76,
+        80,
+        76
+      ],
+      "isStub": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "@swc.js",
+      "paths": [
+        "cipher-engine-clean-v2/.next/server/vendor-chunks/@swc.js",
+        "ava/.next/server/vendor-chunks/@swc.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        12143,
+        6415
+      ],
+      "isStub": [
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "typeGuards.ts",
+      "paths": [
+        "cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/shared/typeGuards.ts",
+        "brain/shared/typeGuards.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        2266,
+        12912
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "types.ts",
+      "paths": [
+        "cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/shared/types.ts",
+        "brain/shared/types.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        104942,
+        14896
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "utils.ts",
+      "paths": [
+        "cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/shared/utils.ts",
+        "brain/shared/utils.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        42221,
+        33347
+      ],
+      "isStub": [
+        true,
+        false
+      ]
+    },
+    {
+      "fileName": "typeHelpers.ts",
+      "paths": [
+        "cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/shared/typeHelpers.ts",
+        "brain/shared/typeHelpers.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8828,
+        713
+      ],
+      "isStub": [
+        false,
+        false
+      ]
+    },
+    {
+      "fileName": "index.js",
+      "paths": [
+        "brain/index.js",
+        "ava/.next/static/chunks/pages/index.js",
+        "ava/.next/server/pages/index.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        1839,
+        163429,
+        60223
+      ],
+      "isStub": [
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "page_client-reference-manifest.js",
+      "paths": [
+        ".next/server/app/jam/page_client-reference-manifest.js",
+        ".next/server/app/_not-found/page_client-reference-manifest.js",
+        ".next/server/app/stage/page_client-reference-manifest.js",
+        ".next/server/app/practice/page_client-reference-manifest.js",
+        ".next/server/app/simon/page_client-reference-manifest.js",
+        ".next/server/app/vocal/page_client-reference-manifest.js",
+        ".next/server/app/page_client-reference-manifest.js",
+        ".next/server/app/about/page_client-reference-manifest.js",
+        ".next/server/app/cipher/page_client-reference-manifest.js",
+        ".next/server/app/theory/page_client-reference-manifest.js",
+        ".next/server/app/guitar/page_client-reference-manifest.js",
+        ".next/server/app/contact/page_client-reference-manifest.js",
+        ".next/server/app/tuner/page_client-reference-manifest.js",
+        ".next/server/app/home/page_client-reference-manifest.js",
+        ".next/server/app/music/page_client-reference-manifest.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        8683,
+        8643,
+        8689,
+        8698,
+        8735,
+        8689,
+        8561,
+        8689,
+        8784,
+        8692,
+        8692,
+        8695,
+        8735,
+        8686,
+        8689
+      ],
+      "isStub": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "page.js",
+      "paths": [
+        ".next/server/app/jam/page.js",
+        ".next/server/app/_not-found/page.js",
+        ".next/server/app/stage/page.js",
+        ".next/server/app/practice/page.js",
+        ".next/server/app/vocal/page.js",
+        ".next/server/app/simon/page.js",
+        ".next/server/app/about/page.js",
+        ".next/server/app/page.js",
+        ".next/server/app/theory/page.js",
+        ".next/server/app/cipher/page.js",
+        ".next/server/app/guitar/page.js",
+        ".next/server/app/contact/page.js",
+        ".next/server/app/tuner/page.js",
+        ".next/server/app/home/page.js",
+        ".next/server/app/music/page.js"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        5787,
+        3047,
+        11037,
+        13231,
+        20358,
+        15403,
+        8975,
+        34533,
+        12510,
+        24348,
+        21205,
+        12409,
+        3773,
+        10945,
+        11722
+      ],
+      "isStub": [
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "fileName": "page.ts",
+      "paths": [
+        ".next/types/app/practice/page.ts",
+        ".next/types/app/page.ts",
+        ".next/types/app/vocal/page.ts",
+        ".next/types/app/about/page.ts",
+        ".next/types/app/simon/page.ts",
+        ".next/types/app/jam/page.ts",
+        ".next/types/app/stage/page.ts",
+        ".next/types/app/cipher/page.ts",
+        ".next/types/app/theory/page.ts",
+        ".next/types/app/guitar/page.ts",
+        ".next/types/app/tuner/page.ts",
+        ".next/types/app/music/page.ts",
+        ".next/types/app/contact/page.ts",
+        ".next/types/app/home/page.ts"
+      ],
+      "workspaces": [
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI",
+        "Maestro AI"
+      ],
+      "sizes": [
+        3742,
+        3709,
+        3733,
+        3733,
+        3733,
+        3727,
+        3733,
+        3736,
+        3736,
+        3736,
+        3733,
+        3733,
+        3739,
+        3730
+      ],
+      "isStub": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  ],
+  "brainLearningActive": true,
+  "version": "2.0"
+}

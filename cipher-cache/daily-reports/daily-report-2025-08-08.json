@@ -1,0 +1,79 @@
+{
+  "date": "2025-08-08T06:09:05.155Z",
+  "summary": "✅ Great system health with minor optimization opportunities.",
+  "overallScore": 89,
+  "codeQuality": {
+    "score": 80,
+    "issues": 5,
+    "improvements": 0,
+    "totalFiles": 645,
+    "componentsAnalyzed": 176,
+    "suggestions": [
+      "♫ Music component detected: KeySwitcherStore.tsx",
+      "♫ Music component detected: index.ts",
+      "♫ Music component detected: useMetronome.ts",
+      "♫ Music component detected: useAudioEngine.ts",
+      "♫ Music component detected: useMusicAnalyzer.ts"
+    ]
+  },
+  "dependencies": {
+    "total": 54,
+    "outdated": 2,
+    "vulnerabilities": 0,
+    "devDependencies": 28,
+    "productionDependencies": 26,
+    "recommendations": [
+      "Well-equipped project with comprehensive dependencies",
+      "Great TypeScript setup detected!"
+    ]
+  },
+  "routes": {
+    "total": 1492,
+    "working": 1481,
+    "broken": 11,
+    "healthScore": 96,
+    "issues": [
+      "11 files need attention"
+    ],
+    "recommendations": [
+      "Consider reviewing files with critical issues",
+      "Large codebase detected - excellent project scale!",
+      "Outstanding code health - keep up the great work!"
+    ]
+  },
+  "performance": {
+    "bundleSize": "Large but manageable",
+    "loadTime": "Fast",
+    "score": 85,
+    "issues": [],
+    "optimizations": [
+      "Consider code-splitting for optimal loading"
+    ]
+  },
+  "security": {
+    "score": 95,
+    "vulnerabilities": [],
+    "recommendations": [
+      "Excellent! No critical security vulnerabilities detected"
+    ],
+    "securePatterns": 0,
+    "totalChecks": 50
+  },
+  "gitStatus": {
+    "hasGit": true,
+    "branch": "unknown",
+    "uncommittedChanges": 0,
+    "lastCommit": "unknown",
+    "recommendations": [
+      "Git repository detected - excellent version control!",
+      ".gitignore found - great practice!"
+    ]
+  },
+  "recommendations": [
+    "🎉 Excellent code health - your project is in great shape!",
+    "📦 Well-managed dependency structure",
+    "🔒 No critical security issues detected",
+    "⚡ Good performance patterns in place"
+  ],
+  "timestamp": "8/7/2025, 11:09:05 PM"
+}

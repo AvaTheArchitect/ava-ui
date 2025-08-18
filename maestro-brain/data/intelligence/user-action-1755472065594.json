@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "complete-pipeline-handler-complete",
+    "context": {
+      "result": "success",
+      "context": {
+        "handlerName": "trainBrainCompleteHandler",
+        "sessionId": "combined-1755472050744",
+        "totalPatterns": 9,
+        "confidenceBoost": 11.900545112781955
+      }
+    },
+    "timestamp": 1755472065549,
+    "frequency": 1
+  },
+  "timestamp": 1755472065549,
+  "musicApp": true,
+  "dualBrainActive": false
+}

@@ -1,0 +1,19 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "type": "route_analysis_complete",
+    "data": {
+      "routesFound": 0,
+      "musicRoutes": 0,
+      "workingRoutes": 0,
+      "issues": 1,
+      "emptyDirectories": 0,
+      "emptyFiles": 0
+    },
+    "timestamp": "2025-08-16T01:35:43.516Z"
+  },
+  "timestamp": 1755308143517,
+  "musicApp": true,
+  "dualBrainActive": false
+}

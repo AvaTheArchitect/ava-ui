@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Enhanced File Analysis Report - audio-controller.ts</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .severity-score {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            color: #ef4444;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .issue-item, .suggestion-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .issue-item {
+            border-left: 4px solid #ef4444;
+        }
+        .suggestion-item {
+            border-left: 4px solid #3b82f6;
+        }
+        .ts-issue {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .metric-card {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .metric-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Enhanced File Analysis Report</h1>
+            <h2>audio-controller.ts</h2>
+            <p>Generated: 7/17/2025, 2:47:10 PM</p>
+            <p>🚀 <strong>TypeScript Diagnostics Enabled</strong></p>
+        </div>
+
+        <div class="card">
+            <h2>📊 Overall Assessment</h2>
+            <div class="severity-score">HIGH</div>
+            <div style="text-align: center; margin-top: 10px;">
+                Complexity: 22/10 | Type: TypeScript
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-number" style="color: #f59e0b;">203</div>
+                <div>TypeScript Issues</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #ef4444;">9</div>
+                <div>Pattern Issues</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #3b82f6;">25</div>
+                <div>Suggestions</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #10b981;">YES</div>
+                <div>Auto-fixable</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>🚨 TypeScript Compiler Issues</h3>
+                <div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 102) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ')' expected. (Line 102) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 105) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 105) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ',' expected. (Line 107) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 108) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 112) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 113) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 115) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 117) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 117) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ':' expected. (Line 118) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 123) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 124) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 126) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ':' expected. (Line 130) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ':' expected. (Line 131) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ':' expected. (Line 132) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 135) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 136) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 138) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 141) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 141) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 144) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 146) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 148) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 150) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 150) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ',' expected. (Line 151) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 154) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 156) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 156) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ',' expected. (Line 157) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 160) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 161) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Property assignment expected. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 164) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 165) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 166) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 167) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 168) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 169) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 180) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ')' expected. (Line 180) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ',' expected. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ',' expected. (Line 183) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 184) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 186) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 186) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 186) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 187) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 188) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Declaration or statement expected. (Line 189) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 102) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 102) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'audio'. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'ref'. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'src'. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 103) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 105) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 105) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 106) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '>' cannot be applied to types 'string' and 'number'. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 110) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 111) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Parameter 'currentTime' implicitly has an 'any' type. (Line 111) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 111) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Parameter 'duration' implicitly has an 'any' type. (Line 111) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 115) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 115) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'input'. (Line 116) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'type'. (Line 117) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'min'. (Line 118) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'max'. (Line 119) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'value'. (Line 120) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onChange'. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'handleSeek'. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 121) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 122) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 122) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 126) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 126) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'label'. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Speed'. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'playbackRate'. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'x'. (Line 127) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'input'. (Line 128) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'type'. (Line 129) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'min'. (Line 130) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'max'. (Line 131) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'step'. (Line 132) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'value'. (Line 133) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: No value exists in scope for the shorthand property 'playbackRate'. Either declare one or provide an initializer. (Line 133) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onChange'. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'handlePlaybackRateChange'. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 134) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 138) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 138) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'label'. (Line 139) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'input'. (Line 140) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'type'. (Line 141) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'checked'. (Line 142) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: No value exists in scope for the shorthand property 'isLooping'. Either declare one or provide an initializer. (Line 142) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onChange'. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'setIsLooping'. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 143) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Loop'. (Line 145) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 148) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 148) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'input'. (Line 149) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'type'. (Line 150) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'value'. (Line 151) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'loopStart'. (Line 151) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onChange'. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'setLoopStart'. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 152) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'placeholder'. (Line 153) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 153) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'input'. (Line 155) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'type'. (Line 156) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'value'. (Line 157) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'loopEnd'. (Line 157) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onChange'. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'setLoopEnd'. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'e'. (Line 158) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'placeholder'. (Line 159) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type. (Line 159) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type '{}' has no call signatures. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'setLoopRegion'. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'currentTime'. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'currentTime'. (Line 163) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Loop'. (Line 164) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Here'. (Line 164) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 164) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 164) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 180) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'className'. (Line 180) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 181) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '>' cannot be applied to types '{ isPlaying: boolean; onPause: () => void; }' and '{ isPlaying: boolean; '\u23F8\uFE0F': string; }'. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 182) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 185) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 186) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'onClick'. (Line 186) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Parsing error: '>' expected. (Line 102) - Source: eslint</div>
+            </div>
+
+            <div class="card">
+                <h3>📝 Pattern-Based Issues</h3>
+                <div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">🎯 Type Issue: Implicit any type detected</div><div class="issue-item">🎯 Type Issue: Implicit any type detected</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>💡 Optimization Suggestions</h3>
+            <div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Add explicit type annotations to improve type safety</div><div class="suggestion-item">Add explicit type annotations to improve type safety</div><div class="suggestion-item">💭 HINT: 'playbackRate' is declared but its value is never read. (Line 18) - Source: ts</div><div class="suggestion-item">💭 HINT: 'setIsLooping' is declared but its value is never read. (Line 21) - Source: ts</div><div class="suggestion-item">💭 HINT: 'animationFrameRef' is declared but its value is never read. (Line 24) - Source: ts</div><div class="suggestion-item">💭 HINT: 'handleSeek' is declared but its value is never read. (Line 74) - Source: ts</div><div class="suggestion-item">💭 HINT: 'handlePlaybackRateChange' is declared but its value is never read. (Line 82) - Source: ts</div><div class="suggestion-item">💭 HINT: 'setLoopRegion' is declared but its value is never read. (Line 90) - Source: ts</div><div class="suggestion-item">💭 HINT: 'formatTime' is declared but its value is never read. (Line 95) - Source: ts</div><div class="suggestion-item">💭 HINT: Unreachable code detected. (Line 103) - Source: ts</div><div class="suggestion-item">💭 HINT: 'onPause' is declared but its value is never read. (Line 178) - Source: ts</div><div class="suggestion-item">💭 HINT: Unreachable code detected. (Line 181) - Source: ts</div><div class="suggestion-item">🔍 Found 213 TypeScript diagnostic(s) - these are REAL compiler issues</div><div class="suggestion-item">📦 Multiple import issues detected - check React imports and dependencies</div><div class="suggestion-item">⚠️ Syntax issues detected - run Prettier formatting or check JSX structure</div><div class="suggestion-item">💡 Run "TypeScript: Restart TS Server" if issues persist</div><div class="suggestion-item">Code duplication detected - 7 duplicate patterns found</div><div class="suggestion-item">Magic numbers detected - consider using named constants</div>
+        </div>
+
+        <div class="card">
+            <h3>🎯 Quality Scores</h3>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #10b981;">10</div>
+                    <div>Code Quality</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #f59e0b;">10</div>
+                    <div>Performance</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #3b82f6;">10</div>
+                    <div>Security</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #8b5cf6;">10</div>
+                    <div>Maintainability</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="text-align: center;">
+            <p>🤖 Generated by Cipher Enhanced File Analysis with TypeScript Integration</p>
+            <p>For auto-fixes and optimizations, use: <strong>Cipher: Smart Rebuild File</strong></p>
+        </div>
+    </div>
+</body>
+</html>

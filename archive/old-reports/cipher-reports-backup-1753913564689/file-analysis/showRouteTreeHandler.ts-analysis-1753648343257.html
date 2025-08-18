@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Enhanced File Analysis Report - showRouteTreeHandler.ts</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .severity-score {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            color: #ef4444;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .issue-item, .suggestion-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .issue-item {
+            border-left: 4px solid #ef4444;
+        }
+        .suggestion-item {
+            border-left: 4px solid #3b82f6;
+        }
+        .ts-issue {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .metric-card {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .metric-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Enhanced File Analysis Report</h1>
+            <h2>showRouteTreeHandler.ts</h2>
+            <p>Generated: 7/27/2025, 1:32:23 PM</p>
+            <p>🚀 <strong>TypeScript Diagnostics Enabled</strong></p>
+        </div>
+
+        <div class="card">
+            <h2>📊 Overall Assessment</h2>
+            <div class="severity-score">HIGH</div>
+            <div style="text-align: center; margin-top: 10px;">
+                Complexity: 244/10 | Type: TypeScript
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-number" style="color: #f59e0b;">137</div>
+                <div>TypeScript Issues</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #ef4444;">12</div>
+                <div>Pattern Issues</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #3b82f6;">21</div>
+                <div>Suggestions</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #10b981;">YES</div>
+                <div>Auto-fixable</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>🚨 TypeScript Compiler Issues</h3>
+                <div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 1667) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 1668) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 1669) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Expression expected. (Line 1669) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1672) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1673) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1673) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1674) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1674) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1675) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: An identifier or keyword cannot immediately follow a numeric literal. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1684) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 1685) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1685) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 1687) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1688) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1689) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 1690) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 1691) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1693) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1694) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 1694) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1695) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1696) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type expected. (Line 1697) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 1698) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1700) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '>' expected. (Line 1701) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1701) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 1704) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1705) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 1707) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1707) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 1708) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unterminated regular expression literal. (Line 1709) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: '(' expected. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Invalid character. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Unexpected keyword or identifier. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: ';' expected. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Identifier expected. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type 'string' is not assignable to type '"error" | "active" | "missing" | "deprecated" | "working" | "warning"'. (Line 234) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'fixed'. (Line 1666) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'translate'. Did you mean 'CSSTranslate'? (Line 1669) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'rgba'. (Line 1670) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'white'. (Line 1671) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1672) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'border'. (Line 1673) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'radius'. (Line 1673) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1673) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'max'. (Line 1674) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'width'. (Line 1674) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1674) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'z'. (Line 1675) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'index'. (Line 1675) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'solid'. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'fileData'. (Line 1676) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'box'. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'shadow'. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'px'. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'rgba'. (Line 1677) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 1684) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1684) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'h3'. (Line 1685) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1685) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'statusIcon'. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'FILE'. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'statusText'. (Line 1686) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'p'. (Line 1688) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1688) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1689) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'fileData'. (Line 1689) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 1693) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1693) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'strong'. (Line 1694) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Issues'. (Line 1694) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'ul'. (Line 1695) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1695) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1696) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'fileData'. (Line 1696) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'div'. (Line 1700) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1700) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 1701) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1702) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Operator '<' cannot be applied to types 'boolean' and 'RegExp'. (Line 1702) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Close'. (Line 1703) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'button'. (Line 1705) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Type 'string' is not assignable to type '(this: Window, ev: PointerEvent) => any'. (Line 1705) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'style'. (Line 1706) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Run'. (Line 1707) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Analysis'. (Line 1707) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: This expression is not callable.
+  Type 'RegExp' has no call signatures. (Line 1709) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'Analysis'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'triggered'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name '$'. Do you need to install type definitions for jQuery? Try `npm i --save-dev @types/jquery`. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'filePath'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'n'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'nIn'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'a'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'full'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'implementation'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Left side of comma operator is unused and has no side effects. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: 'this' implicitly has type 'any' because it does not have a type annotation. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'would'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'run'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'analyzeCurrentFileHandler'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'on'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: 'this' implicitly has type 'any' because it does not have a type annotation. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'specific'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Cannot find name 'file'. (Line 1731) - Source: ts</div><div class="issue-item ts-issue">🚨 CRITICAL: Parsing error: Expression expected. (Line 1667) - Source: eslint</div>
+            </div>
+
+            <div class="card">
+                <h3>📝 Pattern-Based Issues</h3>
+                <div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">🎯 Type Issue: Type mismatch detected - check TypeScript types</div><div class="issue-item">🎯 Type Issue: Type mismatch detected - check TypeScript types</div><div class="issue-item">🎯 Type Issue: Implicit any type detected</div><div class="issue-item">⚠️ Syntax Issue: Code structure problem detected</div><div class="issue-item">TypeScript "any" usage detected - reduces type safety</div><div class="issue-item">TypeScript ignore comments found - may hide real issues</div><div class="issue-item">High nesting depth (10) - consider refactoring for readability</div><div class="issue-item">innerHTML usage without sanitization - potential XSS vulnerability</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>💡 Optimization Suggestions</h3>
+            <div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">💭 HINT: 'depth' is declared but its value is never read. (Line 269) - Source: ts</div><div class="suggestion-item">💭 HINT: Unreachable code detected. (Line 1666) - Source: ts</div><div class="suggestion-item">💭 HINT: Parameter 'warning' implicitly has an 'any' type, but a better type may be inferred from usage. (Line 1696) - Source: ts</div><div class="suggestion-item">Add explicit type annotations to improve type safety</div><div class="suggestion-item">Check for missing brackets, commas, or proper JSX syntax</div><div class="suggestion-item">🔍 Found 140 TypeScript diagnostic(s) - these are REAL compiler issues</div><div class="suggestion-item">📦 Multiple import issues detected - check React imports and dependencies</div><div class="suggestion-item">⚠️ Syntax issues detected - run Prettier formatting or check JSX structure</div><div class="suggestion-item">💡 Run "TypeScript: Restart TS Server" if issues persist</div><div class="suggestion-item">TODO/FIXME comments found - consider addressing them</div><div class="suggestion-item">Code duplication detected - 162 duplicate patterns found</div><div class="suggestion-item">Wildcard imports may increase bundle size - use specific imports</div><div class="suggestion-item">Multiple await calls - consider Promise.all for parallel execution</div><div class="suggestion-item">High number of functions - consider splitting into multiple files</div><div class="suggestion-item">13 lines exceed 120 characters - consider refactoring</div><div class="suggestion-item">Magic numbers detected - consider using named constants</div><div class="suggestion-item">No test files found - consider adding unit tests</div>
+        </div>
+
+        <div class="card">
+            <h3>🎯 Quality Scores</h3>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #10b981;">10</div>
+                    <div>Code Quality</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #f59e0b;">10</div>
+                    <div>Performance</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #3b82f6;">10</div>
+                    <div>Security</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #8b5cf6;">10</div>
+                    <div>Maintainability</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="text-align: center;">
+            <p>🤖 Generated by Cipher Enhanced File Analysis with TypeScript Integration</p>
+            <p>For auto-fixes and optimizations, use: <strong>Cipher: Smart Rebuild File</strong></p>
+        </div>
+    </div>
+</body>
+</html>

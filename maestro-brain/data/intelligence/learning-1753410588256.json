@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "showRouteTreeHandler.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1753410587903,
+    "environment": "1.102.2",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1753410587904,
+  "musicApp": true,
+  "dualBrainActive": false
+}

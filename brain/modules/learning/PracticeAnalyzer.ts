@@ -1,5 +1,5 @@
 /**
- * PracticeAnalyzer.ts - Advanced Practice Session Analysis
+ * PracticeAnalyzer.ts - Practice Session Analysis and Optimization
  * 🎯 Analyze practice sessions for efficiency and improvement tracking
  * Part of Maestro.ai Brain System
  */
@@ -7,48 +7,36 @@
 import { generateId } from "../../shared/utils";
 import {
   BrainModule,
-  UserPreferences,
   ChordDifficulty,
   InstrumentType,
+  LearningEvent,
 } from "../../shared/types";
-
-// Skill Metrics (duplicated from SkillTracker to avoid circular imports)
-export interface SkillMetrics {
-  accuracy: number; // 0-1
-  speed: number; // 0-1 (relative to target)
-  consistency: number; // 0-1
-  retention: number; // 0-1 (how well skill is retained over time)
-  transferability: number; // 0-1 (how well skill transfers to other areas)
-  practiceEfficiency: number; // 0-1 (improvement per practice hour)
-}
 
 // Practice Configuration
 export interface PracticeAnalyzerConfig {
-  sessionTimeoutMinutes?: number; // Auto-end session after inactivity
-  minSessionDuration?: number; // Minimum session length to count (seconds)
-  maxSessionDuration?: number; // Maximum realistic session length (seconds)
+  sessionTimeoutMinutes?: number;
+  minSessionDuration?: number; // seconds
+  maxSessionDuration?: number; // seconds
   enableRealTimeAnalysis?: boolean;
-  enablePracticeRecommendations?: boolean;
-  qualityThreshold?: number; // Minimum quality score for effective practice
-  retentionWindowDays?: number; // How long to keep practice data
+  qualityThreshold?: number; // 0-1
+  retentionWindowDays?: number;
 }
 
 // Practice Session Types
 export enum PracticeType {
-  TECHNICAL = "technical", // Scales, exercises, technique
-  REPERTOIRE = "repertoire", // Learning songs
-  IMPROVISATION = "improvisation", // Creative practice
-  THEORY = "theory", // Music theory study
-  PERFORMANCE = "performance", // Performance preparation
-  MAINTENANCE = "maintenance", // Keeping skills sharp
-  EXPLORATION = "exploration", // Trying new things
+  TECHNICAL = "technical",
+  REPERTOIRE = "repertoire",
+  IMPROVISATION = "improvisation",
+  THEORY = "theory",
+  PERFORMANCE = "performance",
+  MAINTENANCE = "maintenance",
 }
 
 export enum PracticeIntensity {
-  LOW = "low", // Casual, relaxed practice
-  MEDIUM = "medium", // Focused practice
-  HIGH = "high", // Intensive, concentrated practice
-  PEAK = "peak", // Maximum effort practice
+  LOW = "low",
+  MEDIUM = "medium",
+  HIGH = "high",
+  PEAK = "peak",
 }
 
 // Practice Session Data
@@ -57,19 +45,17 @@ export interface PracticeAnalysisSession {
   userId: string;
   startTime: number;
   endTime: number;
-  duration: number; // Total duration in seconds
-  activePracticeTime: number; // Time actually practicing (excluding breaks)
+  duration: number; // seconds
+  activePracticeTime: number; // seconds actually practicing
   practiceType: PracticeType;
   intensity: PracticeIntensity;
   instrument: InstrumentType;
-  skillsTargeted: string[]; // Skill IDs from SkillTracker
+  skillsTargeted: string[];
   exercisesCompleted: PracticeExercise[];
   qualityMetrics: PracticeQualityMetrics;
   progressMetrics: PracticeProgressMetrics;
-  environmentFactors: EnvironmentFactors;
   notes?: string;
   tags?: string[];
-  mood?: PracticeMood;
 }
 
 // Practice Exercise
@@ -78,68 +64,34 @@ export interface PracticeExercise {
   name: string;
   type: PracticeType;
   difficulty: ChordDifficulty;
-  duration: number; // Time spent on this exercise
-  repetitions?: number;
+  duration: number; // seconds
   targetTempo?: number;
   achievedTempo?: number;
   targetAccuracy?: number;
   achievedAccuracy?: number;
-  qualityScore: number; // 0-1 overall quality rating
+  qualityScore: number; // 0-1
   improvementNotes?: string[];
-  challengeAreas?: string[];
 }
 
 // Practice Quality Metrics
 export interface PracticeQualityMetrics {
-  overallQuality: number; // 0-1 (weighted average of all quality factors)
-  focus: number; // 0-1 (how focused was the practice)
-  consistency: number; // 0-1 (consistency throughout session)
-  efficiency: number; // 0-1 (progress per minute of practice)
-  engagement: number; // 0-1 (how engaged the user was)
-  technicalAccuracy: number; // 0-1 (technical execution quality)
-  musicalExpression: number; // 0-1 (musical interpretation quality)
-  errorRate: number; // 0-1 (frequency of mistakes, lower is better)
-  recoveryRate: number; // 0-1 (how well errors were corrected)
+  overallQuality: number; // 0-1
+  focus: number; // 0-1
+  consistency: number; // 0-1
+  efficiency: number; // 0-1
+  engagement: number; // 0-1
+  technicalAccuracy: number; // 0-1
+  errorRate: number; // 0-1 (lower is better)
 }
 
 // Practice Progress Metrics
 export interface PracticeProgressMetrics {
-  skillImprovement: { [skillId: string]: number }; // Per-skill improvement in this session
-  tempoProgress: number; // Change in tempo capability
-  accuracyProgress: number; // Change in accuracy
-  complexityProgress: number; // Ability to handle more complex material
-  retentionScore: number; // How well previous material was retained
-  challengesOvercome: string[]; // Specific challenges conquered
-  newChallengesEncountered: string[]; // New difficulties discovered
-  overallProgress: number; // 0-1 overall progress rating
-}
-
-// Environment Factors
-export interface EnvironmentFactors {
-  timeOfDay: "morning" | "afternoon" | "evening" | "night";
-  dayOfWeek: string;
-  location: "home" | "studio" | "stage" | "other";
-  instrumentCondition: "excellent" | "good" | "fair" | "poor";
-  ambientNoise: "quiet" | "moderate" | "noisy";
-  distractions: string[]; // List of distracting factors
-  temperature?: number;
-  lighting?: "excellent" | "good" | "fair" | "poor";
-}
-
-// Practice Mood
-export interface PracticeMood {
-  energy: number; // 0-1 energy level
-  motivation: number; // 0-1 motivation level
-  confidence: number; // 0-1 confidence level
-  frustration: number; // 0-1 frustration level
-  satisfaction: number; // 0-1 satisfaction with session
-  preSessionMood: "excited" | "motivated" | "neutral" | "tired" | "frustrated";
-  postSessionMood:
-    | "accomplished"
-    | "satisfied"
-    | "neutral"
-    | "disappointed"
-    | "frustrated";
+  skillImprovement: { [skillId: string]: number };
+  tempoProgress: number;
+  accuracyProgress: number;
+  retentionScore: number; // 0-1
+  challengesOvercome: string[];
+  overallProgress: number; // 0-1
 }
 
 // Practice Analytics
@@ -147,75 +99,51 @@ export interface PracticeAnalytics {
   userId: string;
   timeRange: { start: number; end: number };
   totalSessions: number;
-  totalPracticeTime: number; // Total seconds practiced
+  totalPracticeTime: number; // seconds
   averageSessionLength: number;
-  practiceFrequency: number; // Sessions per week
-  practiceStreaks: PracticeStreak[];
+  practiceFrequency: number; // sessions per week
   qualityTrends: QualityTrend[];
-  skillProgressSummary: { [skillId: string]: SkillProgressSummary };
-  practiceEfficiency: number; // 0-1 overall efficiency
-  recommendedAdjustments: PracticeRecommendation[];
+  practiceEfficiency: number; // 0-1
+  recommendations: PracticeRecommendation[];
   insights: PracticeInsight[];
-}
-
-// Practice Streak
-export interface PracticeStreak {
-  startDate: number;
-  endDate: number;
-  length: number; // Days in streak
-  averageQuality: number;
-  isActive: boolean;
 }
 
 // Quality Trend
 export interface QualityTrend {
   metric: keyof PracticeQualityMetrics;
   trend: "improving" | "declining" | "stable";
-  changeRate: number; // Rate of change per week
-  confidence: number; // 0-1 confidence in trend
-}
-
-// Skill Progress Summary
-export interface SkillProgressSummary {
-  skillId: string;
-  practiceTime: number; // Time spent practicing this skill
-  improvement: number; // Overall improvement in this period
-  efficiency: number; // Improvement per hour of practice
-  plateau: boolean; // Is the skill plateauing?
-  challenges: string[]; // Current challenges with this skill
+  changeRate: number;
+  confidence: number; // 0-1
 }
 
 // Practice Recommendations
 export interface PracticeRecommendation {
-  type: "duration" | "frequency" | "focus" | "method" | "environment" | "break";
-  priority: "low" | "medium" | "high" | "critical";
+  type: "duration" | "frequency" | "focus" | "method";
+  priority: "low" | "medium" | "high";
   title: string;
   description: string;
   reasoning: string;
   expectedBenefit: string;
-  implementation: string;
-  timeframe: "immediate" | "this_week" | "this_month" | "long_term";
+  timeframe: "immediate" | "this_week" | "this_month";
 }
 
 // Practice Insights
 export interface PracticeInsight {
-  type: "pattern" | "correlation" | "achievement" | "warning" | "optimization";
+  type: "pattern" | "achievement" | "optimization";
   title: string;
   description: string;
-  confidence: number; // 0-1 confidence in insight
-  actionable: boolean; // Can the user act on this insight?
-  relatedMetrics: string[]; // Which metrics support this insight
-  impact: "low" | "medium" | "high"; // Potential impact of acting on this insight
+  confidence: number; // 0-1
+  actionable: boolean;
+  impact: "low" | "medium" | "high";
 }
 
 // Real-time Practice Feedback
 export interface RealTimeFeedback {
   timestamp: number;
-  qualityScore: number; // Instantaneous quality (0-1)
-  suggestions: string[]; // Real-time suggestions
-  encouragement?: string; // Motivational message
-  technicalFeedback?: string; // Technical correction
-  musicalFeedback?: string; // Musical interpretation feedback
+  qualityScore: number; // 0-1
+  suggestions: string[];
+  encouragement?: string;
+  technicalFeedback?: string;
 }
 
 /**
@@ -230,10 +158,9 @@ export class PracticeAnalyzer implements BrainModule {
   // Configuration
   private config: PracticeAnalyzerConfig = {
     sessionTimeoutMinutes: 30,
-    minSessionDuration: 60, // 1 minute minimum
-    maxSessionDuration: 14400, // 4 hours maximum
+    minSessionDuration: 60, // 1 minute
+    maxSessionDuration: 14400, // 4 hours
     enableRealTimeAnalysis: true,
-    enablePracticeRecommendations: true,
     qualityThreshold: 0.6,
     retentionWindowDays: 365,
   };
@@ -256,7 +183,7 @@ export class PracticeAnalyzer implements BrainModule {
     try {
       console.log(`🎯 Initializing PracticeAnalyzer v${this.version}...`);
 
-      // Load user practice history
+      // Load practice history
       await this.loadPracticeHistory();
 
       // Initialize real-time analysis if enabled
@@ -325,8 +252,6 @@ export class PracticeAnalyzer implements BrainModule {
       exercisesCompleted: [],
       qualityMetrics: this.createInitialQualityMetrics(),
       progressMetrics: this.createInitialProgressMetrics(),
-      environmentFactors: this.detectEnvironmentFactors(),
-      mood: this.createInitialMood(),
     };
 
     this.activeSessions.set(sessionId, session);
@@ -356,9 +281,6 @@ export class PracticeAnalyzer implements BrainModule {
     // Move to history
     this.activeSessions.delete(sessionId);
     this.sessionHistory.push(session);
-
-    // Generate insights and recommendations
-    await this.generateSessionInsights(session);
 
     console.log(
       `✅ Ended practice session: ${sessionId} (${Math.round(
@@ -421,13 +343,9 @@ export class PracticeAnalyzer implements BrainModule {
       averageSessionLength:
         sessions.reduce((sum, s) => sum + s.duration, 0) / sessions.length,
       practiceFrequency: this.calculatePracticeFrequency(sessions),
-      practiceStreaks: this.calculatePracticeStreaks(sessions),
       qualityTrends: this.analyzeQualityTrends(sessions),
-      skillProgressSummary: this.generateSkillProgressSummary(sessions),
       practiceEfficiency: this.calculateOverallEfficiency(sessions),
-      recommendedAdjustments: await this.generatePracticeRecommendations(
-        sessions
-      ),
+      recommendations: await this.generatePracticeRecommendations(sessions),
       insights: await this.generatePracticeInsights(sessions),
     };
 
@@ -435,80 +353,24 @@ export class PracticeAnalyzer implements BrainModule {
   }
 
   /**
-   * Generate practice recommendations based on analysis
+   * Convert practice session to learning event
    */
-  async generatePracticeRecommendations(
-    sessions: PracticeAnalysisSession[]
-  ): Promise<PracticeRecommendation[]> {
-    const recommendations: PracticeRecommendation[] = [];
-
-    if (sessions.length === 0) return recommendations;
-
-    // Analyze practice patterns
-    const avgQuality = this.calculateAverageQuality(sessions);
-    const avgDuration =
-      sessions.reduce((sum, s) => sum + s.duration, 0) / sessions.length;
-    const frequency = this.calculatePracticeFrequency(sessions);
-
-    // Duration recommendations
-    if (avgDuration < 900) {
-      // Less than 15 minutes
-      recommendations.push({
-        type: "duration",
-        priority: "medium",
-        title: "Increase Practice Duration",
-        description: "Your practice sessions are quite short",
-        reasoning:
-          "Longer sessions allow for deeper focus and better skill development",
-        expectedBenefit: "Improved skill retention and faster progress",
-        implementation: "Gradually increase session length to 20-30 minutes",
-        timeframe: "this_week",
-      });
-    } else if (avgDuration > 7200) {
-      // More than 2 hours
-      recommendations.push({
-        type: "duration",
-        priority: "medium",
-        title: "Consider Shorter Sessions",
-        description: "Very long sessions may lead to diminished returns",
-        reasoning: "Quality often decreases after extended practice periods",
-        expectedBenefit: "Better focus and retention in each session",
-        implementation:
-          "Break long sessions into multiple shorter ones with breaks",
-        timeframe: "immediate",
-      });
-    }
-
-    // Frequency recommendations
-    if (frequency < 3) {
-      // Less than 3 times per week
-      recommendations.push({
-        type: "frequency",
-        priority: "high",
-        title: "Increase Practice Frequency",
-        description: "More frequent practice leads to better results",
-        reasoning: "Regular practice maintains skill development momentum",
-        expectedBenefit: "Faster skill acquisition and better retention",
-        implementation: "Aim for at least 4-5 practice sessions per week",
-        timeframe: "this_week",
-      });
-    }
-
-    // Quality recommendations
-    if (avgQuality < this.config.qualityThreshold!) {
-      recommendations.push({
-        type: "focus",
-        priority: "high",
-        title: "Improve Practice Quality",
-        description: "Focus on practice quality over quantity",
-        reasoning: "Low-quality practice can reinforce bad habits",
-        expectedBenefit: "More effective skill development",
-        implementation: "Practice slower with more attention to accuracy",
-        timeframe: "immediate",
-      });
-    }
-
-    return recommendations.slice(0, 5); // Return top 5 recommendations
+  convertSessionToLearningEvent(
+    session: PracticeAnalysisSession
+  ): LearningEvent {
+    return {
+      id: generateId("learning-event"),
+      type: "practice",
+      skill: session.practiceType,
+      performance: session.qualityMetrics.overallQuality,
+      duration: session.duration,
+      timestamp: session.startTime,
+      metadata: {
+        instrument: session.instrument,
+        exerciseCount: session.exercisesCompleted.length,
+        intensity: session.intensity,
+      },
+    };
   }
 
   /**
@@ -516,8 +378,7 @@ export class PracticeAnalyzer implements BrainModule {
    */
 
   private async loadPracticeHistory(): Promise<void> {
-    // In a real implementation, this would load from storage
-    console.log("📊 Practice history loaded (placeholder)");
+    console.log("📊 Practice history loaded");
   }
 
   private async initializeRealTimeAnalysis(): Promise<void> {
@@ -543,9 +404,7 @@ export class PracticeAnalyzer implements BrainModule {
       efficiency: 0.5,
       engagement: 0.5,
       technicalAccuracy: 0.5,
-      musicalExpression: 0.5,
       errorRate: 0.5,
-      recoveryRate: 0.5,
     };
   }
 
@@ -554,43 +413,9 @@ export class PracticeAnalyzer implements BrainModule {
       skillImprovement: {},
       tempoProgress: 0,
       accuracyProgress: 0,
-      complexityProgress: 0,
       retentionScore: 0.5,
       challengesOvercome: [],
-      newChallengesEncountered: [],
       overallProgress: 0,
-    };
-  }
-
-  private detectEnvironmentFactors(): EnvironmentFactors {
-    const hour = new Date().getHours();
-    let timeOfDay: "morning" | "afternoon" | "evening" | "night";
-
-    if (hour < 12) timeOfDay = "morning";
-    else if (hour < 17) timeOfDay = "afternoon";
-    else if (hour < 21) timeOfDay = "evening";
-    else timeOfDay = "night";
-
-    return {
-      timeOfDay,
-      dayOfWeek: new Date().toLocaleDateString("en-US", { weekday: "long" }),
-      location: "home", // Default assumption
-      instrumentCondition: "good",
-      ambientNoise: "quiet",
-      distractions: [],
-      lighting: "good",
-    };
-  }
-
-  private createInitialMood(): PracticeMood {
-    return {
-      energy: 0.7,
-      motivation: 0.7,
-      confidence: 0.6,
-      frustration: 0.2,
-      satisfaction: 0.5,
-      preSessionMood: "motivated",
-      postSessionMood: "satisfied",
     };
   }
 
@@ -604,7 +429,7 @@ export class PracticeAnalyzer implements BrainModule {
     session.progressMetrics = this.calculateProgressMetrics(session);
 
     // Update active practice time (excluding breaks)
-    session.activePracticeTime = this.calculateActivePracticeTime(session);
+    session.activePracticeTime = Math.round(session.duration * 0.85);
   }
 
   private calculateFinalQualityMetrics(
@@ -613,7 +438,7 @@ export class PracticeAnalyzer implements BrainModule {
     const exercises = session.exercisesCompleted;
 
     if (exercises.length === 0) {
-      return session.qualityMetrics; // Return initial metrics if no exercises
+      return session.qualityMetrics;
     }
 
     const avgQuality =
@@ -625,11 +450,9 @@ export class PracticeAnalyzer implements BrainModule {
       focus: this.calculateFocus(session),
       consistency: this.calculateConsistency(exercises),
       efficiency: this.calculateEfficiency(session),
-      engagement: avgQuality, // Simple proxy for engagement
+      engagement: avgQuality,
       technicalAccuracy: this.calculateTechnicalAccuracy(exercises),
-      musicalExpression: avgQuality * 0.8, // Proxy for musical expression
-      errorRate: 1 - avgQuality, // Inverse of quality
-      recoveryRate: avgQuality * 0.9, // Proxy for recovery rate
+      errorRate: 1 - avgQuality,
     };
   }
 
@@ -640,36 +463,23 @@ export class PracticeAnalyzer implements BrainModule {
 
     const skillImprovement: { [skillId: string]: number } = {};
     session.skillsTargeted.forEach((skillId) => {
-      skillImprovement[skillId] = this.estimateSkillImprovement(
-        skillId,
-        exercises
-      );
+      skillImprovement[skillId] = this.estimateSkillImprovement(exercises);
     });
 
     return {
       skillImprovement,
       tempoProgress: this.calculateTempoProgress(exercises),
       accuracyProgress: this.calculateAccuracyProgress(exercises),
-      complexityProgress: this.calculateComplexityProgress(exercises),
-      retentionScore: 0.7, // Default retention score
+      retentionScore: 0.7,
       challengesOvercome: this.identifyChallengesOvercome(exercises),
-      newChallengesEncountered: this.identifyNewChallenges(exercises),
       overallProgress: this.calculateOverallProgress(exercises),
     };
-  }
-
-  private calculateActivePracticeTime(
-    session: PracticeAnalysisSession
-  ): number {
-    // For now, assume 85% of total time was active practice
-    return Math.round(session.duration * 0.85);
   }
 
   private async updateSessionMetrics(
     session: PracticeAnalysisSession,
     exercise: PracticeExercise
   ): Promise<void> {
-    // Update quality metrics incrementally
     const exerciseWeight = 1 / (session.exercisesCompleted.length + 1);
     const currentWeight = 1 - exerciseWeight;
 
@@ -696,14 +506,6 @@ export class PracticeAnalyzer implements BrainModule {
       suggestions.push("Great focus on tempo - keep building speed gradually");
     }
 
-    // Use session data for contextual feedback
-    if (
-      session.exercisesCompleted.length > 3 &&
-      session.qualityMetrics.overallQuality < 0.5
-    ) {
-      suggestions.push("Consider taking a short break to maintain focus");
-    }
-
     return {
       timestamp: Date.now(),
       qualityScore: exercise.qualityScore,
@@ -711,7 +513,6 @@ export class PracticeAnalyzer implements BrainModule {
       encouragement:
         exercise.qualityScore > 0.8 ? "Excellent work!" : "Keep practicing!",
       technicalFeedback: this.generateTechnicalFeedback(exercise),
-      musicalFeedback: this.generateMusicalFeedback(exercise),
     };
   }
 
@@ -722,16 +523,6 @@ export class PracticeAnalyzer implements BrainModule {
       return "Good progress - try to maintain consistency throughout";
     } else {
       return "Excellent technical execution!";
-    }
-  }
-
-  private generateMusicalFeedback(exercise: PracticeExercise): string {
-    if (exercise.type === PracticeType.TECHNICAL) {
-      return "Remember to stay musical even during technical exercises";
-    } else if (exercise.type === PracticeType.REPERTOIRE) {
-      return "Think about the musical story you're telling";
-    } else {
-      return "Great musical expression!";
     }
   }
 
@@ -768,11 +559,9 @@ export class PracticeAnalyzer implements BrainModule {
       totalPracticeTime: 0,
       averageSessionLength: 0,
       practiceFrequency: 0,
-      practiceStreaks: [],
       qualityTrends: [],
-      skillProgressSummary: {},
       practiceEfficiency: 0,
-      recommendedAdjustments: [],
+      recommendations: [],
       insights: [],
     };
   }
@@ -785,34 +574,7 @@ export class PracticeAnalyzer implements BrainModule {
     const daysCovered =
       (sessions[sessions.length - 1].startTime - sessions[0].startTime) /
       (24 * 60 * 60 * 1000);
-    return daysCovered > 0 ? (sessions.length / daysCovered) * 7 : 0; // Sessions per week
-  }
-
-  private calculatePracticeStreaks(
-    sessions: PracticeAnalysisSession[]
-  ): PracticeStreak[] {
-    // Simplified streak calculation
-    const streaks: PracticeStreak[] = [];
-
-    if (sessions.length === 0) return streaks;
-
-    // This is a simplified implementation
-    // In reality, you'd want more sophisticated streak detection
-    const hasRecentSession =
-      Date.now() - sessions[sessions.length - 1].startTime <
-      48 * 60 * 60 * 1000;
-
-    if (hasRecentSession) {
-      streaks.push({
-        startDate: sessions[Math.max(0, sessions.length - 7)].startTime,
-        endDate: sessions[sessions.length - 1].startTime,
-        length: Math.min(7, sessions.length),
-        averageQuality: this.calculateAverageQuality(sessions.slice(-7)),
-        isActive: true,
-      });
-    }
-
-    return streaks;
+    return daysCovered > 0 ? (sessions.length / daysCovered) * 7 : 0;
   }
 
   private analyzeQualityTrends(
@@ -820,7 +582,7 @@ export class PracticeAnalyzer implements BrainModule {
   ): QualityTrend[] {
     const trends: QualityTrend[] = [];
 
-    if (sessions.length < 5) return trends; // Need enough data for trends
+    if (sessions.length < 5) return trends;
 
     const recentSessions = sessions.slice(-10);
     const olderSessions = sessions.slice(0, sessions.length - 10);
@@ -838,44 +600,10 @@ export class PracticeAnalyzer implements BrainModule {
       metric: "overallQuality",
       trend,
       changeRate: change,
-      confidence: Math.min(0.9, sessions.length / 20), // Higher confidence with more data
+      confidence: Math.min(0.9, sessions.length / 20),
     });
 
     return trends;
-  }
-
-  private generateSkillProgressSummary(sessions: PracticeAnalysisSession[]): {
-    [skillId: string]: SkillProgressSummary;
-  } {
-    const summary: { [skillId: string]: SkillProgressSummary } = {};
-
-    sessions.forEach((session) => {
-      session.skillsTargeted.forEach((skillId) => {
-        if (!summary[skillId]) {
-          summary[skillId] = {
-            skillId,
-            practiceTime: 0,
-            improvement: 0,
-            efficiency: 0,
-            plateau: false,
-            challenges: [],
-          };
-        }
-
-        summary[skillId].practiceTime += session.duration;
-        summary[skillId].improvement +=
-          session.progressMetrics.skillImprovement[skillId] || 0;
-      });
-    });
-
-    // Calculate efficiency for each skill
-    Object.values(summary).forEach((skill) => {
-      if (skill.practiceTime > 0) {
-        skill.efficiency = skill.improvement / (skill.practiceTime / 3600); // Per hour
-      }
-    });
-
-    return summary;
   }
 
   private calculateOverallEfficiency(
@@ -889,7 +617,49 @@ export class PracticeAnalyzer implements BrainModule {
       0
     );
 
-    return totalTime > 0 ? totalProgress / (totalTime / 3600) : 0; // Progress per hour
+    return totalTime > 0 ? totalProgress / (totalTime / 3600) : 0;
+  }
+
+  private async generatePracticeRecommendations(
+    sessions: PracticeAnalysisSession[]
+  ): Promise<PracticeRecommendation[]> {
+    const recommendations: PracticeRecommendation[] = [];
+
+    if (sessions.length === 0) return recommendations;
+
+    const avgQuality = this.calculateAverageQuality(sessions);
+    const avgDuration =
+      sessions.reduce((sum, s) => sum + s.duration, 0) / sessions.length;
+    const frequency = this.calculatePracticeFrequency(sessions);
+
+    // Duration recommendations
+    if (avgDuration < 900) {
+      recommendations.push({
+        type: "duration",
+        priority: "medium",
+        title: "Increase Practice Duration",
+        description: "Your practice sessions are quite short",
+        reasoning:
+          "Longer sessions allow for deeper focus and better skill development",
+        expectedBenefit: "Improved skill retention and faster progress",
+        timeframe: "this_week",
+      });
+    }
+
+    // Quality recommendations
+    if (avgQuality < this.config.qualityThreshold!) {
+      recommendations.push({
+        type: "focus",
+        priority: "high",
+        title: "Improve Practice Quality",
+        description: "Focus on practice quality over quantity",
+        reasoning: "Low-quality practice can reinforce bad habits",
+        expectedBenefit: "More effective skill development",
+        timeframe: "immediate",
+      });
+    }
+
+    return recommendations.slice(0, 5);
   }
 
   private async generatePracticeInsights(
@@ -899,36 +669,16 @@ export class PracticeAnalyzer implements BrainModule {
 
     if (sessions.length === 0) return insights;
 
-    // Best practice time insight
-    const timeQualityMap = new Map<string, number[]>();
-    sessions.forEach((session) => {
-      const timeKey = session.environmentFactors.timeOfDay;
-      if (!timeQualityMap.has(timeKey)) {
-        timeQualityMap.set(timeKey, []);
-      }
-      timeQualityMap.get(timeKey)!.push(session.qualityMetrics.overallQuality);
-    });
-
-    let bestTime = "";
-    let bestQuality = 0;
-    timeQualityMap.forEach((qualities, time) => {
-      const avgQuality =
-        qualities.reduce((sum, q) => sum + q, 0) / qualities.length;
-      if (avgQuality > bestQuality) {
-        bestQuality = avgQuality;
-        bestTime = time;
-      }
-    });
-
-    if (bestTime) {
+    // Quality trend insight
+    const avgQuality = this.calculateAverageQuality(sessions);
+    if (avgQuality > 0.8) {
       insights.push({
-        type: "pattern",
-        title: `Best Practice Time: ${bestTime}`,
-        description: `Your highest quality practice sessions occur in the ${bestTime}`,
-        confidence: Math.min(0.9, sessions.length / 20),
-        actionable: true,
-        relatedMetrics: ["overallQuality", "timeOfDay"],
-        impact: "medium",
+        type: "achievement",
+        title: "Excellent Practice Quality",
+        description: "Your practice sessions consistently show high quality",
+        confidence: 0.9,
+        actionable: false,
+        impact: "high",
       });
     }
 
@@ -937,7 +687,6 @@ export class PracticeAnalyzer implements BrainModule {
 
   // Helper calculation methods
   private calculateFocus(session: PracticeAnalysisSession): number {
-    // Simplified focus calculation based on session continuity
     return Math.max(
       0.3,
       Math.min(1.0, session.activePracticeTime / session.duration)
@@ -955,7 +704,7 @@ export class PracticeAnalyzer implements BrainModule {
       qualityScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) /
       qualityScores.length;
 
-    return Math.max(0, 1 - variance); // Lower variance = higher consistency
+    return Math.max(0, 1 - variance);
   }
 
   private calculateEfficiency(session: PracticeAnalysisSession): number {
@@ -978,11 +727,7 @@ export class PracticeAnalyzer implements BrainModule {
       : 0.5;
   }
 
-  private estimateSkillImprovement(
-    skillId: string,
-    exercises: PracticeExercise[]
-  ): number {
-    // Simplified skill improvement estimation - skillId could be used for more specific calculations
+  private estimateSkillImprovement(exercises: PracticeExercise[]): number {
     const relevantExercises = exercises.filter(
       (ex) => ex.type !== PracticeType.MAINTENANCE
     );
@@ -991,7 +736,7 @@ export class PracticeAnalyzer implements BrainModule {
     const avgQuality =
       relevantExercises.reduce((sum, ex) => sum + ex.qualityScore, 0) /
       relevantExercises.length;
-    return avgQuality * 0.1; // Assume 10% of quality translates to skill improvement
+    return avgQuality * 0.1;
   }
 
   private calculateTempoProgress(exercises: PracticeExercise[]): number {
@@ -1003,7 +748,6 @@ export class PracticeAnalyzer implements BrainModule {
     const progressScores = tempoExercises.map((ex) =>
       Math.min(1, ex.achievedTempo! / ex.targetTempo!)
     );
-
     return (
       progressScores.reduce((sum, score) => sum + score, 0) /
       progressScores.length
@@ -1024,35 +768,11 @@ export class PracticeAnalyzer implements BrainModule {
     );
   }
 
-  private calculateComplexityProgress(exercises: PracticeExercise[]): number {
-    // Simplified complexity progress based on exercise difficulty
-    if (exercises.length === 0) return 0;
-
-    const difficultyMap = {
-      [ChordDifficulty.BEGINNER]: 0.25,
-      [ChordDifficulty.INTERMEDIATE]: 0.5,
-      [ChordDifficulty.ADVANCED]: 0.75,
-      [ChordDifficulty.EXPERT]: 1.0,
-    };
-
-    const avgDifficulty =
-      exercises.reduce((sum, ex) => sum + difficultyMap[ex.difficulty], 0) /
-      exercises.length;
-    return avgDifficulty;
-  }
-
   private identifyChallengesOvercome(exercises: PracticeExercise[]): string[] {
     return exercises
       .filter((ex) => ex.qualityScore > 0.8)
       .map((ex) => `Mastered: ${ex.name}`)
-      .slice(0, 3); // Top 3 challenges overcome
-  }
-
-  private identifyNewChallenges(exercises: PracticeExercise[]): string[] {
-    return exercises
-      .filter((ex) => ex.qualityScore < 0.6 && ex.challengeAreas)
-      .flatMap((ex) => ex.challengeAreas!)
-      .slice(0, 3); // Top 3 new challenges
+      .slice(0, 3);
   }
 
   private calculateOverallProgress(exercises: PracticeExercise[]): number {
@@ -1061,7 +781,7 @@ export class PracticeAnalyzer implements BrainModule {
     const avgQuality =
       exercises.reduce((sum, ex) => sum + ex.qualityScore, 0) /
       exercises.length;
-    return avgQuality * 0.8; // 80% of quality represents progress
+    return avgQuality * 0.8;
   }
 
   private calculateAverageQuality(sessions: PracticeAnalysisSession[]): number {
@@ -1082,13 +802,4 @@ export class PracticeAnalyzer implements BrainModule {
   private calculateAverageSessionQuality(): number {
     return this.calculateAverageQuality(this.sessionHistory);
   }
-
-  private async generateSessionInsights(
-    session: PracticeAnalysisSession
-  ): Promise<void> {
-    // Generate insights for the completed session
-    console.log(`💡 Generated insights for session ${session.id}`);
-  }
 }
-
-export default PracticeAnalyzer;

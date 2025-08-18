@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 File Analysis Report - analyzeCurrentFileHandler.ts</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .severity-score {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            color: #ef4444;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .issue-item, .suggestion-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .issue-item {
+            border-left: 4px solid #ef4444;
+        }
+        .suggestion-item {
+            border-left: 4px solid #3b82f6;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .metric-card {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .metric-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 File Analysis Report</h1>
+            <h2>analyzeCurrentFileHandler.ts</h2>
+            <p>Generated: 7/12/2025, 8:52:19 PM</p>
+        </div>
+
+        <div class="card">
+            <h2>📊 Overall Assessment</h2>
+            <div class="severity-score">HIGH</div>
+            <div style="text-align: center; margin-top: 10px;">
+                Complexity: 10/10 | Type: TypeScript
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-number" style="color: #ef4444;">5</div>
+                <div>Issues Found</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #3b82f6;">9</div>
+                <div>Suggestions</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #10b981;">YES</div>
+                <div>Auto-fixable</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number" style="color: #8b5cf6;">10</div>
+                <div>Complexity</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>🚨 Issues Identified</h3>
+                <div class="issue-item">TypeScript "any" usage detected - reduces type safety</div><div class="issue-item">TypeScript ignore comments found - may hide real issues</div><div class="issue-item">High nesting depth (8) - consider refactoring for readability</div><div class="issue-item">eval() usage detected - major security risk</div><div class="issue-item">Potential SQL injection vulnerability - use parameterized queries</div>
+            </div>
+
+            <div class="card">
+                <h3>💡 Optimization Suggestions</h3>
+                <div class="suggestion-item">TODO/FIXME comments found - consider addressing them</div><div class="suggestion-item">Code duplication detected - 21 duplicate patterns found</div><div class="suggestion-item">Wildcard imports may increase bundle size - use specific imports</div><div class="suggestion-item">Consider using lodash-es or specific lodash imports for better tree shaking</div><div class="suggestion-item">High number of functions - consider splitting into multiple files</div><div class="suggestion-item">7 lines exceed 120 characters - consider refactoring</div><div class="suggestion-item">Magic numbers detected - consider using named constants</div><div class="suggestion-item">No test files found - consider adding unit tests</div><div class="suggestion-item">Consider migrating from moment.js to day.js or date-fns for smaller bundle size</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🎯 Quality Scores</h3>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #10b981;">10</div>
+                    <div>Code Quality</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #f59e0b;">10</div>
+                    <div>Performance</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #3b82f6;">8</div>
+                    <div>Security</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number" style="color: #8b5cf6;">10</div>
+                    <div>Maintainability</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="text-align: center;">
+            <p>🤖 Generated by Cipher Enhanced File Analysis</p>
+            <p>For auto-fixes and optimizations, use: <strong>Cipher: Smart Rebuild File</strong></p>
+        </div>
+    </div>
+</body>
+</html>

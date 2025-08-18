@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌳 Cipher Route Tree</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        #tree-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            min-height: 600px;
+        }
+        .node circle {
+            cursor: pointer;
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        .node.working circle {
+            fill: #10b981;
+        }
+        .node.missing circle {
+            fill: #ef4444;
+        }
+        .node.category circle {
+            fill: #8b5cf6;
+        }
+        .node text {
+            font: 12px sans-serif;
+            fill: white;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+        .link {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.6);
+            stroke-width: 2px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            margin: 0 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌳 Cipher Route Tree Visualization</h1>
+            <p>Interactive route structure analysis | Generated: 7/12/2025, 7:30:15 PM</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="expandAll()">🌳 Expand All</button>
+            <button class="btn" onclick="collapseAll()">📁 Collapse All</button>
+            <button class="btn" onclick="resetView()">🎯 Reset View</button>
+        </div>
+
+        <div id="tree-container"></div>
+
+        <div class="legend">
+            <h3>Legend</h3>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #10b981;"></div>
+                <span>Working Routes</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ef4444;"></div>
+                <span>Missing Routes</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #8b5cf6;"></div>
+                <span>Categories</span>
+            </div>
+        </div>
+
+        <div class="tooltip"></div>
+    </div>
+
+    <script>
+        const treeData = {
+  "name": "Application Routes",
+  "children": [
+    {
+      "name": "Unknown Routes",
+      "type": "category",
+      "children": [
+        {
+          "name": "/practice",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        },
+        {
+          "name": "/tuner",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        },
+        {
+          "name": "/metronome",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        },
+        {
+          "name": "/jam",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        },
+        {
+          "name": "/vocal",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        },
+        {
+          "name": "/tabs",
+          "type": "route",
+          "status": "missing",
+          "exists": false,
+          "size": 50
+        }
+      ]
+    }
+  ]
+};
+        
+        const margin = {top: 20, right: 90, bottom: 30, left: 90};
+        const width = 800 - margin.left - margin.right;
+        const height = 600 - margin.top - margin.bottom;
+
+        const svg = d3.select("#tree-container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom);
+
+        const g = svg.append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        const tree = d3.tree().size([height, width]);
+        const root = d3.hierarchy(treeData);
+
+        let i = 0;
+        const duration = 750;
+
+        root.x0 = height / 2;
+        root.y0 = 0;
+
+        function collapse(d) {
+            if(d.children) {
+                d._children = d.children;
+                d._children.forEach(collapse);
+                d.children = null;
+            }
+        }
+
+        root.children.forEach(collapse);
+        update(root);
+
+        function update(source) {
+            const treeData = tree(root);
+            const nodes = treeData.descendants();
+            const links = treeData.descendants().slice(1);
+
+            nodes.forEach(function(d){ d.y = d.depth * 180});
+
+            const node = g.selectAll('g.node')
+                .data(nodes, function(d) {return d.id || (d.id = ++i); });
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', function(d) { 
+                    let classes = 'node';
+                    if (d.data.type === 'route') {
+                        classes += d.data.exists ? ' working' : ' missing';
+                    } else {
+                        classes += ' category';
+                    }
+                    return classes;
+                })
+                .attr("transform", function(d) {
+                    return "translate(" + source.y0 + "," + source.x0 + ")";
+                })
+                .on('click', click)
+                .on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip);
+
+            nodeEnter.append('circle')
+                .attr('r', 1e-6);
+
+            nodeEnter.append('text')
+                .attr("dy", ".35em")
+                .attr("x", function(d) {
+                    return d.children || d._children ? -13 : 13;
+                })
+                .attr("text-anchor", function(d) {
+                    return d.children || d._children ? "end" : "start";
+                })
+                .text(function(d) { return d.data.name; });
+
+            const nodeUpdate = nodeEnter.merge(node);
+
+            nodeUpdate.transition()
+                .duration(duration)
+                .attr("transform", function(d) { 
+                    return "translate(" + d.y + "," + d.x + ")";
+                });
+
+            nodeUpdate.select('circle')
+                .attr('r', 10)
+                .style("fill-opacity", 1);
+
+            const nodeExit = node.exit().transition()
+                .duration(duration)
+                .attr("transform", function(d) {
+                    return "translate(" + source.y + "," + source.x + ")";
+                })
+                .remove();
+
+            nodeExit.select('circle')
+                .attr('r', 1e-6);
+
+            nodeExit.select('text')
+                .style('fill-opacity', 1e-6);
+
+            const link = g.selectAll('path.link')
+                .data(links, function(d) { return d.id; });
+
+            const linkEnter = link.enter().insert('path', "g")
+                .attr("class", "link")
+                .attr('d', function(d){
+                    var o = {x: source.x0, y: source.y0}
+                    return diagonal(o, o)
+                });
+
+            const linkUpdate = linkEnter.merge(link);
+
+            linkUpdate.transition()
+                .duration(duration)
+                .attr('d', function(d){ return diagonal(d, d.parent) });
+
+            const linkExit = link.exit().transition()
+                .duration(duration)
+                .attr('d', function(d) {
+                    var o = {x: source.x, y: source.y}
+                    return diagonal(o, o)
+                })
+                .remove();
+
+            nodes.forEach(function(d){
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+
+            function diagonal(s, d) {
+                const path = `M ${s.y} ${s.x}
+                        C ${(s.y + d.y) / 2} ${s.x},
+                          ${(s.y + d.y) / 2} ${d.x},
+                          ${d.y} ${d.x}`;
+                return path;
+            }
+
+            function click(event, d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                update(d);
+            }
+        }
+
+        function showTooltip(event, d) {
+            const tooltip = d3.select('.tooltip');
+            let content = `<strong>${d.data.name}</strong><br/>`;
+            
+            if (d.data.type === 'route') {
+                content += `Type: ${d.data.type}<br/>`;
+                content += `Status: ${d.data.status}<br/>`;
+                content += `URL: ${d.data.url}<br/>`;
+                content += `Exists: ${d.data.exists ? 'Yes' : 'No'}`;
+            } else {
+                content += `Category: ${d.data.type}`;
+            }
+            
+            tooltip.html(content)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .style('opacity', 1);
+        }
+
+        function hideTooltip() {
+            d3.select('.tooltip').style('opacity', 0);
+        }
+
+        function expandAll() {
+            function expand(d) {
+                if (d._children) {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                if (d.children) {
+                    d.children.forEach(expand);
+                }
+            }
+            expand(root);
+            update(root);
+        }
+
+        function collapseAll() {
+            function collapse(d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d._children.forEach(collapse);
+                    d.children = null;
+                }
+            }
+            root.children.forEach(collapse);
+            update(root);
+        }
+
+        function resetView() {
+            svg.transition().duration(750).attr("transform", "translate(0,0) scale(1)");
+        }
+    </script>
+</body>
+</html>

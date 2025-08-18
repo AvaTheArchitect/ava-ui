@@ -5,12 +5,17 @@
  */
 
 import { generateId } from "../../shared/utils";
-import {
-  BrainModule,
-  UserPreferences,
-  ChordDifficulty,
-  InstrumentType,
-} from "../../shared/types";
+import { BrainModule, ChordDifficulty } from "../../shared/types";
+
+// Define InstrumentType locally since it's missing from shared types
+export enum InstrumentType {
+  GUITAR = "guitar",
+  PIANO = "piano",
+  VOCALS = "vocals",
+  BASS = "bass",
+  DRUMS = "drums",
+  GENERAL = "general",
+}
 
 // Skill Configuration
 export interface SkillTrackerConfig {
@@ -37,15 +42,6 @@ export const SKILL_TRACKER_CONSTANTS = {
   MIN_PRACTICE_EFFICIENCY: 0.1,
 } as const;
 
-// Forward declaration to avoid circular imports
-interface PracticeExercise {
-  qualityScore: number;
-  type: string;
-}
-
-const PracticeType = {
-  MAINTENANCE: "maintenance",
-} as const;
 export enum SkillCategory {
   TECHNICAL = "technical",
   THEORETICAL = "theoretical",
@@ -202,6 +198,7 @@ export class SkillTracker implements BrainModule {
   };
 
   // State management
+  private sessionId: string = generateId("skill-tracker");
   private skillDefinitions = new Map<string, MusicSkill>();
   private skillLevels = new Map<string, SkillLevel>();
   private skillHistory: SkillProgressEntry[] = [];
@@ -249,6 +246,7 @@ export class SkillTracker implements BrainModule {
       initialized: this.initialized,
       healthy: this.initialized && this.skillDefinitions.size > 0,
       metrics: {
+        sessionId: this.sessionId,
         trackedSkills: this.skillDefinitions.size,
         userSkillLevels: this.skillLevels.size,
         historyEntries: this.skillHistory.length,
@@ -296,6 +294,7 @@ export class SkillTracker implements BrainModule {
       confidence: newLevel.confidence,
       assessmentSource: source,
       metrics,
+      notes: `Assessment via ${source}`,
     });
 
     // Trim history if needed
@@ -499,7 +498,34 @@ export class SkillTracker implements BrainModule {
           },
         ],
       },
-      // Add more skills as needed...
+      // Piano Skills
+      {
+        id: "piano_basic_technique",
+        name: "Basic Piano Technique",
+        category: SkillCategory.TECHNICAL,
+        instrument: InstrumentType.PIANO,
+        description: "Fundamental hand position and finger technique",
+        prerequisites: [],
+        subSkills: ["hand_position", "finger_independence", "scales"],
+        difficulty: ChordDifficulty.BEGINNER,
+        learningPath: ["hand_position", "five_finger_patterns", "scales"],
+        assessmentCriteria: [
+          {
+            name: "Hand Position",
+            description: "Proper hand and finger positioning",
+            weight: 0.4,
+            measurementType: "accuracy",
+            targetValue: 0.9,
+          },
+          {
+            name: "Finger Independence",
+            description: "Ability to move fingers independently",
+            weight: 0.6,
+            measurementType: "consistency",
+            targetValue: 0.8,
+          },
+        ],
+      },
     ];
   }
 
@@ -517,6 +543,21 @@ export class SkillTracker implements BrainModule {
           "guitar_chord_progressions",
         ],
         estimatedDuration: 120, // 120 hours
+        currentPosition: 0,
+        completionPercentage: 0,
+        adaptations: [],
+      },
+      {
+        id: "piano_beginner_path",
+        name: "Piano Beginner Path",
+        description: "Complete beginner piano learning sequence",
+        targetInstrument: InstrumentType.PIANO,
+        skillSequence: [
+          "piano_basic_technique",
+          "theory_scales",
+          "piano_simple_pieces",
+        ],
+        estimatedDuration: 150, // 150 hours
         currentPosition: 0,
         completionPercentage: 0,
         adaptations: [],
@@ -665,7 +706,9 @@ export class SkillTracker implements BrainModule {
     updatedLevel: SkillLevel
   ): Promise<void> {
     // Find skills that depend on this skill and update them accordingly
-    for (const [depSkillId, depSkill] of this.skillDefinitions) {
+    for (const [depSkillId, depSkill] of Array.from(
+      this.skillDefinitions.entries()
+    )) {
       if (depSkill.prerequisites.includes(skillId)) {
         const depCurrentLevel = this.skillLevels.get(depSkillId);
         if (depCurrentLevel) {
@@ -807,6 +850,7 @@ export class SkillTracker implements BrainModule {
     const categoryPriorities = new Map<SkillCategory, number>();
 
     // Initialize with current strength levels (inverted - lower strength = higher priority)
+    // Fix the type casting issue by properly typing the entries
     Object.entries(strengthProfile).forEach(([category, strength]) => {
       categoryPriorities.set(category as SkillCategory, 1 - strength);
     });
@@ -893,6 +937,103 @@ export class SkillTracker implements BrainModule {
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, maxEntries);
     }
+  }
+
+  /**
+   * Public API methods for external access
+   */
+
+  /**
+   * Get all skill definitions
+   */
+  getSkillDefinitions(): MusicSkill[] {
+    return Array.from(this.skillDefinitions.values());
+  }
+
+  /**
+   * Get specific skill level
+   */
+  getSkillLevel(skillId: string): SkillLevel | undefined {
+    return this.skillLevels.get(skillId);
+  }
+
+  /**
+   * Get skill history for analysis
+   */
+  getSkillHistory(skillId?: string): SkillProgressEntry[] {
+    if (skillId) {
+      return this.skillHistory.filter((entry) => entry.skillId === skillId);
+    }
+    return [...this.skillHistory];
+  }
+
+  /**
+   * Add custom skill definition
+   */
+  addSkillDefinition(skill: MusicSkill): void {
+    this.skillDefinitions.set(skill.id, skill);
+    console.log(`✅ Added skill definition: ${skill.name}`);
+  }
+
+  /**
+   * Create new learning pathway
+   */
+  createLearningPathway(
+    name: string,
+    description: string,
+    targetInstrument: InstrumentType,
+    skillSequence: string[]
+  ): string {
+    const pathwayId = generateId("pathway");
+    const pathway: LearningPathway = {
+      id: pathwayId,
+      name,
+      description,
+      targetInstrument,
+      skillSequence,
+      estimatedDuration: skillSequence.length * 20, // Estimate 20 hours per skill
+      currentPosition: 0,
+      completionPercentage: 0,
+      adaptations: [],
+    };
+
+    this.learningPathways.set(pathwayId, pathway);
+    return pathwayId;
+  }
+
+  /**
+   * Update configuration
+   */
+  updateConfig(newConfig: Partial<SkillTrackerConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+    console.log("⚙️ SkillTracker configuration updated");
+  }
+
+  /**
+   * Generate skill tracking report
+   */
+  generateSkillReport(): string {
+    const skills = Array.from(this.skillLevels.values());
+    const overallLevel = this.calculateOverallLevel(skills);
+    const strengthProfile = this.calculateStrengthProfile(skills);
+
+    const categoryReports = Object.entries(strengthProfile)
+      .map(([category, level]) => `${category}: ${(level * 100).toFixed(1)}%`)
+      .join("\n");
+
+    return `
+🎯 Skill Tracking Report
+Overall Skill Level: ${(overallLevel * 100).toFixed(1)}%
+Total Skills Tracked: ${skills.length}
+Assessment History: ${this.skillHistory.length} entries
+
+Skill Categories:
+${categoryReports}
+
+Learning Velocity: ${this.calculateLearningVelocity().toFixed(
+      1
+    )}% improvement rate
+    `.trim();
   }
 }
 

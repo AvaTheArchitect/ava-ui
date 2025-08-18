@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "MissingBrackets.tsx",
+      "fileType": ".tsx"
+    },
+    "timestamp": 1755209563524,
+    "environment": "1.103.1",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1755209563525,
+  "musicApp": true,
+  "dualBrainActive": false
+}

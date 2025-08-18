@@ -1,0 +1,23 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "autofix-missing-usestate-import",
+    "context": {
+      "result": "success",
+      "context": {
+        "errorType": "missing-usestate-import",
+        "confidence": 0.92,
+        "handlerName": "BrainFixer-v20-UNIFIED",
+        "version": "v20-2025-08-15",
+        "linesChanged": 1,
+        "timeToFix": 1
+      }
+    },
+    "timestamp": 1755472063853,
+    "frequency": 1
+  },
+  "timestamp": 1755472063853,
+  "musicApp": true,
+  "dualBrainActive": false
+}

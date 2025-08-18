@@ -8,9 +8,15 @@
 // Core Learning Intelligence
 export * from "./PatternRecognizer";
 
-// Personalization Engine (with explicit re-export to resolve PracticeSession conflict)
+// Personalization Engine
 export { PersonalizationEngine } from "./PersonalizationEngine";
-export type { PracticeSession as PersonalizationPracticeSession } from "./PersonalizationEngine";
+export type {
+  PersonalizationConfig,
+  PersonalizedSuggestion,
+  PersonalizationResult,
+  SuggestionItem,
+  UserProfile as PersonalizationUserProfile, // Renamed to avoid conflicts
+} from "./PersonalizationEngine";
 
 // Adaptive Learning
 export * from "./AdaptiveLearning";
@@ -18,19 +24,21 @@ export * from "./AdaptiveLearning";
 // Skill Tracking
 export * from "./SkillTracker";
 
-// Practice Analysis (with renamed PracticeSession to avoid conflicts)
+// Practice Analysis (with renamed exports to avoid conflicts)
 export { PracticeAnalyzer } from "./PracticeAnalyzer";
 export type {
-  PracticeAnalysisSession,
+  PracticeAnalyzerConfig,
   PracticeType,
   PracticeIntensity,
+  PracticeAnalysisSession,
   PracticeExercise,
   PracticeQualityMetrics,
   PracticeProgressMetrics,
   PracticeAnalytics,
+  QualityTrend,
   PracticeRecommendation,
   PracticeInsight,
-  SkillMetrics as PracticeSkillMetrics, // Rename to avoid conflicts
+  RealTimeFeedback as PracticeRealTimeFeedback, // Renamed to avoid conflict
 } from "./PracticeAnalyzer";
 
 // Module Registry for the Brain System

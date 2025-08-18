@@ -1,0 +1,22 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "digest-songsterr-pdf",
+    "context": {
+      "result": "success",
+      "context": {
+        "patternsFound": 2,
+        "complexity": 3.6,
+        "modules": 12,
+        "insights": 3,
+        "handlerName": "DigestAndLearn"
+      }
+    },
+    "timestamp": 1755472060903,
+    "frequency": 1
+  },
+  "timestamp": 1755472060903,
+  "musicApp": true,
+  "dualBrainActive": false
+}

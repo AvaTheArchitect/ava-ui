@@ -1,7 +1,7 @@
 // src/app/guitar/page.tsx
 'use client';
 
-import Guitar from '@/components/guitar/guitar';
+import Guitar from '@/components/guitar/Guitar';
 
 export default function GuitarPage() {
     return (

@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "trainBrainRunner.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1755051404965,
+    "environment": "1.103.0",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1755051404966,
+  "musicApp": true,
+  "dualBrainActive": false
+}

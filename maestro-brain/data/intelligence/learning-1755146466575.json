@@ -1,0 +1,17 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "trainBrainDigest",
+    "result": "success",
+    "timestamp": 1755146465891,
+    "context": {
+      "args": 0,
+      "timestamp": 1755146465873,
+      "commandName": "trainBrainDigest"
+    }
+  },
+  "timestamp": 1755146465892,
+  "musicApp": true,
+  "dualBrainActive": false
+}

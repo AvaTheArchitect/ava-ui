@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌳 Maestro-AI FIXED Ecosystem Tree</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 25%, #667eea 50%, #764ba2 75%, #f093fb 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .ecosystem-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        #tree-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            min-height: 600px;
+            overflow: auto;
+        }
+        
+        /* Project Colors */
+        .node.cipher circle { fill: #8b5cf6; stroke: #a78bfa; }
+        .node.maestro circle { fill: #14b8a6; stroke: #5eead4; }
+        .node.ava circle { fill: #ec4899; stroke: #f9a8d4; }
+        .node.modules circle { fill: #f59e0b; stroke: #fbbf24; }
+        .node.music circle { fill: #f97316; stroke: #fb923c; }
+        
+        .node.working circle { stroke-width: 3px; }
+        .node.project circle { stroke-width: 4px; filter: drop-shadow(0 0 10px currentColor); }
+        
+        .node text {
+            font: 12px sans-serif;
+            fill: white;
+            text-anchor: middle;
+            dominant-baseline: central;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            pointer-events: none;
+        }
+        
+        .link {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.6);
+            stroke-width: 2px;
+        }
+        
+        .zoom-controls {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌳 Maestro-AI FIXED Ecosystem Tree</h1>
+        <p>Multi-project visualization | Generated: 7/14/2025, 2:51:42 PM</p>
+        
+        
+        <div class="ecosystem-stats">
+            <div class="stat-card">
+                <div style="font-size: 2em; font-weight: bold;">1</div>
+                <div>Projects</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 2em; font-weight: bold;">61</div>
+                <div>Routes</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 2em; font-weight: bold;">59</div>
+                <div>Working</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 2em; font-weight: bold;">97%</div>
+                <div>Health</div>
+            </div>
+        </div>
+        
+    </div>
+
+    <div class="controls">
+        <button class="btn" onclick="expandAll()">🌳 Expand All</button>
+        <button class="btn" onclick="collapseAll()">📁 Collapse All</button>
+        <button class="btn" onclick="resetView()">🎯 Reset View</button>
+        <button class="btn" onclick="focusProject('cipher')">🟣 Cipher</button>
+        <button class="btn" onclick="focusProject('maestro')">🟦 Maestro</button>
+        <button class="btn" onclick="focusProject('ava')">💗 Ava</button>
+        <button class="btn" onclick="exportAll()">📤 Export All</button>
+    </div>
+
+    <div class="zoom-controls">
+        <button class="zoom-btn" onclick="zoomIn()">+</button>
+        <button class="zoom-btn" onclick="zoomOut()">-</button>
+        <button class="zoom-btn" onclick="resetZoom()">⌂</button>
+    </div>
+
+    <div id="tree-container"></div>
+
+    <script>
+        const treeData = {
+  "name": "Maestro-AI Ecosystem",
+  "type": "root",
+  "children": [
+    {
+      "name": "🟦 Maestro AI",
+      "type": "project",
+      "color": "maestro",
+      "description": "Central AI Intelligence",
+      "stats": {
+        "total": 61,
+        "working": 59,
+        "missing": 2,
+        "folders": 123,
+        "files": 61
+      },
+      "children": [
+        {
+          "name": "📦 Module (5)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "AvaMemory.js",
+              "fullPath": "Ava/Ava_Vault_Memory_Modules/AvaMemory.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Ava/Ava_Vault_Memory_Modules/AvaMemory.js",
+              "color": "maestro",
+              "routeType": "module"
+            },
+            {
+              "name": "VaultSync.js",
+              "fullPath": "Ava/Ava_Vault_Memory_Modules/VaultSync.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Ava/Ava_Vault_Memory_Modules/VaultSync.js",
+              "color": "maestro",
+              "routeType": "module"
+            },
+            {
+              "name": "app.js",
+              "fullPath": "SimonsGPG/app.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/app.js",
+              "color": "maestro",
+              "routeType": "module"
+            },
+            {
+              "name": "index.js",
+              "fullPath": "SimonsGPG/src/index.js",
+              "type": "route",
+              "status": "warning",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/src/index.js",
+              "color": "maestro",
+              "routeType": "module"
+            },
+            {
+              "name": "sw.js",
+              "fullPath": "SimonsGPG/sw.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/sw.js",
+              "color": "maestro",
+              "routeType": "module"
+            }
+          ]
+        },
+        {
+          "name": "🎸 Guitar (6)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": ":: 🧠 Maestro Brain Setup for Guitar & Vocal App.pdf",
+              "fullPath": "Brain System/MASTER PLAN/:: 🧠 Maestro Brain Setup for Guitar & Vocal App.pdf",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Brain System/MASTER PLAN/:: 🧠 Maestro Brain Setup for Guitar & Vocal App.pdf",
+              "color": "maestro",
+              "routeType": "guitar"
+            },
+            {
+              "name": "README.md",
+              "fullPath": "SimonsGuitarV2/README.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGuitarV2/README.md",
+              "color": "maestro",
+              "routeType": "guitar"
+            },
+            {
+              "name": "index.html",
+              "fullPath": "SimonsGuitarV2/index.html",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGuitarV2/index.html",
+              "color": "maestro",
+              "routeType": "guitar"
+            },
+            {
+              "name": "index.html.backup",
+              "fullPath": "SimonsGuitarV2/index.html.backup",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGuitarV2/index.html.backup",
+              "color": "maestro",
+              "routeType": "guitar"
+            },
+            {
+              "name": "index.html.save",
+              "fullPath": "SimonsGuitarV2/index.html.save",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGuitarV2/index.html.save",
+              "color": "maestro",
+              "routeType": "guitar"
+            },
+            {
+              "name": "Simon_Flaming_Guitar_Tuner_Blueprint-3.md",
+              "fullPath": "TE Tuner - Maestro.ai/Simon_Flaming_Guitar_Tuner_Blueprint-3.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/TE Tuner - Maestro.ai/Simon_Flaming_Guitar_Tuner_Blueprint-3.md",
+              "color": "maestro",
+              "routeType": "guitar"
+            }
+          ]
+        },
+        {
+          "name": "🧠 Brain (36)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "Claude-Cipher.ai Command Migration.md",
+              "fullPath": "Brain System/MASTER PLAN/Claude-Cipher.ai Command Migration.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Brain System/MASTER PLAN/Claude-Cipher.ai Command Migration.md",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "Claude-Maestro.ai Development Setup.md",
+              "fullPath": "Brain System/MASTER PLAN/Claude-Maestro.ai Development Setup.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Brain System/MASTER PLAN/Claude-Maestro.ai Development Setup.md",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "eslint.config.js",
+              "fullPath": "CIPHER AI /Download cipher-autonomous-dev/eslint.config.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Download cipher-autonomous-dev/eslint.config.js",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "package.json",
+              "fullPath": "CIPHER AI /Download cipher-autonomous-dev/package.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Download cipher-autonomous-dev/package.json",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "extension.ts",
+              "fullPath": "CIPHER AI /Download cipher-autonomous-dev/src/extension.ts",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Download cipher-autonomous-dev/src/extension.ts",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "tsconfig.json",
+              "fullPath": "CIPHER AI /Download cipher-autonomous-dev/tsconfig.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Download cipher-autonomous-dev/tsconfig.json",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "CipherPrimer.ts",
+              "fullPath": "CIPHER AI /Next-tconfig Expert Level/CipherPrimer.ts",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Next-tconfig Expert Level/CipherPrimer.ts",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "cipher-agent-config.json",
+              "fullPath": "CIPHER AI /Next-tconfig Expert Level/cipher-agent-config.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Next-tconfig Expert Level/cipher-agent-config.json",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "CIPHER_TEST_CHECKLIST.md",
+              "fullPath": "CIPHER AI /Songsterr plan /maestro-ai/CIPHER_TEST_CHECKLIST.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Songsterr plan /maestro-ai/CIPHER_TEST_CHECKLIST.md",
+              "color": "maestro",
+              "routeType": "brain"
+            },
+            {
+              "name": "README_AUTONOMOUS_PIPELINE.md",
+              "fullPath": "CIPHER AI /Songsterr plan /maestro-ai/README_AUTONOMOUS_PIPELINE.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Songsterr plan /maestro-ai/README_AUTONOMOUS_PIPELINE.md",
+              "color": "maestro",
+              "routeType": "brain"
+            }
+          ]
+        },
+        {
+          "name": "🧩 Component (2)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "VisualFeedbackPanel.jsx",
+              "fullPath": "CIPHER AI /Visual_Intelligence_Module_Pack/components/VisualFeedbackPanel.jsx",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /Visual_Intelligence_Module_Pack/components/VisualFeedbackPanel.jsx",
+              "color": "maestro",
+              "routeType": "component"
+            },
+            {
+              "name": "VisualFeedbackPanel.jsx",
+              "fullPath": "CIPHER AI /cipher_engine_vision_integration_bundle/components/VisualFeedbackPanel.jsx",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /cipher_engine_vision_integration_bundle/components/VisualFeedbackPanel.jsx",
+              "color": "maestro",
+              "routeType": "component"
+            }
+          ]
+        },
+        {
+          "name": "🎵 Practice (1)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "test-practice-generator.md",
+              "fullPath": "CIPHER AI /cipher-engine-clean-v2/ai-team-input/test-practice-generator.md",
+              "type": "route",
+              "status": "warning",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /cipher-engine-clean-v2/ai-team-input/test-practice-generator.md",
+              "color": "maestro",
+              "routeType": "practice"
+            }
+          ]
+        },
+        {
+          "name": "📄 Page (3)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "_app.tsx",
+              "fullPath": "CIPHER AI /cipher-engine-clean-v2/pages/_app.tsx",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /cipher-engine-clean-v2/pages/_app.tsx",
+              "color": "maestro",
+              "routeType": "page"
+            },
+            {
+              "name": "tabparser.js",
+              "fullPath": "CIPHER AI /pages/api/tabparser.js",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /pages/api/tabparser.js",
+              "color": "maestro",
+              "routeType": "page"
+            },
+            {
+              "name": "Simon's Guitar Practice Generator App.pages",
+              "fullPath": "Simon's Guitar Practice Generator App.pages",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Simon's Guitar Practice Generator App.pages",
+              "color": "maestro",
+              "routeType": "page"
+            }
+          ]
+        },
+        {
+          "name": "⚡ Handler (1)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "generateSelfEvolvingModulesHandler.ts",
+              "fullPath": "CIPHER AI /📥 Download Cipher_SelfGenerator_Pack/handlers/generateSelfEvolvingModulesHandler.ts",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/CIPHER AI /📥 Download Cipher_SelfGenerator_Pack/handlers/generateSelfEvolvingModulesHandler.ts",
+              "color": "maestro",
+              "routeType": "handler"
+            }
+          ]
+        },
+        {
+          "name": "⚙️ Config (5)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "conversations.json",
+              "fullPath": "Screenshots and examples/data-2025-06-09-04-43-06/conversations.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Screenshots and examples/data-2025-06-09-04-43-06/conversations.json",
+              "color": "maestro",
+              "routeType": "config"
+            },
+            {
+              "name": "projects.json",
+              "fullPath": "Screenshots and examples/data-2025-06-09-04-43-06/projects.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Screenshots and examples/data-2025-06-09-04-43-06/projects.json",
+              "color": "maestro",
+              "routeType": "config"
+            },
+            {
+              "name": "users.json",
+              "fullPath": "Screenshots and examples/data-2025-06-09-04-43-06/users.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/Screenshots and examples/data-2025-06-09-04-43-06/users.json",
+              "color": "maestro",
+              "routeType": "config"
+            },
+            {
+              "name": "manifest.json",
+              "fullPath": "SimonsGPG/manifest.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/manifest.json",
+              "color": "maestro",
+              "routeType": "config"
+            },
+            {
+              "name": "package.json",
+              "fullPath": "SimonsGPG/package.json",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/package.json",
+              "color": "maestro",
+              "routeType": "config"
+            }
+          ]
+        },
+        {
+          "name": "📚 Documentation (1)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "README.md",
+              "fullPath": "SimonsGPG/README.md",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/README.md",
+              "color": "maestro",
+              "routeType": "documentation"
+            }
+          ]
+        },
+        {
+          "name": "📄 File (1)",
+          "type": "category",
+          "color": "maestro",
+          "children": [
+            {
+              "name": "index.html",
+              "fullPath": "SimonsGPG/index.html",
+              "type": "route",
+              "status": "working",
+              "exists": true,
+              "url": "file:///Users/brettbolzenthal/Desktop/Maestro.ai/SimonsGPG/index.html",
+              "color": "maestro",
+              "routeType": "file"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "totalProjects": 1,
+    "totalRoutes": 61,
+    "totalWorking": 59,
+    "totalMissing": 2,
+    "healthPercentage": 97
+  }
+};
+        
+        const width = 1200;
+        const height = 800;
+        
+        const svg = d3.select("#tree-container")
+            .append("svg")
+            .attr("width", "100%")
+            .attr("height", height)
+            .attr("viewBox", [0, 0, width, height]);
+
+        const g = svg.append("g");
+
+        const tree = d3.tree().size([height - 100, width - 200]);
+        const root = d3.hierarchy(treeData);
+
+        // Add zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+
+        svg.call(zoom);
+
+        function zoomIn() {
+            svg.transition().call(zoom.scaleBy, 1.5);
+        }
+
+        function zoomOut() {
+            svg.transition().call(zoom.scaleBy, 1 / 1.5);
+        }
+
+        function resetZoom() {
+            svg.transition().call(zoom.transform, d3.zoomIdentity);
+        }
+
+        // Initialize with projects expanded, categories collapsed
+        root.children?.forEach(d => {
+            if (d.children) {
+                d.children.forEach(child => {
+                    if (child.children) {
+                        child._children = child.children;
+                        child.children = null;
+                    }
+                });
+            }
+        });
+
+        update(root);
+
+        function update(source) {
+            const treeLayout = tree(root);
+            const nodes = treeLayout.descendants();
+            const links = treeLayout.descendants().slice(1);
+
+            // Position nodes
+            nodes.forEach(d => { d.y = d.depth * 180; });
+
+            // Update nodes
+            const node = g.selectAll('g.node')
+                .data(nodes, d => d.id || (d.id = ++Date.now()));
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', d => {
+                    let classes = 'node';
+                    if (d.data.color) classes += ' ' + d.data.color;
+                    if (d.data.type) classes += ' ' + d.data.type;
+                    return classes;
+                })
+                .attr("transform", "translate(" + source.y0 + "," + source.x0 + ")")
+                .on('click', click);
+
+            nodeEnter.append('circle')
+                .attr('r', d => {
+                    if (d.data.type === 'root') return 12;
+                    if (d.data.type === 'project') return 10;
+                    if (d.data.type === 'category') return 7;
+                    return 5;
+                });
+
+            nodeEnter.append('text')
+                .attr("dy", ".35em")
+                .attr("x", d => d.children || d._children ? -15 : 15)
+                .attr("text-anchor", d => d.children || d._children ? "end" : "start")
+                .text(d => d.data.name);
+
+            const nodeUpdate = nodeEnter.merge(node);
+            nodeUpdate.transition()
+                .duration(750)
+                .attr("transform", d => "translate(" + d.y + "," + d.x + ")");
+
+            // Update links
+            const link = g.selectAll('path.link')
+                .data(links, d => d.id);
+
+            link.enter().insert('path', "g")
+                .attr("class", "link")
+                .attr('d', diagonal);
+
+            function diagonal(d) {
+                return "M" + d.y + "," + d.x +
+                       "C" + (d.y + d.parent.y) / 2 + "," + d.x +
+                       " " + (d.y + d.parent.y) / 2 + "," + d.parent.x +
+                       " " + d.parent.y + "," + d.parent.x;
+            }
+
+            function click(event, d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                update(d);
+            }
+
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+        }
+
+        function expandAll() {
+            function expand(d) {
+                if (d._children) {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                if (d.children) d.children.forEach(expand);
+            }
+            expand(root);
+            update(root);
+        }
+
+        function collapseAll() {
+            function collapse(d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d._children.forEach(collapse);
+                    d.children = null;
+                }
+            }
+            if (root.children) root.children.forEach(collapse);
+            update(root);
+        }
+
+        function resetView() {
+            resetZoom();
+        }
+
+        function focusProject(projectColor) {
+            collapseAll();
+            setTimeout(() => {
+                if (root.children) {
+                    root.children.forEach(d => {
+                        if (d.data.color === projectColor && d._children) {
+                            d.children = d._children;
+                            d._children = null;
+                        }
+                    });
+                }
+                update(root);
+            }, 400);
+        }
+
+        function exportAll() {
+            const exportData = JSON.stringify(treeData, null, 2);
+            const blob = new Blob([exportData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'maestro-ecosystem-fixed.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "autofix-missing-react-import",
+    "context": {
+      "result": "success",
+      "context": {
+        "errorType": "missing-react-import",
+        "confidence": 0.95,
+        "handlerName": "BrainFixer-v20-UNIFIED",
+        "version": "v20-2025-08-15",
+        "linesChanged": 1,
+        "timeToFix": 1
+      }
+    },
+    "timestamp": 1755472062452,
+    "frequency": 1
+  },
+  "timestamp": 1755472062452,
+  "musicApp": true,
+  "dualBrainActive": false
+}

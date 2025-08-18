@@ -22,6 +22,14 @@ import { AvaCoordinator } from "./brain/integrations/external/AvaCoordinator";
 import { MusicAppCoordinator } from "./brain/integrations/maestro/MusicAppCoordinator";
 
 // =============================================================================
+// 🔮 FUTURE IMPORTS (Commented out until needed)
+// =============================================================================
+// Performance Imports (Stage Mode - on hold)
+// import { StagePerformanceAI } from "./brain/modules/performance/StagePerformanceAI";
+// import { LivePerformanceAI } from "./brain/modules/performance/LivePerformanceAI";
+// import { AudienceAnalyzer } from "./brain/modules/performance/AudienceAnalyzer";
+
+// =============================================================================
 // 🏷️ TYPE DEFINITIONS (Fixed - No more 'any' types!)
 // =============================================================================
 
@@ -133,7 +141,7 @@ export interface AdaptiveRecommendation {
 /**
  * 🧠 MaestroBrain - Core AI Intelligence System
  */
-export class MaestroBrain {
+class MaestroBrain {
   // 🎵 Audio Processing Components
   private guitarAI: GuitarAI;
   private vocalAI: VocalAI;
@@ -149,6 +157,9 @@ export class MaestroBrain {
   private cipherCoordinator: CipherCoordinator;
   private avaCoordinator: AvaCoordinator;
   private musicAppCoordinator: MusicAppCoordinator;
+
+  // 🔮 Future Components (commented out until Stage Mode ready)
+  // private stagePerformanceAI: StagePerformanceAI;
 
   // 🎯 System State
   private isInitialized: boolean = false;
@@ -174,6 +185,9 @@ export class MaestroBrain {
     this.avaCoordinator = new AvaCoordinator(this);
     this.musicAppCoordinator = new MusicAppCoordinator();
 
+    // Future Stage Mode initialization (commented out)
+    // this.stagePerformanceAI = new StagePerformanceAI();
+
     this.sessionId = this.generateSessionId();
     console.log(`✅ MaestroBrain created with session: ${this.sessionId}`);
   }
@@ -198,6 +212,8 @@ export class MaestroBrain {
         this.cipherCoordinator.initialize(),
         this.avaCoordinator.initialize(),
         this.musicAppCoordinator.initialize(),
+        // Future Stage Mode initialization
+        // this.stagePerformanceAI.initialize(),
       ]);
 
       this.isInitialized = true;
@@ -405,6 +421,8 @@ export class MaestroBrain {
         cipherCoordinator: this.isInitialized ? "ready" : "initializing",
         avaCoordinator: this.isInitialized ? "ready" : "initializing",
         musicAppCoordinator: this.isInitialized ? "ready" : "initializing",
+        // Future components
+        // stagePerformanceAI: this.isInitialized ? "ready" : "initializing",
       },
     };
   }
@@ -584,10 +602,122 @@ export class MaestroBrain {
 }
 
 // =============================================================================
+// 🎯 SIMON INTERACTION FUNCTION (For CipherConsole compatibility)
+// =============================================================================
+
+/**
+ * 🤖 Simon interaction function for CipherConsole
+ * Routes simple commands to appropriate responses
+ */
+export async function interactWithSimon(input: string): Promise<{
+  elementSet: string[];
+  focusTarget: string | null;
+  confidenceScore: number;
+}> {
+  try {
+    console.log(`🤖 Simon processing: "${input}"`);
+
+    // Voice/Vocal commands
+    if (
+      input.includes("voice") ||
+      input.includes("vocal") ||
+      input.includes("sing")
+    ) {
+      return {
+        elementSet: ["voice", "tuner", "vocal", "practice"],
+        focusTarget: "vocal",
+        confidenceScore: 0.95,
+      };
+    }
+
+    // Guitar commands
+    if (
+      input.includes("guitar") ||
+      input.includes("chord") ||
+      input.includes("fret")
+    ) {
+      return {
+        elementSet: ["guitar", "tuner", "practice", "theory"],
+        focusTarget: "guitar",
+        confidenceScore: 0.95,
+      };
+    }
+
+    // Tuner commands
+    if (
+      input.includes("tuner") ||
+      input.includes("tune") ||
+      input.includes("pitch")
+    ) {
+      return {
+        elementSet: ["tuner", "audio", "frequency"],
+        focusTarget: "tuner",
+        confidenceScore: 0.98,
+      };
+    }
+
+    // Practice commands
+    if (
+      input.includes("practice") ||
+      input.includes("exercise") ||
+      input.includes("learn")
+    ) {
+      return {
+        elementSet: ["practice", "lesson", "skill"],
+        focusTarget: "practice",
+        confidenceScore: 0.9,
+      };
+    }
+
+    // Jam commands
+    if (
+      input.includes("jam") ||
+      input.includes("play") ||
+      input.includes("session")
+    ) {
+      return {
+        elementSet: ["jam", "session", "collaboration"],
+        focusTarget: "jam",
+        confidenceScore: 0.9,
+      };
+    }
+
+    // Theory commands
+    if (
+      input.includes("theory") ||
+      input.includes("scale") ||
+      input.includes("key")
+    ) {
+      return {
+        elementSet: ["theory", "scale", "harmony"],
+        focusTarget: "theory",
+        confidenceScore: 0.9,
+      };
+    }
+
+    // Default response for general commands
+    console.log(`🤖 Simon: General response for "${input}"`);
+    return {
+      elementSet: ["general", "help", "navigation"],
+      focusTarget: "practice",
+      confidenceScore: 0.75,
+    };
+  } catch (error) {
+    console.error("❌ Simon interaction failed:", error);
+    return {
+      elementSet: ["error", "fallback"],
+      focusTarget: null,
+      confidenceScore: 0.1,
+    };
+  }
+}
+
+// =============================================================================
 // 🔗 PROPER EXPORTS FOR CIPHER CONNECTION
 // =============================================================================
 
-// Default export (for easier importing)
+// CRITICAL: Add these exports at the end (matching your pattern)
+export { MaestroBrain };
 export default MaestroBrain;
 
 console.log("🧠 MaestroBrain module loaded - ready for Cipher integration");

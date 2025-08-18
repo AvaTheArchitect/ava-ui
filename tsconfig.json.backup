@@ -1,0 +1,76 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@/components/*": ["src/components/*"],
+      "@/lib/*": ["src/lib/*"],
+      "@/store/*": ["src/store/*"],
+      "@lib/*": ["lib/*"],
+      "@cipher/*": ["lib/cipher/*"],
+      "@components/*": ["src/components/*"],
+      "@brain/*": ["brain/*", "MaestroBrain"],
+      "@brain/core/*": ["brain/core/*"],
+      "@brain/modules/*": ["brain/modules/*"],
+      "@brain/integrations/*": ["brain/integrations/*"],
+      "@maestro/brain": ["brain/index", "MaestroBrain"]
+    },
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "types": [
+      "react",
+      "react-dom",
+      "jest",
+      "node",
+      "@testing-library/jest-dom"
+    ],
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    "MaestroBrain.ts",
+    "brain/**/*",
+    "src/types/**/*.d.ts",
+    "*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "brain/node_modules",
+    "brain/dist",
+    "backup-*/**/*",
+    "**/backup-*/**/*",
+    "brain/learning-backup/**/*",
+    "backup-quickfix/**/*",
+    "backup-comprehensive-fix/**/*",
+    "backup-final-fixes/**/*",
+    "backup-final-final-fixes/**/*",
+    "backup-duplicate-fix/**/*",
+    "cipher-engine-clean-v2/**/*",
+    "cipher-engine-clean-v2",
+    "**/cipher-engine-*/**/*",
+    "old-*/**/*",
+    "**/old-*/**/*",
+    "archive/**/*",
+    "**/archive/**/*"
+  ]
+}

@@ -97,6 +97,11 @@ export interface Modulation {
   type: "direct" | "pivot" | "chromatic";
 }
 
+// ========================================
+// 🎼 MUSIC THEORY TYPES (New & Enhanced)
+// ========================================
+
+// Instrument Types - Added for SkillTracker compatibility
 export enum InstrumentType {
   GUITAR = "guitar",
   PIANO = "piano",
@@ -105,10 +110,6 @@ export enum InstrumentType {
   DRUMS = "drums",
   GENERAL = "general",
 }
-
-// ========================================
-// 🎼 MUSIC THEORY TYPES (New & Enhanced)
-// ========================================
 
 // Basic music theory types
 export interface Key {

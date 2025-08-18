@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "train-on-file",
+    "result": "training-data",
+    "timestamp": 1754936812244,
+    "context": {
+      "fileName": "MissingBrackets.tsx",
+      "fileType": ".tsx",
+      "codeLength": 503,
+      "hasReactComponents": false,
+      "hasTypeScript": true,
+      "hasAudioComponents": false,
+      "hasGuitarComponents": false
+    }
+  },
+  "timestamp": 1754936812244,
+  "musicApp": true,
+  "dualBrainActive": false
+}

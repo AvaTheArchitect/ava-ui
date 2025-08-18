@@ -8,10 +8,8 @@ import { generateId } from "../../shared/utils";
 import {
   BrainModule,
   UserPreferences,
-  LearningProgress,
   LearningContext,
   LearningEvent,
-  AdaptiveResponse,
   MusicGenre,
 } from "../../shared/types";
 
@@ -456,8 +454,6 @@ export class AdaptiveLearning implements BrainModule {
   private assessDifficultyAdjustment(
     metrics: LearningMetrics
   ): AdaptiveRecommendation | null {
-    const threshold = this.config.difficultyAdjustmentThreshold || 0.2;
-
     // High performance - increase difficulty
     if (
       metrics.accuracy > 0.9 &&
@@ -1086,5 +1082,191 @@ Skills Assessed: ${assessments.length}
 Adaptations Applied: ${this.adaptationHistory.length}
 Learning Efficiency: ${(this.calculateLearningEfficiency() * 100).toFixed(1)}%
     `.trim();
+  }
+
+  // =============================================================================
+  // 🔗 MaestroBrain.ts COMPATIBILITY METHODS
+  // =============================================================================
+
+  /**
+   * 🎯 Record session (MaestroBrain compatibility)
+   * Wrapper for recordLearningSession with simpler interface
+   */
+  recordSession(sessionData: {
+    accuracy: number;
+    speed: number;
+    consistency: number;
+    improvement_rate: number;
+  }): void {
+    // Convert MaestroBrain sessionData to our internal format
+    const metrics: LearningMetrics = {
+      accuracy: sessionData.accuracy,
+      speed: sessionData.speed / 120, // Normalize tempo to 0-1 range
+      consistency: sessionData.consistency,
+      improvementRate: sessionData.improvement_rate,
+      effortLevel: 0.5, // Default value
+      engagement: 0.7, // Default value
+      retentionRate: 0.8, // Default value
+      frustrationLevel: sessionData.accuracy < 0.6 ? 0.6 : 0.3, // Infer from accuracy
+      confidenceLevel: sessionData.accuracy > 0.8 ? 0.8 : 0.5, // Infer from accuracy
+    };
+
+    const context: LearningContext = {
+      userId: "current-user", // Default user ID
+      sessionId: this.sessionId,
+      currentSkill: "general",
+      difficulty: "beginner",
+      preferences: this.userProfile || {
+        favoriteGenres: [],
+        skillLevel: "beginner",
+        instruments: ["guitar"],
+        favoriteKeys: ["C"],
+        practiceGoals: ["improve-technique"],
+      },
+      history: [],
+    };
+
+    // Use existing method asynchronously but don't await (fire and forget)
+    this.recordLearningSession(metrics, context)
+      .then(() => {
+        console.log("✅ Session recorded successfully");
+      })
+      .catch((error) => {
+        console.error("❌ Session recording failed:", error);
+      });
+  }
+
+  /**
+   * 🎯 Get adaptive recommendation (MaestroBrain compatibility)
+   * Returns simple recommendation format expected by MaestroBrain
+   */
+  getAdaptiveRecommendation(): {
+    next_exercises: string[];
+    difficulty_adjustment: number;
+    focus_areas: string[];
+  } {
+    // Get latest metrics if available
+    const latestMetrics = this.sessionHistory[this.sessionHistory.length - 1];
+
+    if (!latestMetrics) {
+      // Return default recommendation if no session history
+      return {
+        next_exercises: [
+          "Basic chord practice",
+          "Rhythm exercises",
+          "Scale practice",
+        ],
+        difficulty_adjustment: 0.0,
+        focus_areas: ["technique", "timing"],
+      };
+    }
+
+    // Generate recommendations based on latest performance
+    const exercises: string[] = [];
+    let difficultyAdjustment = 0.0;
+    const focusAreas: string[] = [];
+
+    // Determine next exercises based on performance
+    if (latestMetrics.accuracy > 0.85) {
+      exercises.push(
+        "Advanced chord progressions",
+        "Complex rhythms",
+        "Improvisation exercises"
+      );
+      difficultyAdjustment = 0.1;
+    } else if (latestMetrics.accuracy > 0.7) {
+      exercises.push(
+        "Intermediate scales",
+        "Chord transitions",
+        "Tempo building"
+      );
+      difficultyAdjustment = 0.05;
+    } else {
+      exercises.push(
+        "Basic chord review",
+        "Slow tempo practice",
+        "Fundamental exercises"
+      );
+      difficultyAdjustment = -0.05;
+    }
+
+    // Determine focus areas based on weak metrics
+    if (latestMetrics.accuracy < 0.7) focusAreas.push("accuracy");
+    if (latestMetrics.consistency < 0.7) focusAreas.push("consistency");
+    if (latestMetrics.speed < 0.6) focusAreas.push("speed");
+    if (latestMetrics.frustrationLevel > 0.6) focusAreas.push("confidence");
+
+    // Default focus areas if none identified
+    if (focusAreas.length === 0) {
+      focusAreas.push("technique", "timing");
+    }
+
+    return {
+      next_exercises: exercises,
+      difficulty_adjustment: difficultyAdjustment,
+      focus_areas: focusAreas,
+    };
+  }
+
+  /**
+   * 🎯 Update skill progress (helper for recordSession)
+   * Provides additional interface for skill tracking
+   */
+  async updateSkillProgress(
+    userId: string,
+    skill: string,
+    performance: number
+  ): Promise<void> {
+    // Create basic metrics from performance score
+    const metrics: LearningMetrics = {
+      accuracy: performance,
+      speed: 0.7,
+      consistency: performance,
+      improvementRate: 0.05,
+      effortLevel: 0.5,
+      engagement: 0.7,
+      retentionRate: 0.8,
+      frustrationLevel: performance < 0.6 ? 0.7 : 0.3,
+      confidenceLevel: performance > 0.7 ? 0.8 : 0.5,
+    };
+
+    const context: LearningContext = {
+      userId,
+      sessionId: this.sessionId,
+      currentSkill: skill,
+      difficulty: "beginner",
+      preferences: this.userProfile || {
+        favoriteGenres: [],
+        skillLevel: "beginner",
+        instruments: ["guitar"],
+        favoriteKeys: ["C"],
+        practiceGoals: ["improve-technique"],
+      },
+      history: [],
+    };
+
+    await this.recordLearningSession(metrics, context);
+  }
+
+  /**
+   * 🎯 Generate recommendations (PersonalizationEngine compatibility)
+   * Provides recommendation interface expected by other modules
+   */
+  async generateRecommendations(
+    userId: string,
+    skillLevel: string,
+    options: { context?: string }
+  ): Promise<{
+    exercises?: { name: string }[];
+    focusAreas?: string[];
+    difficulty?: number;
+  }> {
+    const recommendation = this.getAdaptiveRecommendation();
+
+    return {
+      exercises: recommendation.next_exercises.map((name) => ({ name })),
+      focusAreas: recommendation.focus_areas,
+      difficulty: 0.5 + recommendation.difficulty_adjustment,
+    };
   }
 }

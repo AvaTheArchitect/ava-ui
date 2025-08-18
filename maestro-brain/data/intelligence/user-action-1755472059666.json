@@ -1,0 +1,29 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "songsterr-audio-sync-pattern",
+    "context": {
+      "result": "success",
+      "context": {
+        "patternId": "audio-pattern-1755472051471-47",
+        "complexity": 4,
+        "tags": [
+          "audio",
+          "playback",
+          "sync",
+          "timing",
+          "svg"
+        ],
+        "confidence": 0.85,
+        "sourceFile": "songsterr-audio-patterns",
+        "handlerName": "DigestAndLearn"
+      }
+    },
+    "timestamp": 1755472059664,
+    "frequency": 1
+  },
+  "timestamp": 1755472059664,
+  "musicApp": true,
+  "dualBrainActive": false
+}

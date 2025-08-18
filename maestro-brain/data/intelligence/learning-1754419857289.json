@@ -1,0 +1,17 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "getPersonalizedSuggestions",
+    "result": "success",
+    "timestamp": 1754419857201,
+    "context": {
+      "args": 0,
+      "timestamp": 1754419857198,
+      "commandName": "getPersonalizedSuggestions"
+    }
+  },
+  "timestamp": 1754419857201,
+  "musicApp": true,
+  "dualBrainActive": false
+}

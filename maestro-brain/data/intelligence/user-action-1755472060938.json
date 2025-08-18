@@ -1,0 +1,22 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "digest-training-complete",
+    "context": {
+      "result": "success",
+      "context": {
+        "patternsLearned": 2,
+        "duration": 10179,
+        "fileType": ".txt",
+        "handlerName": "TrainBrainRunner",
+        "sessionId": "digest-1755472050744"
+      }
+    },
+    "timestamp": 1755472060926,
+    "frequency": 1
+  },
+  "timestamp": 1755472060926,
+  "musicApp": true,
+  "dualBrainActive": false
+}

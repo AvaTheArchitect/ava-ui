@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "analyzeGuitarComponentsHandler.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1754505186821,
+    "environment": "1.102.3",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1754505186822,
+  "musicApp": true,
+  "dualBrainActive": false
+}

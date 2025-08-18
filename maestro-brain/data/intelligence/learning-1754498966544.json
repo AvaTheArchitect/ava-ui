@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "createSongwritersStudioHandler.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1754498966398,
+    "environment": "1.102.3",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1754498966399,
+  "musicApp": true,
+  "dualBrainActive": false
+}

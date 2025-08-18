@@ -280,11 +280,52 @@ export { MusicTheoryEngine } from "./modules/composition";
 export { ChordAnalyzer } from "./modules/guitar/ChordAnalyzer";
 export { chordAnalyzer } from "./modules/guitar/ChordAnalyzer";
 
-// Keep wildcard exports for modules without conflicts
-export * from "./modules/learning";
+// Keep wildcard exports for modules without conflicts (removed learning due to conflicts)
+// export * from "./modules/learning";  // Commented out due to naming conflicts
 export * from "./integrations/cipher";
 export * from "./integrations/external";
-export * from "./integrations/maestro";
+
+// =============================================================================
+// 📚 LEARNING MODULE EXPORTS (Specific exports to avoid conflicts)
+// =============================================================================
+
+// Export specific learning components that are commonly used
+export { AdaptiveLearning } from "./modules/learning/AdaptiveLearning";
+export { PatternRecognizer } from "./modules/learning/PatternRecognizer";
+export { PersonalizationEngine } from "./modules/learning/PersonalizationEngine";
+export { PracticeAnalyzer } from "./modules/learning/PracticeAnalyzer";
+export { SkillTracker } from "./modules/learning/SkillTracker";
+
+// =============================================================================
+// 🧠 CORE BRAIN COMPONENTS (Now has index.ts)
+// =============================================================================
+
+// Export core brain systems (now that core/index.ts exists)
+export * from "./core";
+
+// =============================================================================
+// 🤝 MAESTRO COORDINATORS (MISSING EXPORTS ADDED)
+// =============================================================================
+
+// Export specific coordinators that were missing
+export { TeamCoordinator } from "./integrations/maestro/TeamCoordinator";
+export { ModuleCoordinator } from "./integrations/maestro/ModuleCoordinator";
+export { MusicAppCoordinator } from "./integrations/maestro/MusicAppCoordinator";
+
+// Note: Removed wildcard export to avoid naming conflicts
+
+// =============================================================================
+// ⚠️ REMOVED EXPORTS (Due to missing index.ts files or conflicts)
+// =============================================================================
+// The following exports were removed due to TypeScript errors:
+// - "./modules/analysis" (no index.ts file)
+// - "./modules/collaboration" (no index.ts file)
+// - "./interfaces" (causing conflicts)
+// - "./integrations/maestro" wildcard (naming conflicts)
+// - "./modules/learning" wildcard (naming conflicts)
+//
+// ✅ ADDED BACK:
+// - "./core" (created missing index.ts file)
 
 // =============================================================================
 // 🔧 BRAIN CONFIGURATION
@@ -337,4 +378,6 @@ if (defaultBrainConfig.autoCleanup) {
   }, 1000 * 60 * 10); // Check every 10 minutes
 }
 
-console.log("✅ Brain module fully loaded - all exports ready");
+console.log(
+  "✅ Brain module fully loaded - selective exports ready (avoiding conflicts)"
+);

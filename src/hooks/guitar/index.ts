@@ -4,3 +4,4 @@
 
 export * from './useGuitar';
 export * from './useGuitarAnalyzer';
+export * from "./display";
