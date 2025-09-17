@@ -1,0 +1,24 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "file-analysis-success",
+    "context": {
+      "result": "success",
+      "context": {
+        "handlerName": "showRouteTreeHandler",
+        "version": "v20-LIGHTWEIGHT",
+        "filePath": "/Users/brettbolzenthal/Desktop/maestro-ai/cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/shared/templateGenerators.ts",
+        "fileName": "templateGenerators.ts",
+        "extension": ".ts",
+        "contentLength": 38576,
+        "pattern": "healthy-file"
+      }
+    },
+    "timestamp": 1755738056349,
+    "frequency": 1
+  },
+  "timestamp": 1755738056349,
+  "musicApp": true,
+  "dualBrainActive": false
+}

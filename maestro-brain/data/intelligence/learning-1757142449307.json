@@ -1,0 +1,17 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "quickFileFix",
+    "result": "success",
+    "timestamp": 1757142449288,
+    "context": {
+      "args": 0,
+      "timestamp": 1757142449287,
+      "commandName": "quickFileFix"
+    }
+  },
+  "timestamp": 1757142449288,
+  "musicApp": true,
+  "dualBrainActive": false
+}

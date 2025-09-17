@@ -1,11 +1,11 @@
 {
   "type": "current-file-analysis",
   "data": {
-    "fileName": "/Users/brettbolzenthal/Desktop/maestro-ai/practice",
-    "fileType": "Unknown",
-    "issueCount": 0,
-    "complexity": 0
+    "fileName": "/Users/brettbolzenthal/Desktop/maestro-ai/src/notation/parsers/validationEngine.ts",
+    "fileType": "TypeScript",
+    "issueCount": 1,
+    "complexity": 7
   },
-  "timestamp": 1752523517013,
+  "timestamp": 1756747966536,
   "patterns": []
 }

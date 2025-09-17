@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "types.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1758048730955,
+    "environment": "1.104.0",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1758048730956,
+  "musicApp": true,
+  "dualBrainActive": false
+}

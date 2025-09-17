@@ -1,0 +1,38 @@
+{
+  "title": "I Won't Forget You",
+  "artist": "Poison",
+   "audioFile": "/audio/songs/poison-i-wont-forget-you/audio.mp3",
+  "album": "Look What the Cat Dragged In",
+  "year": 1986,
+  "bpm": 120,
+  "key": "G",
+  "timeSignature": [4, 4],
+  "duration": 248,
+  "difficulty": "intermediate",
+  "genre": "Rock",
+  "tuning": "EADGBE",
+  "capo": 0,
+  "tracks": {
+    "guitar-1": {
+      "name": "Lead Guitar",
+      "difficulty": "intermediate",
+      "techniques": ["bends", "hammer-ons", "pull-offs", "vibrato"]
+    },
+    "guitar-2": {
+      "name": "Rhythm Guitar",
+      "difficulty": "beginner",
+      "techniques": ["power-chords", "palm-muting"]
+    }
+  },
+  "songStructure": [
+    { "section": "intro", "measures": [1, 8] },
+    { "section": "verse", "measures": [9, 24] },
+    { "section": "chorus", "measures": [25, 40] },
+    { "section": "verse", "measures": [41, 56] },
+    { "section": "chorus", "measures": [57, 72] },
+    { "section": "solo", "measures": [73, 88] },
+    { "section": "chorus", "measures": [89, 104] },
+    { "section": "outro", "measures": [105, 112] }
+  ],
+  "notes": "Classic 80s rock ballad with moderate difficulty lead parts"
+}

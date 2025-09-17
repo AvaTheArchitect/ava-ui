@@ -1,0 +1,32 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "file-analysis",
+    "context": {
+      "result": "success",
+      "context": {
+        "fileName": "templateGenerators.ts",
+        "confidence": 75,
+        "complexity": 263,
+        "issuesFound": 6,
+        "tsIssuesFound": 4,
+        "patternIssuesFound": 2,
+        "canAutoFix": true,
+        "fileType": "TypeScript",
+        "suggestionsGenerated": 13,
+        "analysisTimestamp": 1755933750774,
+        "handlerName": "analyzeCurrentFile",
+        "version": "v20-UNIFIED",
+        "analysisType": "real-time-file-analysis",
+        "learningSource": "crown-jewel-handler",
+        "timestamp": "2025-08-23T07:22:30.778Z"
+      }
+    },
+    "timestamp": 1755933750778,
+    "frequency": 1
+  },
+  "timestamp": 1755933750778,
+  "musicApp": true,
+  "dualBrainActive": false
+}

@@ -1,0 +1,17 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "action": "showRouteTree",
+    "result": "success",
+    "timestamp": 1755738460958,
+    "context": {
+      "args": 0,
+      "timestamp": 1755738053299,
+      "commandName": "showRouteTree"
+    }
+  },
+  "timestamp": 1755738460962,
+  "musicApp": true,
+  "dualBrainActive": false
+}

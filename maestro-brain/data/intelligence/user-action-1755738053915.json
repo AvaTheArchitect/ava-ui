@@ -1,0 +1,24 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "file-analysis-success",
+    "context": {
+      "result": "success",
+      "context": {
+        "handlerName": "showRouteTreeHandler",
+        "version": "v20-LIGHTWEIGHT",
+        "filePath": "/Users/brettbolzenthal/Desktop/maestro-ai/cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/brain/training/autofixer/broken/SyntaxErrors.tsx",
+        "fileName": "SyntaxErrors.tsx",
+        "extension": ".tsx",
+        "contentLength": 259,
+        "pattern": "healthy-file"
+      }
+    },
+    "timestamp": 1755738053914,
+    "frequency": 1
+  },
+  "timestamp": 1755738053914,
+  "musicApp": true,
+  "dualBrainActive": false
+}

@@ -101,8 +101,8 @@ const EnhancedTabContent: React.FC = () => {
                         <button
                             onClick={() => handleTabChange('sample')}
                             className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${selectedTab === 'sample'
-                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
-                                    : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
+                                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
+                                : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
                                 }`}
                         >
                             🎸 Guitar Tab (Lead)
@@ -110,8 +110,8 @@ const EnhancedTabContent: React.FC = () => {
                         <button
                             onClick={() => handleTabChange('chords')}
                             className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${selectedTab === 'chords'
-                                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
-                                    : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
+                                ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                                : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
                                 }`}
                         >
                             🎼 Chord Progression
@@ -176,8 +176,8 @@ const EnhancedTabContent: React.FC = () => {
                             onClick={play}
                             disabled={!state.isLoaded || state.isPlaying}
                             className={`py-3 px-6 rounded-lg font-semibold transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${!state.isLoaded
-                                    ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
+                                ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
                                 }`}
                         >
                             ▶️ Play Guitar Track
@@ -203,8 +203,8 @@ const EnhancedTabContent: React.FC = () => {
                             onClick={handleLoopToggle}
                             disabled={!state.isLoaded}
                             className={`py-3 px-4 rounded-lg font-semibold transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${loop
-                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
-                                    : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
+                                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
+                                : 'bg-gradient-to-r from-gray-500/50 to-gray-600/50 text-blue-200'
                                 }`}
                         >
                             🔄 Loop: {loop ? 'ON' : 'OFF'}

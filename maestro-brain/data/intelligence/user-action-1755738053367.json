@@ -1,0 +1,23 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "ecosystem-detection-start",
+    "context": {
+      "result": "success",
+      "context": {
+        "handlerName": "showRouteTreeHandler",
+        "version": "v20-LIGHTWEIGHT",
+        "currentPath": "/Users/brettbolzenthal/Desktop/maestro-ai/cipher-engine-clean-v2",
+        "maestroAiRoot": "/Users/brettbolzenthal/Desktop/maestro-ai",
+        "workspaceRoot": "/Users/brettbolzenthal/Desktop/maestro-ai/cipher-engine-clean-v2",
+        "configCount": 3
+      }
+    },
+    "timestamp": 1755738053301,
+    "frequency": 1
+  },
+  "timestamp": 1755738053301,
+  "musicApp": true,
+  "dualBrainActive": false
+}

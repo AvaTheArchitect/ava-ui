@@ -138,8 +138,8 @@ const EnhancedSVGTestContent: React.FC = () => {
                                 key={song.id}
                                 onClick={() => handleSongChange(song.id)}
                                 className={`p-4 rounded-lg border transition-all text-left ${selectedSong.id === song.id
-                                        ? 'bg-orange-500/20 border-orange-500 text-orange-400'
-                                        : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50'
+                                    ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                                    : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50'
                                     }`}
                             >
                                 <div className="font-bold text-lg">{song.title}</div>

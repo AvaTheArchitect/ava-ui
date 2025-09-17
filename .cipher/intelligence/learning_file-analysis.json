@@ -2,20 +2,31 @@
   "type": "file-analysis",
   "data": {
     "analysis": {
-      "issues": [],
-      "suggestions": [
-        "🧠 Enhanced with CipherBrain intelligence",
-        "✅ File type  now supported for analysis"
+      "issues": [
+        "Using \"any\" type - consider more specific typing"
       ],
-      "fileType": "Unknown",
-      "complexity": 0,
-      "canAutoFix": false
+      "suggestions": [
+        "🎧 Optimize audio buffer settings",
+        "🎧 Add real-time frequency analysis",
+        "🎧 Optimize audio buffer settings",
+        "🎧 Add real-time frequency analysis",
+        "🎧 Consider audio worklet implementation",
+        "🧠 Enhanced with CipherBrain + MaestroBrain intelligence"
+      ],
+      "fileType": "TypeScript",
+      "complexity": 7,
+      "canAutoFix": true,
+      "originalCode": "items.map(item => expensiveOperation(item))",
+      "optimizedCode": "useMemo(() => items.map(item => expensiveOperation(item)), [items])",
+      "confidence": 0.75,
+      "timestamp": 1756747966502,
+      "source": "/Users/brettbolzenthal/Desktop/maestro-ai/src/notation/parsers/validationEngine.ts"
     },
-    "fileName": "/Users/brettbolzenthal/Desktop/maestro-ai/practice",
-    "fileType": "Unknown"
+    "fileName": "/Users/brettbolzenthal/Desktop/maestro-ai/src/notation/parsers/validationEngine.ts",
+    "fileType": "TypeScript"
   },
-  "timestamp": 1752523516969,
+  "timestamp": 1756747966503,
   "patterns": [
-    "file_type_unknown"
+    "file_type_typescript"
   ]
 }

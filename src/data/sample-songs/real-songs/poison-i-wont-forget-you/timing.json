@@ -1,0 +1,40 @@
+{
+  "bpm": 120,
+  "beatsPerMeasure": 4,
+  "totalMeasures": 112,
+  "audioFile": "audio.mp3",
+  "syncPoints": [
+    { "measure": 1, "audioTime": 0.0, "description": "Song start" },
+    { "measure": 9, "audioTime": 16.0, "description": "Verse 1 start" },
+    { "measure": 25, "audioTime": 48.0, "description": "Chorus 1 start" },
+    { "measure": 41, "audioTime": 80.0, "description": "Verse 2 start" },
+    { "measure": 57, "audioTime": 112.0, "description": "Chorus 2 start" },
+    { "measure": 73, "audioTime": 144.0, "description": "Guitar solo start" },
+    { "measure": 89, "audioTime": 176.0, "description": "Final chorus start" },
+    { "measure": 105, "audioTime": 208.0, "description": "Outro start" }
+  ],
+  "measureMarkers": [
+    { "measure": 1, "beat": 1, "audioTime": 0.0 },
+    { "measure": 1, "beat": 2, "audioTime": 0.5 },
+    { "measure": 1, "beat": 3, "audioTime": 1.0 },
+    { "measure": 1, "beat": 4, "audioTime": 1.5 },
+    { "measure": 2, "beat": 1, "audioTime": 2.0 },
+    { "measure": 2, "beat": 2, "audioTime": 2.5 },
+    { "measure": 2, "beat": 3, "audioTime": 3.0 },
+    { "measure": 2, "beat": 4, "audioTime": 3.5 }
+  ],
+  "tempoChanges": [
+    { "measure": 1, "bpm": 120, "audioTime": 0.0 },
+    {
+      "measure": 73,
+      "bpm": 125,
+      "audioTime": 144.0,
+      "description": "Solo section slightly faster"
+    }
+  ],
+  "notes": {
+    "syncMethod": "Manual timing with audio editor",
+    "precision": "Beat-level accuracy",
+    "lastUpdated": "2025-09-16"
+  }
+}

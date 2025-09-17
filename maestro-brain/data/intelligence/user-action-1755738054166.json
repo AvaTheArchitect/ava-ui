@@ -1,0 +1,24 @@
+{
+  "source": "cipher",
+  "type": "user-action",
+  "data": {
+    "action": "file-analysis-success",
+    "context": {
+      "result": "success",
+      "context": {
+        "handlerName": "showRouteTreeHandler",
+        "version": "v20-LIGHTWEIGHT",
+        "filePath": "/Users/brettbolzenthal/Desktop/maestro-ai/cipher-engine-clean-v2/.vscode-extensions/cipher-autonomous-dev/src/brain/training/autofixer/results/MissingBrackets-attempt-1755291798156.tsx",
+        "fileName": "MissingBrackets-attempt-1755291798156.tsx",
+        "extension": ".tsx",
+        "contentLength": 1398,
+        "pattern": "healthy-file"
+      }
+    },
+    "timestamp": 1755738054165,
+    "frequency": 1
+  },
+  "timestamp": 1755738054165,
+  "musicApp": true,
+  "dualBrainActive": false
+}

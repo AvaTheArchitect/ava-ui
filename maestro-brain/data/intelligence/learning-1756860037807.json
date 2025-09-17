@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "OrchestratorBrainSystem.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1756860037773,
+    "environment": "1.103.2",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1756860037774,
+  "musicApp": true,
+  "dualBrainActive": false
+}

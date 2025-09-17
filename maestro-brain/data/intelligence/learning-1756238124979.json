@@ -1,0 +1,21 @@
+{
+  "source": "cipher",
+  "type": "learning",
+  "data": {
+    "userId": "cipher-user",
+    "action": "file-changed",
+    "context": {
+      "fileName": "museScore.ts",
+      "fileType": ".ts"
+    },
+    "timestamp": 1756238124965,
+    "environment": "1.103.2",
+    "metadata": {
+      "version": "v9",
+      "workspace": "cipher-engine-clean-v2"
+    }
+  },
+  "timestamp": 1756238124966,
+  "musicApp": true,
+  "dualBrainActive": false
+}
