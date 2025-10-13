@@ -1,0 +1,406 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { PlaybackProvider, usePlaybackControls } from '@/hooks/audio/playback/usePlaybackControls';
+import { WorkingAudioController } from '@/components/audio/controls/WorkingAudioController';
+import HorizontalTabDisplay from '@/components/guitar/display/HorizontalTabDisplay';
+import { TabMeasure, TabNote } from '@/lib/tab-parsers/basicTabParser';
+
+const GP4TestContent: React.FC = () => {
+    const { state, play, pause, stop, seek } = usePlaybackControls();
+    const [convertedMeasures, setConvertedMeasures] = useState<TabMeasure[]>([]);
+    const [songMetadata, setSongMetadata] = useState<any>(null);
+    const [selectedTrack, setSelectedTrack] = useState<'guitar-1' | 'guitar-2'>('guitar-1');
+    const [loading, setLoading] = useState<boolean>(true);
+    const [error, setError] = useState<string | null>(null);
+    const [parseDetails, setParseDetails] = useState<string>('');
+
+    const loadGP4File = async (trackName: 'guitar-1' | 'guitar-2') => {
+        try {
+            setLoading(true);
+            setError(null);
+            setParseDetails(`Step 1: Loading ${trackName}.gp4...`);
+            console.log(`Starting load for ${trackName}.gp4`);
+
+            const response = await fetch(`/data/sample-songs/real-songs/poison-i-wont-forget-you/${trackName}.gp4`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: Failed to load ${trackName}.gp4`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+
+            console.log(`Step 2: GP4 loaded: ${uint8Array.byteLength} bytes`);
+            setParseDetails(`Step 2: File loaded (${uint8Array.byteLength} bytes), parsing...`);
+
+            const parsePromise = parseWithAlphaTab(uint8Array);
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Parse timeout after 10 seconds')), 10000)
+            );
+
+            const score: any = await Promise.race([parsePromise, timeoutPromise]);
+
+            console.log('Step 3: Score parsed:', score);
+            setParseDetails(`Step 3: Parsing complete, converting to measures...`);
+
+            const measures = convertScoreToMeasures(score, trackName);
+            setConvertedMeasures(measures);
+
+            setSongMetadata({
+                title: 'I Won\'t Forget You',
+                artist: score.artist || 'Poison',
+                tempo: score.tempo || 103,
+                album: score.album || 'Open Up and Say... Ahh!',
+                trackCount: score.tracks?.length || 1
+            });
+
+            console.log(`Step 4: Success - ${measures.length} measures converted`);
+            setParseDetails(`Step 4: Complete - ${measures.length} measures loaded`);
+            setLoading(false);
+
+        } catch (err) {
+            console.error('GP4 loading error:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load GP4 file');
+            setParseDetails(`Error at current step: ${err}`);
+            setLoading(false);
+        }
+    };
+
+    const parseWithAlphaTab = (data: Uint8Array): Promise<any> => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                console.log('Attempting AlphaTab parse...');
+
+                const tempDiv = document.createElement('div');
+                tempDiv.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;';
+                document.body.appendChild(tempDiv);
+
+                const { AlphaTabApi, Settings } = await import('@coderline/alphatab');
+
+                const settings = new Settings();
+                settings.core.engine = 'svg';
+                settings.core.enableLazyLoading = false;
+
+                console.log('Creating AlphaTab instance...');
+                const api = new AlphaTabApi(tempDiv, settings);
+
+                let resolved = false;
+
+                api.scoreLoaded.on((score) => {
+                    console.log('AlphaTab scoreLoaded event fired');
+                    if (!resolved) {
+                        resolved = true;
+                        document.body.removeChild(tempDiv);
+                        resolve(score);
+                    }
+                });
+
+                api.error.on((error) => {
+                    console.error('AlphaTab error event fired:', error);
+                    if (!resolved) {
+                        resolved = true;
+                        document.body.removeChild(tempDiv);
+                        reject(new Error(`AlphaTab error: ${error}`));
+                    }
+                });
+
+                console.log('Loading data into AlphaTab...');
+                api.load(data);
+
+            } catch (err) {
+                console.error('AlphaTab setup error:', err);
+                reject(err);
+            }
+        });
+    };
+
+    const convertScoreToMeasures = (score: any, trackName: string): TabMeasure[] => {
+        const measures: TabMeasure[] = [];
+
+        console.log('Converting score to measures. Score object:', score);
+
+        if (!score.tracks || score.tracks.length === 0) {
+            console.warn('No tracks in score');
+            return measures;
+        }
+
+        // FIXED: Select correct track based on selectedTrack
+        const trackIndex = selectedTrack === 'guitar-1' ? 0 : Math.min(1, score.tracks.length - 1);
+        const track = score.tracks[trackIndex];
+
+        console.log(`Using track ${trackIndex + 1} of ${score.tracks.length}: ${track.name || 'Unnamed'}`);
+
+        const beatDuration = 60 / (score.tempo || 120);
+
+        if (!track.staves || track.staves.length === 0) {
+            console.warn('No staves in track');
+            return measures;
+        }
+
+        const staff = track.staves[0];
+
+        staff.bars.forEach((bar: any, barIndex: number) => {
+            const measureStartTime = barIndex * (beatDuration * 4);
+            const measureEndTime = measureStartTime + (beatDuration * 4);
+            const notes: TabNote[] = [];
+
+            if (bar.voices) {
+                bar.voices.forEach((voice: any) => {
+                    if (voice.beats) {
+                        voice.beats.forEach((beat: any, beatIndex: number) => {
+                            const beatTime = measureStartTime + (beatIndex * beatDuration);
+
+                            if (beat.notes) {
+                                beat.notes.forEach((note: any) => {
+                                    notes.push({
+                                        fret: note.fret,
+                                        string: note.string + 1,
+                                        time: beatTime,
+                                        duration: beatDuration
+                                    });
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+
+            measures.push({
+                id: `measure-${barIndex + 1}`,
+                timeSignature: [
+                    bar.masterBar?.timeSignatureNumerator || 4,
+                    bar.masterBar?.timeSignatureDenominator || 4
+                ] as [number, number],
+                notes: notes.sort((a, b) => a.time - b.time),
+                startTime: measureStartTime,
+                endTime: measureEndTime
+            });
+        });
+
+        console.log(`Converted ${measures.length} measures with ${measures.reduce((t, m) => t + m.notes.length, 0)} total notes`);
+        return measures;
+    };
+
+    useEffect(() => {
+        console.log('Track changed to:', selectedTrack);
+        loadGP4File(selectedTrack);
+    }, [selectedTrack]);
+
+    const handleTrackChange = (track: 'guitar-1' | 'guitar-2') => {
+        if (track !== selectedTrack) {
+            setSelectedTrack(track);
+            stop();
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-8 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-orange-500 mb-4"></div>
+                    <h2 className="text-2xl font-bold text-orange-500">Parsing GP4 File...</h2>
+                    <p className="text-blue-200/80 mb-4">{parseDetails}</p>
+                    <p className="text-sm text-gray-400">Check browser console (F12) for detailed logs</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-8 flex items-center justify-center">
+                <div className="text-center max-w-2xl">
+                    <h2 className="text-2xl font-bold text-red-500 mb-4">GP4 Parse Error</h2>
+                    <p className="text-red-300 mb-4">{error}</p>
+                    <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4 mb-4 text-left">
+                        <h3 className="font-bold text-yellow-400 mb-2">Debug Info:</h3>
+                        <p className="text-yellow-300 text-sm whitespace-pre-wrap">{parseDetails}</p>
+                    </div>
+                    <button
+                        onClick={() => loadGP4File(selectedTrack)}
+                        className="px-6 py-3 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-8">
+            <div className="max-w-7xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <h1 className="text-4xl font-bold mb-4 text-orange-500">
+                        GP4 File Player
+                    </h1>
+                    <p className="text-xl text-blue-200/80 mb-4">
+                        {songMetadata ? `${songMetadata.title} by ${songMetadata.artist}` : 'Loading...'}
+                    </p>
+                    <div className="flex items-center justify-center gap-4 text-sm">
+                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${state.isLoaded ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
+                            }`}>
+                            <div className={`w-2 h-2 rounded-full ${state.isLoaded ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
+                                }`}></div>
+                            {state.isLoaded ? 'Audio Ready' : 'Loading...'}
+                        </div>
+                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${state.isPlaying ? 'bg-orange-500/20 text-orange-400' : 'bg-gray-500/20 text-gray-400'
+                            }`}>
+                            <div className={`w-2 h-2 rounded-full ${state.isPlaying ? 'bg-orange-400 animate-pulse' : 'bg-gray-400'
+                                }`}></div>
+                            {state.isPlaying ? 'Playing' : 'Paused'}
+                        </div>
+                        <div className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-400">
+                            GP4 Format
+                        </div>
+                    </div>
+                </div>
+
+                {/* Audio Controller - Always Visible */}
+                <WorkingAudioController audioUrl="/audio/songs/poison-i-wont-forget-you/audio.mp3" />
+
+                {/* Track Selection */}
+                <div className="bg-gray-800/80 rounded-xl p-6 mb-8 border border-green-500/30">
+                    <h2 className="text-2xl font-bold text-green-500 mb-4">Track Selection</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button
+                            onClick={() => handleTrackChange('guitar-1')}
+                            className={`p-4 rounded-lg border transition-all text-left ${selectedTrack === 'guitar-1'
+                                    ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                                    : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50'
+                                }`}
+                        >
+                            <div className="font-bold text-lg">Guitar 1 - Lead</div>
+                            <div className="text-sm opacity-80 mt-1">Lead guitar from GP4</div>
+                        </button>
+
+                        <button
+                            onClick={() => handleTrackChange('guitar-2')}
+                            className={`p-4 rounded-lg border transition-all text-left ${selectedTrack === 'guitar-2'
+                                    ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                                    : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50'
+                                }`}
+                        >
+                            <div className="font-bold text-lg">Guitar 2 - Rhythm</div>
+                            <div className="text-sm opacity-80 mt-1">Rhythm guitar from GP4</div>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Playback Controls - Like document 21 */}
+                <div className="bg-gray-800/80 rounded-xl p-4 mb-8 border border-blue-500/30">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={play}
+                                disabled={!state.isLoaded || state.isPlaying}
+                                className="px-6 py-3 bg-green-500/20 text-green-400 rounded-lg border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 font-bold"
+                            >
+                                ▶️ Play
+                            </button>
+
+                            <button
+                                onClick={pause}
+                                disabled={!state.isPlaying}
+                                className="px-6 py-3 bg-yellow-500/20 text-yellow-400 rounded-lg border border-yellow-500/30 hover:bg-yellow-500/30 disabled:opacity-50 font-bold"
+                            >
+                                ⏸️ Pause
+                            </button>
+
+                            <button
+                                onClick={stop}
+                                disabled={!state.isLoaded}
+                                className="px-6 py-3 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50 font-bold"
+                            >
+                                ⏹️ Stop
+                            </button>
+                        </div>
+
+                        {/* Time Display */}
+                        <div className="flex items-center gap-4">
+                            <div className="px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 font-mono text-lg">
+                                {Math.floor(state.currentTime / 60)}:{Math.floor(state.currentTime % 60).toString().padStart(2, '0')} /
+                                {Math.floor(state.duration / 60)}:{Math.floor(state.duration % 60).toString().padStart(2, '0')}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="mt-4">
+                        <div
+                            className="w-full h-4 bg-gray-700 rounded-full overflow-hidden cursor-pointer"
+                            onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                                if (!state.isLoaded) return;
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const x = e.clientX - rect.left;
+                                const percent = x / rect.width;
+                                const time = percent * state.duration;
+                                seek(time);
+                            }}
+                        >
+                            <div
+                                className="h-full bg-gradient-to-r from-orange-500 to-blue-500 transition-all duration-100"
+                                style={{
+                                    width: state.duration > 0 ? `${(state.currentTime / state.duration) * 100}%` : '0%'
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Parse Results */}
+                {songMetadata && (
+                    <div className="bg-blue-500/20 rounded-xl p-4 mb-6 border border-blue-500/30">
+                        <h3 className="text-lg font-bold text-blue-400 mb-2">Parse Results</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                                <span className="text-blue-300">Format:</span>
+                                <div className="text-white font-mono">GP4</div>
+                            </div>
+                            <div>
+                                <span className="text-blue-300">Measures:</span>
+                                <div className="text-white font-mono">{convertedMeasures.length}</div>
+                            </div>
+                            <div>
+                                <span className="text-blue-300">Notes:</span>
+                                <div className="text-white font-mono">
+                                    {convertedMeasures.reduce((t, m) => t + m.notes.length, 0)}
+                                </div>
+                            </div>
+                            <div>
+                                <span className="text-blue-300">BPM:</span>
+                                <div className="text-white font-mono">{songMetadata.tempo}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* HorizontalTabDisplay with auto-scroll */}
+                {convertedMeasures.length > 0 && (
+                    <div className="mb-8">
+                        <HorizontalTabDisplay
+                            measures={convertedMeasures}
+                            songTitle={songMetadata?.title || 'I Won\'t Forget You'}
+                            artist={songMetadata?.artist || 'Poison'}
+                            bpm={songMetadata?.tempo || 103}
+                            timeSignature={[4, 4]}
+                            showCursor={true}
+                            measuresPerLine={4}
+                            width={1200}
+                        />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default function GP4TestPage() {
+    return (
+        <PlaybackProvider>
+            <GP4TestContent />
+        </PlaybackProvider>
+    );
+}
