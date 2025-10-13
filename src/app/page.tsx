@@ -287,7 +287,7 @@ export default function MaestroApp(): React.JSX.Element {
         singers: { title: "Singer's Corner", desc: 'Vocal training & exercises' },
         jam: { title: 'Jam Zone', desc: 'Interactive jam sessions' },
         lessons: { title: "Teachers' Lessons", desc: 'Connect with instructors' },
-        build: { title: 'Build a Song', desc: 'Composition tools' },
+        build: { title: "Songwriter's Studio", desc: 'Composition & songwriting tools' },
         'ai-tab': { title: 'AI Stem & Tab', desc: 'AI-powered transcription' }
       },
       nav: {
@@ -306,7 +306,7 @@ export default function MaestroApp(): React.JSX.Element {
         singers: { title: 'Rincón del Cantante', desc: 'Entrenamiento vocal y ejercicios' },
         jam: { title: 'Zona de Jam', desc: 'Sesiones de jam interactivas' },
         lessons: { title: 'Lecciones de Maestros', desc: 'Conecta con instructores' },
-        build: { title: 'Construir una Canción', desc: 'Herramientas de composición' },
+        build: { title: 'Estudio de Compositores', desc: 'Herramientas de composición' },
         'ai-tab': { title: 'IA Stem y Tab', desc: 'Transcripción con IA' }
       },
       nav: {
@@ -417,7 +417,7 @@ export default function MaestroApp(): React.JSX.Element {
     }
   }
 
-  // Main modules configuration
+  // Main modules configuration - UPDATED with synth-player route
   const modules = [
     {
       id: 'practice' as ModuleId,
@@ -425,7 +425,7 @@ export default function MaestroApp(): React.JSX.Element {
       icon: Guitar,
       color: getModuleColor('practice'),
       description: t.modules.practice.desc,
-      route: null
+      route: '/synth-player' // ✅ LINKED TO SYNTH PLAYER!
     },
     {
       id: 'singers' as ModuleId,
@@ -453,7 +453,7 @@ export default function MaestroApp(): React.JSX.Element {
     },
     {
       id: 'build' as ModuleId,
-      title: t.modules.build.title,
+      title: t.modules.build.title, // ✅ NOW "Songwriter's Studio"
       icon: Wrench,
       color: getModuleColor('build'),
       description: t.modules.build.desc,
