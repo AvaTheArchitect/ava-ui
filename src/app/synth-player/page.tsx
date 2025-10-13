@@ -17,6 +17,10 @@ export default function SynthPlayerPage() {
     const [trackMuteState, setTrackMuteState] = useState<Map<number, boolean>>(new Map());
     const [trackSoloState, setTrackSoloState] = useState<Map<number, boolean>>(new Map());
 
+    // Loop state
+    const [isLooping, setIsLooping] = useState<boolean>(true);
+    const [hasSelection, setHasSelection] = useState<boolean>(false);
+
     // Diagnostic state - limited to 30 entries
     const [diagnostics, setDiagnostics] = useState<string[]>([]);
     const addDiagnostic = useCallback((msg: string) => {
@@ -54,6 +58,12 @@ export default function SynthPlayerPage() {
         addDiagnostic('✅ API Ready');
         setApi(alphaTabApi);
 
+        // Enable looping by default
+        if (alphaTabApi.isLooping !== undefined) {
+            alphaTabApi.isLooping = true;
+            addDiagnostic('🔄 Loop enabled by default');
+        }
+
         // Wire up player state events
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
@@ -76,6 +86,19 @@ export default function SynthPlayerPage() {
                 // Update refs directly - NO React re-render
                 currentTimeRef.current = e.currentTime / 1000;
                 durationRef.current = e.endTime / 1000;
+            });
+        }
+
+        // Listen for playback range changes
+        if (alphaTabApi.playbackRangeChanged) {
+            alphaTabApi.playbackRangeChanged.on((e: any) => {
+                if (e.playbackRange) {
+                    addDiagnostic(`🎯 Loop range set: ${e.playbackRange.startTick} → ${e.playbackRange.endTick}`);
+                    setHasSelection(true);
+                } else {
+                    addDiagnostic('🔄 Loop range cleared');
+                    setHasSelection(false);
+                }
             });
         }
 
@@ -131,16 +154,30 @@ export default function SynthPlayerPage() {
         }
     }, [api, addDiagnostic]);
 
+    const toggleLoop = useCallback(() => {
+        if (!api) return;
+        
+        const newLoopState = !isLooping;
+        api.isLooping = newLoopState;
+        setIsLooping(newLoopState);
+        addDiagnostic(`🔄 Loop ${newLoopState ? 'enabled' : 'disabled'}`);
+    }, [api, isLooping, addDiagnostic]);
+
+    const clearSelection = useCallback(() => {
+        if (!api) return;
+        
+        api.playbackRange = null;
+        setHasSelection(false);
+        addDiagnostic('🗑️ Selection cleared');
+    }, [api, addDiagnostic]);
+
     const handleMuteToggle = useCallback((trackIndex: number) => {
         if (!api || !api.score) return;
 
         const track = api.score.tracks[trackIndex];
         const isMuted = trackMuteState.get(trackIndex) || false;
 
-        // Apply mute at track level (this handles the synthesizer internally)
         api.changeTrackMute([track], !isMuted);
-
-        // Update React state
         setTrackMuteState(prev => {
             const newMap = new Map(prev);
             newMap.set(trackIndex, !isMuted);
@@ -156,17 +193,12 @@ export default function SynthPlayerPage() {
         const track = api.score.tracks[trackIndex];
         const isSoloed = trackSoloState.get(trackIndex) || false;
 
-        // Apply solo at track level (this handles the synthesizer internally)
         api.changeTrackSolo([track], !isSoloed);
-
-        // Update React state - soloing one track affects all others
         setTrackSoloState(prev => {
             const newMap = new Map(prev);
             if (!isSoloed) {
-                // Solo this track, unsolo all others
                 prev.forEach((_, key) => newMap.set(key, key === trackIndex));
             } else {
-                // Unsolo this track
                 newMap.set(trackIndex, false);
             }
             return newMap;
@@ -212,6 +244,20 @@ export default function SynthPlayerPage() {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!api || !soundFontLoaded || displayDuration === 0) return;
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const percent = x / rect.width;
+        const targetTime = percent * displayDuration;
+        
+        // Convert time to ticks and seek
+        const targetTick = Math.floor((targetTime / displayDuration) * (durationRef.current * 1000));
+        api.tickPosition = targetTick;
+        addDiagnostic(`⏩ Seek to ${formatTime(targetTime)}`);
     };
 
     return (
@@ -307,6 +353,8 @@ export default function SynthPlayerPage() {
                             (Browsers require user interaction to start audio)
                         </div>
                     )}
+                    
+                    {/* Transport Controls Row */}
                     <div className="flex items-center gap-4 mb-4">
                         <button
                             onClick={handlePlay}
@@ -330,20 +378,53 @@ export default function SynthPlayerPage() {
                             ⏹️ Stop
                         </button>
 
+                        <button
+                            onClick={toggleLoop}
+                            disabled={!api}
+                            className={`px-6 py-3 rounded-lg font-bold transition-all flex items-center gap-2 ${
+                                isLooping
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white border-2 border-blue-400'
+                                    : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
+                            }`}
+                            title={isLooping ? 'Loop enabled' : 'Loop disabled'}
+                        >
+                            🔄 Loop {isLooping && '✓'}
+                        </button>
+
+                        {hasSelection && (
+                            <button
+                                onClick={clearSelection}
+                                disabled={!api}
+                                className="px-6 py-3 rounded-lg font-bold bg-yellow-600 hover:bg-yellow-700 text-white transition-all"
+                            >
+                                🗑️ Clear Selection
+                            </button>
+                        )}
+
                         <div className="ml-auto text-purple-400 font-mono">
                             {formatTime(displayTime)} / {formatTime(displayDuration)}
                         </div>
                     </div>
 
-                    {/* Progress bar */}
-                    <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                    {/* Progress bar with GRADIENT */}
+                    <div 
+                        className="w-full bg-gray-700 rounded-full h-3 overflow-hidden cursor-pointer"
+                        onClick={handleProgressBarClick}
+                        title="Click to seek"
+                    >
                         <div
-                            className="bg-orange-500 h-full transition-all duration-500"
+                            className="bg-gradient-to-r from-orange-500 to-blue-500 h-full transition-all duration-500"
                             style={{
                                 width: displayDuration > 0 ? `${(displayTime / displayDuration) * 100}%` : '0%'
                             }}
                         />
                     </div>
+
+                    {hasSelection && (
+                        <div className="mt-2 text-xs text-blue-400 flex items-center gap-2">
+                            🎯 Loop range selected - playback will repeat this section
+                        </div>
+                    )}
                 </div>
 
                 {/* Track Selector */}
@@ -363,12 +444,9 @@ export default function SynthPlayerPage() {
                                 <button
                                     onClick={() => {
                                         if (api?.score?.tracks) {
-                                            // Reset all tracks to max volume using AlphaTab API
                                             api.score.tracks.forEach((track: any) => {
                                                 if (track) {
-                                                    // Update volume via API (volume is 0-1 scale)
                                                     api.changeTrackVolume([track], 1.0);
-                                                    // Update playbackInfo for UI display
                                                     if (track.playbackInfo) {
                                                         track.playbackInfo.volume = 16;
                                                     }
@@ -448,16 +526,9 @@ export default function SynthPlayerPage() {
                                                         const newVolume = parseInt(e.target.value);
                                                         if (api?.score?.tracks[idx]) {
                                                             const track = api.score.tracks[idx];
-
-                                                            // Update volume using AlphaTab API
                                                             api.changeTrackVolume([track], newVolume / 16);
-
-                                                            // Update the track's playbackInfo for UI display
                                                             track.playbackInfo.volume = newVolume;
-
-                                                            // Force re-render to update displayed value
                                                             setTracks([...tracks]);
-
                                                             addDiagnostic(`🔊 ${track.name} volume: ${newVolume}/16`);
                                                         }
                                                     }}
@@ -474,8 +545,8 @@ export default function SynthPlayerPage() {
                     </>
                 )}
 
-                {/* AlphaTab Renderer */}
-                <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+                {/* AlphaTab Renderer with ID wrapper for CSS specificity */}
+                <div id="maestro-player" className="bg-white rounded-xl shadow-2xl overflow-hidden">
                     <AlphaTabRenderer
                         fileUrl="/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3"
                         playerMode="synthesizer"
@@ -490,32 +561,29 @@ export default function SynthPlayerPage() {
 
                 {/* Info Panel */}
                 <div className="mt-6 bg-blue-500/20 rounded-xl p-6 border border-blue-500/30">
-                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 Diagnostics & Troubleshooting</h3>
+                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 Features & Controls</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <h4 className="font-bold text-blue-300 mb-2">✓ Fixed Issues</h4>
+                            <h4 className="font-bold text-blue-300 mb-2">✓ Active Features</h4>
                             <ul className="text-blue-200 space-y-1 text-sm">
-                                <li>✓ Position tracking uses refs (no re-renders)</li>
-                                <li>✓ UI updates only 2x per second</li>
-                                <li>✓ Single cursor line (bar hidden)</li>
-                                <li>✓ Audio plays smoothly</li>
-                                <li>✓ Mute/Solo at channel level (FIXED)</li>
-                                <li>✓ State synced between React & AlphaTab</li>
+                                <li>✓ Loop mode {isLooping && '(enabled)'}</li>
+                                <li>✓ Section selection (click & drag on notation)</li>
+                                <li>✓ Gradient progress bar (orange → blue)</li>
+                                <li>✓ Click progress bar to seek</li>
+                                <li>✓ Individual track mute/solo</li>
+                                <li>✓ Volume control per track</li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-bold text-yellow-300 mb-2">🎸 Guitar Solo Debug</h4>
+                            <h4 className="font-bold text-yellow-300 mb-2">🎸 How to Use Loop</h4>
                             <div className="text-yellow-200 space-y-2 text-sm">
-                                <div className="font-bold mb-1">Check the Event Log for:</div>
-                                <ul className="list-disc list-inside space-y-1 ml-2">
-                                    <li>"Ch X" shows the MIDI channel number</li>
-                                    <li>Muted piano should show "🔇 ... (Ch Y)"</li>
-                                    <li>If wrong track plays, channels are mixed</li>
-                                </ul>
-                                <div className="mt-3 p-2 bg-yellow-900/30 rounded border border-yellow-700">
-                                    <strong>If guitar solo is still silent:</strong>
-                                    <br />The GPX file may not have solo notes. Try finding another version of the song.
-                                </div>
+                                <ol className="list-decimal list-inside space-y-1 ml-2">
+                                    <li>Enable Loop mode (button should show ✓)</li>
+                                    <li>Click and drag on the notation to select bars</li>
+                                    <li>Selected section will be highlighted in purple</li>
+                                    <li>Press Play - it will loop the selected section</li>
+                                    <li>Click "Clear Selection" to loop entire song</li>
+                                </ol>
                             </div>
                         </div>
                     </div>

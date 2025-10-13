@@ -1,6 +1,6 @@
 /**
  * alphaTab Required Styles - Maestro.ai Purple Cursor
- * FIXED: Uses box-shadow to bypass transform:scale() override
+ * FIXED: Corrected !important syntax for box-shadow
  * Place in: src/styles/alphaTab.css
  */
 
@@ -23,24 +23,40 @@
     display: none !important;
 }
 
-/* Beat line cursor - THICK PURPLE with HEIGHT LIMIT */
+/* Beat line cursor - FALLBACK VERSION (lower specificity) */
 .at-cursor-beat {
+    /* Purple color for the center line */
+    background: #a855f7 !important;
+    
+    box-shadow: 
+        15px 0 0 #a855f7,
+        -15px 0 0 #a855f7,
+        0 0 15px 3px rgba(168, 85, 247, 0.7)
+    !important;
+    
+    opacity: 1 !important;
+    visibility: visible !important;
+    
+    /* REMOVED: clip-path - let cursor span full height */
+}
+
+/* Beat line cursor - HIGH SPECIFICITY VERSION */
+#maestro-player .at-cursor-beat {
     /* Purple color for the center line */
     background: #a855f7 !important; /* Maestro.ai Purple (violet-500) */
     
-    /* VERY THICK LINE: 13px on each side = ~30px total (2x thicker!) */
+    /* THICK LINE with GLOW: 15px on each side = ~32px total */
     box-shadow: 
-        13px 0 0 #a855f7,    /* Solid right shadow */
-        -13px 0 0 #a855f7    /* Solid left shadow */
+        15px 0 0 #a855f7,                      /* Solid right shadow */
+        -15px 0 0 #a855f7,                     /* Solid left shadow */
+        0 0 15px 3px rgba(168, 85, 247, 0.7)  /* Stronger glow effect */
     !important;
     
     /* Make fully visible */
     opacity: 1 !important;
     visibility: visible !important;
     
-    /* Limit cursor height (crop top/bottom) */
-    max-height: 120px !important;
-    clip-path: inset(22% 0 22% 0) !important;
+    /* REMOVED: clip-path - let cursor span full height like AlphaTab default */
 }
 
 /* Selection highlighting - purple theme */
@@ -153,31 +169,39 @@
    CUSTOMIZATION GUIDE
    ============================================
    
-   Current Settings:
-   - Thickness: ~30px total (13px + 3px + 13px) - VERY THICK!
-   - Clean edges (no vertical bleed)
-   - Height clipped at 22%
+   LIMITATION: AlphaTab uses inline styles (width + scale transform) that 
+   CANNOT be overridden with CSS alone. To control cursor thickness, we need
+   JavaScript to manipulate the DOM after AlphaTab creates the cursor.
    
-   To make EVEN THICKER:
-   box-shadow: 16px 0 0 #a855f7, -16px 0 0 #a855f7;
-   (Total: ~35px)
+   Current Settings (Color Only):
+   - Color: Purple (#a855f7) ✅ WORKS
+   - Glow effect: 15px blur ✅ WORKS
+   - Thickness: Limited by AlphaTab's scale transform ❌ Needs JavaScript
+   - Height: Full staff height (clip-path removed)
    
-   To make THINNER:
-   box-shadow: 10px 0 0 #a855f7, -10px 0 0 #a855f7;
-   (Total: ~23px)
+   What Works with CSS:
+   - Color changes (background)
+   - Glow effects (box-shadow blur)
+   - Visibility (opacity, display)
+   - Small horizontal shadows
    
-   To make MUCH THINNER:
-   box-shadow: 6px 0 0 #a855f7, -6px 0 0 #a855f7;
-   (Total: ~15px)
+   What Requires JavaScript:
+   - True thickness control (needs to override inline width + scale)
+   - Custom cursor shapes
+   - Height control beyond AlphaTab's default
    
-   To adjust HEIGHT (taller or shorter):
-   clip-path: inset(15% 0 15% 0); = Taller cursor
-   clip-path: inset(25% 0 25% 0); = Shorter cursor
-   clip-path: inset(30% 0 30% 0); = Much shorter cursor
+   For Songsterr-Style Cursor:
+   We need to create a custom SVG overlay cursor that follows playback position,
+   similar to how Songsterr implements theirs. This will be a future enhancement.
    
-   To change COLOR:
+   To change COLOR (this DOES work):
    - Deeper purple: #7c3aed (purple-600)
    - Lighter lavender: #c084fc (purple-400)
    - Brighter purple: #9333ea (purple-700)
-   - Replace #a855f7 everywhere with your chosen color
+   - Replace #a855f7 in both background and box-shadow rgba values
+   
+   NEXT STEPS:
+   1. Accept current cursor appearance with purple color ✅
+   2. Plan custom SVG cursor overlay (like Songsterr) for future
+   3. Use JavaScript to manipulate AlphaTab cursor if needed
    ============================================ */
