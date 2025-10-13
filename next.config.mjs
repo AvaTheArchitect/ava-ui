@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 import path from "path";
 import { fileURLToPath } from "url";
+import { AlphaTabWebPackPlugin } from "@coderline/alphatab/webpack";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +11,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  
+
   // ✅ PRESERVE: Your Turbopack configuration (Next.js 15+)
   turbopack: {
     resolveAlias: {
@@ -19,45 +20,51 @@ const nextConfig = {
       "@lib": path.resolve(__dirname, "lib"),
     },
   },
-  
-  // ✅ PRESERVE: Your webpack fallback
-  webpack: (config) => {
+
+  // ✅ UPDATED: Your webpack with AlphaTab plugin added
+  webpack: (config, { isServer }) => {
     config.resolve.alias["@"] = path.resolve(__dirname, "src");
     config.resolve.alias["@components"] = path.resolve(
       __dirname,
       "src/components"
     );
     config.resolve.alias["@lib"] = path.resolve(__dirname, "lib");
+
+    // 🎸 ADD AlphaTab plugin for client-side only
+    if (!isServer) {
+      config.plugins.push(new AlphaTabWebPackPlugin());
+    }
+
     return config;
   },
 
-  // 🎵 NEW: Add maestro-music-data serving
+  // 🎵 PRESERVE: Your maestro-music-data serving
   async rewrites() {
     return [
       {
-        source: '/maestro-music-data/:path*',
-        destination: '/maestro-music-data/:path*',
+        source: "/maestro-music-data/:path*",
+        destination: "/maestro-music-data/:path*",
       },
     ];
   },
-  
-  // 🎵 NEW: Add CORS headers for music data access
+
+  // 🎵 PRESERVE: Your CORS headers for music data access
   async headers() {
     return [
       {
-        source: '/maestro-music-data/:path*',
+        source: "/maestro-music-data/:path*",
         headers: [
           {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
+            key: "Access-Control-Allow-Origin",
+            value: "*",
           },
           {
-            key: 'Access-Control-Allow-Methods',
-            value: 'GET, OPTIONS',
+            key: "Access-Control-Allow-Methods",
+            value: "GET, OPTIONS",
           },
           {
-            key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type',
+            key: "Access-Control-Allow-Headers",
+            value: "Content-Type",
           },
         ],
       },

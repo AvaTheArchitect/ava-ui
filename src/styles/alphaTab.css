@@ -1,0 +1,183 @@
+/**
+ * alphaTab Required Styles - Maestro.ai Purple Cursor
+ * FIXED: Uses box-shadow to bypass transform:scale() override
+ * Place in: src/styles/alphaTab.css
+ */
+
+/* Main alphaTab container */
+.at-surface {
+    width: 100%;
+    overflow: auto;
+    position: relative;
+}
+
+/* SVG wrapper */
+.at-viewport {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+/* HIDE the bar cursor - we only want the beat line */
+.at-cursor-bar {
+    display: none !important;
+}
+
+/* Beat line cursor - THICK PURPLE with HEIGHT LIMIT */
+.at-cursor-beat {
+    /* Purple color for the center line */
+    background: #a855f7 !important; /* Maestro.ai Purple (violet-500) */
+    
+    /* VERY THICK LINE: 13px on each side = ~30px total (2x thicker!) */
+    box-shadow: 
+        13px 0 0 #a855f7,    /* Solid right shadow */
+        -13px 0 0 #a855f7    /* Solid left shadow */
+    !important;
+    
+    /* Make fully visible */
+    opacity: 1 !important;
+    visibility: visible !important;
+    
+    /* Limit cursor height (crop top/bottom) */
+    max-height: 120px !important;
+    clip-path: inset(22% 0 22% 0) !important;
+}
+
+/* Selection highlighting - purple theme */
+.at-selection div {
+    position: absolute;
+    background: rgba(168, 85, 247, 0.25);
+    pointer-events: none;
+    z-index: 998;
+    border: 2px solid rgba(168, 85, 247, 0.6);
+    border-radius: 4px;
+}
+
+/* Highlight effect during playback - purple theme */
+.at-highlight * {
+    fill: #a855f7 !important;
+    stroke: #a855f7 !important;
+}
+
+/* Music font - alphaTab uses Bravura font */
+@font-face {
+    font-family: 'alphaTab';
+    src: url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.woff2') format('woff2'),
+         url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.woff') format('woff'),
+         url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.otf') format('opentype');
+}
+
+.at {
+    font-family: 'alphaTab', sans-serif;
+    speak: none;
+    font-style: normal;
+    font-weight: normal;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tab notation elements */
+.at-tab-line {
+    stroke: #666;
+    stroke-width: 1;
+}
+
+.at-tab-number {
+    fill: #000;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+}
+
+/* Standard notation elements */
+.at-score-staff-line {
+    stroke: #000;
+    stroke-width: 1;
+}
+
+/* Bar lines */
+.at-bar-line {
+    stroke: #000;
+    stroke-width: 1.5;
+}
+
+/* Loading overlay */
+.at-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.9);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;
+}
+
+/* Scrollbar styling */
+.at-surface::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.at-surface::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.at-surface::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 6px;
+}
+
+.at-surface::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Print styles */
+@media print {
+    .at-cursor-bar,
+    .at-cursor-beat,
+    .at-selection {
+        display: none !important;
+    }
+    
+    .at-surface {
+        overflow: visible !important;
+    }
+}
+
+/* ============================================
+   CUSTOMIZATION GUIDE
+   ============================================
+   
+   Current Settings:
+   - Thickness: ~30px total (13px + 3px + 13px) - VERY THICK!
+   - Clean edges (no vertical bleed)
+   - Height clipped at 22%
+   
+   To make EVEN THICKER:
+   box-shadow: 16px 0 0 #a855f7, -16px 0 0 #a855f7;
+   (Total: ~35px)
+   
+   To make THINNER:
+   box-shadow: 10px 0 0 #a855f7, -10px 0 0 #a855f7;
+   (Total: ~23px)
+   
+   To make MUCH THINNER:
+   box-shadow: 6px 0 0 #a855f7, -6px 0 0 #a855f7;
+   (Total: ~15px)
+   
+   To adjust HEIGHT (taller or shorter):
+   clip-path: inset(15% 0 15% 0); = Taller cursor
+   clip-path: inset(25% 0 25% 0); = Shorter cursor
+   clip-path: inset(30% 0 30% 0); = Much shorter cursor
+   
+   To change COLOR:
+   - Deeper purple: #7c3aed (purple-600)
+   - Lighter lavender: #c084fc (purple-400)
+   - Brighter purple: #9333ea (purple-700)
+   - Replace #a855f7 everywhere with your chosen color
+   ============================================ */

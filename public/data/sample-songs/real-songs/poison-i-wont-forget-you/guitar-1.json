@@ -1,0 +1,22 @@
+{
+  "title": "I Won't Forget You - Lead Guitar",
+  "artist": "Poison",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "tempo": 103,
+  "timeSignature": "4/4",
+  "audioFile": "/audio/songs/poison-i-wont-forget-you/audio.mp3",
+  "measures": [
+    {
+      "number": 1,
+      "beats": [
+        {
+          "time": 0.0,
+          "notes": [
+            { "string": 1, "fret": 12, "duration": 0.5 },
+            { "string": 1, "fret": 14, "duration": 0.5 }
+          ]
+        }
+      ]
+    }
+  ]
+}

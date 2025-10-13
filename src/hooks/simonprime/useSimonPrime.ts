@@ -17,7 +17,7 @@ import {
 import {
   SimonPrimePersonalityEngine,
   AchievementBadges,
-} from "@/utils/simonPrimePersonality";
+} from "@/utils/simon/simonPrimePersonality";
 
 // ✅ Enhanced types with Simon's personality features
 export interface VocalAnalysisResult {
@@ -92,23 +92,25 @@ function getNextSuggestion(performanceLevel: string, genre: string): string {
       "Try a more challenging piece in the same style",
       "Experiment with advanced techniques",
       "Consider performing for others",
-      "Explore improvisation in this genre"
+      "Explore improvisation in this genre",
     ],
     good: [
       "Focus on consistency in your next practice",
       "Try increasing the tempo slightly",
       "Work on dynamics and expression",
-      "Practice this piece until it feels effortless"
+      "Practice this piece until it feels effortless",
     ],
     needsWork: [
       "Slow down and focus on accuracy first",
       "Break this into smaller sections",
       "Practice fundamentals daily",
-      "Use a metronome to improve timing"
-    ]
+      "Use a metronome to improve timing",
+    ],
   };
 
-  const levelSuggestions = suggestions[performanceLevel as keyof typeof suggestions] || suggestions.needsWork;
+  const levelSuggestions =
+    suggestions[performanceLevel as keyof typeof suggestions] ||
+    suggestions.needsWork;
   return levelSuggestions[Math.floor(Math.random() * levelSuggestions.length)];
 }
 
@@ -125,75 +127,79 @@ function generatePerformanceLevelResponse(
         "🔥 LEGENDARY! You just melted my circuits with that performance!",
         "🎸 That was so good, I need to update my code just to process it!",
         "🚀 Houston, we have a ROCKSTAR! That was out of this world!",
-        "⚡ You just broke the sound barrier AND my expectations!"
+        "⚡ You just broke the sound barrier AND my expectations!",
       ],
       professional: [
         "Outstanding performance! Your technique shows exceptional mastery.",
         "Excellent work! You've demonstrated advanced skill development.",
         "Superb execution! Your practice is clearly paying dividends.",
-        "Masterful performance! You're operating at a professional level."
+        "Masterful performance! You're operating at a professional level.",
       ],
-      animation: "rockOn" as const
+      animation: "rockOn" as const,
     },
     good: {
       humor: [
         "🎵 Nice work, rockstar! You're cooking with musical gas!",
         "🔥 Solid performance! My algorithms are impressed!",
         "🎸 That's what I'm talking about! Keep that energy flowing!",
-        "⭐ Good stuff! You're definitely in the groove zone!"
+        "⭐ Good stuff! You're definitely in the groove zone!",
       ],
       professional: [
         "Good performance! You're showing steady improvement.",
         "Well done! Your technique is developing nicely.",
         "Solid work! You're on the right track with your practice.",
-        "Nice job! Your musical skills are progressing well."
+        "Nice job! Your musical skills are progressing well.",
       ],
-      animation: "thumbsUp" as const
+      animation: "thumbsUp" as const,
     },
     needsWork: {
       humor: [
         "🤖 Don't worry, even my code needs debugging sometimes! Let's refine this!",
         "🎸 We're in the workshop phase - time to tune up those skills!",
         "🔧 No worries! Every rockstar needs some fine-tuning sessions!",
-        "💪 Practice makes perfect, and you're building those musical muscles!"
+        "💪 Practice makes perfect, and you're building those musical muscles!",
       ],
       professional: [
         "Keep practicing! Improvement comes with consistent effort.",
         "Focus on fundamentals - they're the foundation of great performance.",
         "Don't get discouraged! Every musician goes through learning phases.",
-        "Let's work on this area - targeted practice will help you improve."
+        "Let's work on this area - targeted practice will help you improve.",
       ],
-      animation: "nod" as const
-    }
+      animation: "nod" as const,
+    },
   };
 
   const level = performanceLevel as keyof typeof responses;
   const modeResponses = responses[level] || responses.needsWork;
-  const responseArray = humorMode ? modeResponses.humor : modeResponses.professional;
-  
+  const responseArray = humorMode
+    ? modeResponses.humor
+    : modeResponses.professional;
+
   // Select a random response from the array
-  const selectedResponse = responseArray[Math.floor(Math.random() * responseArray.length)];
+  const selectedResponse =
+    responseArray[Math.floor(Math.random() * responseArray.length)];
 
   // Add genre-specific flair
-  const genrePrefix = {
-    rock: "🎸",
-    country: "🤠",
-    blues: "🎵",
-    metal: "⚡",
-    christian: "🙏",
-    bluesrock: "🔥"
-  }[genre] || "🎵";
+  const genrePrefix =
+    {
+      rock: "🎸",
+      country: "🤠",
+      blues: "🎵",
+      metal: "⚡",
+      christian: "🙏",
+      bluesrock: "🔥",
+    }[genre] || "🎵";
 
   return {
     answer: `${genrePrefix} ${selectedResponse}`,
-    confidence: level === 'excellent' ? 0.95 : level === 'good' ? 0.8 : 0.6,
+    confidence: level === "excellent" ? 0.95 : level === "good" ? 0.8 : 0.6,
     elements: ["performance", "feedback", level],
     humorMode,
     personality: humorMode ? "humor" : "professional",
     genre,
     focusTarget: result?.focusTarget,
     vibratoScore: result?.vibratoScore,
-    badge: level === 'excellent' ? 'rockstar' : undefined,
+    badge: level === "excellent" ? "rockstar" : undefined,
     nextSuggestion: getNextSuggestion(level, genre),
     animation: modeResponses.animation,
   };
@@ -331,11 +337,14 @@ export function useSimonPrime(
             humorMode: state.humorMode,
             genre: state.genre,
             skillLevel: context.skillLevel || "intermediate",
-            technique: context.technique || "general"
+            technique: context.technique || "general",
           };
 
           // Try to call the actual SimonPrime module with enhanced context
-          const result = runSimonPrime(`${context.performanceLevel}-performance`, enhancedContext);
+          const result = runSimonPrime(
+            `${context.performanceLevel}-performance`,
+            enhancedContext
+          );
 
           // 🔥 Generate performance-specific responses
           return generatePerformanceLevelResponse(

@@ -1,7 +1,7 @@
 // src/modules/SimonPrime/SimonPrimeModule.ts - Fixed to use existing personality system
 
 // Import the existing personality system
-import { SimonPrimePersonalityEngine } from "@/utils/simonPrimePersonality";
+import { SimonPrimePersonalityEngine } from "@/utils/simon/simonPrimePersonality";
 
 export interface SimonPrimeResult {
   elementSet: string[];

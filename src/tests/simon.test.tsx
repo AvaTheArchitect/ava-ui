@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { renderHook, act } from '@testing-library/react';
 import { useSimonPrime } from '@/hooks/simonprime/useSimonPrime';
-import { SimonPrimePersonalityEngine, AchievementBadges } from '@/utils/simonPrimePersonality';
+import { SimonPrimePersonalityEngine, AchievementBadges } from '@/utils/simon/simonPrimePersonality';
 import SimonPrimeInterface from '@/components/simonprime/SimonPrimeInterface';
 
 // Simple Component Test

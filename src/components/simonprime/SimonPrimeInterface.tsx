@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSimonPrime } from '@/hooks/simonprime/useSimonPrime';
-import { SimonPrimePersonalityEngine, AchievementBadges } from '@/utils/simonPrimePersonality';
+import { SimonPrimePersonalityEngine, AchievementBadges } from '@/utils/simon/simonPrimePersonality';
 
 // 🤖 Simon Prime Avatar Component (shared with chat)
 const SimonAvatar = ({
@@ -280,8 +280,8 @@ export default function SimonPrimeInterface({
                         <p className="text-simon-blue-text/80 text-sm">Your Virtual Music Mentor</p>
                         <div className="flex items-center gap-2 mt-1">
                             <span className={`px-2 py-1 rounded text-xs transition-all ${isHumorMode
-                                    ? 'bg-simon-orange text-white shadow-orange-400/40 shadow-md'
-                                    : 'bg-simon-blue text-white shadow-blue-400/40 shadow-md'
+                                ? 'bg-simon-orange text-white shadow-orange-400/40 shadow-md'
+                                : 'bg-simon-blue text-white shadow-blue-400/40 shadow-md'
                                 }`}>
                                 {isHumorMode ? 'Humor Mode 🔥' : 'Professional 🎓'}
                             </span>
@@ -289,9 +289,9 @@ export default function SimonPrimeInterface({
                                 {genre.toUpperCase()}
                             </span>
                             <span className={`text-xs px-2 py-1 rounded-full ${simonState === 'thinking' ? 'bg-blue-500/20 text-blue-300' :
-                                    simonState === 'celebrating' ? 'bg-yellow-500/20 text-yellow-300' :
-                                        simonState === 'roasting' ? 'bg-orange-500/20 text-orange-300' :
-                                            'bg-gray-500/20 text-gray-300'
+                                simonState === 'celebrating' ? 'bg-yellow-500/20 text-yellow-300' :
+                                    simonState === 'roasting' ? 'bg-orange-500/20 text-orange-300' :
+                                        'bg-gray-500/20 text-gray-300'
                                 }`}>
                                 {simonState === 'thinking' ? '💭 Thinking' :
                                     simonState === 'celebrating' ? '🎉 Celebrating' :
@@ -307,8 +307,8 @@ export default function SimonPrimeInterface({
                     <button
                         onClick={handleHumorToggle}
                         className={`px-3 py-2 rounded transition-all shadow-lg ${isHumorMode
-                                ? 'bg-gradient-to-r from-simon-orange to-cyber-orange hover:shadow-orange-400/40 shadow-orange-400/20 hover:-translate-y-1'
-                                : 'bg-gradient-to-r from-simon-blue to-cyan-400 hover:shadow-blue-400/40 shadow-blue-400/20 hover:-translate-y-1'
+                            ? 'bg-gradient-to-r from-simon-orange to-cyber-orange hover:shadow-orange-400/40 shadow-orange-400/20 hover:-translate-y-1'
+                            : 'bg-gradient-to-r from-simon-blue to-cyan-400 hover:shadow-blue-400/40 shadow-blue-400/20 hover:-translate-y-1'
                             }`}
                         disabled={isThinking}
                     >

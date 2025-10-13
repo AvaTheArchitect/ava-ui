@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AchievementBadges } from '@/utils/simonPrimePersonality';
+import { AchievementBadges } from '@/utils/simon/simonPrimePersonality';
 import { useSimonPrime } from '@/hooks/simonprime/useSimonPrime';
 
 interface Achievement {
@@ -92,8 +92,8 @@ export default function AchievementBadgesComponent({
                         <div
                             key={achievement.id}
                             className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${achievement.unlockedAt
-                                    ? 'bg-gradient-to-br from-yellow-400 to-orange-500'
-                                    : 'bg-gray-600'
+                                ? 'bg-gradient-to-br from-yellow-400 to-orange-500'
+                                : 'bg-gray-600'
                                 }`}
                             title={achievement.name}
                         >
@@ -190,8 +190,8 @@ export default function AchievementBadgesComponent({
                                     key={achievement.id}
                                     onClick={() => testUnlock(achievement.id)}
                                     className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${achievement.unlockedAt
-                                            ? 'bg-gradient-to-br from-yellow-400/20 to-orange-500/20 border-yellow-400 shadow-lg shadow-yellow-400/20'
-                                            : 'bg-gray-800 border-gray-600 hover:border-gray-500'
+                                        ? 'bg-gradient-to-br from-yellow-400/20 to-orange-500/20 border-yellow-400 shadow-lg shadow-yellow-400/20'
+                                        : 'bg-gray-800 border-gray-600 hover:border-gray-500'
                                         } ${newlyUnlocked.includes(achievement.id) ? 'animate-pulse' : ''}`}
                                 >
                                     <div className="text-center">
@@ -228,8 +228,8 @@ export default function AchievementBadgesComponent({
                                     key={achievement.id}
                                     onClick={() => testUnlock(achievement.id)}
                                     className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${achievement.unlockedAt
-                                            ? 'bg-gradient-to-br from-blue-400/20 to-purple-500/20 border-blue-400 shadow-lg shadow-blue-400/20'
-                                            : 'bg-gray-800 border-gray-600 hover:border-gray-500'
+                                        ? 'bg-gradient-to-br from-blue-400/20 to-purple-500/20 border-blue-400 shadow-lg shadow-blue-400/20'
+                                        : 'bg-gray-800 border-gray-600 hover:border-gray-500'
                                         } ${newlyUnlocked.includes(achievement.id) ? 'animate-pulse' : ''}`}
                                 >
                                     <div className="text-center">
@@ -266,8 +266,8 @@ export default function AchievementBadgesComponent({
                                     key={achievement.id}
                                     onClick={() => testUnlock(achievement.id)}
                                     className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${achievement.unlockedAt
-                                            ? 'bg-gradient-to-br from-green-400/20 to-emerald-500/20 border-green-400 shadow-lg shadow-green-400/20'
-                                            : 'bg-gray-800 border-gray-600 hover:border-gray-500'
+                                        ? 'bg-gradient-to-br from-green-400/20 to-emerald-500/20 border-green-400 shadow-lg shadow-green-400/20'
+                                        : 'bg-gray-800 border-gray-600 hover:border-gray-500'
                                         } ${newlyUnlocked.includes(achievement.id) ? 'animate-pulse' : ''}`}
                                 >
                                     <div className="text-center">

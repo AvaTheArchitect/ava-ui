@@ -8,13 +8,13 @@
 export interface ValidationRule {
   name: string;
   description: string;
-  severity: 'error' | 'warning' | 'info';
-  category: 'harmony' | 'voice-leading' | 'notation' | 'performance' | 'style';
+  severity: "error" | "warning" | "info";
+  category: "harmony" | "voice-leading" | "notation" | "performance" | "style";
 }
 
 export interface ValidationError {
   rule: string;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   message: string;
   location: ValidationLocation;
   suggestion?: string;
@@ -41,7 +41,7 @@ export interface ValidationSummary {
   criticalErrors: number;
   styleWarnings: number;
   performanceSuggestions: number;
-  overallGrade: 'A' | 'B' | 'C' | 'D' | 'F';
+  overallGrade: "A" | "B" | "C" | "D" | "F";
 }
 
 export interface ValidationOptions {
@@ -50,7 +50,7 @@ export interface ValidationOptions {
   checkVoiceLeading?: boolean;
   checkNotation?: boolean;
   checkPerformance?: boolean;
-  styleGuide?: 'classical' | 'jazz' | 'popular' | 'custom';
+  styleGuide?: "classical" | "jazz" | "popular" | "custom";
 }
 
 export class Validationengineparser {
@@ -64,10 +64,10 @@ export class Validationengineparser {
       checkVoiceLeading: true,
       checkNotation: true,
       checkPerformance: false,
-      styleGuide: 'classical',
-      ...options
+      styleGuide: "classical",
+      ...options,
     };
-    
+
     this.initializeRules();
   }
 
@@ -85,7 +85,12 @@ export class Validationengineparser {
 
       if (this.options.checkVoiceLeading) {
         const voiceLeadingIssues = this.validateVoiceLeading(musicData);
-        this.categorizeIssues(voiceLeadingIssues, errors, warnings, suggestions);
+        this.categorizeIssues(
+          voiceLeadingIssues,
+          errors,
+          warnings,
+          suggestions
+        );
       }
 
       if (this.options.checkNotation) {
@@ -108,16 +113,16 @@ export class Validationengineparser {
         errors,
         warnings,
         suggestions,
-        summary
+        summary,
       };
     } catch (error) {
       const validationError: ValidationError = {
-        rule: 'validation-engine',
-        severity: 'error',
+        rule: "validation-engine",
+        severity: "error",
         message: `Validation engine error: ${String(error)}`,
-        location: {}
+        location: {},
       };
-      
+
       return {
         success: false,
         score: 0,
@@ -129,185 +134,203 @@ export class Validationengineparser {
           criticalErrors: 1,
           styleWarnings: 0,
           performanceSuggestions: 0,
-          overallGrade: 'F'
-        }
+          overallGrade: "F",
+        },
       };
     }
   }
 
   private initializeRules(): void {
     // Harmony rules
-    this.rules.set('parallel-fifths', {
-      name: 'Parallel Fifths',
-      description: 'Avoid parallel perfect fifths between voices',
-      severity: 'error',
-      category: 'harmony'
+    this.rules.set("parallel-fifths", {
+      name: "Parallel Fifths",
+      description: "Avoid parallel perfect fifths between voices",
+      severity: "error",
+      category: "harmony",
     });
 
-    this.rules.set('parallel-octaves', {
-      name: 'Parallel Octaves',
-      description: 'Avoid parallel octaves between voices',
-      severity: 'error',
-      category: 'harmony'
+    this.rules.set("parallel-octaves", {
+      name: "Parallel Octaves",
+      description: "Avoid parallel octaves between voices",
+      severity: "error",
+      category: "harmony",
     });
 
-    this.rules.set('voice-crossing', {
-      name: 'Voice Crossing',
-      description: 'Avoid voices crossing unnaturally',
-      severity: 'warning',
-      category: 'voice-leading'
+    this.rules.set("voice-crossing", {
+      name: "Voice Crossing",
+      description: "Avoid voices crossing unnaturally",
+      severity: "warning",
+      category: "voice-leading",
     });
 
     // Notation rules
-    this.rules.set('beam-grouping', {
-      name: 'Beam Grouping',
-      description: 'Beams should follow beat patterns',
-      severity: 'warning',
-      category: 'notation'
+    this.rules.set("beam-grouping", {
+      name: "Beam Grouping",
+      description: "Beams should follow beat patterns",
+      severity: "warning",
+      category: "notation",
     });
 
-    this.rules.set('key-signature', {
-      name: 'Key Signature',
-      description: 'Accidentals should respect key signature',
-      severity: 'info',
-      category: 'notation'
+    this.rules.set("key-signature", {
+      name: "Key Signature",
+      description: "Accidentals should respect key signature",
+      severity: "info",
+      category: "notation",
     });
   }
 
   private validateHarmony(musicData: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Check for parallel fifths and octaves
     if (musicData.voices && musicData.voices.length >= 2) {
       for (let i = 0; i < musicData.voices.length - 1; i++) {
         const voice1 = musicData.voices[i];
         const voice2 = musicData.voices[i + 1];
-        
+
         const parallelIssues = this.checkParallelMotion(voice1, voice2);
         issues.push(...parallelIssues);
       }
     }
-    
+
     return issues;
   }
 
   private checkParallelMotion(voice1: any, voice2: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Simplified parallel motion detection
-    if (voice1.notes && voice2.notes && voice1.notes.length === voice2.notes.length) {
+    if (
+      voice1.notes &&
+      voice2.notes &&
+      voice1.notes.length === voice2.notes.length
+    ) {
       for (let i = 0; i < voice1.notes.length - 1; i++) {
-        const interval1 = this.calculateInterval(voice1.notes[i], voice2.notes[i]);
-        const interval2 = this.calculateInterval(voice1.notes[i + 1], voice2.notes[i + 1]);
-        
-        if (interval1 === 7 && interval2 === 7) { // Perfect fifths
+        const interval1 = this.calculateInterval(
+          voice1.notes[i],
+          voice2.notes[i]
+        );
+        const interval2 = this.calculateInterval(
+          voice1.notes[i + 1],
+          voice2.notes[i + 1]
+        );
+
+        if (interval1 === 7 && interval2 === 7) {
+          // Perfect fifths
           issues.push({
-            rule: 'parallel-fifths',
-            severity: 'error',
-            message: 'Parallel perfect fifths detected',
+            rule: "parallel-fifths",
+            severity: "error",
+            message: "Parallel perfect fifths detected",
             location: { measure: Math.floor(i / 4) + 1, beat: (i % 4) + 1 },
-            suggestion: 'Consider contrary or oblique motion'
+            suggestion: "Consider contrary or oblique motion",
           });
         }
-        
-        if (interval1 === 12 && interval2 === 12) { // Octaves
+
+        if (interval1 === 12 && interval2 === 12) {
+          // Octaves
           issues.push({
-            rule: 'parallel-octaves',
-            severity: 'error',
-            message: 'Parallel octaves detected',
+            rule: "parallel-octaves",
+            severity: "error",
+            message: "Parallel octaves detected",
             location: { measure: Math.floor(i / 4) + 1, beat: (i % 4) + 1 },
-            suggestion: 'Use different voice leading'
+            suggestion: "Use different voice leading",
           });
         }
       }
     }
-    
+
     return issues;
   }
 
   private calculateInterval(note1: any, note2: any): number {
     // Simplified interval calculation
     if (!note1.pitch || !note2.pitch) return 0;
-    
+
     const pitchClass1 = this.getPitchClass(note1.pitch);
     const pitchClass2 = this.getPitchClass(note2.pitch);
-    
+
     return Math.abs(pitchClass2 - pitchClass1);
   }
 
   private getPitchClass(pitch: string): number {
     const pitchMap: { [key: string]: number } = {
-      'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11
+      C: 0,
+      D: 2,
+      E: 4,
+      F: 5,
+      G: 7,
+      A: 9,
+      B: 11,
     };
     return pitchMap[pitch.charAt(0)] || 0;
   }
 
   private validateVoiceLeading(musicData: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Check for voice crossing
     if (musicData.voices && musicData.voices.length >= 2) {
       issues.push(...this.checkVoiceCrossing(musicData.voices));
     }
-    
+
     return issues;
   }
 
   private checkVoiceCrossing(voices: any[]): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Simplified voice crossing detection
     for (let i = 0; i < voices.length - 1; i++) {
       const higherVoice = voices[i];
       const lowerVoice = voices[i + 1];
-      
+
       if (higherVoice.notes && lowerVoice.notes) {
         // Check if higher voice goes below lower voice
         // Implementation would check actual pitch heights
       }
     }
-    
+
     return issues;
   }
 
   private validateNotation(musicData: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Check beam grouping
     if (musicData.measures) {
       for (const measure of musicData.measures) {
         issues.push(...this.checkBeamGrouping(measure));
       }
     }
-    
+
     return issues;
   }
 
   private checkBeamGrouping(measure: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Check if beaming follows beat patterns
     if (measure.notes) {
       // Implementation would check beam grouping rules
     }
-    
+
     return issues;
   }
 
   private validatePerformance(musicData: any): ValidationError[] {
     const issues: ValidationError[] = [];
-    
+
     // Check for performance practicality
     if (musicData.tempo && musicData.tempo > 200) {
       issues.push({
-        rule: 'tempo-practicality',
-        severity: 'warning',
-        message: 'Very fast tempo may be difficult to perform',
+        rule: "tempo-practicality",
+        severity: "warning",
+        message: "Very fast tempo may be difficult to perform",
         location: {},
-        suggestion: 'Consider a more moderate tempo'
+        suggestion: "Consider a more moderate tempo",
       });
     }
-    
+
     return issues;
   }
 
@@ -319,13 +342,13 @@ export class Validationengineparser {
   ): void {
     for (const issue of issues) {
       switch (issue.severity) {
-        case 'error':
+        case "error":
           errors.push(issue);
           break;
-        case 'warning':
+        case "warning":
           warnings.push(issue);
           break;
-        case 'info':
+        case "info":
           suggestions.push(issue);
           break;
       }
@@ -341,20 +364,20 @@ export class Validationengineparser {
     const criticalErrors = errors.length;
     const styleWarnings = warnings.length;
     const performanceSuggestions = suggestions.length;
-    
-    let overallGrade: 'A' | 'B' | 'C' | 'D' | 'F';
-    if (criticalErrors === 0 && styleWarnings <= 1) overallGrade = 'A';
-    else if (criticalErrors === 0 && styleWarnings <= 3) overallGrade = 'B';
-    else if (criticalErrors <= 1) overallGrade = 'C';
-    else if (criticalErrors <= 3) overallGrade = 'D';
-    else overallGrade = 'F';
-    
+
+    let overallGrade: "A" | "B" | "C" | "D" | "F";
+    if (criticalErrors === 0 && styleWarnings <= 1) overallGrade = "A";
+    else if (criticalErrors === 0 && styleWarnings <= 3) overallGrade = "B";
+    else if (criticalErrors <= 1) overallGrade = "C";
+    else if (criticalErrors <= 3) overallGrade = "D";
+    else overallGrade = "F";
+
     return {
       totalIssues,
       criticalErrors,
       styleWarnings,
       performanceSuggestions,
-      overallGrade
+      overallGrade,
     };
   }
 
@@ -364,12 +387,31 @@ export class Validationengineparser {
     suggestions: ValidationError[]
   ): number {
     let score = 100;
-    
-    score -= errors.length * 20;        // Major deductions for errors
-    score -= warnings.length * 5;       // Minor deductions for warnings
-    score -= suggestions.length * 1;    // Minimal deductions for suggestions
-    
+
+    score -= errors.length * 20; // Major deductions for errors
+    score -= warnings.length * 5; // Minor deductions for warnings
+    score -= suggestions.length * 1; // Minimal deductions for suggestions
+
     return Math.max(0, score);
+  }
+
+  async validateAllParsers(parsedData: {
+    staff: any;
+    chords: any;
+    techniques: any;
+    rhythms: any;
+  }): Promise<ValidationResult> {
+    console.log("Validating all parsed data from Phase 12 parsers...");
+
+    // Combine all data for comprehensive validation
+    const combinedMusicData = {
+      ...parsedData,
+      voices: parsedData.staff?.staffTracks || [],
+      measures: parsedData.rhythms?.timeSignatures || [],
+    };
+
+    // Use existing validateMusic method
+    return this.validateMusic(combinedMusicData);
   }
 
   static create(options?: ValidationOptions): Validationengineparser {

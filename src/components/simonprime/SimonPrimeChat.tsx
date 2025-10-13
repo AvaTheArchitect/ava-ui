@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSimonPrime } from '@/hooks/simonprime/useSimonPrime';
 import useSimonPrimeVoice from '@/hooks/simonprime/useSimonPrimeVoice';
-import { SimonPrimePersonalityEngine } from '@/utils/simonPrimePersonality';
+import { SimonPrimePersonalityEngine } from '@/utils/simon/simonPrimePersonality';
 
 interface ChatMessage {
   id: string;
@@ -403,8 +403,8 @@ export default function SimonPrimeChat({
           {messages.slice(-2).map((message) => (
             <div key={message.id} className={`mb-2 ${message.sender === 'user' ? 'text-right' : 'text-left'}`}>
               <div className={`inline-block p-2 rounded text-sm ${message.sender === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-200'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-200'
                 }`}>
                 {message.text}
                 {message.sender === 'simon' && isVoiceSupported && (
@@ -456,10 +456,10 @@ export default function SimonPrimeChat({
             <p className="text-sm text-simon-blue-text/80">Your Virtual Music Mentor</p>
             <div className="flex items-center gap-2 mt-1">
               <span className={`text-xs px-2 py-1 rounded-full ${simonState === 'speaking' ? 'bg-emerald-500/20 text-emerald-300' :
-                  simonState === 'thinking' ? 'bg-blue-500/20 text-blue-300' :
-                    simonState === 'celebrating' ? 'bg-yellow-500/20 text-yellow-300' :
-                      simonState === 'roasting' ? 'bg-orange-500/20 text-orange-300' :
-                        'bg-gray-500/20 text-gray-300'
+                simonState === 'thinking' ? 'bg-blue-500/20 text-blue-300' :
+                  simonState === 'celebrating' ? 'bg-yellow-500/20 text-yellow-300' :
+                    simonState === 'roasting' ? 'bg-orange-500/20 text-orange-300' :
+                      'bg-gray-500/20 text-gray-300'
                 }`}>
                 {simonState === 'speaking' ? '🎤 Speaking' :
                   simonState === 'thinking' ? '💭 Thinking' :
@@ -475,8 +475,8 @@ export default function SimonPrimeChat({
           <button
             onClick={handleHumorToggle}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-all shadow-lg ${isHumorMode
-                ? 'bg-gradient-to-r from-simon-orange to-orange-600 hover:from-simon-orange hover:to-orange-700 shadow-orange-400/40 hover:-translate-y-1'
-                : 'bg-gradient-to-r from-simon-blue to-blue-600 hover:from-simon-blue hover:to-blue-700 shadow-blue-400/40 hover:-translate-y-1'
+              ? 'bg-gradient-to-r from-simon-orange to-orange-600 hover:from-simon-orange hover:to-orange-700 shadow-orange-400/40 hover:-translate-y-1'
+              : 'bg-gradient-to-r from-simon-blue to-blue-600 hover:from-simon-blue hover:to-blue-700 shadow-blue-400/40 hover:-translate-y-1'
               }`}
             disabled={isThinking}
           >
@@ -502,8 +502,8 @@ export default function SimonPrimeChat({
               <button
                 onClick={() => toggleVoice()}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all shadow-lg ${synthConfig.enabled
-                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-emerald-400/40 hover:-translate-y-1'
-                    : 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-400/40 hover:-translate-y-1'
+                  ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-emerald-400/40 hover:-translate-y-1'
+                  : 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-400/40 hover:-translate-y-1'
                   }`}
                 title={synthConfig.enabled ? 'Voice ON - Simon will speak' : 'Voice OFF - Text only'}
               >
@@ -540,8 +540,8 @@ export default function SimonPrimeChat({
               )}
 
               <div className={`px-4 py-3 rounded-lg transition-all ${message.sender === 'user'
-                  ? 'bg-gradient-to-r from-simon-blue to-blue-600 text-white shadow-lg shadow-blue-400/40'
-                  : 'bg-white/5 backdrop-blur-lg text-simon-blue-text border border-simon-blue-light/20 shadow-lg'
+                ? 'bg-gradient-to-r from-simon-blue to-blue-600 text-white shadow-lg shadow-blue-400/40'
+                : 'bg-white/5 backdrop-blur-lg text-simon-blue-text border border-simon-blue-light/20 shadow-lg'
                 }`}>
                 {message.sender === 'simon' && (
                   <div className="flex items-center justify-between mb-2">
@@ -558,8 +558,8 @@ export default function SimonPrimeChat({
                         onClick={() => handleSpeakMessage(message)}
                         disabled={isSpeaking}
                         className={`text-xs px-2 py-1 rounded transition-all ${isSpeaking
-                            ? 'bg-orange-500/20 text-orange-300'
-                            : 'bg-white/10 text-simon-blue-text/70 hover:bg-white/20 hover:text-simon-blue-text'
+                          ? 'bg-orange-500/20 text-orange-300'
+                          : 'bg-white/10 text-simon-blue-text/70 hover:bg-white/20 hover:text-simon-blue-text'
                           }`}
                         title="Speak this message"
                       >

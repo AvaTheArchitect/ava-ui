@@ -1,0 +1,59 @@
+/* Maestro Custom Cursor Styles
+ * Songsterr-inspired thin, smooth cursor
+ */
+
+.maestro-cursor {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2px;
+    height: 100px;
+    background: linear-gradient(
+        to bottom,
+        rgba(34, 197, 94, 0.9),
+        rgba(34, 197, 94, 0.7)
+    );
+    pointer-events: none;
+    z-index: 9999;
+    display: none;
+    transition: left 50ms linear;
+    will-change: transform, left;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+/* Active state during playback */
+.maestro-cursor.playing {
+    background: linear-gradient(
+        to bottom,
+        rgba(34, 197, 94, 1),
+        rgba(34, 197, 94, 0.8)
+    );
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+}
+
+/* Optional: Pick indicator at top of cursor */
+.maestro-cursor::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -3px;
+    width: 8px;
+    height: 8px;
+    background: rgba(34, 197, 94, 1);
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.9);
+}
+
+/* Smooth animation for cursor movement */
+@keyframes cursor-pulse {
+    0%, 100% {
+        opacity: 0.9;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+.maestro-cursor.playing {
+    animation: cursor-pulse 1s ease-in-out infinite;
+}
