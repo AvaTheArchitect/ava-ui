@@ -287,7 +287,7 @@ export default function MaestroApp(): React.JSX.Element {
         singers: { title: "Singer's Corner", desc: 'Vocal training & exercises' },
         jam: { title: 'Jam Zone', desc: 'Interactive jam sessions' },
         lessons: { title: "Teachers' Lessons", desc: 'Connect with instructors' },
-        build: { title: "Songwriter's Studio", desc: 'Composition & songwriting tools' },
+        build: { title: "Songwriter's Studio", desc: 'Composition tools' },
         'ai-tab': { title: 'AI Stem & Tab', desc: 'AI-powered transcription' }
       },
       nav: {
@@ -417,7 +417,7 @@ export default function MaestroApp(): React.JSX.Element {
     }
   }
 
-  // Main modules configuration - UPDATED with synth-player route
+  // Main modules configuration
   const modules = [
     {
       id: 'practice' as ModuleId,
@@ -425,7 +425,7 @@ export default function MaestroApp(): React.JSX.Element {
       icon: Guitar,
       color: getModuleColor('practice'),
       description: t.modules.practice.desc,
-      route: '/synth-player' // ✅ LINKED TO SYNTH PLAYER!
+      route: '/synth-player'
     },
     {
       id: 'singers' as ModuleId,
@@ -453,7 +453,7 @@ export default function MaestroApp(): React.JSX.Element {
     },
     {
       id: 'build' as ModuleId,
-      title: t.modules.build.title, // ✅ NOW "Songwriter's Studio"
+      title: t.modules.build.title,
       icon: Wrench,
       color: getModuleColor('build'),
       description: t.modules.build.desc,
