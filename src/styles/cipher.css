@@ -1,0 +1,19 @@
+/* Shared input styles */
+.select-purple {
+    @apply border border-purple-500 bg-white text-black rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-purple-600 transition duration-200 ease-in-out;
+}
+
+.select-purple-dark {
+    @apply border border-purple-500 dark:border-purple-400 bg-white dark:bg-gray-800 text-black dark:text-white rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-purple-600 transition duration-200 ease-in-out;
+}
+
+..highlight-fret {
+    @apply text-white w-8 h-8 flex items-center justify-center rounded-full;
+    background-color: #7c3aed;
+    /* Tailwind purple-600 */
+}
+
+.dark .highlight-fret {
+    background-color: #a78bfa;
+    /* Tailwind purple-400 */
+}
