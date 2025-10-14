@@ -58,7 +58,6 @@ backup-*/
 # Development reports and analysis
 cipher-reports/
 maestro-brain/data/intelligence/
-maestro-ai-input/processed/
 
 # Additional backup patterns
 *.backup
@@ -67,3 +66,8 @@ maestro-ai-input/processed/
 src/**/*.backup
 src/**/*.backup[0-9]
 **/*.backup
+ava-agent/
+ava-ui/
+.gitmodules.save
+maestro-ai.pub
+maestro-ai-input/processed/
