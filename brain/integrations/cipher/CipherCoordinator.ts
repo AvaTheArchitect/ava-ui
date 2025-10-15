@@ -891,7 +891,7 @@ export class CipherCoordinator implements BrainModule {
       request.targetPaths?.map((path) =>
         path.split("/").slice(0, -1).join("/")
       ) || [];
-    const uniqueFolders = [...new Set(folders)];
+    const uniqueFolders = Array.from(new Set(folders));
 
     return {
       shouldCreate,

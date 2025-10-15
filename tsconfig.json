@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "target": "es6",
+    "ignoreDeprecations": "6.0",
+    "target": "es2015",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -51,8 +52,9 @@
     "MaestroBrain.ts",
     "brain/**/*",
     "src/types/**/*.d.ts",
-    "*.d.ts"
-, "src/hooks/audio/playback/usePlaybackControls.tsx"  ],
+    "*.d.ts",
+    "src/hooks/audio/playback/usePlaybackControls.tsx"
+  ],
   "exclude": [
     "node_modules",
     "brain/node_modules",

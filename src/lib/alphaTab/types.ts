@@ -4,46 +4,53 @@
 export type AlphaTabApi = any; // Will be properly typed after @coderline/alphatab import
 
 export interface CursorPosition {
-    x: number;
-    y: number;
-    height: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
+export interface PlaybackInfo {
+  volume: number;
+  isMuted?: boolean;
+  isSoloed?: boolean;
 }
 
 export interface Track {
-    index: number;
-    name: string;
-    color: any;
+  index: number;
+  name: string;
+  color: any;
+  playbackInfo: PlaybackInfo;
 }
 
 export interface SongInfo {
-    title: string;
-    artist: string;
-    album: string;
-    tempo: number;
+  title: string;
+  artist: string;
+  album: string;
+  tempo: number;
 }
 
 export interface BeatBounds {
-    visualBounds: {
-        x: number;
+  visualBounds: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
+  barBounds: {
+    masterBarBounds: {
+      visualBounds: {
         y: number;
-        w: number;
-        h: number;
+      };
     };
-    barBounds: {
-        masterBarBounds: {
-            visualBounds: {
-                y: number;
-            };
-        };
-    };
+  };
 }
 
 export interface Beat {
-    absolutePlaybackStart: number;
-    playbackDuration: number;
-    nextBeat: Beat | null;
+  absolutePlaybackStart: number;
+  playbackDuration: number;
+  nextBeat: Beat | null;
 }
 
 export interface BeatLookupResult {
-    beat: Beat | null;
+  beat: Beat | null;
 }

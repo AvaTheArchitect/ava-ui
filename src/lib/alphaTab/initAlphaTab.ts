@@ -65,7 +65,7 @@ export async function initAlphaTab(
 
     // 2. Enable workers for synthesis to actually make it work
     // Even though we disabled rendering workers, we NEED synthesis workers
-    settings.core.useWorkers = true;
+    settings.core.useWorkers = false;
 
     console.log("🎹 SYNTHESIZER MODE enabled");
     console.log("🎼 SoundFont:", soundFontPath);

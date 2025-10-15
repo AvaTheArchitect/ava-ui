@@ -4,7 +4,7 @@
  * Central AI orchestrator that coordinates all music intelligence systems
  */
 
-import {
+import type {
   AudioFeatures,
   GuitarAnalysis,
   VocalAnalysis,
