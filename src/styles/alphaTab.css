@@ -1,6 +1,6 @@
 /**
- * alphaTab Required Styles - Maestro.ai Purple Cursor
- * FIXED: Corrected !important syntax for box-shadow
+ * alphaTab Required Styles - Simple Purple Cursor (Minimal Approach)
+ * Based on the working green version - NO effects, just color
  * Place in: src/styles/alphaTab.css
  */
 
@@ -23,46 +23,29 @@
     display: none !important;
 }
 
-/* Beat line cursor - FALLBACK VERSION (lower specificity) */
+/* Beat line cursor - SIMPLE purple line (based on working green version) */
 .at-cursor-beat {
-    /* Purple color for the center line */
-    background: #a855f7 !important;
-    
-    box-shadow: 
-        15px 0 0 #a855f7,
-        -15px 0 0 #a855f7,
-        0 0 15px 3px rgba(168, 85, 247, 0.7)
-    !important;
-    
-    opacity: 1 !important;
-    visibility: visible !important;
-    
-    /* REMOVED: clip-path - let cursor span full height */
+    background: rgba(168, 85, 247, 0.9) !important; /* Purple with slight transparency */
+    /* NO box-shadow, NO glow, NO effects - just like the working version */
 }
 
-/* Beat line cursor - HIGH SPECIFICITY VERSION */
+/* High specificity version for safety */
 #maestro-player .at-cursor-beat {
-    /* Purple color for the center line */
-    background: #a855f7 !important; /* Maestro.ai Purple (violet-500) */
-    
-    /* THICK LINE with GLOW: 15px on each side = ~32px total */
-    box-shadow: 
-        15px 0 0 #a855f7,                      /* Solid right shadow */
-        -15px 0 0 #a855f7,                     /* Solid left shadow */
-        0 0 15px 3px rgba(168, 85, 247, 0.7)  /* Stronger glow effect */
-    !important;
-    
-    /* Make fully visible */
-    opacity: 1 !important;
-    visibility: visible !important;
-    
-    /* REMOVED: clip-path - let cursor span full height like AlphaTab default */
+    background: rgba(168, 85, 247, 0.9) !important;
 }
 
-/* Selection highlighting - purple theme */
+/* Mobile-specific - still minimal, just ensuring visibility */
+@media (max-width: 768px) {
+    .at-cursor-beat {
+        background: rgba(168, 85, 247, 1) !important; /* Full opacity on mobile */
+        min-width: 2px !important; /* Ensure minimum width */
+    }
+}
+
+/* Selection highlighting */
 .at-selection div {
     position: absolute;
-    background: rgba(168, 85, 247, 0.25);
+    background: rgba(168, 85, 247, 0.3);
     pointer-events: none;
     z-index: 998;
     border: 2px solid rgba(168, 85, 247, 0.6);
@@ -164,73 +147,3 @@
         overflow: visible !important;
     }
 }
-/* MOBILE-SPECIFIC CURSOR FIXES */
-@media (max-width: 768px), (hover: none) and (pointer: coarse) {
-  .at-cursor-beat {
-    box-shadow: none !important;
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
-    will-change: transform;
-    background: #a855f7 !important;
-    width: 3px !important;
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-    opacity: 1 !important;
-    visibility: visible !important;
-    z-index: 1000 !important;
-    pointer-events: none !important;
-  }
-  
-  .at-cursor-beat::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -7px;
-    right: -7px;
-    bottom: 0;
-    background: rgba(168, 85, 247, 0.3);
-    filter: blur(8px);
-    pointer-events: none;
-    z-index: -1;
-  }
-}
-/* ============================================
-   CUSTOMIZATION GUIDE
-   ============================================
-   
-   LIMITATION: AlphaTab uses inline styles (width + scale transform) that 
-   CANNOT be overridden with CSS alone. To control cursor thickness, we need
-   JavaScript to manipulate the DOM after AlphaTab creates the cursor.
-   
-   Current Settings (Color Only):
-   - Color: Purple (#a855f7) ✅ WORKS
-   - Glow effect: 15px blur ✅ WORKS
-   - Thickness: Limited by AlphaTab's scale transform ❌ Needs JavaScript
-   - Height: Full staff height (clip-path removed)
-   
-   What Works with CSS:
-   - Color changes (background)
-   - Glow effects (box-shadow blur)
-   - Visibility (opacity, display)
-   - Small horizontal shadows
-   
-   What Requires JavaScript:
-   - True thickness control (needs to override inline width + scale)
-   - Custom cursor shapes
-   - Height control beyond AlphaTab's default
-   
-   For Songsterr-Style Cursor:
-   We need to create a custom SVG overlay cursor that follows playback position,
-   similar to how Songsterr implements theirs. This will be a future enhancement.
-   
-   To change COLOR (this DOES work):
-   - Deeper purple: #7c3aed (purple-600)
-   - Lighter lavender: #c084fc (purple-400)
-   - Brighter purple: #9333ea (purple-700)
-   - Replace #a855f7 in both background and box-shadow rgba values
-   
-   NEXT STEPS:
-   1. Accept current cursor appearance with purple color ✅
-   2. Plan custom SVG cursor overlay (like Songsterr) for future
-   3. Use JavaScript to manipulate AlphaTab cursor if needed
-   ============================================ */

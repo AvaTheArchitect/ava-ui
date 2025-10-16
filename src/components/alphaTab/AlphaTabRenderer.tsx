@@ -14,7 +14,121 @@ export interface AlphaTabRendererProps {
     minHeight?: string;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
+    enableTouchSelection?: boolean;
 }
+
+// Touch event handlers for loop selection
+const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
+    let startBeat: any = null;
+    let endBeat: any = null;
+    let isSelecting = false;
+
+    // Helper to get beat at touch position
+    const getBeatAtPosition = (x: number, y: number) => {
+        if (!api.renderer?.boundsLookup) return null;
+
+        // Convert touch coordinates to container-relative
+        const rect = container.getBoundingClientRect();
+        const relX = x - rect.left + container.scrollLeft;
+        const relY = y - rect.top + container.scrollTop;
+
+        return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
+    };
+
+    // Handle touch start
+    const handleTouchStart = (e: Event) => {
+        const touchEvent = e as TouchEvent;
+        // Only handle single-finger touch
+        if (touchEvent.touches.length !== 1) return;
+
+        const touch = touchEvent.touches[0];
+        const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+
+        if (beat) {
+            // Prevent text selection only when we have a valid beat
+            e.preventDefault();
+            e.stopPropagation();
+
+            startBeat = beat;
+            endBeat = beat;
+            isSelecting = true;
+
+            console.log('🎸 Selection started at beat:', beat.index);
+        }
+    };
+
+    // Handle touch move
+    const handleTouchMove = (e: Event) => {
+        const touchEvent = e as TouchEvent;
+        if (!isSelecting || touchEvent.touches.length !== 1) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const touch = touchEvent.touches[0];
+        const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+
+        if (beat && beat !== endBeat) {
+            endBeat = beat;
+
+            // Update selection range in AlphaTab
+            if (startBeat && endBeat) {
+                // Ensure correct order
+                const start = startBeat.index < endBeat.index ? startBeat : endBeat;
+                const end = startBeat.index < endBeat.index ? endBeat : startBeat;
+
+                // Set playback range
+                if (api.playbackRange !== undefined) {
+                    api.playbackRange = {
+                        startTick: start.absolutePlaybackStart,
+                        endTick: end.absolutePlaybackStart + end.playbackDuration
+                    };
+                }
+
+                console.log(`🎸 Selection: beat ${start.index} to ${end.index}`);
+            }
+        }
+    };
+
+    // Handle touch end
+    const handleTouchEnd = (e: Event) => {
+        if (!isSelecting) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (startBeat && endBeat) {
+            const start = startBeat.index < endBeat.index ? startBeat : endBeat;
+            const end = startBeat.index < endBeat.index ? endBeat : startBeat;
+
+            console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
+
+            // Trigger visual update
+            if (api.render) {
+                api.render();
+            }
+        }
+
+        isSelecting = false;
+    };
+
+    // Attach listeners with passive: false to allow preventDefault
+    const surface = container.querySelector('.at-surface');
+    const target = surface || container;
+
+    target.addEventListener('touchstart', handleTouchStart as EventListener, { passive: false });
+    target.addEventListener('touchmove', handleTouchMove as EventListener, { passive: false });
+    target.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
+    target.addEventListener('touchcancel', handleTouchEnd as EventListener, { passive: false });
+
+    // Return cleanup function
+    return () => {
+        target.removeEventListener('touchstart', handleTouchStart as EventListener);
+        target.removeEventListener('touchmove', handleTouchMove as EventListener);
+        target.removeEventListener('touchend', handleTouchEnd as EventListener);
+        target.removeEventListener('touchcancel', handleTouchEnd as EventListener);
+    };
+};
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     fileUrl,
@@ -25,10 +139,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     className = '',
     minHeight = '600px',
     playerMode = 'external',
-    soundFontPath = '/soundfont/sonivox.sf2'
+    soundFontPath = '/soundfont/sonivox.sf2',
+    enableTouchSelection = true
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
     useEffect(() => {
@@ -117,6 +233,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.renderFinished.on(() => {
                     if (!isMounted) return;
                     console.log('✅ Rendering complete');
+                    setIsRendered(true);
                     onRenderFinished?.();
                 });
 
@@ -158,6 +275,31 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
+
+    // Setup touch selection handlers AFTER rendering is complete
+    useEffect(() => {
+        if (!enableTouchSelection || !apiRef.current || !containerRef.current || !isRendered) {
+            return;
+        }
+
+        // Wait a bit for boundsLookup to be ready
+        const setupTimer = setTimeout(() => {
+            if (apiRef.current && containerRef.current) {
+                console.log('🎯 Setting up touch selection...');
+                const cleanup = setupTouchSelection(apiRef.current, containerRef.current);
+                
+                // Store cleanup function
+                return () => {
+                    console.log('🧹 Cleaning up touch selection');
+                    cleanup();
+                };
+            }
+        }, 500);
+
+        return () => {
+            clearTimeout(setupTimer);
+        };
+    }, [isRendered, enableTouchSelection]);
 
     return (
         <div className="relative">
