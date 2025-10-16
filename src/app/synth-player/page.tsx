@@ -72,11 +72,21 @@ export default function SynthPlayerPage() {
             });
         }
 
+        // UPDATE the playerStateChanged handler - REMOVE the reset logic:
         if (alphaTabApi.playerStateChanged) {
             alphaTabApi.playerStateChanged.on((e: any) => {
                 const playing = e.state === 1;
-                addDiagnostic(`🎹 ${playing ? 'Playing' : 'Paused'}`);
+                addDiagnostic(`🎹 ${playing ? 'Playing' : e.state === 0 ? 'Paused' : 'Finished'} (state: ${e.state})`);
                 setIsPlaying(playing);
+
+                // Only reset on finished, NOT on pause/stop
+                // The stop button will handle its own reset
+                if (e.state === 2) { // 2 = Finished playing
+                    currentTimeRef.current = 0;
+                    setDisplayTime(0);
+                    addDiagnostic('✅ Playback finished - reset to start');
+                }
+                // Do NOT reset on state 0 (paused) - let pause maintain position
             });
         }
 
@@ -156,7 +166,7 @@ export default function SynthPlayerPage() {
 
     const toggleLoop = useCallback(() => {
         if (!api) return;
-        
+
         const newLoopState = !isLooping;
         api.isLooping = newLoopState;
         setIsLooping(newLoopState);
@@ -165,7 +175,7 @@ export default function SynthPlayerPage() {
 
     const clearSelection = useCallback(() => {
         if (!api) return;
-        
+
         api.playbackRange = null;
         setHasSelection(false);
         addDiagnostic('🗑️ Selection cleared');
@@ -233,10 +243,26 @@ export default function SynthPlayerPage() {
         api.playPause();
     };
 
+    // UPDATE handleStop to explicitly reset everything:
     const handleStop = () => {
         if (api) {
             addDiagnostic('⏹️ Stop');
             api.stop();
+
+            // Force reset everything on stop
+            currentTimeRef.current = 0;
+            setDisplayTime(0);
+            setIsPlaying(false);
+
+            // Force the API to reset position
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = 0;
+            }
+
+            // Optional: Force update the display immediately
+            setTimeout(() => {
+                setDisplayTime(0);
+            }, 50);
         }
     };
 
@@ -248,12 +274,12 @@ export default function SynthPlayerPage() {
 
     const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!api || !soundFontLoaded || displayDuration === 0) return;
-        
+
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const percent = x / rect.width;
         const targetTime = percent * displayDuration;
-        
+
         // Convert time to ticks and seek
         const targetTick = Math.floor((targetTime / displayDuration) * (durationRef.current * 1000));
         api.tickPosition = targetTick;
@@ -353,7 +379,7 @@ export default function SynthPlayerPage() {
                             (Browsers require user interaction to start audio)
                         </div>
                     )}
-                    
+
                     {/* Transport Controls Row */}
                     <div className="flex items-center gap-4 mb-4">
                         <button
@@ -381,11 +407,10 @@ export default function SynthPlayerPage() {
                         <button
                             onClick={toggleLoop}
                             disabled={!api}
-                            className={`px-6 py-3 rounded-lg font-bold transition-all flex items-center gap-2 ${
-                                isLooping
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white border-2 border-blue-400'
-                                    : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
-                            }`}
+                            className={`px-6 py-3 rounded-lg font-bold transition-all flex items-center gap-2 ${isLooping
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white border-2 border-blue-400'
+                                : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
+                                }`}
                             title={isLooping ? 'Loop enabled' : 'Loop disabled'}
                         >
                             🔄 Loop {isLooping && '✓'}
@@ -407,7 +432,7 @@ export default function SynthPlayerPage() {
                     </div>
 
                     {/* Progress bar with GRADIENT */}
-                    <div 
+                    <div
                         className="w-full bg-gray-700 rounded-full h-3 overflow-hidden cursor-pointer"
                         onClick={handleProgressBarClick}
                         title="Click to seek"

@@ -164,7 +164,36 @@
         overflow: visible !important;
     }
 }
-
+/* MOBILE-SPECIFIC CURSOR FIXES */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .at-cursor-beat {
+    box-shadow: none !important;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: transform;
+    background: #a855f7 !important;
+    width: 3px !important;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    opacity: 1 !important;
+    visibility: visible !important;
+    z-index: 1000 !important;
+    pointer-events: none !important;
+  }
+  
+  .at-cursor-beat::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -7px;
+    right: -7px;
+    bottom: 0;
+    background: rgba(168, 85, 247, 0.3);
+    filter: blur(8px);
+    pointer-events: none;
+    z-index: -1;
+  }
+}
 /* ============================================
    CUSTOMIZATION GUIDE
    ============================================
