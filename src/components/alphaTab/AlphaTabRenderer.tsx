@@ -24,6 +24,10 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     let isSelecting = false;
     let touchStartTime = 0;
     let touchMoved = false;
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
 
     // Helper to get beat at touch position
     const getBeatAtPosition = (x: number, y: number) => {
@@ -37,6 +41,14 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
     };
 
+    // Check if touch is in scroll zone (right edge of screen)
+    const isInScrollZone = (x: number) => {
+        const rect = container.getBoundingClientRect();
+        const rightEdge = rect.right;
+        const scrollZoneWidth = 50; // 50px from right edge
+        return x > (rightEdge - scrollZoneWidth);
+    };
+
     // Handle touch start
     const handleTouchStart = (e: Event) => {
         const touchEvent = e as TouchEvent;
@@ -44,15 +56,23 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         if (touchEvent.touches.length !== 1) return;
 
         const touch = touchEvent.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        currentX = startX;
+        currentY = startY;
         touchStartTime = Date.now();
         touchMoved = false;
+
+        // Don't start selection in scroll zone
+        if (isInScrollZone(startX)) {
+            return;
+        }
 
         const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
         if (beat) {
             startBeat = beat;
             endBeat = beat;
-            // Don't set isSelecting yet - wait for movement
         }
     };
 
@@ -61,37 +81,58 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const touchEvent = e as TouchEvent;
         if (touchEvent.touches.length !== 1 || !startBeat) return;
 
-        touchMoved = true;
-
         const touch = touchEvent.touches[0];
-        const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+        currentX = touch.clientX;
+        currentY = touch.clientY;
 
-        if (beat && beat !== endBeat) {
-            // Only start selecting if user has moved significantly
-            if (!isSelecting) {
-                isSelecting = true;
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('🎸 Selection started at beat:', startBeat.index);
-            }
+        const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-            endBeat = beat;
+        // Check if this is primarily vertical scrolling
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+            // Vertical scroll - don't interfere
+            startBeat = null;
+            endBeat = null;
+            return;
+        }
 
-            // Update selection range in AlphaTab
-            if (startBeat && endBeat) {
-                // Ensure correct order
-                const start = startBeat.index < endBeat.index ? startBeat : endBeat;
-                const end = startBeat.index < endBeat.index ? endBeat : startBeat;
+        // Require horizontal movement AND left-to-right direction
+        const isHorizontalDrag = Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY);
+        const isLeftToRight = deltaX > 0;
 
-                // Set playback range
-                if (api.playbackRange !== undefined) {
-                    api.playbackRange = {
-                        startTick: start.absolutePlaybackStart,
-                        endTick: end.absolutePlaybackStart + end.playbackDuration
-                    };
+        if (isHorizontalDrag && isLeftToRight) {
+            touchMoved = true;
+
+            const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+
+            if (beat && beat !== endBeat) {
+                // Only start selecting on first valid movement
+                if (!isSelecting) {
+                    isSelecting = true;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🎸 Selection started at beat:', startBeat.index);
                 }
 
-                console.log(`🎸 Selection: beat ${start.index} to ${end.index}`);
+                endBeat = beat;
+
+                // Update selection range in AlphaTab
+                if (startBeat && endBeat) {
+                    // Ensure correct order (left to right)
+                    const start = startBeat.index < endBeat.index ? startBeat : endBeat;
+                    const end = startBeat.index < endBeat.index ? endBeat : startBeat;
+
+                    // Set playback range
+                    if (api.playbackRange !== undefined) {
+                        api.playbackRange = {
+                            startTick: start.absolutePlaybackStart,
+                            endTick: end.absolutePlaybackStart + end.playbackDuration
+                        };
+                    }
+
+                    console.log(`🎸 Selection: beat ${start.index} to ${end.index}`);
+                }
             }
         }
     };
@@ -105,6 +146,11 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             if (api.playbackRange !== undefined) {
                 api.playbackRange = null;
                 console.log('🎸 Loop cleared - ready for full playback');
+
+                // If player is stopped/paused and loop was cleared, ensure it can play
+                if (api.playerState === 0) {
+                    console.log('🎸 Player ready for full playback from current position');
+                }
             }
         }
 
@@ -112,11 +158,12 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             e.preventDefault();
             e.stopPropagation();
 
-            if (startBeat && endBeat) {
+            if (startBeat && endBeat && startBeat !== endBeat) {
                 const start = startBeat.index < endBeat.index ? startBeat : endBeat;
                 const end = startBeat.index < endBeat.index ? endBeat : startBeat;
 
                 console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
+                console.log('💡 TIP: Press play to loop this section');
 
                 // Trigger visual update
                 if (api.render) {
@@ -130,9 +177,11 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         startBeat = null;
         endBeat = null;
         touchMoved = false;
+        startX = 0;
+        startY = 0;
     };
 
-    // Attach listeners with passive: false to allow preventDefault
+    // Attach listeners
     const surface = container.querySelector('.at-surface');
     const target = surface || container;
 
