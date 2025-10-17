@@ -45,7 +45,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     const isInScrollZone = (x: number) => {
         const rect = container.getBoundingClientRect();
         const rightEdge = rect.right;
-        const scrollZoneWidth = 50; // 50px from right edge
+        const scrollZoneWidth = 40; // 40px from right edge
         return x > (rightEdge - scrollZoneWidth);
     };
 
@@ -97,11 +97,10 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             return;
         }
 
-        // Require horizontal movement AND left-to-right direction
+        // Require significant horizontal movement (either direction now)
         const isHorizontalDrag = Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY);
-        const isLeftToRight = deltaX > 0;
 
-        if (isHorizontalDrag && isLeftToRight) {
+        if (isHorizontalDrag) {
             touchMoved = true;
 
             const beat = getBeatAtPosition(touch.clientX, touch.clientY);
@@ -119,7 +118,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
 
                 // Update selection range in AlphaTab
                 if (startBeat && endBeat) {
-                    // Ensure correct order (left to right)
+                    // Ensure correct order
                     const start = startBeat.index < endBeat.index ? startBeat : endBeat;
                     const end = startBeat.index < endBeat.index ? endBeat : startBeat;
 
@@ -147,9 +146,10 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
                 api.playbackRange = null;
                 console.log('🎸 Loop cleared - ready for full playback');
 
-                // If player is stopped/paused and loop was cleared, ensure it can play
-                if (api.playerState === 0) {
-                    console.log('🎸 Player ready for full playback from current position');
+                // CRITICAL FIX: If player was paused with a loop, it gets stuck
+                // Clearing the loop should allow playback to resume
+                if (api.playerState === 0 || api.playerState === 2) {
+                    console.log('✅ Player state reset - can now play from current position');
                 }
             }
         }
@@ -163,7 +163,16 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
                 const end = startBeat.index < endBeat.index ? endBeat : startBeat;
 
                 console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
-                console.log('💡 TIP: Press play to loop this section');
+                console.log('💡 Loop is active - press play to start looping');
+
+                // CRITICAL FIX: If player is paused/stopped, seeking to loop start helps
+                if (api.playerState === 0 || api.playerState === 2) {
+                    // Move playhead to loop start when loop is set while paused
+                    if (api.tickPosition !== undefined) {
+                        api.tickPosition = start.absolutePlaybackStart;
+                        console.log('🎯 Playhead moved to loop start - ready to play');
+                    }
+                }
 
                 // Trigger visual update
                 if (api.render) {
