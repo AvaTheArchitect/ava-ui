@@ -22,6 +22,8 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     let startBeat: any = null;
     let endBeat: any = null;
     let isSelecting = false;
+    let touchStartTime = 0;
+    let touchMoved = false;
 
     // Helper to get beat at touch position
     const getBeatAtPosition = (x: number, y: number) => {
@@ -42,33 +44,37 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         if (touchEvent.touches.length !== 1) return;
 
         const touch = touchEvent.touches[0];
+        touchStartTime = Date.now();
+        touchMoved = false;
+
         const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
         if (beat) {
-            // Prevent text selection only when we have a valid beat
-            e.preventDefault();
-            e.stopPropagation();
-
             startBeat = beat;
             endBeat = beat;
-            isSelecting = true;
-
-            console.log('🎸 Selection started at beat:', beat.index);
+            // Don't set isSelecting yet - wait for movement
         }
     };
 
     // Handle touch move
     const handleTouchMove = (e: Event) => {
         const touchEvent = e as TouchEvent;
-        if (!isSelecting || touchEvent.touches.length !== 1) return;
+        if (touchEvent.touches.length !== 1 || !startBeat) return;
 
-        e.preventDefault();
-        e.stopPropagation();
+        touchMoved = true;
 
         const touch = touchEvent.touches[0];
         const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
         if (beat && beat !== endBeat) {
+            // Only start selecting if user has moved significantly
+            if (!isSelecting) {
+                isSelecting = true;
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🎸 Selection started at beat:', startBeat.index);
+            }
+
             endBeat = beat;
 
             // Update selection range in AlphaTab
@@ -92,31 +98,45 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
 
     // Handle touch end
     const handleTouchEnd = (e: Event) => {
-        if (!isSelecting) return;
+        const touchDuration = Date.now() - touchStartTime;
 
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (startBeat && endBeat) {
-            const start = startBeat.index < endBeat.index ? startBeat : endBeat;
-            const end = startBeat.index < endBeat.index ? endBeat : startBeat;
-
-            console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
-
-            // Trigger visual update
-            if (api.render) {
-                api.render();
+        // If it was a quick tap without movement, clear any loop selection
+        if (!touchMoved && touchDuration < 300) {
+            if (api.playbackRange !== undefined) {
+                api.playbackRange = null;
+                console.log('🎸 Loop cleared - ready for full playback');
             }
         }
 
+        if (isSelecting) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (startBeat && endBeat) {
+                const start = startBeat.index < endBeat.index ? startBeat : endBeat;
+                const end = startBeat.index < endBeat.index ? endBeat : startBeat;
+
+                console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
+
+                // Trigger visual update
+                if (api.render) {
+                    api.render();
+                }
+            }
+        }
+
+        // Reset state
         isSelecting = false;
+        startBeat = null;
+        endBeat = null;
+        touchMoved = false;
     };
 
     // Attach listeners with passive: false to allow preventDefault
     const surface = container.querySelector('.at-surface');
     const target = surface || container;
 
-    target.addEventListener('touchstart', handleTouchStart as EventListener, { passive: false });
+    target.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
     target.addEventListener('touchmove', handleTouchMove as EventListener, { passive: false });
     target.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
     target.addEventListener('touchcancel', handleTouchEnd as EventListener, { passive: false });
@@ -287,7 +307,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (apiRef.current && containerRef.current) {
                 console.log('🎯 Setting up touch selection...');
                 const cleanup = setupTouchSelection(apiRef.current, containerRef.current);
-                
+
                 // Store cleanup function
                 return () => {
                     console.log('🧹 Cleaning up touch selection');

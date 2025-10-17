@@ -69,20 +69,34 @@ export default function RootLayout({
 
         {/* PWA Optimizations */}
         <style>{`
-          /* Base PWA adjustments */
-          html, body {
+          /* Base PWA adjustments - Fill entire viewport */
+          html {
+            height: 100%;
             overflow-x: hidden;
             -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
           }
           
-          /* Safe area adjustments for iPhone notch - ONLY for fixed elements */
+          body {
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            overflow-x: hidden;
+            /* Remove safe area padding from body - let individual components handle it */
+            margin: 0;
+            padding: 0;
+          }
+          
+          /* Utility classes for safe area control */
           .safe-area-top {
             padding-top: env(safe-area-inset-top);
           }
           
           .safe-area-bottom {
             padding-bottom: env(safe-area-inset-bottom);
+          }
+          
+          .ignore-safe-area {
+            margin: calc(-1 * env(safe-area-inset-top)) calc(-1 * env(safe-area-inset-right)) calc(-1 * env(safe-area-inset-bottom)) calc(-1 * env(safe-area-inset-left));
           }
           
           /* Prevent text selection ONLY in music notation areas */
@@ -100,6 +114,13 @@ export default function RootLayout({
           /* Ensure containers respect viewport boundaries */
           * {
             box-sizing: border-box;
+          }
+          
+          /* Fix for iOS Safari viewport height issue */
+          @supports (-webkit-touch-callout: none) {
+            body {
+              min-height: -webkit-fill-available;
+            }
           }
         `}</style>
       </head>
