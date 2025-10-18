@@ -18,40 +18,69 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ api, currentTime, isPlay
             return;
         }
 
-        const info: Record<string, any> = {
-            'API Ready': '✅',
-            'Score Loaded': api.score ? '✅' : '❌',
-            'Renderer Ready': api.renderer ? '✅' : '❌',
-            'BoundsLookup': api.renderer?.boundsLookup ? '✅' : '❌',
-            'TickCache': api.tickCache ? '✅' : '❌',
-            'Rendered Tracks': api.tracks?.length || 0,
-            'Total Tracks': api.score?.tracks?.length || 0,
-            'Current Time': `${currentTime.toFixed(2)}s`,
-            'Playing': isPlaying ? '▶️' : '⏸️'
+        // Function to update debug info
+        const updateDebugInfo = () => {
+            const info: Record<string, any> = {
+                'API Ready': '✅',
+                'Score Loaded': api.score ? '✅' : '❌',
+                'Renderer Ready': api.renderer ? '✅' : '❌',
+                'BoundsLookup': api.renderer?.boundsLookup ? '✅' : '❌',
+                'TickCache': api.tickCache ? '✅' : '❌',
+                'Rendered Tracks': api.tracks?.length || 0,
+                'Total Tracks': api.score?.tracks?.length || 0,
+                'Current Time': `${currentTime.toFixed(2)}s`,
+                'Playing': isPlaying ? '▶️' : '⏸️'
+            };
+
+            // Try to find current beat
+            if (api.tickCache && api.tracks?.length > 0) {
+                try {
+                    const trackIndices = api.tracks.map((t: any) => t.index);
+                    const trackSet = new Set(trackIndices);
+                    const result = api.tickCache.findBeat(trackSet, currentTime * 1000);
+                    info['Beat Found'] = result?.beat ? '✅' : '❌';
+
+                    if (result?.beat && api.renderer?.boundsLookup) {
+                        const bounds = api.renderer.boundsLookup.findBeat(result.beat);
+                        info['Beat Bounds'] = bounds ? '✅' : '❌';
+                        if (bounds) {
+                            info['Cursor X'] = Math.floor(bounds.visualBounds.x);
+                            info['Cursor Y'] = Math.floor(bounds.visualBounds.y);
+                        }
+                    }
+                } catch (e) {
+                    info['Beat Lookup Error'] = e instanceof Error ? e.message : 'Unknown';
+                }
+            }
+
+            setDebugInfo(info);
         };
 
-        // Try to find current beat
-        if (api.tickCache && api.tracks?.length > 0) {
-            try {
-                const trackIndices = api.tracks.map((t: any) => t.index);
-                const trackSet = new Set(trackIndices);
-                const result = api.tickCache.findBeat(trackSet, currentTime * 1000);
-                info['Beat Found'] = result?.beat ? '✅' : '❌';
+        // CRITICAL FIX: Listen for scoreLoaded event
+        // This ensures track counts update when the score actually loads
+        if (api.scoreLoaded) {
+            const scoreLoadedHandler = () => {
+                console.log('✅ Score loaded - updating debug panel');
+                updateDebugInfo();
+            };
 
-                if (result?.beat && api.renderer?.boundsLookup) {
-                    const bounds = api.renderer.boundsLookup.findBeat(result.beat);
-                    info['Beat Bounds'] = bounds ? '✅' : '❌';
-                    if (bounds) {
-                        info['Cursor X'] = Math.floor(bounds.visualBounds.x);
-                        info['Cursor Y'] = Math.floor(bounds.visualBounds.y);
-                    }
-                }
-            } catch (e) {
-                info['Beat Lookup Error'] = e instanceof Error ? e.message : 'Unknown';
+            api.scoreLoaded.on(scoreLoadedHandler);
+
+            // Update immediately if score is already loaded
+            if (api.score) {
+                updateDebugInfo();
             }
-        }
 
-        setDebugInfo(info);
+            // Cleanup listener
+            return () => {
+                if (api.scoreLoaded) {
+                    api.scoreLoaded.off(scoreLoadedHandler);
+                }
+            };
+        } else {
+            // Fallback: just update with current values
+            updateDebugInfo();
+        }
     }, [api, currentTime, isPlaying]);
 
     return (
