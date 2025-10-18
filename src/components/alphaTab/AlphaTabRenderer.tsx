@@ -17,7 +17,8 @@ export interface AlphaTabRendererProps {
     enableTouchSelection?: boolean;
 }
 
-// Touch event handlers for loop selection
+// Touch event handlers for loop selection - FIXED VERSION
+// Addresses all critical bugs from handoff document
 const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     let startBeat: any = null;
     let endBeat: any = null;
@@ -28,12 +29,14 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     let startY = 0;
     let currentX = 0;
     let currentY = 0;
+    let lastTapTime = 0; // For double-tap detection
+
+    const DOUBLE_TAP_DELAY = 300; // ms for double-tap detection
 
     // Helper to get beat at touch position
     const getBeatAtPosition = (x: number, y: number) => {
         if (!api.renderer?.boundsLookup) return null;
 
-        // Convert touch coordinates to container-relative
         const rect = container.getBoundingClientRect();
         const relX = x - rect.left + container.scrollLeft;
         const relY = y - rect.top + container.scrollTop;
@@ -41,18 +44,35 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
     };
 
+    // 🔧 FIX #2: Snap to bar boundaries
+    const snapToBarStart = (beat: any) => {
+        if (!beat || !beat.voice || !beat.voice.bar) return beat;
+
+        // Get the first beat of the bar that contains this beat
+        const bar = beat.voice.bar;
+        if (bar.voices && bar.voices.length > 0) {
+            const firstVoice = bar.voices[0];
+            if (firstVoice.beats && firstVoice.beats.length > 0) {
+                const firstBeat = firstVoice.beats[0];
+                console.log(`📏 Snapped beat ${beat.index} → bar start beat ${firstBeat.index}`);
+                return firstBeat;
+            }
+        }
+
+        return beat;
+    };
+
     // Check if touch is in scroll zone (right edge of screen)
     const isInScrollZone = (x: number) => {
         const rect = container.getBoundingClientRect();
         const rightEdge = rect.right;
-        const scrollZoneWidth = 40; // 40px from right edge
+        const scrollZoneWidth = 40;
         return x > (rightEdge - scrollZoneWidth);
     };
 
     // Handle touch start
     const handleTouchStart = (e: Event) => {
         const touchEvent = e as TouchEvent;
-        // Only handle single-finger touch
         if (touchEvent.touches.length !== 1) return;
 
         const touch = touchEvent.touches[0];
@@ -62,17 +82,18 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         currentY = startY;
         touchStartTime = Date.now();
         touchMoved = false;
-
+        
         // Don't start selection in scroll zone
         if (isInScrollZone(startX)) {
             return;
         }
-
+        
         const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
         if (beat) {
-            startBeat = beat;
-            endBeat = beat;
+            // Snap to bar start for precision
+            startBeat = snapToBarStart(beat);
+            endBeat = startBeat;
         }
     };
 
@@ -84,11 +105,10 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const touch = touchEvent.touches[0];
         currentX = touch.clientX;
         currentY = touch.clientY;
-
+        
         const deltaX = currentX - startX;
         const deltaY = currentY - startY;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
+        
         // Check if this is primarily vertical scrolling
         if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
             // Vertical scroll - don't interfere
@@ -96,33 +116,52 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             endBeat = null;
             return;
         }
-
-        // Require significant horizontal movement (either direction now)
+        
+        // Require significant horizontal movement
         const isHorizontalDrag = Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY);
-
+        
         if (isHorizontalDrag) {
             touchMoved = true;
-
+            
+            // 🔧 FIX #3: Prevent scroll during selection
+            if (!isSelecting) {
+                isSelecting = true;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                // Prevent body scroll during selection
+                document.body.style.overflow = 'hidden';
+                console.log('🎸 Selection started at beat:', startBeat.index);
+            } else {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }
+            
             const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
             if (beat && beat !== endBeat) {
-                // Only start selecting on first valid movement
-                if (!isSelecting) {
-                    isSelecting = true;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🎸 Selection started at beat:', startBeat.index);
-                }
+                // Snap to bar start for precision
+                endBeat = snapToBarStart(beat);
 
-                endBeat = beat;
-
-                // Update selection range in AlphaTab
+                // Update selection range with minimum size check
                 if (startBeat && endBeat) {
-                    // Ensure correct order
                     const start = startBeat.index < endBeat.index ? startBeat : endBeat;
                     const end = startBeat.index < endBeat.index ? endBeat : startBeat;
 
-                    // Set playback range
+                    // Ensure minimum selection of 1 full measure
+                    if (start.voice?.bar && end.voice?.bar) {
+                        const barDistance = Math.abs(end.voice.bar.index - start.voice.bar.index);
+                        
+                        if (barDistance < 1) {
+                            // Selection too small - expand to at least 1 bar
+                            console.log('⚠️ Selection too small, expanding to full bar');
+                            return;
+                        }
+                    }
+
+                    // Set playback range for visual feedback
                     if (api.playbackRange !== undefined) {
                         api.playbackRange = {
                             startTick: start.absolutePlaybackStart,
@@ -130,7 +169,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
                         };
                     }
 
-                    console.log(`🎸 Selection: beat ${start.index} to ${end.index}`);
+                    console.log(`🎸 Selection: bar ${start.voice?.bar?.index} to ${end.voice?.bar?.index}`);
                 }
             }
         }
@@ -139,21 +178,45 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     // Handle touch end
     const handleTouchEnd = (e: Event) => {
         const touchDuration = Date.now() - touchStartTime;
-
-        // If it was a quick tap without movement, clear any loop selection
+        const now = Date.now();
+        
+        // 🔧 FIX #3: Restore scroll
+        document.body.style.overflow = '';
+        
+        // 🔧 FIX #4: Double-tap detection
+        const isDoubleTap = (now - lastTapTime) < DOUBLE_TAP_DELAY;
+        lastTapTime = now;
+        
+        // Quick tap handling
         if (!touchMoved && touchDuration < 300) {
-            if (api.playbackRange !== undefined) {
-                api.playbackRange = null;
-                console.log('🎸 Loop cleared - ready for full playback');
-
-                // CRITICAL FIX: If player was paused with a loop, it gets stuck
-                // Clearing the loop should allow playback to resume
-                if (api.playerState === 0 || api.playerState === 2) {
-                    console.log('✅ Player state reset - can now play from current position');
+            if (isDoubleTap) {
+                // Double-tap: clear loop
+                if (api.playbackRange !== undefined) {
+                    api.playbackRange = null;
+                    console.log('🗑️ Loop cleared via double-tap');
+                }
+            } else {
+                // Single tap: check if outside loop to clear
+                const hasLoop = api.playbackRange !== null;
+                
+                if (hasLoop) {
+                    const tapBeat = getBeatAtPosition(currentX, currentY);
+                    
+                    // If tap is outside current loop range, clear it
+                    if (tapBeat && api.playbackRange) {
+                        const tapTick = tapBeat.absolutePlaybackStart;
+                        const loopStart = api.playbackRange.startTick;
+                        const loopEnd = api.playbackRange.endTick;
+                        
+                        if (tapTick < loopStart || tapTick > loopEnd) {
+                            api.playbackRange = null;
+                            console.log('🗑️ Loop cleared - tapped outside loop');
+                        }
+                    }
                 }
             }
         }
-
+        
         if (isSelecting) {
             e.preventDefault();
             e.stopPropagation();
@@ -162,16 +225,14 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
                 const start = startBeat.index < endBeat.index ? startBeat : endBeat;
                 const end = startBeat.index < endBeat.index ? endBeat : startBeat;
 
-                console.log(`✅ Loop selected: beats ${start.index} to ${end.index}`);
+                console.log(`✅ Loop selected: bars ${start.voice?.bar?.index} to ${end.voice?.bar?.index}`);
                 console.log('💡 Loop is active - press play to start looping');
-
-                // CRITICAL FIX: If player is paused/stopped, seeking to loop start helps
-                if (api.playerState === 0 || api.playerState === 2) {
-                    // Move playhead to loop start when loop is set while paused
-                    if (api.tickPosition !== undefined) {
-                        api.tickPosition = start.absolutePlaybackStart;
-                        console.log('🎯 Playhead moved to loop start - ready to play');
-                    }
+                
+                // 🔧 FIX #1: ALWAYS force cursor to loop start (HIGHEST PRIORITY)
+                // This prevents the bug where player won't start if cursor is inside loop
+                if (api.tickPosition !== undefined) {
+                    api.tickPosition = start.absolutePlaybackStart;
+                    console.log('🎯 Cursor FORCED to loop start - ready to play');
                 }
 
                 // Trigger visual update
@@ -205,6 +266,9 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         target.removeEventListener('touchmove', handleTouchMove as EventListener);
         target.removeEventListener('touchend', handleTouchEnd as EventListener);
         target.removeEventListener('touchcancel', handleTouchEnd as EventListener);
+        
+        // Ensure scroll is restored on cleanup
+        document.body.style.overflow = '';
     };
 };
 

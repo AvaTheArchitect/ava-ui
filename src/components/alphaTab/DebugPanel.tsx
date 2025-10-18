@@ -56,31 +56,47 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ api, currentTime, isPlay
             setDebugInfo(info);
         };
 
-        // CRITICAL FIX: Listen for scoreLoaded event
-        // This ensures track counts update when the score actually loads
+        // CRITICAL FIX: Listen for multiple events to update all fields
+        const handlers: (() => void)[] = [];
+
+        // 1. Score loaded event - updates track counts
         if (api.scoreLoaded) {
             const scoreLoadedHandler = () => {
                 console.log('✅ Score loaded - updating debug panel');
                 updateDebugInfo();
             };
-
             api.scoreLoaded.on(scoreLoadedHandler);
+            handlers.push(() => api.scoreLoaded?.off(scoreLoadedHandler));
+        }
 
-            // Update immediately if score is already loaded
-            if (api.score) {
+        // 2. Render finished event - updates BoundsLookup and TickCache
+        if (api.renderFinished) {
+            const renderFinishedHandler = () => {
+                console.log('✅ Render finished - updating debug panel');
                 updateDebugInfo();
-            }
-
-            // Cleanup listener
-            return () => {
-                if (api.scoreLoaded) {
-                    api.scoreLoaded.off(scoreLoadedHandler);
-                }
             };
-        } else {
-            // Fallback: just update with current values
+            api.renderFinished.on(renderFinishedHandler);
+            handlers.push(() => api.renderFinished?.off(renderFinishedHandler));
+        }
+
+        // 3. Player state changed - updates playing status
+        if (api.playerStateChanged) {
+            const playerStateHandler = () => {
+                updateDebugInfo();
+            };
+            api.playerStateChanged.on(playerStateHandler);
+            handlers.push(() => api.playerStateChanged?.off(playerStateHandler));
+        }
+
+        // Update immediately if score/renderer already loaded
+        if (api.score || api.renderer) {
             updateDebugInfo();
         }
+
+        // Cleanup all listeners
+        return () => {
+            handlers.forEach(cleanup => cleanup());
+        };
     }, [api, currentTime, isPlaying]);
 
     return (
