@@ -1,5 +1,6 @@
 // AlphaTab initialization utility - FIXED FOR NEXT.JS
 // Key fix: Use ScriptProcessor instead of AudioWorklets to avoid worker issues
+// SCROLL FIX: Added negative scrollOffsetY for better visibility (Songsterr-style)
 
 import type { AlphaTabApi } from "./types";
 
@@ -105,6 +106,17 @@ export async function initAlphaTab(
     settings.player.enableUserInteraction = true;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
+    // 🎯 SCROLL POSITION FIX - Songsterr-style positioning
+    // Negative offset moves the playing bar DOWN on screen
+    // This keeps one staff/row visible ABOVE the currently playing bar
+    // Typical staff height is ~150-200px, so -180px keeps one row visible
+    // On mobile, use less offset since screen is smaller
+    settings.player.scrollOffsetY = isMobile ? -120 : -180;
+
+    console.log(
+      `📍 Scroll offset set to ${settings.player.scrollOffsetY}px (one row visible above)`
+    );
+
     // ⚡ CRITICAL FIX FOR NEXT.JS:
     // 1. Use ScriptProcessor for playback (no AudioWorklets)
     settings.player.outputMode =
@@ -141,6 +153,8 @@ export async function initAlphaTab(
     scale: settings.display.scale,
     stretchForce: settings.display.stretchForce,
     isMobile: isMobile,
+    scrollOffsetY:
+      playerMode === "synthesizer" ? settings.player.scrollOffsetY : 0,
   });
 
   // Create API instance
@@ -165,6 +179,11 @@ export async function initAlphaTab(
         // Update settings on orientation/size change
         api.settings.display.scale = newIsMobile ? 0.75 : 1.0;
         api.settings.display.stretchForce = newIsMobile ? 0.6 : 0.8;
+
+        // Update scroll offset for mobile vs desktop
+        if (playerMode === "synthesizer") {
+          api.settings.player.scrollOffsetY = newIsMobile ? -120 : -180;
+        }
 
         // Update bars per row if the property exists
         if ((api.settings.display as any).barsPerRow !== undefined) {
