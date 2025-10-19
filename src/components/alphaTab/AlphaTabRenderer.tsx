@@ -15,6 +15,7 @@ export interface AlphaTabRendererProps {
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
     enableTouchSelection?: boolean;
+    isLooping?: boolean; // 🆕 Control selection based on loop toggle state
 }
 
 // Touch event handlers for loop selection - V3 ENHANCED
@@ -56,7 +57,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
 
         const bar = beat.voice.bar;
         let firstBeatTick = beat.absolutePlaybackStart;
-
+        
         if (bar.voices && bar.voices.length > 0) {
             for (const voice of bar.voices) {
                 if (voice.beats && voice.beats.length > 0) {
@@ -79,7 +80,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
 
         const bar = beat.voice.bar;
         let lastBeatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
-
+        
         if (bar.voices && bar.voices.length > 0) {
             for (const voice of bar.voices) {
                 if (voice.beats && voice.beats.length > 0) {
@@ -100,23 +101,23 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         if (!api.playbackRange || !api.renderer?.boundsLookup) return false;
 
         const startTick = api.playbackRange.startTick;
-
+        
         if (api.tickCache && api.tracks?.length > 0) {
             const trackIndices = new Set(api.tracks.map((t: any) => t.index));
             const result = api.tickCache.findBeat(trackIndices, startTick);
-
+            
             if (result?.beat) {
                 const bounds = api.renderer.boundsLookup.findBeat(result.beat);
                 if (bounds) {
                     const rect = container.getBoundingClientRect();
                     const handleX = bounds.realBounds.x - container.scrollLeft + rect.left;
-
+                    
                     const distance = Math.abs(x - handleX);
                     return distance < HANDLE_TOUCH_AREA;
                 }
             }
         }
-
+        
         return false;
     };
 
@@ -125,23 +126,23 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         if (!api.playbackRange || !api.renderer?.boundsLookup) return false;
 
         const endTick = api.playbackRange.endTick;
-
+        
         if (api.tickCache && api.tracks?.length > 0) {
             const trackIndices = new Set(api.tracks.map((t: any) => t.index));
             const result = api.tickCache.findBeat(trackIndices, endTick);
-
+            
             if (result?.beat) {
                 const bounds = api.renderer.boundsLookup.findBeat(result.beat);
                 if (bounds) {
                     const rect = container.getBoundingClientRect();
                     const handleX = bounds.realBounds.x + bounds.realBounds.w - container.scrollLeft + rect.left;
-
+                    
                     const distance = Math.abs(x - handleX);
                     return distance < HANDLE_TOUCH_AREA;
                 }
             }
         }
-
+        
         return false;
     };
 
@@ -165,7 +166,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         currentY = startY;
         touchStartTime = Date.now();
         touchMoved = false;
-
+        
         if (isInScrollZone(startX)) {
             return;
         }
@@ -176,13 +177,13 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             console.log('🎯 Dragging START handle');
             return;
         }
-
+        
         if (isTouchingEndHandle(startX, startY)) {
             isDraggingEnd = true;
             console.log('🎯 Dragging END handle');
             return;
         }
-
+        
         // Start new selection
         const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
@@ -201,7 +202,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const touch = touchEvent.touches[0];
         currentX = touch.clientX;
         currentY = touch.clientY;
-
+        
         const deltaX = currentX - startX;
         const deltaY = currentY - startY;
 
@@ -215,7 +216,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             const beat = getBeatAtPosition(touch.clientX, touch.clientY);
             if (beat && api.playbackRange) {
                 const newStartTick = getBarStartTick(beat);
-
+                
                 if (newStartTick < api.playbackRange.endTick) {
                     api.playbackRange = {
                         startTick: newStartTick,
@@ -237,7 +238,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             const beat = getBeatAtPosition(touch.clientX, touch.clientY);
             if (beat && api.playbackRange) {
                 const newEndTick = getBarEndTick(beat);
-
+                
                 if (newEndTick > api.playbackRange.startTick) {
                     api.playbackRange = {
                         startTick: api.playbackRange.startTick,
@@ -251,31 +252,31 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
 
         // Normal selection
         if (!startBeat) return;
-
+        
         // Prioritize vertical scrolling
         if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
             startBeat = null;
             endBeat = null;
             return;
         }
-
+        
         // Require horizontal movement
         const isHorizontalDrag = Math.abs(deltaX) > 30; // Increased threshold
-
+        
         if (isHorizontalDrag) {
             touchMoved = true;
-
+            
             // 🔧 Prevent scroll during selection
             if (!isSelecting) {
                 isSelecting = true;
                 document.body.style.overflow = 'hidden';
                 console.log('🎸 Selection started');
             }
-
+            
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-
+            
             const beat = getBeatAtPosition(touch.clientX, touch.clientY);
 
             if (beat && beat !== endBeat) {
@@ -308,20 +309,20 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     const handleTouchEnd = (e: Event) => {
         const touchDuration = Date.now() - touchStartTime;
         const now = Date.now();
-
+        
         // Restore scroll
         document.body.style.overflow = '';
-
+        
         // 🆕 Handle end of dragging
         if (isDraggingStart || isDraggingEnd) {
             console.log('✅ Loop adjusted via handle drag');
-
+            
             // Force cursor to loop start after adjustment
             if (api.playbackRange && api.tickPosition !== undefined) {
                 api.tickPosition = api.playbackRange.startTick;
                 console.log('🎯 Cursor moved to loop start');
             }
-
+            
             isDraggingStart = false;
             isDraggingEnd = false;
             touchMoved = false;
@@ -332,7 +333,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const timeSinceLastTap = now - lastTapTime;
         const isDoubleTap = timeSinceLastTap < DOUBLE_TAP_DELAY && timeSinceLastTap > 50;
         lastTapTime = now;
-
+        
         // Handle taps (not drags)
         if (!touchMoved && touchDuration < 400) {
             if (isDoubleTap) {
@@ -340,7 +341,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
                 if (api.playbackRange !== undefined) {
                     api.playbackRange = null;
                     console.log('🗑️ Loop cleared via double-tap');
-
+                    
                     // 🔧 Reset cursor to beginning
                     if (api.tickPosition !== undefined) {
                         api.tickPosition = 0;
@@ -350,7 +351,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             // 🔧 Single tap: Do NOTHING (removed auto-clear logic)
             console.log('👆 Single tap detected - ignoring');
         }
-
+        
         // Handle drag selection
         if (isSelecting && startBeat && endBeat) {
             e.preventDefault();
@@ -372,7 +373,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
             }
 
             console.log(`✅ Loop finalized: ${loopStart} → ${loopEnd}`);
-
+            
             // 🔧 FIX #1: ALWAYS force cursor to loop start
             // This is the CRITICAL fix for the stuck cursor
             if (api.tickPosition !== undefined) {

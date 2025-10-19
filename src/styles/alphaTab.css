@@ -43,121 +43,108 @@
 }
 
 /* ========================================
-   ENHANCED LOOP SELECTION WITH VISUAL HANDLES
-   Songsterr/Ultimate-Guitar style draggable endpoints
+   LOOP SELECTION VISUAL HANDLES - FIXED
+   Using angle brackets < > like Ultimate-Guitar/Songsterr
    ======================================== */
 
-/* Selection highlighting - base styles */
+/* Base selection styling - NO extra padding */
 .at-selection div {
     position: absolute;
     background: rgba(147, 51, 234, 0.3) !important; /* Purple with transparency */
     pointer-events: none;
     z-index: 998;
     border: 2px solid rgba(147, 51, 234, 0.6);
-    border-radius: 4px;
-    
-    /* Extend selection vertically for better touch targets */
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
-    margin-top: -10px !important;
-    margin-bottom: -10px !important;
+    border-radius: 0px; /* Square edges like UG/Songsterr */
 }
 
-/* Loop Start Handle (▶ marker) */
-.at-selection div::before {
-    content: '▶';
-    position: absolute;
-    left: -8px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 24px;
-    color: #9333ea;
-    font-weight: bold;
-    text-shadow: 
-        -1px -1px 0 #fff,
-        1px -1px 0 #fff,
-        -1px 1px 0 #fff,
-        1px 1px 0 #fff,
-        0 0 8px rgba(147, 51, 234, 0.8);
-    pointer-events: auto; /* Make handle touchable */
-    cursor: ew-resize;
-    z-index: 1000;
-    
-    /* Larger touch target - 60px to match HANDLE_TOUCH_AREA */
-    padding: 30px;
-    margin: -30px;
-}
-
-/* Loop End Handle (◀ marker) */
+/* ONLY show handles on FIRST and LAST selection segments */
+/* Hide handles on all segments by default */
+.at-selection div::before,
 .at-selection div::after {
-    content: '◀';
+    display: none;
+}
+
+/* Show START handle (>) ONLY on the FIRST segment */
+.at-selection div:first-child::before {
+    content: '>';
+    display: block;
     position: absolute;
-    right: -8px;
+    left: -1px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 24px;
-    color: #9333ea;
+    font-size: 20px;
     font-weight: bold;
+    color: #9333ea;
+    font-family: monospace;
+    line-height: 1;
     text-shadow: 
         -1px -1px 0 #fff,
         1px -1px 0 #fff,
         -1px 1px 0 #fff,
-        1px 1px 0 #fff,
-        0 0 8px rgba(147, 51, 234, 0.8);
-    pointer-events: auto; /* Make handle touchable */
+        1px 1px 0 #fff;
+    pointer-events: auto;
     cursor: ew-resize;
     z-index: 1000;
     
-    /* Larger touch target - 60px to match HANDLE_TOUCH_AREA */
-    padding: 30px;
-    margin: -30px;
+    /* Large touch target - 60px */
+    padding: 30px 15px;
+    margin: -30px -15px;
 }
 
-/* Highlight handles on active touch */
-.at-selection div::before:active,
-.at-selection div::after:active {
-    color: #7c3aed;
-    transform: translateY(-50%) scale(1.2);
+/* Show END handle (<) ONLY on the LAST segment */
+.at-selection div:last-child::after {
+    content: '<';
+    display: block;
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    font-weight: bold;
+    color: #9333ea;
+    font-family: monospace;
+    line-height: 1;
     text-shadow: 
         -1px -1px 0 #fff,
         1px -1px 0 #fff,
         -1px 1px 0 #fff,
-        1px 1px 0 #fff,
-        0 0 12px rgba(124, 58, 237, 1);
+        1px 1px 0 #fff;
+    pointer-events: auto;
+    cursor: ew-resize;
+    z-index: 1000;
+    
+    /* Large touch target - 60px */
+    padding: 30px 15px;
+    margin: -30px -15px;
+}
+
+/* Active state - darken on touch */
+.at-selection div:first-child::before:active,
+.at-selection div:last-child::after:active {
+    color: #7c3aed;
+    transform: translateY(-50%) scale(1.1);
 }
 
 /* Alternative Theme: Ultimate-Guitar style (blue) */
 .at-selection.ug-style div {
-    background: rgba(59, 130, 246, 0.3) !important; /* Blue */
+    background: rgba(59, 130, 246, 0.3) !important;
     border-color: rgba(59, 130, 246, 0.6);
 }
 
-.at-selection.ug-style div::before,
-.at-selection.ug-style div::after {
+.at-selection.ug-style div:first-child::before,
+.at-selection.ug-style div:last-child::after {
     color: #3b82f6;
-    text-shadow: 
-        -1px -1px 0 #fff,
-        1px -1px 0 #fff,
-        -1px 1px 0 #fff,
-        1px 1px 0 #fff,
-        0 0 8px rgba(59, 130, 246, 0.8);
 }
 
 /* Alternative Theme: Songsterr style (green) */
 .at-selection.songsterr-style div {
-    background: rgba(16, 185, 129, 0.3) !important; /* Green */
+    background: rgba(16, 185, 129, 0.3) !important;
     border-color: rgba(16, 185, 129, 0.6);
 }
 
-.at-selection.songsterr-style div::before,
-.at-selection.songsterr-style div::after {
+.at-selection.songsterr-style div:first-child::before,
+.at-selection.songsterr-style div:last-child::after {
     color: #10b981;
-    text-shadow: 
-        -1px -1px 0 #fff,
-        1px -1px 0 #fff,
-        -1px 1px 0 #fff,
-        1px 1px 0 #fff,
-        0 0 8px rgba(16, 185, 129, 0.8);
 }
 
 /* Highlight effect during playback - purple theme */

@@ -581,6 +581,8 @@ export default function SynthPlayerPage() {
                         onRenderFinished={handleRenderFinished}
                         onError={handleError}
                         minHeight="600px"
+                        enableTouchSelection={true}  // ← ADD: Enable touch selection feature
+                        isLooping={isLooping}         // ← ADD: Respect loop toggle state
                     />
                 </div>
 
