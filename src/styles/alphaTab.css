@@ -1,6 +1,6 @@
 /**
- * alphaTab Required Styles - Simple Purple Cursor (Minimal Approach)
- * Based on the working green version - NO effects, just color
+ * alphaTab Required Styles - V5 FINAL
+ * Songsterr/Ultimate-Guitar style loop selection
  * Place in: src/styles/alphaTab.css
  */
 
@@ -23,10 +23,10 @@
     display: none !important;
 }
 
-/* Beat line cursor - SIMPLE purple line (based on working green version) */
+/* Beat line cursor - SIMPLE purple line */
 .at-cursor-beat {
-    background: rgba(168, 85, 247, 0.9) !important; /* Purple with slight transparency */
-    /* NO box-shadow, NO glow, NO effects - just like the working version */
+    background: rgba(168, 85, 247, 0.9) !important;
+    z-index: 999 !important; /* Above selection but below handles */
 }
 
 /* High specificity version for safety */
@@ -34,120 +34,160 @@
     background: rgba(168, 85, 247, 0.9) !important;
 }
 
-/* Mobile-specific - still minimal, just ensuring visibility */
+/* Mobile-specific */
 @media (max-width: 768px) {
     .at-cursor-beat {
-        background: rgba(168, 85, 247, 1) !important; /* Full opacity on mobile */
-        min-width: 2px !important; /* Ensure minimum width */
+        background: rgba(168, 85, 247, 1) !important;
+        min-width: 2px !important;
     }
 }
 
 /* ========================================
-   LOOP SELECTION VISUAL HANDLES - FIXED
-   Using angle brackets < > like Ultimate-Guitar/Songsterr
+   LOOP SELECTION - V5 SONGSTERR STYLE
+   - Grayed semi-transparent background
+   - White angle brackets in rounded bubbles
+   - Centered on staff (not at top)
+   - Large touch targets
    ======================================== */
 
-/* Base selection styling - NO extra padding */
+/* Base selection - grayed background like Songsterr */
 .at-selection div {
     position: absolute;
-    background: rgba(147, 51, 234, 0.3) !important; /* Purple with transparency */
-    pointer-events: none;
-    z-index: 998;
-    border: 2px solid rgba(147, 51, 234, 0.6);
-    border-radius: 0px; /* Square edges like UG/Songsterr */
+    background: rgba(0, 0, 0, 0.15) !important; /* Light gray overlay - much more transparent */
+    pointer-events: none; /* Let touches pass through to handles */
+    z-index: 997; /* Below cursor and handles */
+    border-left: 3px solid rgba(147, 51, 234, 0.7); /* Purple left border */
+    border-right: 3px solid rgba(147, 51, 234, 0.7); /* Purple right border */
+    border-radius: 0px;
 }
 
-/* ONLY show handles on FIRST and LAST selection segments */
-/* Hide handles on all segments by default */
+/* Hide all handles by default */
 .at-selection div::before,
 .at-selection div::after {
     display: none;
 }
 
-/* Show START handle (>) ONLY on the FIRST segment */
+/* START handle (>) - White in purple rounded bubble */
 .at-selection div:first-child::before {
+    content: '';
+    display: block;
+    position: absolute;
+    left: -20px; /* Position outside the selection */
+    top: 50%;
+    transform: translateY(-50%);
+    
+    /* Purple rounded bubble */
+    width: 32px;
+    height: 32px;
+    background: rgba(147, 51, 234, 0.9);
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    
+    pointer-events: auto; /* Make touchable */
+    cursor: ew-resize;
+    z-index: 1001; /* Above everything */
+    
+    /* Large touch target - 60px total */
+    padding: 14px;
+    margin: -14px;
+    
+    /* White angle bracket using border trick */
+    background-image: 
+        linear-gradient(to right, white 2px, transparent 2px),
+        linear-gradient(45deg, transparent 10px, white 10px, white 12px, transparent 12px),
+        linear-gradient(-45deg, transparent 10px, white 10px, white 12px, transparent 12px);
+    background-size: 10px 2px, 14px 14px, 14px 14px;
+    background-position: center, center 8px, center 24px;
+    background-repeat: no-repeat;
+}
+
+/* Alternative: Use actual > character */
+.at-selection div:first-child::after {
     content: '>';
     display: block;
     position: absolute;
-    left: -1px;
+    left: -20px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 20px;
+    
+    /* Purple rounded bubble */
+    width: 28px;
+    height: 28px;
+    background: rgba(147, 51, 234, 0.95);
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    
+    /* White angle bracket */
+    font-size: 16px;
     font-weight: bold;
-    color: #9333ea;
+    color: #fff;
     font-family: monospace;
-    line-height: 1;
-    text-shadow: 
-        -1px -1px 0 #fff,
-        1px -1px 0 #fff,
-        -1px 1px 0 #fff,
-        1px 1px 0 #fff;
+    line-height: 28px;
+    text-align: center;
+    
     pointer-events: auto;
     cursor: ew-resize;
-    z-index: 1000;
+    z-index: 1001;
     
-    /* Large touch target - 60px */
-    padding: 30px 15px;
-    margin: -30px -15px;
+    /* Large touch target */
+    padding: 16px;
+    margin: -16px;
 }
 
-/* Show END handle (<) ONLY on the LAST segment */
-.at-selection div:last-child::after {
+/* END handle (<) - White in purple rounded bubble */
+.at-selection div:last-child::before {
     content: '<';
     display: block;
     position: absolute;
-    right: -1px;
+    right: -20px; /* Position outside the selection */
     top: 50%;
     transform: translateY(-50%);
-    font-size: 20px;
+    
+    /* Purple rounded bubble */
+    width: 28px;
+    height: 28px;
+    background: rgba(147, 51, 234, 0.95);
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    
+    /* White angle bracket */
+    font-size: 16px;
     font-weight: bold;
-    color: #9333ea;
+    color: #fff;
     font-family: monospace;
-    line-height: 1;
-    text-shadow: 
-        -1px -1px 0 #fff,
-        1px -1px 0 #fff,
-        -1px 1px 0 #fff,
-        1px 1px 0 #fff;
+    line-height: 28px;
+    text-align: center;
+    
     pointer-events: auto;
     cursor: ew-resize;
-    z-index: 1000;
+    z-index: 1001;
     
-    /* Large touch target - 60px */
-    padding: 30px 15px;
-    margin: -30px -15px;
+    /* Large touch target */
+    padding: 16px;
+    margin: -16px;
 }
 
-/* Active state - darken on touch */
-.at-selection div:first-child::before:active,
-.at-selection div:last-child::after:active {
-    color: #7c3aed;
-    transform: translateY(-50%) scale(1.1);
+/* Active state - grow slightly on touch */
+.at-selection div:first-child::after:active,
+.at-selection div:last-child::before:active {
+    transform: translateY(-50%) scale(1.15);
+    box-shadow: 0 3px 10px rgba(147, 51, 234, 0.5);
+    background: rgba(124, 58, 237, 1);
 }
 
-/* Alternative Theme: Ultimate-Guitar style (blue) */
-.at-selection.ug-style div {
-    background: rgba(59, 130, 246, 0.3) !important;
-    border-color: rgba(59, 130, 246, 0.6);
+/* Prevent default touch actions on handles only */
+.at-selection div:first-child::after,
+.at-selection div:last-child::before {
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
-.at-selection.ug-style div:first-child::before,
-.at-selection.ug-style div:last-child::after {
-    color: #3b82f6;
-}
-
-/* Alternative Theme: Songsterr style (green) */
-.at-selection.songsterr-style div {
-    background: rgba(16, 185, 129, 0.3) !important;
-    border-color: rgba(16, 185, 129, 0.6);
-}
-
-.at-selection.songsterr-style div:first-child::before,
-.at-selection.songsterr-style div:last-child::after {
-    color: #10b981;
-}
-
-/* Highlight effect during playback - purple theme */
+/* Highlight effect during playback */
 .at-highlight * {
     fill: #a855f7 !important;
     stroke: #a855f7 !important;
