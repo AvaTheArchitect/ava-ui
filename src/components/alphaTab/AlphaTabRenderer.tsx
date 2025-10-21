@@ -96,7 +96,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     };
 
     // 🆕 IMPROVED: Check if touch is near loop START handle
-    // Use actual DOM selection bounds with BETTER hit detection
+    // Use actual DOM selection bounds with better positioning
     const isTouchingStartHandle = (x: number, y: number): boolean => {
         if (!api.playbackRange) return false;
 
@@ -106,15 +106,16 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const firstSegment = selectionDivs[0] as HTMLElement;
         const rect = firstSegment.getBoundingClientRect();
 
-        // Check if touch is near LEFT edge (where handle appears at left: -20px)
-        const handleX = rect.left - 20; // Handle is 20px outside
-        const handleY = rect.top + (rect.height / 2); // Centered vertically
+        // Handle is smaller now (20px) at left: -15px
+        const handleX = rect.left - 15; // Adjusted position
+        const handleY = rect.top + (rect.height / 2);
 
         const distanceX = Math.abs(x - handleX);
         const distanceY = Math.abs(y - handleY);
         const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
 
-        const isNear = distance < HANDLE_TOUCH_AREA;
+        // Larger touch area to compensate for smaller visual
+        const isNear = distance < 50; // Increased from 60px
         if (isNear) {
             console.log(`🎯 START handle! Dist: ${Math.round(distance)}px at (${Math.round(x)}, ${Math.round(y)})`);
         }
@@ -122,7 +123,7 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
     };
 
     // 🆕 IMPROVED: Check if touch is near loop END handle
-    // Use actual DOM selection bounds with BETTER hit detection
+    // Use actual DOM selection bounds with better positioning
     const isTouchingEndHandle = (x: number, y: number): boolean => {
         if (!api.playbackRange) return false;
 
@@ -132,15 +133,16 @@ const setupTouchSelection = (api: AlphaTabApi, container: HTMLElement) => {
         const lastSegment = selectionDivs[selectionDivs.length - 1] as HTMLElement;
         const rect = lastSegment.getBoundingClientRect();
 
-        // Check if touch is near RIGHT edge (where handle appears at right: -20px)
-        const handleX = rect.right + 20; // Handle is 20px outside
-        const handleY = rect.top + (rect.height / 2); // Centered vertically
+        // Handle is smaller now (20px) at right: -15px
+        const handleX = rect.right + 15; // Adjusted position
+        const handleY = rect.top + (rect.height / 2);
 
         const distanceX = Math.abs(x - handleX);
         const distanceY = Math.abs(y - handleY);
         const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
 
-        const isNear = distance < HANDLE_TOUCH_AREA;
+        // Larger touch area to compensate for smaller visual
+        const isNear = distance < 50; // Increased from 60px
         if (isNear) {
             console.log(`🎯 END handle! Dist: ${Math.round(distance)}px at (${Math.round(x)}, ${Math.round(y)})`);
         }

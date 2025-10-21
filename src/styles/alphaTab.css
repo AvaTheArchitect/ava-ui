@@ -56,8 +56,8 @@
     background: rgba(0, 0, 0, 0.15) !important; /* Light gray overlay - much more transparent */
     pointer-events: none; /* Let touches pass through to handles */
     z-index: 997; /* Below cursor and handles */
-    border-left: 3px solid rgba(147, 51, 234, 0.7); /* Purple left border */
-    border-right: 3px solid rgba(147, 51, 234, 0.7); /* Purple right border */
+    border-left: 3px solid rgba(147, 51, 234, 0.8); /* Purple left border */
+    border-right: 3px solid rgba(147, 51, 234, 0.8); /* Purple right border */
     border-radius: 0px;
 }
 
@@ -67,118 +67,89 @@
     display: none;
 }
 
-/* START handle (>) - White in purple rounded bubble */
-.at-selection div:first-child::before {
-    content: '';
-    display: block;
-    position: absolute;
-    left: -20px; /* Position outside the selection */
-    top: 50%;
-    transform: translateY(-50%);
-    
-    /* Purple rounded bubble */
-    width: 32px;
-    height: 32px;
-    background: rgba(147, 51, 234, 0.9);
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    
-    pointer-events: auto; /* Make touchable */
-    cursor: ew-resize;
-    z-index: 1001; /* Above everything */
-    
-    /* Large touch target - 60px total */
-    padding: 14px;
-    margin: -14px;
-    
-    /* White angle bracket using border trick */
-    background-image: 
-        linear-gradient(to right, white 2px, transparent 2px),
-        linear-gradient(45deg, transparent 10px, white 10px, white 12px, transparent 12px),
-        linear-gradient(-45deg, transparent 10px, white 10px, white 12px, transparent 12px);
-    background-size: 10px 2px, 14px 14px, 14px 14px;
-    background-position: center, center 8px, center 24px;
-    background-repeat: no-repeat;
-}
-
-/* Alternative: Use actual > character */
+/* START handle (>) - Smaller white in purple bubble */
 .at-selection div:first-child::after {
     content: '>';
     display: block;
     position: absolute;
-    left: -20px;
+    left: -15px; /* Closer to edge */
     top: 50%;
     transform: translateY(-50%);
     
-    /* Purple rounded bubble */
-    width: 28px;
-    height: 28px;
+    /* Smaller purple rounded bubble - matches border thickness */
+    width: 20px;
+    height: 20px;
     background: rgba(147, 51, 234, 0.95);
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     
-    /* White angle bracket */
-    font-size: 16px;
+    /* White angle bracket - centered */
+    font-size: 12px;
     font-weight: bold;
     color: #fff;
-    font-family: monospace;
-    line-height: 28px;
+    font-family: 'Courier New', monospace;
+    line-height: 20px; /* Match height for vertical centering */
     text-align: center;
+    padding-left: 1px; /* Optical centering for > */
     
     pointer-events: auto;
     cursor: ew-resize;
     z-index: 1001;
     
-    /* Large touch target */
-    padding: 16px;
-    margin: -16px;
+    /* Large invisible touch target */
+    box-shadow: 
+        0 0 0 20px transparent, /* 40px total touch area */
+        0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* END handle (<) - White in purple rounded bubble */
+/* END handle (<) - Smaller white in purple bubble */
 .at-selection div:last-child::before {
     content: '<';
     display: block;
     position: absolute;
-    right: -20px; /* Position outside the selection */
+    right: -15px; /* Closer to edge */
     top: 50%;
     transform: translateY(-50%);
     
-    /* Purple rounded bubble */
-    width: 28px;
-    height: 28px;
+    /* Smaller purple rounded bubble - matches border thickness */
+    width: 20px;
+    height: 20px;
     background: rgba(147, 51, 234, 0.95);
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     
-    /* White angle bracket */
-    font-size: 16px;
+    /* White angle bracket - centered */
+    font-size: 12px;
     font-weight: bold;
     color: #fff;
-    font-family: monospace;
-    line-height: 28px;
+    font-family: 'Courier New', monospace;
+    line-height: 20px; /* Match height for vertical centering */
     text-align: center;
+    padding-right: 1px; /* Optical centering for < */
     
     pointer-events: auto;
     cursor: ew-resize;
     z-index: 1001;
     
-    /* Large touch target */
-    padding: 16px;
-    margin: -16px;
+    /* Large invisible touch target */
+    box-shadow: 
+        0 0 0 20px transparent, /* 40px total touch area */
+        0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Active state - grow slightly on touch */
 .at-selection div:first-child::after:active,
 .at-selection div:last-child::before:active {
-    transform: translateY(-50%) scale(1.15);
-    box-shadow: 0 3px 10px rgba(147, 51, 234, 0.5);
+    transform: translateY(-50%) scale(1.2);
+    box-shadow: 
+        0 0 0 20px transparent,
+        0 3px 8px rgba(147, 51, 234, 0.5);
     background: rgba(124, 58, 237, 1);
 }
 
-/* Prevent default touch actions on handles only */
+/* Prevent default touch actions on handles */
 .at-selection div:first-child::after,
 .at-selection div:last-child::before {
     touch-action: none;
