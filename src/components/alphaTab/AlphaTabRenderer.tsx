@@ -79,7 +79,7 @@ const createLoopHandles = (container: HTMLElement): {
     startHandle: HTMLDivElement;
     endHandle: HTMLDivElement;
 } => {
-    // START HANDLE - Purple line (thicker, like Songsterr)
+    // START HANDLE - Purple line (3px, Songsterr-style)
     const startHandle = document.createElement('div');
     startHandle.className = 'maestro-loop-handle maestro-loop-handle-start';
     startHandle.style.cssText = `
@@ -119,7 +119,7 @@ const createLoopHandles = (container: HTMLElement): {
 
     startHandle.appendChild(startBubble);
 
-    // END HANDLE - Purple line (thicker, like Songsterr)
+    // END HANDLE - Purple line (3px, Songsterr-style)
     const endHandle = document.createElement('div');
     endHandle.className = 'maestro-loop-handle maestro-loop-handle-end';
     endHandle.style.cssText = `
@@ -168,7 +168,7 @@ const createLoopHandles = (container: HTMLElement): {
 
 // ==================== HANDLE POSITIONING ====================
 
-// 🆕 V18: Reverted to 3px line (working), keeps 28px height extension, bubble centered
+// 🆕 V18: 3px line, 28px height extension, bubble centered on selection
 const updateHandlePositions = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -193,8 +193,8 @@ const updateHandlePositions = (
             const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
             if (startBounds && endBounds) {
-                // ✅ Songsterr-style: Line extends far above (25-30px)
-                const topExtension = 28; // Extend 28px above selection (almost to top of gray overlay)
+                // ✅ Songsterr-style: Line extends far above (28px)
+                const topExtension = 28; // Extend 28px above selection
 
                 // --- START Handle ---
                 const startSelectionHeight = startBounds.realBounds.h;
