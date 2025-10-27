@@ -79,7 +79,7 @@ const createLoopHandles = (container: HTMLElement): {
     startHandle: HTMLDivElement;
     endHandle: HTMLDivElement;
 } => {
-    // START HANDLE - Purple line
+    // START HANDLE - Purple line (thicker, like Songsterr)
     const startHandle = document.createElement('div');
     startHandle.className = 'maestro-loop-handle maestro-loop-handle-start';
     startHandle.style.cssText = `
@@ -92,18 +92,18 @@ const createLoopHandles = (container: HTMLElement): {
         pointer-events: none;
     `;
 
-    // START BUBBLE - Tab shape poking LEFT
+    // START BUBBLE - Tab shape poking LEFT (compact like Songsterr)
     const startBubble = document.createElement('div');
     startBubble.className = 'maestro-loop-bubble';
     startBubble.innerHTML = '&gt;';
     startBubble.style.cssText = `
         position: absolute;
-        width: 18px;
+        width: 12px;
         height: 24px;
         background: rgba(147, 51, 234, 0.95) !important;
-        border-radius: 8px 0 0 8px;
+        border-radius: 6px 0 0 6px;
         color: #fff;
-        font-size: 13px;
+        font-size: 11px;
         font-weight: bold;
         font-family: 'Courier New', monospace;
         line-height: 24px;
@@ -114,14 +114,12 @@ const createLoopHandles = (container: HTMLElement): {
         touch-action: none;
         user-select: none;
         -webkit-user-select: none;
-        right: 2px;
-        top: 50%;
-        transform: translateY(-50%);
+        right: 1px;
     `;
 
     startHandle.appendChild(startBubble);
 
-    // END HANDLE - Purple line
+    // END HANDLE - Purple line (thicker, like Songsterr)
     const endHandle = document.createElement('div');
     endHandle.className = 'maestro-loop-handle maestro-loop-handle-end';
     endHandle.style.cssText = `
@@ -134,18 +132,18 @@ const createLoopHandles = (container: HTMLElement): {
         pointer-events: none;
     `;
 
-    // END BUBBLE - Tab shape poking RIGHT
+    // END BUBBLE - Tab shape poking RIGHT (compact like Songsterr)
     const endBubble = document.createElement('div');
     endBubble.className = 'maestro-loop-bubble';
     endBubble.innerHTML = '&lt;';
     endBubble.style.cssText = `
         position: absolute;
-        width: 18px;
+        width: 12px;
         height: 24px;
         background: rgba(147, 51, 234, 0.95) !important;
-        border-radius: 0 8px 8px 0;
+        border-radius: 0 6px 6px 0;
         color: #fff;
-        font-size: 13px;
+        font-size: 11px;
         font-weight: bold;
         font-family: 'Courier New', monospace;
         line-height: 24px;
@@ -156,9 +154,7 @@ const createLoopHandles = (container: HTMLElement): {
         touch-action: none;
         user-select: none;
         -webkit-user-select: none;
-        left: 2px;
-        top: 50%;
-        transform: translateY(-50%);
+        left: 1px;
     `;
 
     endHandle.appendChild(endBubble);
@@ -172,6 +168,7 @@ const createLoopHandles = (container: HTMLElement): {
 
 // ==================== HANDLE POSITIONING ====================
 
+// 🆕 V18: Reverted to 3px line (working), keeps 28px height extension, bubble centered
 const updateHandlePositions = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -196,21 +193,54 @@ const updateHandlePositions = (
             const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
             if (startBounds && endBounds) {
-                const staffPadding = 10;
-                const firstRowHeight = startBounds.realBounds.h + (staffPadding * 2);
-                const handleTop = startBounds.realBounds.y - staffPadding;
+                // ✅ Songsterr-style: Line extends far above (25-30px)
+                const topExtension = 28; // Extend 28px above selection (almost to top of gray overlay)
 
-                startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`;
-                startHandle.style.top = `${handleTop}px`;
-                startHandle.style.height = `${firstRowHeight}px`;
+                // --- START Handle ---
+                const startSelectionHeight = startBounds.realBounds.h;
+                const startSelectionTop = startBounds.realBounds.y;
+                const startSelectionCenterY = startSelectionTop + (startSelectionHeight / 2);
+
+                // Line extends above, stops at bottom of selection
+                const newStartHeight = startSelectionHeight + topExtension;
+                const newStartTop = startSelectionTop - topExtension;
+
+                startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`; // Center 3px line
+                startHandle.style.top = `${newStartTop}px`;
+                startHandle.style.height = `${newStartHeight}px`;
                 startHandle.style.display = 'block';
 
-                endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`;
-                endHandle.style.top = `${endBounds.realBounds.y - staffPadding}px`;
-                endHandle.style.height = `${endBounds.realBounds.h + (staffPadding * 2)}px`;
+                // Position bubble at CENTER of SELECTION (not center of handle)
+                const startBubble = startHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+                if (startBubble) {
+                    const bubbleOffsetFromTop = startSelectionCenterY - newStartTop;
+                    startBubble.style.top = `${bubbleOffsetFromTop}px`;
+                    startBubble.style.transform = 'translateY(-50%)';
+                }
+
+                // --- END Handle ---
+                const endSelectionHeight = endBounds.realBounds.h;
+                const endSelectionTop = endBounds.realBounds.y;
+                const endSelectionCenterY = endSelectionTop + (endSelectionHeight / 2);
+
+                // Line extends above, stops at bottom of selection
+                const newEndHeight = endSelectionHeight + topExtension;
+                const newEndTop = endSelectionTop - topExtension;
+
+                endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`; // Center 3px line
+                endHandle.style.top = `${newEndTop}px`;
+                endHandle.style.height = `${newEndHeight}px`;
                 endHandle.style.display = 'block';
 
-                console.log(`🎯 Handles positioned: Height=${Math.round(firstRowHeight)}px`);
+                // Position bubble at CENTER of SELECTION (not center of handle)
+                const endBubble = endHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+                if (endBubble) {
+                    const bubbleOffsetFromTop = endSelectionCenterY - newEndTop;
+                    endBubble.style.top = `${bubbleOffsetFromTop}px`;
+                    endBubble.style.transform = 'translateY(-50%)';
+                }
+
+                console.log(`🎯 V18 Handles: 3px line, extends ${topExtension}px above, bubble centered on selection`);
             }
         }
     } catch (error) {
@@ -237,13 +267,13 @@ const attachHandleDragHandlers = (
         isDragging = true;
         dragTarget = target;
         document.body.style.overflow = 'hidden';
-        
+
         const handle = target === 'start' ? startHandle : endHandle;
         const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
         if (bubble) {
             bubble.style.transform = 'translateY(-50%) scale(1.15)';
         }
-        
+
         console.log(`🎯 ${target.toUpperCase()} handle drag started`);
     };
 
@@ -282,7 +312,7 @@ const attachHandleDragHandlers = (
         if (!isDragging) return;
 
         document.body.style.overflow = '';
-        
+
         if (dragTarget) {
             const handle = dragTarget === 'start' ? startHandle : endHandle;
             const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
@@ -407,7 +437,7 @@ const setupTouchSelection = (
                             startTick: loopStart,
                             endTick: loopEnd
                         };
-                        
+
                         setTimeout(() => {
                             updateHandlePositions(api, container, startHandle, endHandle);
                         }, 50);
@@ -502,7 +532,7 @@ const setupMouseSelection = (
             mouseMoved = false;
             startBeat = beat;
             endBeat = beat;
-            
+
             const startTick = getBarStartTick(beat);
             const endTick = getBarEndTick(beat);
             if (api.playbackRange !== undefined) {
@@ -511,7 +541,7 @@ const setupMouseSelection = (
                     updateHandlePositions(api, container, startHandle, endHandle);
                 }, 50);
             }
-            
+
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
         }
@@ -545,13 +575,13 @@ const setupMouseSelection = (
     const handleMouseUp = (e: MouseEvent) => {
         if (!isSelecting) return;
         isSelecting = false;
-        
+
         if (startBeat && endBeat) {
             const startTick = getBarStartTick(startBeat);
             const endTick = getBarEndTick(endBeat);
             const loopStart = Math.min(startTick, endTick);
             const loopEnd = Math.max(startTick, endTick);
-            
+
             if (api.playbackRange !== undefined) {
                 api.playbackRange = { startTick: loopStart, endTick: loopEnd };
             }
@@ -613,7 +643,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
-    
+
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
     const dragCleanupRef = useRef<(() => void) | null>(null);
