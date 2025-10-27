@@ -18,76 +18,160 @@ export interface AlphaTabRendererProps {
     isLooping?: boolean;
 }
 
-// 🆕 CREATE REAL DOM HANDLES - Songsterr Style
-// This function creates actual <div> elements for start/end handles
+// ==================== SHARED HELPER FUNCTIONS ====================
+// These are used by drag, touch, and mouse handlers - defined ONCE
+
+const getBeatAtPosition = (
+    api: AlphaTabApi,
+    container: HTMLElement,
+    x: number,
+    y: number
+) => {
+    if (!api.renderer?.boundsLookup) return null;
+    const rect = container.getBoundingClientRect();
+    const relX = x - rect.left + container.scrollLeft;
+    const relY = y - rect.top + container.scrollTop;
+    return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
+};
+
+const getBarStartTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart || 0;
+    }
+    const bar = beat.voice.bar;
+    let firstBeatTick = beat.absolutePlaybackStart;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const firstBeat = voice.beats[0];
+                if (firstBeat.absolutePlaybackStart < firstBeatTick) {
+                    firstBeatTick = firstBeat.absolutePlaybackStart;
+                }
+            }
+        }
+    }
+    return firstBeatTick;
+};
+
+const getBarEndTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart + beat?.playbackDuration || 0;
+    }
+    const bar = beat.voice.bar;
+    let lastBeatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const lastBeat = voice.beats[voice.beats.length - 1];
+                const beatEnd = lastBeat.absolutePlaybackStart + lastBeat.playbackDuration;
+                if (beatEnd > lastBeatEnd) {
+                    lastBeatEnd = beatEnd;
+                }
+            }
+        }
+    }
+    return lastBeatEnd;
+};
+
+// ==================== LOOP HANDLE CREATION ====================
+
 const createLoopHandles = (container: HTMLElement): {
     startHandle: HTMLDivElement;
     endHandle: HTMLDivElement;
 } => {
-    // Create START handle (>)
+    // START HANDLE - Purple line
     const startHandle = document.createElement('div');
     startHandle.className = 'maestro-loop-handle maestro-loop-handle-start';
-    startHandle.innerHTML = '&gt;'; // > character
     startHandle.style.cssText = `
         position: absolute;
-        width: 24px;
+        width: 3px;
+        background: rgba(147, 51, 234, 0.9) !important;
+        border: none !important;
+        display: none;
+        z-index: 1000;
+        pointer-events: none;
+    `;
+
+    // START BUBBLE - Tab shape poking LEFT
+    const startBubble = document.createElement('div');
+    startBubble.className = 'maestro-loop-bubble';
+    startBubble.innerHTML = '&gt;';
+    startBubble.style.cssText = `
+        position: absolute;
+        width: 18px;
         height: 24px;
-        background: rgba(147, 51, 234, 0.95);
-        border-radius: 50%;
-        border: 2px solid #fff;
+        background: rgba(147, 51, 234, 0.95) !important;
+        border-radius: 8px 0 0 8px;
         color: #fff;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: bold;
         font-family: 'Courier New', monospace;
         line-height: 24px;
         text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         cursor: ew-resize;
-        z-index: 1001;
-        display: none;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        pointer-events: auto;
         touch-action: none;
         user-select: none;
         -webkit-user-select: none;
-        -webkit-touch-callout: none;
+        right: 2px;
+        top: 50%;
+        transform: translateY(-50%);
     `;
 
-    // Create END handle (<)
+    startHandle.appendChild(startBubble);
+
+    // END HANDLE - Purple line
     const endHandle = document.createElement('div');
     endHandle.className = 'maestro-loop-handle maestro-loop-handle-end';
-    endHandle.innerHTML = '&lt;'; // < character
     endHandle.style.cssText = `
         position: absolute;
-        width: 24px;
+        width: 3px;
+        background: rgba(147, 51, 234, 0.9) !important;
+        border: none !important;
+        display: none;
+        z-index: 1000;
+        pointer-events: none;
+    `;
+
+    // END BUBBLE - Tab shape poking RIGHT
+    const endBubble = document.createElement('div');
+    endBubble.className = 'maestro-loop-bubble';
+    endBubble.innerHTML = '&lt;';
+    endBubble.style.cssText = `
+        position: absolute;
+        width: 18px;
         height: 24px;
-        background: rgba(147, 51, 234, 0.95);
-        border-radius: 50%;
-        border: 2px solid #fff;
+        background: rgba(147, 51, 234, 0.95) !important;
+        border-radius: 0 8px 8px 0;
         color: #fff;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: bold;
         font-family: 'Courier New', monospace;
         line-height: 24px;
         text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         cursor: ew-resize;
-        z-index: 1001;
-        display: none;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        pointer-events: auto;
         touch-action: none;
         user-select: none;
         -webkit-user-select: none;
-        -webkit-touch-callout: none;
+        left: 2px;
+        top: 50%;
+        transform: translateY(-50%);
     `;
 
-    // Append to container
+    endHandle.appendChild(endBubble);
+
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ Real DOM handles created');
+    console.log('✅ Loop handles created');
     return { startHandle, endHandle };
 };
 
-// 🆕 UPDATE HANDLE POSITIONS - Uses AlphaTab's BoundsLookup API
-// This positions the handles at the correct beat locations
+// ==================== HANDLE POSITIONING ====================
+
 const updateHandlePositions = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -101,38 +185,32 @@ const updateHandlePositions = (
     }
 
     const { startTick, endTick } = api.playbackRange;
-
-    // Get track indices for beat lookup
     const trackIndices = new Set(api.tracks.map((t: any) => t.index));
 
     try {
-        // Find beats at start and end ticks using AlphaTab's TickCache
         const startResult = (api as any).tickCache?.findBeat(trackIndices, startTick);
         const endResult = (api as any).tickCache?.findBeat(trackIndices, endTick);
 
         if (startResult?.beat && endResult?.beat) {
-            // Get visual bounds for these beats
             const startBounds = api.renderer.boundsLookup.findBeat(startResult.beat);
             const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
             if (startBounds && endBounds) {
-                // Position START handle at left edge of first beat
-                const startX = startBounds.realBounds.x - 15; // 15px offset from edge
-                const startY = startBounds.realBounds.y + (startBounds.realBounds.h / 2) - 12; // Center vertically
+                const staffPadding = 10;
+                const firstRowHeight = startBounds.realBounds.h + (staffPadding * 2);
+                const handleTop = startBounds.realBounds.y - staffPadding;
 
-                startHandle.style.left = `${startX}px`;
-                startHandle.style.top = `${startY}px`;
+                startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`;
+                startHandle.style.top = `${handleTop}px`;
+                startHandle.style.height = `${firstRowHeight}px`;
                 startHandle.style.display = 'block';
 
-                // Position END handle at right edge of last beat
-                const endX = endBounds.realBounds.x + endBounds.realBounds.w + 15; // 15px offset from edge
-                const endY = endBounds.realBounds.y + (endBounds.realBounds.h / 2) - 12; // Center vertically
-
-                endHandle.style.left = `${endX}px`;
-                endHandle.style.top = `${endY}px`;
+                endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`;
+                endHandle.style.top = `${endBounds.realBounds.y - staffPadding}px`;
+                endHandle.style.height = `${endBounds.realBounds.h + (staffPadding * 2)}px`;
                 endHandle.style.display = 'block';
 
-                console.log(`🎯 Handles positioned: Start(${Math.round(startX)}, ${Math.round(startY)}), End(${Math.round(endX)}, ${Math.round(endY)})`);
+                console.log(`🎯 Handles positioned: Height=${Math.round(firstRowHeight)}px`);
             }
         }
     } catch (error) {
@@ -142,18 +220,123 @@ const updateHandlePositions = (
     }
 };
 
-// Touch event handlers for loop selection - V6 with REAL DOM HANDLES
+// ==================== DRAG HANDLERS ====================
+
+const attachHandleDragHandlers = (
+    api: AlphaTabApi,
+    container: HTMLElement,
+    startHandle: HTMLDivElement,
+    endHandle: HTMLDivElement
+) => {
+    let isDragging = false;
+    let dragTarget: 'start' | 'end' | null = null;
+
+    const handleStart = (e: MouseEvent | TouchEvent, target: 'start' | 'end') => {
+        e.preventDefault();
+        e.stopPropagation();
+        isDragging = true;
+        dragTarget = target;
+        document.body.style.overflow = 'hidden';
+        
+        const handle = target === 'start' ? startHandle : endHandle;
+        const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
+        if (bubble) {
+            bubble.style.transform = 'translateY(-50%) scale(1.15)';
+        }
+        
+        console.log(`🎯 ${target.toUpperCase()} handle drag started`);
+    };
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+        if (!isDragging || !dragTarget || !api.playbackRange) return;
+
+        e.preventDefault();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+        const beat = getBeatAtPosition(api, container, clientX, clientY);
+        if (!beat) return;
+
+        if (dragTarget === 'start') {
+            const newStartTick = getBarStartTick(beat);
+            if (newStartTick < api.playbackRange.endTick) {
+                api.playbackRange = {
+                    startTick: newStartTick,
+                    endTick: api.playbackRange.endTick
+                };
+                updateHandlePositions(api, container, startHandle, endHandle);
+            }
+        } else {
+            const newEndTick = getBarEndTick(beat);
+            if (newEndTick > api.playbackRange.startTick) {
+                api.playbackRange = {
+                    startTick: api.playbackRange.startTick,
+                    endTick: newEndTick
+                };
+                updateHandlePositions(api, container, startHandle, endHandle);
+            }
+        }
+    };
+
+    const handleEnd = () => {
+        if (!isDragging) return;
+
+        document.body.style.overflow = '';
+        
+        if (dragTarget) {
+            const handle = dragTarget === 'start' ? startHandle : endHandle;
+            const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
+            if (bubble) {
+                bubble.style.transform = 'translateY(-50%)';
+            }
+        }
+
+        isDragging = false;
+        dragTarget = null;
+        console.log('✅ Handle drag completed');
+    };
+
+    const startBubble = startHandle.querySelector('.maestro-loop-bubble');
+    const endBubble = endHandle.querySelector('.maestro-loop-bubble');
+
+    if (startBubble) {
+        startBubble.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'start'));
+        startBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'start'), { passive: false });
+    }
+
+    if (endBubble) {
+        endBubble.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'end'));
+        endBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'end'), { passive: false });
+    }
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchend', handleEnd);
+    document.addEventListener('touchcancel', handleEnd);
+
+    console.log('✅ Drag handlers attached');
+
+    return () => {
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('touchmove', handleMove);
+        document.removeEventListener('mouseup', handleEnd);
+        document.removeEventListener('touchend', handleEnd);
+        document.removeEventListener('touchcancel', handleEnd);
+    };
+};
+
+// ==================== TOUCH SELECTION ====================
+
 const setupTouchSelection = (
     api: AlphaTabApi,
     container: HTMLElement,
-    startHandleRef: HTMLDivElement,
-    endHandleRef: HTMLDivElement
+    startHandle: HTMLDivElement,
+    endHandle: HTMLDivElement
 ) => {
     let startBeat: any = null;
     let endBeat: any = null;
     let isSelecting = false;
-    let isDraggingStart = false;
-    let isDraggingEnd = false;
     let touchStartTime = 0;
     let touchMoved = false;
     let startX = 0;
@@ -161,113 +344,7 @@ const setupTouchSelection = (
     let lastTapTime = 0;
 
     const DOUBLE_TAP_DELAY = 400;
-    const HANDLE_TOUCH_AREA = 60; // 60px touch area for handles
 
-    // Helper to get beat at touch position
-    const getBeatAtPosition = (x: number, y: number) => {
-        if (!api.renderer?.boundsLookup) return null;
-
-        const rect = container.getBoundingClientRect();
-        const relX = x - rect.left + container.scrollLeft;
-        const relY = y - rect.top + container.scrollTop;
-
-        return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
-    };
-
-    // Get bar start tick
-    const getBarStartTick = (beat: any): number => {
-        if (!beat || !beat.voice || !beat.voice.bar) {
-            return beat?.absolutePlaybackStart || 0;
-        }
-
-        const bar = beat.voice.bar;
-        let firstBeatTick = beat.absolutePlaybackStart;
-
-        if (bar.voices && bar.voices.length > 0) {
-            for (const voice of bar.voices) {
-                if (voice.beats && voice.beats.length > 0) {
-                    const firstBeat = voice.beats[0];
-                    if (firstBeat.absolutePlaybackStart < firstBeatTick) {
-                        firstBeatTick = firstBeat.absolutePlaybackStart;
-                    }
-                }
-            }
-        }
-
-        return firstBeatTick;
-    };
-
-    // Get bar end tick
-    const getBarEndTick = (beat: any): number => {
-        if (!beat || !beat.voice || !beat.voice.bar) {
-            return beat?.absolutePlaybackStart + beat?.playbackDuration || 0;
-        }
-
-        const bar = beat.voice.bar;
-        let lastBeatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
-
-        if (bar.voices && bar.voices.length > 0) {
-            for (const voice of bar.voices) {
-                if (voice.beats && voice.beats.length > 0) {
-                    const lastBeat = voice.beats[voice.beats.length - 1];
-                    const beatEnd = lastBeat.absolutePlaybackStart + lastBeat.playbackDuration;
-                    if (beatEnd > lastBeatEnd) {
-                        lastBeatEnd = beatEnd;
-                    }
-                }
-            }
-        }
-
-        return lastBeatEnd;
-    };
-
-    // 🆕 IMPROVED: Check if touch is on REAL START handle
-    const isTouchingStartHandle = (x: number, y: number): boolean => {
-        if (startHandleRef.style.display === 'none') return false;
-
-        const rect = startHandleRef.getBoundingClientRect();
-        const handleCenterX = rect.left + rect.width / 2;
-        const handleCenterY = rect.top + rect.height / 2;
-
-        const distanceX = Math.abs(x - handleCenterX);
-        const distanceY = Math.abs(y - handleCenterY);
-        const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
-
-        const isNear = distance < HANDLE_TOUCH_AREA;
-        if (isNear) {
-            console.log(`🎯 START handle touched! Distance: ${Math.round(distance)}px`);
-        }
-        return isNear;
-    };
-
-    // 🆕 IMPROVED: Check if touch is on REAL END handle
-    const isTouchingEndHandle = (x: number, y: number): boolean => {
-        if (endHandleRef.style.display === 'none') return false;
-
-        const rect = endHandleRef.getBoundingClientRect();
-        const handleCenterX = rect.left + rect.width / 2;
-        const handleCenterY = rect.top + rect.height / 2;
-
-        const distanceX = Math.abs(x - handleCenterX);
-        const distanceY = Math.abs(y - handleCenterY);
-        const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
-
-        const isNear = distance < HANDLE_TOUCH_AREA;
-        if (isNear) {
-            console.log(`🎯 END handle touched! Distance: ${Math.round(distance)}px`);
-        }
-        return isNear;
-    };
-
-    // Check if touch is in scroll zone
-    const isInScrollZone = (x: number) => {
-        const rect = container.getBoundingClientRect();
-        const rightEdge = rect.right;
-        const scrollZoneWidth = 40;
-        return x > (rightEdge - scrollZoneWidth);
-    };
-
-    // Handle touch start
     const handleTouchStart = (e: Event) => {
         const touchEvent = e as TouchEvent;
         if (touchEvent.touches.length !== 1) return;
@@ -278,107 +355,29 @@ const setupTouchSelection = (
         touchStartTime = Date.now();
         touchMoved = false;
 
-        if (isInScrollZone(startX)) {
-            return;
-        }
-
-        // 🆕 Check REAL handles FIRST
-        if (isTouchingStartHandle(startX, startY)) {
-            isDraggingStart = true;
-            e.preventDefault();
-            e.stopPropagation();
-            document.body.style.overflow = 'hidden';
-            startHandleRef.style.transform = 'scale(1.15)';
-            console.log('🎯 START handle grabbed');
-            return;
-        }
-
-        if (isTouchingEndHandle(startX, startY)) {
-            isDraggingEnd = true;
-            e.preventDefault();
-            e.stopPropagation();
-            document.body.style.overflow = 'hidden';
-            endHandleRef.style.transform = 'scale(1.15)';
-            console.log('🎯 END handle grabbed');
-            return;
-        }
-
-        // Allow new selection if not touching handles
-        const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+        const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
         if (beat) {
             startBeat = beat;
             endBeat = beat;
-            console.log('🎯 Touch started on beat:', beat.index);
         }
     };
 
-    // Handle touch move
     const handleTouchMove = (e: Event) => {
         const touchEvent = e as TouchEvent;
         if (touchEvent.touches.length !== 1) return;
 
         const touch = touchEvent.touches[0];
-        const currentX = touch.clientX;
-        const currentY = touch.clientY;
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
 
-        const deltaX = currentX - startX;
-        const deltaY = currentY - startY;
-
-        // Handle dragging loop start
-        if (isDraggingStart) {
-            touchMoved = true;
-            e.preventDefault();
-            e.stopPropagation();
-            document.body.style.overflow = 'hidden';
-
-            const beat = getBeatAtPosition(touch.clientX, touch.clientY);
-            if (beat && api.playbackRange) {
-                const newStartTick = getBarStartTick(beat);
-
-                if (newStartTick < api.playbackRange.endTick) {
-                    api.playbackRange = {
-                        startTick: newStartTick,
-                        endTick: api.playbackRange.endTick
-                    };
-                    console.log(`◀️ Adjusting START: ${newStartTick}`);
-                }
-            }
-            return;
-        }
-
-        // Handle dragging loop end
-        if (isDraggingEnd) {
-            touchMoved = true;
-            e.preventDefault();
-            e.stopPropagation();
-            document.body.style.overflow = 'hidden';
-
-            const beat = getBeatAtPosition(touch.clientX, touch.clientY);
-            if (beat && api.playbackRange) {
-                const newEndTick = getBarEndTick(beat);
-
-                if (newEndTick > api.playbackRange.startTick) {
-                    api.playbackRange = {
-                        startTick: api.playbackRange.startTick,
-                        endTick: newEndTick
-                    };
-                    console.log(`▶️ Adjusting END: ${newEndTick}`);
-                }
-            }
-            return;
-        }
-
-        // Normal selection
         if (!startBeat) return;
 
-        // Prioritize vertical scrolling
         if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
             startBeat = null;
             endBeat = null;
             return;
         }
 
-        // Require horizontal movement
         const isHorizontalDrag = Math.abs(deltaX) > 30;
 
         if (isHorizontalDrag) {
@@ -387,14 +386,11 @@ const setupTouchSelection = (
             if (!isSelecting) {
                 isSelecting = true;
                 document.body.style.overflow = 'hidden';
-                console.log('🎸 Selection started');
             }
 
             e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
 
-            const beat = getBeatAtPosition(touch.clientX, touch.clientY);
+            const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
 
             if (beat && beat !== endBeat) {
                 endBeat = beat;
@@ -411,64 +407,36 @@ const setupTouchSelection = (
                             startTick: loopStart,
                             endTick: loopEnd
                         };
-                        console.log(`🎸 Loop: ${loopStart} → ${loopEnd}`);
+                        
+                        setTimeout(() => {
+                            updateHandlePositions(api, container, startHandle, endHandle);
+                        }, 50);
                     }
                 }
             }
         }
     };
 
-    // Handle touch end
     const handleTouchEnd = (e: Event) => {
-        const touchDuration = Date.now() - touchStartTime;
         const now = Date.now();
-
-        // Restore scroll
         document.body.style.overflow = '';
 
-        // Reset handle scale
-        startHandleRef.style.transform = '';
-        endHandleRef.style.transform = '';
-
-        // Handle end of dragging
-        if (isDraggingStart || isDraggingEnd) {
-            console.log('✅ Loop adjusted via handle drag');
-
-            if (api.playbackRange && api.tickPosition !== undefined) {
-                api.tickPosition = api.playbackRange.startTick;
-                console.log('🎯 Cursor moved to loop start');
-            }
-
-            isDraggingStart = false;
-            isDraggingEnd = false;
-            touchMoved = false;
-            return;
-        }
-
-        // Double-tap detection
         const timeSinceLastTap = now - lastTapTime;
         const isDoubleTap = timeSinceLastTap < DOUBLE_TAP_DELAY && timeSinceLastTap > 50;
         lastTapTime = now;
 
-        if (!touchMoved && touchDuration < 400) {
+        if (!touchMoved && Date.now() - touchStartTime < 400) {
             if (isDoubleTap) {
                 if (api.playbackRange !== undefined) {
                     api.playbackRange = null;
-                    console.log('🗑️ Loop cleared via double-tap');
-
                     if (api.tickPosition !== undefined) {
                         api.tickPosition = 0;
                     }
                 }
             }
-            console.log('👆 Single tap detected - ignoring');
         }
 
-        // Handle drag selection
         if (isSelecting && startBeat && endBeat) {
-            e.preventDefault();
-            e.stopPropagation();
-
             const startTick = getBarStartTick(startBeat);
             const endTick = getBarEndTick(endBeat);
 
@@ -482,39 +450,25 @@ const setupTouchSelection = (
                 };
             }
 
-            console.log(`✅ Loop finalized: ${loopStart} → ${loopEnd}`);
-
             if (api.tickPosition !== undefined) {
                 api.tickPosition = loopStart;
-                console.log(`🎯 Cursor FORCED to loop start: ${loopStart}`);
-            }
-
-            if (api.render) {
-                api.render();
             }
         }
 
-        // Reset state
         isSelecting = false;
-        isDraggingStart = false;
-        isDraggingEnd = false;
         startBeat = null;
         endBeat = null;
         touchMoved = false;
-        startX = 0;
-        startY = 0;
     };
 
-    // Attach listeners to container
     const surface = container.querySelector('.at-surface');
     const target = surface || container;
 
     target.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
     target.addEventListener('touchmove', handleTouchMove as EventListener, { passive: false });
-    target.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
-    target.addEventListener('touchcancel', handleTouchEnd as EventListener, { passive: false });
+    target.addEventListener('touchend', handleTouchEnd as EventListener);
+    target.addEventListener('touchcancel', handleTouchEnd as EventListener);
 
-    // Return cleanup function
     return () => {
         target.removeEventListener('touchstart', handleTouchStart as EventListener);
         target.removeEventListener('touchmove', handleTouchMove as EventListener);
@@ -523,6 +477,124 @@ const setupTouchSelection = (
         document.body.style.overflow = '';
     };
 };
+
+// ==================== MOUSE SELECTION ====================
+
+const setupMouseSelection = (
+    api: AlphaTabApi,
+    container: HTMLElement,
+    startHandle: HTMLDivElement,
+    endHandle: HTMLDivElement
+) => {
+    let startBeat: any = null;
+    let endBeat: any = null;
+    let isSelecting = false;
+    let mouseMoved = false;
+
+    const handleMouseDown = (e: MouseEvent) => {
+        if (e.button !== 0 || (e.target as HTMLElement).closest('.maestro-loop-bubble')) {
+            return;
+        }
+
+        const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+        if (beat) {
+            isSelecting = true;
+            mouseMoved = false;
+            startBeat = beat;
+            endBeat = beat;
+            
+            const startTick = getBarStartTick(beat);
+            const endTick = getBarEndTick(beat);
+            if (api.playbackRange !== undefined) {
+                api.playbackRange = { startTick, endTick };
+                setTimeout(() => {
+                    updateHandlePositions(api, container, startHandle, endHandle);
+                }, 50);
+            }
+            
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+        if (!isSelecting) return;
+        e.preventDefault();
+        mouseMoved = true;
+
+        const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+        if (beat && beat !== endBeat) {
+            endBeat = beat;
+
+            const startTick = getBarStartTick(startBeat);
+            const endTick = getBarEndTick(endBeat);
+
+            const loopStart = Math.min(startTick, endTick);
+            const loopEnd = Math.max(startTick, endTick);
+
+            if (api.playbackRange !== undefined) {
+                api.playbackRange = {
+                    startTick: loopStart,
+                    endTick: loopEnd
+                };
+                updateHandlePositions(api, container, startHandle, endHandle);
+            }
+        }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+        if (!isSelecting) return;
+        isSelecting = false;
+        
+        if (startBeat && endBeat) {
+            const startTick = getBarStartTick(startBeat);
+            const endTick = getBarEndTick(endBeat);
+            const loopStart = Math.min(startTick, endTick);
+            const loopEnd = Math.max(startTick, endTick);
+            
+            if (api.playbackRange !== undefined) {
+                api.playbackRange = { startTick: loopStart, endTick: loopEnd };
+            }
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = loopStart;
+            }
+        }
+
+        startBeat = null;
+        endBeat = null;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    const handleDoubleClick = (e: MouseEvent) => {
+        if ((e.target as HTMLElement).closest('.maestro-loop-bubble')) {
+            return;
+        }
+        if (api.playbackRange !== undefined) {
+            api.playbackRange = null;
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = 0;
+            }
+        }
+    };
+
+    const surface = container.querySelector('.at-surface');
+    const target = surface || container;
+
+    target.addEventListener('mousedown', handleMouseDown as EventListener);
+    target.addEventListener('dblclick', handleDoubleClick as EventListener);
+
+    console.log('✅ Mouse selection enabled');
+
+    return () => {
+        target.removeEventListener('mousedown', handleMouseDown as EventListener);
+        target.removeEventListener('dblclick', handleDoubleClick as EventListener);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+    };
+};
+
+// ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     fileUrl,
@@ -541,11 +613,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
-
-    // 🆕 Refs for REAL DOM handles
+    
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
+    const dragCleanupRef = useRef<(() => void) | null>(null);
 
+    // Initialize AlphaTab
     useEffect(() => {
         let isMounted = true;
 
@@ -571,13 +644,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 apiRef.current = api;
 
-                // iOS FIX: Handle playerFinished event
                 if (api.playerFinished) {
                     api.playerFinished.on(() => {
-                        console.log('🔄 Player finished. isLooping:', isLooping);
-
                         if (isLooping && api.isLooping) {
-                            console.log('🔁 Restarting playback for iOS loop...');
                             setTimeout(() => {
                                 if (isMounted && api) {
                                     api.play();
@@ -589,8 +658,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 api.scoreLoaded.on((score: any) => {
                     if (!isMounted) return;
-
-                    console.log('✅ Score loaded:', score.title);
 
                     const songInfo: SongInfo = {
                         title: score.title || 'Unknown',
@@ -605,46 +672,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         color: track.color
                     }));
 
-                    console.log(`Found ${trackList.length} tracks`);
                     onScoreLoaded?.(songInfo, trackList);
                     setIsLoading(false);
                 });
 
                 if (playerMode === 'synthesizer') {
-                    console.log('🔍 Wiring up player events...');
-
                     if (api.playerReady) {
                         api.playerReady.on(() => {
                             if (!isMounted) return;
                             console.log('✅ Player ready');
                         });
                     }
-
-                    if (api.soundFontLoad) {
-                        api.soundFontLoad.on((e: any) => {
-                            if (!isMounted) return;
-                            console.log(`🎼 Loading soundfont: ${Math.round((e.loaded / e.total) * 100)}%`);
-                        });
-                    }
-
-                    if (api.soundFontLoaded) {
-                        api.soundFontLoaded.on(() => {
-                            if (!isMounted) return;
-                            console.log('✅ SoundFont loaded');
-                        });
-                    }
-
-                    if (api.soundFontLoadFailed) {
-                        api.soundFontLoadFailed.on((e: any) => {
-                            if (!isMounted) return;
-                            console.error('❌ SoundFont load FAILED:', e);
-                        });
-                    }
                 }
 
                 api.renderFinished.on(() => {
                     if (!isMounted) return;
-                    console.log('✅ Rendering complete');
                     setIsRendered(true);
                     onRenderFinished?.();
                 });
@@ -652,7 +694,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.error.on((e: any) => {
                     if (!isMounted) return;
                     const errorMsg = e.message || 'Failed to load tab file';
-                    console.error('❌ AlphaTab error:', errorMsg);
                     onError?.(errorMsg);
                     setIsLoading(false);
                 });
@@ -663,7 +704,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             } catch (err) {
                 if (!isMounted) return;
                 const errorMsg = err instanceof Error ? err.message : 'Initialization failed';
-                console.error('❌ AlphaTabRenderer error:', errorMsg);
                 onError?.(errorMsg);
                 setIsLoading(false);
             }
@@ -674,7 +714,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
             if (apiRef.current) {
-                console.log('🧹 Cleaning up AlphaTab API');
                 try {
                     apiRef.current.destroy();
                 } catch (e) {
@@ -684,19 +723,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, isLooping, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // Sync isLooping prop with API
+    // Sync isLooping prop to API
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
-            console.log(`🔄 Syncing loop state: ${isLooping}`);
             apiRef.current.isLooping = isLooping;
         }
     }, [isLooping]);
 
-    // 🆕 CREATE REAL DOM HANDLES after rendering
+    // Create loop handles
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
-        console.log('🎨 Creating real DOM handles...');
+        console.log('🎨 Creating loop handles...');
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
         endHandleRef.current = handles.endHandle;
@@ -713,7 +751,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
-    // 🆕 UPDATE HANDLE POSITIONS when playback range changes
+    // Setup handle drag handlers
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !startHandleRef.current || !endHandleRef.current) {
             return;
@@ -721,10 +759,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const api = apiRef.current;
 
-        // Initial position update
         updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current);
 
-        // Listen for playback range changes
+        dragCleanupRef.current = attachHandleDragHandlers(
+            api,
+            containerRef.current,
+            startHandleRef.current,
+            endHandleRef.current
+        );
+
         const handler = () => {
             if (containerRef.current && startHandleRef.current && endHandleRef.current) {
                 updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current);
@@ -739,37 +782,33 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if ((api as any).playbackRangeChanged) {
                 (api as any).playbackRangeChanged.off(handler);
             }
+            if (dragCleanupRef.current) {
+                dragCleanupRef.current();
+                dragCleanupRef.current = null;
+            }
         };
     }, [isRendered]);
 
-    // Setup touch selection with REAL handles
+    // Setup touch selection
     useEffect(() => {
-        if (!enableTouchSelection || !apiRef.current || !containerRef.current || !isRendered) {
-            return;
-        }
-
-        if (!isLooping) {
-            console.log('🔒 Touch selection DISABLED - loop is OFF');
+        if (!enableTouchSelection || !apiRef.current || !containerRef.current || !isRendered || !isLooping) {
             return;
         }
 
         if (!startHandleRef.current || !endHandleRef.current) {
-            console.log('⏳ Waiting for handles to be created...');
             return;
         }
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
-                console.log('🎯 Setting up touch selection with REAL handles...');
+                console.log('🎯 Setting up touch selection...');
                 const cleanup = setupTouchSelection(
                     apiRef.current,
                     containerRef.current,
                     startHandleRef.current,
                     endHandleRef.current
                 );
-
                 return () => {
-                    console.log('🧹 Cleaning up touch selection');
                     cleanup();
                 };
             }
@@ -779,6 +818,36 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             clearTimeout(setupTimer);
         };
     }, [isRendered, enableTouchSelection, isLooping]);
+
+    // Setup mouse selection
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered || !isLooping) {
+            return;
+        }
+
+        if (!startHandleRef.current || !endHandleRef.current) {
+            return;
+        }
+
+        const setupTimer = setTimeout(() => {
+            if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
+                console.log('🎯 Setting up mouse selection...');
+                const cleanup = setupMouseSelection(
+                    apiRef.current,
+                    containerRef.current,
+                    startHandleRef.current,
+                    endHandleRef.current
+                );
+                return () => {
+                    cleanup();
+                };
+            }
+        }, 500);
+
+        return () => {
+            clearTimeout(setupTimer);
+        };
+    }, [isRendered, isLooping]);
 
     return (
         <div className="relative">
