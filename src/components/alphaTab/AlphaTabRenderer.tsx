@@ -19,7 +19,6 @@ export interface AlphaTabRendererProps {
 }
 
 // ==================== SHARED HELPER FUNCTIONS ====================
-// These are used by drag, touch, and mouse handlers - defined ONCE
 
 const getBeatAtPosition = (
     api: AlphaTabApi,
@@ -82,11 +81,13 @@ const createLoopHandles = (container: HTMLElement): {
     // START HANDLE - Purple line (3px, Songsterr-style)
     const startHandle = document.createElement('div');
     startHandle.className = 'maestro-loop-handle maestro-loop-handle-start';
+    // 🔧 CRITICAL FIX: Add borderRadius: 0 to prevent pencil tips
     startHandle.style.cssText = `
         position: absolute;
         width: 3px;
         background: rgba(147, 51, 234, 0.9) !important;
         border: none !important;
+        border-radius: 0 !important;
         display: none;
         z-index: 1000;
         pointer-events: none;
@@ -96,12 +97,13 @@ const createLoopHandles = (container: HTMLElement): {
     const startBubble = document.createElement('div');
     startBubble.className = 'maestro-loop-bubble';
     startBubble.innerHTML = '&gt;';
+    // 🔧 CRITICAL FIX: Explicit border-radius for half-circle effect
     startBubble.style.cssText = `
         position: absolute;
         width: 12px;
         height: 24px;
         background: rgba(147, 51, 234, 0.95) !important;
-        border-radius: 6px 0 0 6px;
+        border-radius: 6px 0 0 6px !important;
         color: #fff;
         font-size: 11px;
         font-weight: bold;
@@ -122,11 +124,13 @@ const createLoopHandles = (container: HTMLElement): {
     // END HANDLE - Purple line (3px, Songsterr-style)
     const endHandle = document.createElement('div');
     endHandle.className = 'maestro-loop-handle maestro-loop-handle-end';
+    // 🔧 CRITICAL FIX: Add borderRadius: 0 to prevent pencil tips
     endHandle.style.cssText = `
         position: absolute;
         width: 3px;
         background: rgba(147, 51, 234, 0.9) !important;
         border: none !important;
+        border-radius: 0 !important;
         display: none;
         z-index: 1000;
         pointer-events: none;
@@ -136,12 +140,13 @@ const createLoopHandles = (container: HTMLElement): {
     const endBubble = document.createElement('div');
     endBubble.className = 'maestro-loop-bubble';
     endBubble.innerHTML = '&lt;';
+    // 🔧 CRITICAL FIX: Explicit border-radius for half-circle effect
     endBubble.style.cssText = `
         position: absolute;
         width: 12px;
         height: 24px;
         background: rgba(147, 51, 234, 0.95) !important;
-        border-radius: 0 6px 6px 0;
+        border-radius: 0 6px 6px 0 !important;
         color: #fff;
         font-size: 11px;
         font-weight: bold;
@@ -162,13 +167,12 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ Loop handles created');
+    console.log('✅ Loop handles created with explicit borderRadius: 0');
     return { startHandle, endHandle };
 };
 
 // ==================== HANDLE POSITIONING ====================
 
-// 🆕 V18: 3px line, 28px height extension, bubble centered on selection
 const updateHandlePositions = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -185,62 +189,76 @@ const updateHandlePositions = (
     const trackIndices = new Set(api.tracks.map((t: any) => t.index));
 
     try {
+        // 🔧 FIX: Add null checks to prevent cursor errors
+        if (!(api as any).tickCache) {
+            console.warn('⚠️ TickCache not ready yet');
+            return;
+        }
+
         const startResult = (api as any).tickCache?.findBeat(trackIndices, startTick);
         const endResult = (api as any).tickCache?.findBeat(trackIndices, endTick);
 
-        if (startResult?.beat && endResult?.beat) {
-            const startBounds = api.renderer.boundsLookup.findBeat(startResult.beat);
-            const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
+        // 🔧 FIX: Validate results before accessing
+        if (!startResult?.beat || !endResult?.beat) {
+            console.warn('⚠️ Could not find beats for ticks', { startTick, endTick });
+            startHandle.style.display = 'none';
+            endHandle.style.display = 'none';
+            return;
+        }
 
-            if (startBounds && endBounds) {
-                // ✅ Songsterr-style: Line extends far above (28px)
-                const topExtension = 28; // Extend 28px above selection
+        const startBounds = api.renderer.boundsLookup.findBeat(startResult.beat);
+        const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
-                // --- START Handle ---
-                const startSelectionHeight = startBounds.realBounds.h;
-                const startSelectionTop = startBounds.realBounds.y;
-                const startSelectionCenterY = startSelectionTop + (startSelectionHeight / 2);
+        if (startBounds && endBounds) {
+            const topExtension = 28;
 
-                // Line extends above, stops at bottom of selection
-                const newStartHeight = startSelectionHeight + topExtension;
-                const newStartTop = startSelectionTop - topExtension;
+            // 🔧 CRITICAL: Get scroll offset for accurate positioning
+            const surface = container.querySelector('.at-surface') as HTMLElement;
+            const scrollLeft = surface?.scrollLeft || 0;
+            const scrollTop = surface?.scrollTop || 0;
 
-                startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`; // Center 3px line
-                startHandle.style.top = `${newStartTop}px`;
-                startHandle.style.height = `${newStartHeight}px`;
-                startHandle.style.display = 'block';
+            // --- START Handle ---
+            const startSelectionHeight = startBounds.realBounds.h;
+            const startSelectionTop = startBounds.realBounds.y;
+            const startSelectionCenterY = startSelectionTop + (startSelectionHeight / 2);
 
-                // Position bubble at CENTER of SELECTION (not center of handle)
-                const startBubble = startHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
-                if (startBubble) {
-                    const bubbleOffsetFromTop = startSelectionCenterY - newStartTop;
-                    startBubble.style.top = `${bubbleOffsetFromTop}px`;
-                    startBubble.style.transform = 'translateY(-50%)';
-                }
+            const newStartHeight = startSelectionHeight + topExtension;
+            const newStartTop = startSelectionTop - topExtension;
 
-                // --- END Handle ---
-                const endSelectionHeight = endBounds.realBounds.h;
-                const endSelectionTop = endBounds.realBounds.y;
-                const endSelectionCenterY = endSelectionTop + (endSelectionHeight / 2);
+            startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`;
+            startHandle.style.top = `${newStartTop}px`;
+            startHandle.style.height = `${newStartHeight}px`;
+            startHandle.style.display = 'block';
+            startHandle.style.borderRadius = '0';
 
-                // Line extends above, stops at bottom of selection
-                const newEndHeight = endSelectionHeight + topExtension;
-                const newEndTop = endSelectionTop - topExtension;
+            const startBubble = startHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+            if (startBubble) {
+                const bubbleOffsetFromTop = startSelectionCenterY - newStartTop;
+                startBubble.style.top = `${bubbleOffsetFromTop}px`;
+                startBubble.style.transform = 'translateY(-50%)';
+                startBubble.style.borderRadius = '6px 0 0 6px';
+            }
 
-                endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`; // Center 3px line
-                endHandle.style.top = `${newEndTop}px`;
-                endHandle.style.height = `${newEndHeight}px`;
-                endHandle.style.display = 'block';
+            // --- END Handle ---
+            const endSelectionHeight = endBounds.realBounds.h;
+            const endSelectionTop = endBounds.realBounds.y;
+            const endSelectionCenterY = endSelectionTop + (endSelectionHeight / 2);
 
-                // Position bubble at CENTER of SELECTION (not center of handle)
-                const endBubble = endHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
-                if (endBubble) {
-                    const bubbleOffsetFromTop = endSelectionCenterY - newEndTop;
-                    endBubble.style.top = `${bubbleOffsetFromTop}px`;
-                    endBubble.style.transform = 'translateY(-50%)';
-                }
+            const newEndHeight = endSelectionHeight + topExtension;
+            const newEndTop = endSelectionTop - topExtension;
 
-                console.log(`🎯 V18 Handles: 3px line, extends ${topExtension}px above, bubble centered on selection`);
+            endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`;
+            endHandle.style.top = `${newEndTop}px`;
+            endHandle.style.height = `${newEndHeight}px`;
+            endHandle.style.display = 'block';
+            endHandle.style.borderRadius = '0';
+
+            const endBubble = endHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+            if (endBubble) {
+                const bubbleOffsetFromTop = endSelectionCenterY - newEndTop;
+                endBubble.style.top = `${bubbleOffsetFromTop}px`;
+                endBubble.style.transform = 'translateY(-50%)';
+                endBubble.style.borderRadius = '0 6px 6px 0';
             }
         }
     } catch (error) {
@@ -781,37 +799,156 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
-    // Setup handle drag handlers
+    // Setup handle drag handlers + RESPONSIVE SCALING
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !startHandleRef.current || !endHandleRef.current) {
             return;
         }
 
         const api = apiRef.current;
+        const container = containerRef.current;
+        const startHandle = startHandleRef.current;
+        const endHandle = endHandleRef.current;
 
-        updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current);
+        updateHandlePositions(api, container, startHandle, endHandle);
 
-        dragCleanupRef.current = attachHandleDragHandlers(
-            api,
-            containerRef.current,
-            startHandleRef.current,
-            endHandleRef.current
-        );
+        dragCleanupRef.current = attachHandleDragHandlers(api, container, startHandle, endHandle);
 
-        const handler = () => {
+        // 🔧 CRITICAL FIX: Handle playback range changes
+        const rangeHandler = () => {
             if (containerRef.current && startHandleRef.current && endHandleRef.current) {
                 updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current);
             }
         };
 
         if ((api as any).playbackRangeChanged) {
-            (api as any).playbackRangeChanged.on(handler);
+            (api as any).playbackRangeChanged.on(rangeHandler);
         }
 
+        // 🔧 CRITICAL FIX: ResizeObserver - handles scale with viewport changes
+        let resizeTimer: NodeJS.Timeout;
+        const resizeObserver = new ResizeObserver((entries) => {
+            // Debounce to avoid too many recalculations
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                console.log('📐 Container resized - repositioning handles AND selection');
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    // 🔧 FIX: Force AlphaTab to re-render the gray selection area
+                    const currentRange = apiRef.current.playbackRange;
+                    if (currentRange) {
+                        // Trigger re-render by temporarily clearing and resetting
+                        apiRef.current.playbackRange = null;
+                        setTimeout(() => {
+                            if (apiRef.current) {
+                                apiRef.current.playbackRange = currentRange;
+                                // Update handles after selection is re-rendered
+                                setTimeout(() => {
+                                    if (containerRef.current && startHandleRef.current && endHandleRef.current) {
+                                        updateHandlePositions(apiRef.current!, containerRef.current, startHandleRef.current, endHandleRef.current);
+                                    }
+                                }, 50);
+                            }
+                        }, 10);
+                    } else {
+                        // No selection, just update handle positions
+                        updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current);
+                    }
+                }
+            }, 150);
+        });
+
+        resizeObserver.observe(container);
+
+        // 🔧 CRITICAL FIX: Listen to AlphaTab's render events for internal re-layouts
+        const renderHandler = () => {
+            console.log('🎨 AlphaTab re-rendered - repositioning handles AND selection');
+            setTimeout(() => {
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    const currentRange = apiRef.current.playbackRange;
+                    if (currentRange) {
+                        // Re-render selection by clearing and resetting
+                        apiRef.current.playbackRange = null;
+                        setTimeout(() => {
+                            if (apiRef.current) {
+                                apiRef.current.playbackRange = currentRange;
+                                setTimeout(() => {
+                                    if (containerRef.current && startHandleRef.current && endHandleRef.current) {
+                                        updateHandlePositions(apiRef.current!, containerRef.current, startHandleRef.current, endHandleRef.current);
+                                    }
+                                }, 50);
+                            }
+                        }, 10);
+                    } else {
+                        updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current);
+                    }
+                }
+            }, 100);
+        };
+
+        if (api.renderFinished) {
+            api.renderFinished.on(renderHandler);
+        }
+
+        // 🔧 CRITICAL FIX: Window resize listener as fallback
+        const windowResizeHandler = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                console.log('📐 Window resized - repositioning handles AND selection');
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    // 🔧 FIX: Force AlphaTab to re-render the gray selection area
+                    const currentRange = apiRef.current.playbackRange;
+                    if (currentRange) {
+                        apiRef.current.playbackRange = null;
+                        setTimeout(() => {
+                            if (apiRef.current) {
+                                apiRef.current.playbackRange = currentRange;
+                                setTimeout(() => {
+                                    if (containerRef.current && startHandleRef.current && endHandleRef.current) {
+                                        updateHandlePositions(apiRef.current!, containerRef.current, startHandleRef.current, endHandleRef.current);
+                                    }
+                                }, 50);
+                            }
+                        }, 10);
+                    } else {
+                        updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current);
+                    }
+                }
+            }, 150);
+        };
+
+        window.addEventListener('resize', windowResizeHandler);
+
+        // 🔧 CRITICAL FIX: Scroll handler - handles stay synced during scroll
+        let scrollTimer: NodeJS.Timeout;
+        const scrollHandler = () => {
+            clearTimeout(scrollTimer);
+            scrollTimer = setTimeout(() => {
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    // Just update positions, don't log to avoid spam
+                    updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current);
+                }
+            }, 50);
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const scrollTarget = surface || container;
+        scrollTarget.addEventListener('scroll', scrollHandler);
+
         return () => {
+            clearTimeout(resizeTimer);
+            clearTimeout(scrollTimer);
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', windowResizeHandler);
+            scrollTarget.removeEventListener('scroll', scrollHandler);
+
             if ((api as any).playbackRangeChanged) {
-                (api as any).playbackRangeChanged.off(handler);
+                (api as any).playbackRangeChanged.off(rangeHandler);
             }
+
+            if (api.renderFinished) {
+                api.renderFinished.off(renderHandler);
+            }
+
             if (dragCleanupRef.current) {
                 dragCleanupRef.current();
                 dragCleanupRef.current = null;
