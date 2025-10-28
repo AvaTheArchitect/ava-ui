@@ -137,6 +137,14 @@
     background: rgba(147, 51, 234, 0.8);
     pointer-events: none;
     z-index: 998; /* Below handles, above selection */
+    /* FIX: Ensure straight line with no rounded tips */
+    border-radius: 0 !important;
+    transform: none !important;
+}
+/* Also ensure no child elements inherit rounding */
+.maestro-loop-handle > * {
+    border-radius: 0 !important;
+    transform: none !important;
 }
 
 /* Highlight effect during playback */
