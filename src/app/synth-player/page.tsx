@@ -64,6 +64,12 @@ export default function SynthPlayerPage() {
             addDiagnostic('🔄 Loop enabled by default');
         }
 
+        // 🆕 V38.2: Enable user interaction by default (since Loop starts ON)
+        if (alphaTabApi.settings?.player) {
+            alphaTabApi.settings.player.enableUserInteraction = true;
+            addDiagnostic('🖱️ AlphaTab user interaction: enabled');
+        }
+
         // Wire up player state events
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
@@ -112,6 +118,9 @@ export default function SynthPlayerPage() {
             });
         }
 
+        // 🚫 V30 FIX: COMMENTED OUT - This was causing cursor to follow handle during drag
+        // The AlphaTabRenderer now handles cursor positioning on drag end
+        /*
         if (alphaTabApi.beatMouseUp) {
             alphaTabApi.beatMouseUp.on((beat: any) => {
                 if (beat?.absolutePlaybackStart !== undefined) {
@@ -120,6 +129,8 @@ export default function SynthPlayerPage() {
                 }
             });
         }
+        */
+        addDiagnostic('ℹ️ beatMouseUp disabled - loop handles control cursor position');
 
         if (alphaTabApi.soundFontLoaded) {
             alphaTabApi.soundFontLoaded.on(() => {
@@ -164,22 +175,30 @@ export default function SynthPlayerPage() {
         }
     }, [api, addDiagnostic]);
 
+    // V38.2: Songsterr-style Loop toggle - automatically clears selection when disabled
     const toggleLoop = useCallback(() => {
         if (!api) return;
 
         const newLoopState = !isLooping;
         api.isLooping = newLoopState;
         setIsLooping(newLoopState);
-        addDiagnostic(`🔄 Loop ${newLoopState ? 'enabled' : 'disabled'}`);
+
+        // CRITICAL FIX: When disabling loop, automatically clear any loop selection
+        if (!newLoopState && api.playbackRange !== null) {
+            api.playbackRange = null;
+            setHasSelection(false);
+            addDiagnostic(`🔄 Loop disabled - selection cleared`);
+        } else {
+            addDiagnostic(`🔄 Loop ${newLoopState ? 'enabled' : 'disabled'}`);
+        }
+
+        // 🆕 V38.2: Toggle AlphaTab's native user interaction
+        // This disables AlphaTab's built-in beat selection when Loop is OFF
+        if (api.settings?.player) {
+            api.settings.player.enableUserInteraction = newLoopState;
+            addDiagnostic(`🖱️ AlphaTab user interaction: ${newLoopState ? 'enabled' : 'disabled'}`);
+        }
     }, [api, isLooping, addDiagnostic]);
-
-    const clearSelection = useCallback(() => {
-        if (!api) return;
-
-        api.playbackRange = null;
-        setHasSelection(false);
-        addDiagnostic('🗑️ Selection cleared');
-    }, [api, addDiagnostic]);
 
     const handleMuteToggle = useCallback((trackIndex: number) => {
         if (!api || !api.score) return;
@@ -292,10 +311,10 @@ export default function SynthPlayerPage() {
                 {/* Header */}
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold text-orange-500 mb-2">
-                        🎹 AlphaTab Synthesizer Player
+                        🎹 AlphaTab Synthesizer Player (V38.2 - Complete Fix)
                     </h1>
                     <p className="text-gray-400">
-                        Testing Ozzy Osbourne - No More Tears (GP3 format)
+                        Loop selection properly disabled (both custom + AlphaTab native)
                     </p>
                 </div>
 
@@ -411,20 +430,11 @@ export default function SynthPlayerPage() {
                                 ? 'bg-blue-600 hover:bg-blue-700 text-white border-2 border-blue-400'
                                 : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
                                 }`}
-                            title={isLooping ? 'Loop enabled' : 'Loop disabled'}
+                            title={isLooping ? 'Loop enabled - click to disable and clear selection' : 'Loop disabled - click to enable'}
                         >
                             🔄 Loop {isLooping && '✓'}
+                            {hasSelection && isLooping && <span className="text-xs">(active)</span>}
                         </button>
-
-                        {hasSelection && (
-                            <button
-                                onClick={clearSelection}
-                                disabled={!api}
-                                className="px-6 py-3 rounded-lg font-bold bg-yellow-600 hover:bg-yellow-700 text-white transition-all"
-                            >
-                                🗑️ Clear Selection
-                            </button>
-                        )}
 
                         <div className="ml-auto text-purple-400 font-mono">
                             {formatTime(displayTime)} / {formatTime(displayDuration)}
@@ -445,9 +455,14 @@ export default function SynthPlayerPage() {
                         />
                     </div>
 
-                    {hasSelection && (
+                    {hasSelection && isLooping && (
                         <div className="mt-2 text-xs text-blue-400 flex items-center gap-2">
-                            🎯 Loop range selected - playback will repeat this section
+                            🎯 Loop range selected - playback will repeat this section. Toggle Loop OFF to clear.
+                        </div>
+                    )}
+                    {!isLooping && (
+                        <div className="mt-2 text-xs text-gray-400 flex items-center gap-2">
+                            ℹ️ Loop mode OFF - entire song will play. Toggle Loop ON to enable section selection.
                         </div>
                     )}
                 </div>
@@ -581,36 +596,46 @@ export default function SynthPlayerPage() {
                         onRenderFinished={handleRenderFinished}
                         onError={handleError}
                         minHeight="600px"
-                        enableTouchSelection={true}  // ← ADD: Enable touch selection feature
-                        isLooping={isLooping}         // ← ADD: Respect loop toggle state
+                        enableTouchSelection={true}
+                        isLooping={isLooping}
                     />
                 </div>
 
                 {/* Info Panel */}
                 <div className="mt-6 bg-blue-500/20 rounded-xl p-6 border border-blue-500/30">
-                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 Features & Controls</h3>
+                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 V38.2 Features & Controls</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <h4 className="font-bold text-blue-300 mb-2">✓ Active Features</h4>
                             <ul className="text-blue-200 space-y-1 text-sm">
-                                <li>✓ Loop mode {isLooping && '(enabled)'}</li>
+                                <li>✓ Songsterr-style Loop button {isLooping && '(enabled)'}</li>
+                                <li>✓ Auto-clear selection when Loop disabled</li>
+                                <li>✓ Custom handlers properly cleaned up</li>
+                                <li>✓ AlphaTab native selection disabled when Loop OFF</li>
+                                <li>✓ No reinitialization on Loop toggle</li>
                                 <li>✓ Section selection (click & drag on notation)</li>
+                                <li>✓ Smooth handle dragging</li>
                                 <li>✓ Gradient progress bar (orange → blue)</li>
                                 <li>✓ Click progress bar to seek</li>
                                 <li>✓ Individual track mute/solo</li>
                                 <li>✓ Volume control per track</li>
+                                <li>✓ Debug Panel V2 with measure tracking</li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-bold text-yellow-300 mb-2">🎸 How to Use Loop</h4>
+                            <h4 className="font-bold text-yellow-300 mb-2">🎸 How to Use Loop (Songsterr Style)</h4>
                             <div className="text-yellow-200 space-y-2 text-sm">
                                 <ol className="list-decimal list-inside space-y-1 ml-2">
-                                    <li>Enable Loop mode (button should show ✓)</li>
-                                    <li>Click and drag on the notation to select bars</li>
-                                    <li>Selected section will be highlighted in purple</li>
-                                    <li>Press Play - it will loop the selected section</li>
-                                    <li>Click "Clear Selection" to loop entire song</li>
+                                    <li><strong>Enable Loop:</strong> Click the Loop button (should show ✓)</li>
+                                    <li><strong>Select Section:</strong> Click & drag on notation to highlight bars</li>
+                                    <li><strong>Adjust Boundaries:</strong> Drag handles to fine-tune selection</li>
+                                    <li><strong>Play Loop:</strong> Press Play - selected section will repeat</li>
+                                    <li><strong>Disable Loop:</strong> Click Loop button again - clears selection & disables clicking on notation</li>
+                                    <li><strong>Change Selection:</strong> While Loop is ON, drag a new selection</li>
                                 </ol>
+                                <div className="mt-3 p-2 bg-yellow-900/30 rounded border border-yellow-500/50">
+                                    <strong>💡 V38.2 Fix:</strong> When Loop is OFF, clicking on notation does nothing - both custom handlers AND AlphaTab's native selection are disabled!
+                                </div>
                             </div>
                         </div>
                     </div>
