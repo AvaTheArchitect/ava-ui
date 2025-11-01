@@ -1,38 +1,24 @@
 'use client';
 
 /**
- * AlphaTab Renderer V38.9 - THE COMPLETE FIX!
+ * AlphaTab Renderer V38.12 - WORKING DRAG LOGIC RESTORED
  * 
- * Key Fix (V38.9):
- * 🎯 Combined cursor synchronization + synth completion!
- * - CURSOR_LEAD_IN: -40 ticks (cursor syncs with HEARD audio)
- * - TICK_BUFFER_END: 120 ticks (synth completes all notes)
- * - Result: Perfect cursor sync AND complete note playback! ✅
+ * CRITICAL FIX (V38.12):
+ * ✅ Restored V13 REAL-TIME drag logic - updates range during handleMove, not after
+ * ✅ Simplified beat detection - uses direct getBeatAtPosition (no measure priority)
+ * ✅ Added getBarStartTick/getBarEndTick for accurate bar-level snapping
+ * ✅ Handles now respond immediately to vertical/horizontal drags
+ * ✅ Removed unused isLoopingEnabled parameters (fixed TypeScript errors)
  * 
- * The Two-Part Solution:
+ * PRESERVED FROM V38.11:
+ * ✅ Handle styling: 26px bubbles, 50% D-string alignment
+ * ✅ Timing buffers: -20 start, +160 end, -40 cursor lead-in
+ * ✅ Handle positioning within bounds
  * 
- * PART 1 - Cursor Synchronization (V38.8):
- * Problem: Cursor was ahead of what user hears due to audio output latency
- * Solution: Start cursor 40 ticks BEFORE the note
- * Result: Cursor reaches note position exactly when user HEARS it
- * 
- * PART 2 - Note Completion (V38.9):
- * Problem: Last notes cut off because playback range ended too soon
- * Solution: Extend playback range 120 ticks AFTER last note
- * Result: Synthesizer has time to complete sustain/decay
- * 
- * Example Timeline (note at tick 1000):
- * - Playback starts: 980 (synth prep)
- * - Cursor starts: 960 (lead-in for audio latency)
- * - Note scheduled: 1000 
- * - User hears note: ~1000 (cursor reaches here too!)
- * - Playback ends: 1120 (synth completion buffer)
- * 
- * Previous Versions:
- * V38.8: Added cursor lead-in compensation
- * V38.7: Separated playback range from cursor position
- * V38.6: Reduced end buffer (too aggressive)
- * V38.4: Mobile scaling fixes
+ * WHY V13 WORKED:
+ * - handleMove gets beat and updates range IMMEDIATELY (not deferred)
+ * - Uses bar-level snapping (getBarStartTick/getBarEndTick)
+ * - Simple, direct beat lookup at cursor position
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -53,14 +39,12 @@ export interface AlphaTabRendererProps {
     isLooping?: boolean;
 }
 
-// ==================== HELPER FUNCTIONS ====================
+// ==================== TIMING CONSTANTS ====================
 
-// 🆕 V38.9: Optimized timing constants
 const TICK_BUFFER_START = -20;   // Synth preparation buffer
-const TICK_BUFFER_END = 120;      // Synth completion buffer (increased from 80)
-const CURSOR_LEAD_IN = -40;       // Cursor offset to sync with HEARD audio (not scheduled audio)
+const TICK_BUFFER_END = 160;      // Synth completion buffer
+const CURSOR_LEAD_IN = -40;       // Cursor offset to sync with audio
 
-// Apply buffers to playback range (for synth timing)
 const applyTimingBuffers = (startTick: number, endTick: number): { startTick: number; endTick: number } => {
     return {
         startTick: startTick + TICK_BUFFER_START,
@@ -68,10 +52,11 @@ const applyTimingBuffers = (startTick: number, endTick: number): { startTick: nu
     };
 };
 
-// Calculate cursor position with audio latency compensation
 const calculateCursorPosition = (rawTick: number): number => {
-    return rawTick + CURSOR_LEAD_IN; // Start cursor BEFORE note to sync with heard audio
+    return rawTick + CURSOR_LEAD_IN;
 };
+
+// ==================== HELPER FUNCTIONS (V13 STYLE) ====================
 
 const getBeatAtPosition = (
     api: AlphaTabApi,
@@ -86,59 +71,48 @@ const getBeatAtPosition = (
     return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
 };
 
-const findBeatWithMeasurePriority = (
-    api: AlphaTabApi,
-    container: HTMLElement,
-    x: number,
-    y: number,
-    searchRadius: number = 30
-): { beat: any; isMeasureStart: boolean } | null => {
-    let finalBeat = null;
-    let bestMeasureStartBeat = null;
-    let bestDistance = Infinity;
-    let bestBeatDistance = Infinity;
-
-    const rect = container.getBoundingClientRect();
-    const relX = x - rect.left + container.scrollLeft;
-
-    for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 5) {
-        const testX = x + offsetX;
-        const beat = getBeatAtPosition(api, container, testX, y);
-
-        if (beat) {
-            const distance = Math.abs(offsetX);
-
-            if (beat.index === 0) {
-                if (distance < bestDistance) {
-                    bestMeasureStartBeat = beat;
-                    bestDistance = distance;
-                    console.log(`🎯 V38.8 Found measure start at offset ${offsetX}px, tick=${beat.absolutePlaybackStart}`);
+// 🔥 V13: Get bar start tick (first beat in measure)
+const getBarStartTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart || 0;
+    }
+    const bar = beat.voice.bar;
+    let firstBeatTick = beat.absolutePlaybackStart;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const firstBeat = voice.beats[0];
+                if (firstBeat.absolutePlaybackStart < firstBeatTick) {
+                    firstBeatTick = firstBeat.absolutePlaybackStart;
                 }
-            }
-
-            if (distance < bestBeatDistance) {
-                finalBeat = beat;
-                bestBeatDistance = distance;
             }
         }
     }
-
-    const selectedBeat = bestMeasureStartBeat || finalBeat;
-    if (!selectedBeat) return null;
-
-    if (bestMeasureStartBeat) {
-        console.log(`✅ V38.8 Using MEASURE START at ${bestMeasureStartBeat.absolutePlaybackStart}, distance=${bestDistance}px from cursor`);
-    } else if (finalBeat) {
-        console.log(`⚠️ V38.8 No measure start found, using closest BEAT at ${finalBeat.absolutePlaybackStart}, index=${finalBeat.index}`);
-    }
-
-    return {
-        beat: selectedBeat,
-        isMeasureStart: selectedBeat.index === 0
-    };
+    return firstBeatTick;
 };
 
-// ==================== LOOP HANDLE CREATION ====================
+// 🔥 V13: Get bar end tick (last beat in measure)
+const getBarEndTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart + beat?.playbackDuration || 0;
+    }
+    const bar = beat.voice.bar;
+    let lastBeatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const lastBeat = voice.beats[voice.beats.length - 1];
+                const beatEnd = lastBeat.absolutePlaybackStart + lastBeat.playbackDuration;
+                if (beatEnd > lastBeatEnd) {
+                    lastBeatEnd = beatEnd;
+                }
+            }
+        }
+    }
+    return lastBeatEnd;
+};
+
+// ==================== HANDLE CREATION (V38.11 STYLE) ====================
 
 const createLoopHandles = (container: HTMLElement): {
     startHandle: HTMLDivElement;
@@ -229,11 +203,11 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V38.9 Perfect-sync handles created (cursor + completion)');
+    console.log('✅ V38.12 Handles: 26px bubbles, 50% D-string, V13 drag logic');
     return { startHandle, endHandle };
 };
 
-// ==================== HANDLE POSITIONING ====================
+// ==================== HANDLE POSITIONING (V38.11 STYLE) ====================
 
 const updateHandlePositions = (
     api: AlphaTabApi,
@@ -242,7 +216,7 @@ const updateHandlePositions = (
     endHandle: HTMLDivElement,
     source: string = 'unknown'
 ) => {
-    console.log(`📍 V38.8 updateHandlePositions from: ${source}`);
+    console.log(`📍 V38.12 updateHandlePositions from: ${source}`);
 
     if (!api.playbackRange || !api.renderer?.boundsLookup || !api.tracks) {
         startHandle.style.display = 'none';
@@ -269,12 +243,8 @@ const updateHandlePositions = (
         const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
         if (startBounds && endBounds) {
-            // 🆕 V38.4: Better mobile detection and scaling
-            const isMobile = window.innerWidth <= 768;
-            const topExtension = isMobile ? 8 : 28; // Much less extension on mobile
-
-            // 🆕 V38.4: D string is 40% down for better centering (adjusted from 45%)
-            const dStringRatio = isMobile ? 0.40 : 0.45;
+            const topExtension = 28;
+            const dStringRatio = 0.50;
 
             // START Handle
             const startSelectionHeight = startBounds.realBounds.h;
@@ -314,9 +284,7 @@ const updateHandlePositions = (
                 endBubble.style.transform = 'translateY(-50%)';
             }
 
-            // Force AlphaTab to refresh its selection overlay after resize
             if (source === 'resize' || source === 'renderFinished') {
-                console.log('🔄 V38.8 Forcing selection overlay refresh');
                 const currentRange = { startTick, endTick };
                 setTimeout(() => {
                     if (api.playbackRange) {
@@ -334,7 +302,7 @@ const updateHandlePositions = (
     }
 };
 
-// ==================== DRAG HANDLERS ====================
+// ==================== DRAG HANDLERS (V13 REAL-TIME LOGIC) ====================
 
 const attachHandleDragHandlers = (
     api: AlphaTabApi,
@@ -344,7 +312,6 @@ const attachHandleDragHandlers = (
 ) => {
     let isDragging = false;
     let dragTarget: 'start' | 'end' | null = null;
-    let dragStartY = 0;
 
     const preventSelection = (e: Event) => {
         if (isDragging) {
@@ -354,15 +321,12 @@ const attachHandleDragHandlers = (
     };
 
     const handleStart = (e: MouseEvent | TouchEvent, target: 'start' | 'end') => {
-        console.log(`🎯 V38.8 ${target.toUpperCase()} DRAG START`);
+        console.log(`🎯 V38.12 ${target.toUpperCase()} DRAG START (real-time)`);
 
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
         dragTarget = target;
-
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        dragStartY = clientY;
 
         document.body.style.overflow = 'hidden';
         document.body.style.userSelect = 'none';
@@ -380,8 +344,9 @@ const attachHandleDragHandlers = (
         document.addEventListener('dragstart', preventSelection);
     };
 
+    // 🔥 V13 LOGIC: Update range IN REAL-TIME during drag
     const handleMove = (e: MouseEvent | TouchEvent) => {
-        if (!isDragging || !dragTarget) return;
+        if (!isDragging || !dragTarget || !api.playbackRange) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -389,40 +354,54 @@ const attachHandleDragHandlers = (
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
-        const handle = dragTarget === 'start' ? startHandle : endHandle;
-        const containerRect = container.getBoundingClientRect();
-        const relX = clientX - containerRect.left + container.scrollLeft;
+        // 🔥 Get beat at current position IMMEDIATELY
+        const beat = getBeatAtPosition(api, container, clientX, clientY);
+        if (!beat) return;
 
-        const newLeft = relX - 1.5;
-        handle.style.left = `${newLeft}px`;
-
-        (handle as any)._currentDragX = relX;
-        (handle as any)._currentDragY = clientY;
+        if (dragTarget === 'start') {
+            // Get raw bar start tick
+            const rawStartTick = getBarStartTick(beat);
+            
+            // Apply timing buffer for synth
+            const bufferedStart = rawStartTick + TICK_BUFFER_START;
+            
+            if (bufferedStart < api.playbackRange.endTick) {
+                // Update range IMMEDIATELY
+                api.playbackRange = {
+                    startTick: bufferedStart,
+                    endTick: api.playbackRange.endTick
+                };
+                
+                // Update visual handles
+                updateHandlePositions(api, container, startHandle, endHandle, 'drag-move-start');
+                
+                // Update cursor position with lead-in
+                if (api.tickPosition !== undefined) {
+                    api.tickPosition = calculateCursorPosition(rawStartTick);
+                }
+            }
+        } else {
+            // Get raw bar end tick
+            const rawEndTick = getBarEndTick(beat);
+            
+            // Apply timing buffer for synth
+            const bufferedEnd = rawEndTick + TICK_BUFFER_END;
+            
+            if (bufferedEnd > api.playbackRange.startTick) {
+                // Update range IMMEDIATELY
+                api.playbackRange = {
+                    startTick: api.playbackRange.startTick,
+                    endTick: bufferedEnd
+                };
+                
+                // Update visual handles
+                updateHandlePositions(api, container, startHandle, endHandle, 'drag-move-end');
+            }
+        }
     };
 
-    const handleEnd = (e?: MouseEvent | TouchEvent) => {
-        if (!isDragging || !dragTarget) {
-            return;
-        }
-
-        if (!api.playbackRange) {
-            console.log(`⚠️ V38.8 DRAG END but no playback range`);
-            isDragging = false;
-            dragTarget = null;
-            document.body.style.overflow = '';
-            document.body.style.userSelect = '';
-            document.body.style.webkitUserSelect = '';
-            document.removeEventListener('selectstart', preventSelection);
-            document.removeEventListener('dragstart', preventSelection);
-            return;
-        }
-
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        console.log(`🎯 V38.8 ${dragTarget.toUpperCase()} DRAG END - Snapping...`);
+    const handleEnd = () => {
+        if (!isDragging) return;
 
         document.body.style.overflow = '';
         document.body.style.userSelect = '';
@@ -430,100 +409,16 @@ const attachHandleDragHandlers = (
         document.removeEventListener('selectstart', preventSelection);
         document.removeEventListener('dragstart', preventSelection);
 
-        const handle = dragTarget === 'start' ? startHandle : endHandle;
-        const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
-
-        if (bubble) {
-            bubble.style.pointerEvents = 'auto';
-            bubble.style.transform = 'translateY(-50%)';
-        }
-
-        const finalX = (handle as any)._currentDragX || 0;
-        const finalY = (handle as any)._currentDragY || dragStartY;
-        delete (handle as any)._currentDragX;
-        delete (handle as any)._currentDragY;
-
-        const containerRect = container.getBoundingClientRect();
-        const absoluteX = finalX + containerRect.left - container.scrollLeft;
-
-        console.log(`🎯 V38.8 Final position: X=${finalX}, Y=${finalY}`);
-
-        const result = findBeatWithMeasurePriority(api, container, absoluteX, finalY, 30);
-
-        if (!result) {
-            console.warn(`⚠️ V38.8 No beat found near X=${finalX}, Y=${finalY}`);
-            setTimeout(() => {
-                updateHandlePositions(api, container, startHandle, endHandle, 'handleEnd (no beat)');
-            }, 50);
-            isDragging = false;
-            dragTarget = null;
-            return;
-        }
-
-        const finalBeat = result.beat;
-        const isMeasureStart = result.isMeasureStart;
-        const beatStartTick = finalBeat.absolutePlaybackStart;
-        const beatEndTick = beatStartTick + finalBeat.playbackDuration;
-
-        console.log(`✅ V38.8 FINAL BEAT: ${beatStartTick} - ${beatEndTick}, Measure Start: ${isMeasureStart}, Beat Index: ${finalBeat.index}`);
-        console.log(`📊 V38.8 Current loop: ${api.playbackRange.startTick} → ${api.playbackRange.endTick}`);
-
-        let needsUpdate = false;
-        let finalStartTick = api.playbackRange.startTick;
-        let finalEndTick = api.playbackRange.endTick;
-
-        const savedCursor = api.tickPosition;
-        console.log(`💾 V38.8 Saved cursor position: ${savedCursor}`);
-
-        if (dragTarget === 'start') {
-            // 🆕 V38.8: When dragging start, apply START buffer to playback range only
-            const bufferedStart = beatStartTick + TICK_BUFFER_START;
-            if (bufferedStart < api.playbackRange.endTick && bufferedStart !== api.playbackRange.startTick) {
-                finalStartTick = bufferedStart;
-                needsUpdate = true;
-                console.log(`✅ V38.8 START SNAP: Raw=${beatStartTick} → Buffered=${bufferedStart}`);
-            } else if (bufferedStart === api.playbackRange.startTick) {
-                console.log(`ℹ️ V38.8 START already at this measure (tick ${bufferedStart})`);
-            }
-        } else {
-            // 🆕 V38.8: When dragging end, apply END buffer only
-            const bufferedEnd = beatEndTick + TICK_BUFFER_END;
-            if (bufferedEnd > api.playbackRange.startTick && bufferedEnd !== api.playbackRange.endTick) {
-                finalEndTick = bufferedEnd;
-                needsUpdate = true;
-                console.log(`✅ V38.8 END SNAP: Raw=${beatEndTick} → Buffered=${bufferedEnd}`);
-            } else if (bufferedEnd === api.playbackRange.endTick) {
-                console.log(`ℹ️ V38.8 END already at this measure (tick ${bufferedEnd})`);
+        if (dragTarget) {
+            const handle = dragTarget === 'start' ? startHandle : endHandle;
+            const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
+            if (bubble) {
+                bubble.style.pointerEvents = 'auto';
+                bubble.style.transform = 'translateY(-50%)';
             }
         }
 
-        if (needsUpdate) {
-            api.playbackRange = { startTick: finalStartTick, endTick: finalEndTick };
-            console.log(`✅ V38.8 API Updated: ${finalStartTick} → ${finalEndTick}`);
-
-            setTimeout(() => {
-                if (dragTarget === 'start') {
-                    // 🎯 CRITICAL: Cursor position with audio latency compensation
-                    if (api.tickPosition !== undefined) {
-                        const cursorPos = calculateCursorPosition(beatStartTick);
-                        api.tickPosition = cursorPos;
-                        console.log(`➡️ V38.8 Cursor moved to START: ${cursorPos} (raw=${beatStartTick})`);
-                    }
-                } else {
-                    if (api.tickPosition !== undefined && savedCursor !== undefined) {
-                        api.tickPosition = savedCursor;
-                        console.log(`➡️ V38.8 Cursor RESTORED: ${savedCursor}`);
-                    }
-                }
-            }, 10);
-        } else {
-            console.log(`🟡 V38.8 No tick change, but forcing handle re-position`);
-        }
-
-        setTimeout(() => {
-            updateHandlePositions(api, container, startHandle, endHandle, 'handleEnd (forced update)');
-        }, 50);
-
+        console.log(`✅ V38.12 ${dragTarget?.toUpperCase()} drag completed`);
         isDragging = false;
         dragTarget = null;
     };
@@ -547,7 +442,7 @@ const attachHandleDragHandlers = (
     document.addEventListener('touchend', handleEnd, { capture: true });
     document.addEventListener('touchcancel', handleEnd, { capture: true });
 
-    console.log('✅ V38.9 COMPLETE-SYNC drag handlers attached (cursor + completion)');
+    console.log('✅ V38.12 REAL-TIME drag handlers attached (V13 logic)');
 
     return () => {
         document.removeEventListener('mousemove', handleMove);
@@ -632,18 +527,13 @@ const setupTouchSelection = (
                 endBeat = beat;
 
                 if (startBeat && endBeat) {
-                    // 🆕 V38.5: Calculate raw range
-                    const rawLoopStart = Math.min(
-                        startBeat.absolutePlaybackStart,
-                        endBeat.absolutePlaybackStart
-                    );
-                    const rawLoopEnd = Math.max(
-                        startBeat.absolutePlaybackStart + startBeat.playbackDuration,
-                        endBeat.absolutePlaybackStart + endBeat.playbackDuration
-                    );
+                    const rawStart = getBarStartTick(startBeat);
+                    const rawEnd = getBarEndTick(endBeat);
+                    
+                    const loopStart = Math.min(rawStart, rawEnd);
+                    const loopEnd = Math.max(rawStart, rawEnd);
 
-                    // 🆕 V38.5: Apply buffers for synth lag
-                    const buffered = applyTimingBuffers(rawLoopStart, rawLoopEnd);
+                    const buffered = applyTimingBuffers(loopStart, loopEnd);
 
                     if (api.playbackRange !== undefined) {
                         api.playbackRange = buffered;
@@ -676,25 +566,19 @@ const setupTouchSelection = (
         }
 
         if (isSelecting && startBeat && endBeat) {
-            // 🆕 V38.8: Calculate raw range (actual notes)
-            const rawLoopStart = Math.min(
-                startBeat.absolutePlaybackStart,
-                endBeat.absolutePlaybackStart
-            );
-            const rawLoopEnd = Math.max(
-                startBeat.absolutePlaybackStart + startBeat.playbackDuration,
-                endBeat.absolutePlaybackStart + endBeat.playbackDuration
-            );
+            const rawStart = getBarStartTick(startBeat);
+            const rawEnd = getBarEndTick(endBeat);
+            
+            const loopStart = Math.min(rawStart, rawEnd);
+            const loopEnd = Math.max(rawStart, rawEnd);
 
-            // 🆕 V38.8: Apply buffers for synth timing
-            const buffered = applyTimingBuffers(rawLoopStart, rawLoopEnd);
-            const cursorPos = calculateCursorPosition(rawLoopStart);
+            const buffered = applyTimingBuffers(loopStart, loopEnd);
+            const cursorPos = calculateCursorPosition(loopStart);
 
             if (api.playbackRange !== undefined) {
                 api.playbackRange = buffered;
             }
 
-            // 🎯 CRITICAL: Cursor starts BEFORE note to compensate for audio latency
             if (api.tickPosition !== undefined) {
                 api.tickPosition = cursorPos;
             }
@@ -738,24 +622,19 @@ const setupMouseSelection = (
             return;
         }
 
-        const result = findBeatWithMeasurePriority(api, container, e.clientX, e.clientY, 30);
-        if (result) {
-            const beat = result.beat;
+        const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+        if (beat) {
             isSelecting = true;
             startBeat = beat;
             endBeat = beat;
 
-            // 🆕 V38.8: Separate timing for playback range vs cursor position
-            const rawStart = beat.absolutePlaybackStart;
-            const rawEnd = beat.absolutePlaybackStart + beat.playbackDuration;
+            const rawStart = getBarStartTick(beat);
+            const rawEnd = getBarEndTick(beat);
             const buffered = applyTimingBuffers(rawStart, rawEnd);
             const cursorPos = calculateCursorPosition(rawStart);
 
-            console.log(`🖱️ V38.9 Mouse DOWN: Playback=${buffered.startTick}-${buffered.endTick}, Cursor=${cursorPos} (lead-in synced)`);
-
             if (api.playbackRange !== undefined) {
                 api.playbackRange = buffered;
-                // 🎯 CRITICAL: Cursor starts BEFORE note to sync with heard audio
                 if (api.tickPosition !== undefined) {
                     api.tickPosition = cursorPos;
                 }
@@ -773,23 +652,17 @@ const setupMouseSelection = (
         if (!isSelecting) return;
         e.preventDefault();
 
-        const result = findBeatWithMeasurePriority(api, container, e.clientX, e.clientY, 30);
-        if (result && result.beat !== endBeat) {
-            const beat = result.beat;
+        const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+        if (beat && beat !== endBeat) {
             endBeat = beat;
 
-            // 🆕 V38.5: Calculate raw range first
-            const rawLoopStart = Math.min(
-                startBeat.absolutePlaybackStart,
-                endBeat.absolutePlaybackStart
-            );
-            const rawLoopEnd = Math.max(
-                startBeat.absolutePlaybackStart + startBeat.playbackDuration,
-                endBeat.absolutePlaybackStart + endBeat.playbackDuration
-            );
+            const rawStart = getBarStartTick(startBeat);
+            const rawEnd = getBarEndTick(endBeat);
+            
+            const loopStart = Math.min(rawStart, rawEnd);
+            const loopEnd = Math.max(rawStart, rawEnd);
 
-            // 🆕 V38.5: Apply buffers to the range
-            const buffered = applyTimingBuffers(rawLoopStart, rawLoopEnd);
+            const buffered = applyTimingBuffers(loopStart, loopEnd);
 
             if (api.playbackRange !== undefined) {
                 api.playbackRange = buffered;
@@ -803,29 +676,21 @@ const setupMouseSelection = (
         isSelecting = false;
 
         if (startBeat && endBeat) {
-            // 🆕 V38.8: Calculate raw range (actual notes)
-            const rawLoopStart = Math.min(
-                startBeat.absolutePlaybackStart,
-                endBeat.absolutePlaybackStart
-            );
-            const rawLoopEnd = Math.max(
-                startBeat.absolutePlaybackStart + startBeat.playbackDuration,
-                endBeat.absolutePlaybackStart + endBeat.playbackDuration
-            );
+            const rawStart = getBarStartTick(startBeat);
+            const rawEnd = getBarEndTick(endBeat);
+            
+            const loopStart = Math.min(rawStart, rawEnd);
+            const loopEnd = Math.max(rawStart, rawEnd);
 
-            // 🆕 V38.8: Apply buffers for synth timing
-            const buffered = applyTimingBuffers(rawLoopStart, rawLoopEnd);
-            const cursorPos = calculateCursorPosition(rawLoopStart);
+            const buffered = applyTimingBuffers(loopStart, loopEnd);
+            const cursorPos = calculateCursorPosition(loopStart);
 
             if (api.playbackRange !== undefined) {
                 api.playbackRange = buffered;
             }
-            // 🎯 CRITICAL: Cursor starts BEFORE note to compensate for audio latency
             if (api.tickPosition !== undefined) {
                 api.tickPosition = cursorPos;
             }
-
-            console.log(`🖱️ V38.9 Mouse UP: Playback=${buffered.startTick}-${buffered.endTick} (+120 end buffer), Cursor=${cursorPos} (synced)`);
         }
 
         startBeat = null;
@@ -894,8 +759,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 🎸 🎸 Initializing AlphaTab V38.9 - THE COMPLETE FIX! 🎸 🎸 🎸');
-                console.log('⏱️ Timing Config: Start Buffer=-20, End Buffer=+120, Cursor Lead-In=-40');
+                console.log('🎸 🎸 🎸 Initializing AlphaTab V38.12 - WORKING DRAG LOGIC 🎸 🎸 🎸');
+                console.log('🔥 V13 real-time drag + V38.11 styling + timing buffers');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -998,14 +863,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
-            console.log(`🔄 V38.9 API isLooping set to: ${isLooping}`);
+            console.log(`🔄 V38.12 API isLooping: ${isLooping}`);
         }
     }, [isLooping]);
 
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
-        console.log('🎨 Creating V38.8 loop handles...');
+        console.log('🎨 Creating V38.12 handles: 26px, 50% D-string, real-time drag');
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
         endHandleRef.current = handles.endHandle;
@@ -1053,7 +918,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const resizeObserver = new ResizeObserver(() => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-                console.log('📐 V38.8 Container resized - updating handles');
+                console.log('📐 V38.12 Container resized');
                 if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
                     updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current, 'resize');
                 }
@@ -1063,7 +928,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         resizeObserver.observe(container);
 
         const renderHandler = () => {
-            console.log('🎨 V38.8 Render finished - forcing handle update');
+            console.log('🎨 V38.12 Render finished');
             setTimeout(() => {
                 if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
                     updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current, 'renderFinished');
@@ -1109,11 +974,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
-            console.log('🚫 V38.8 Touch selection DISABLED (Loop is OFF)');
+            console.log('🚫 V38.12 Touch OFF');
             return;
         }
 
-        console.log('🎯 V38.8 Setting up touch selection (Loop is ON)');
+        console.log('🎯 V38.12 Touch ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
@@ -1151,11 +1016,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
-            console.log('🚫 V38.8 Mouse selection DISABLED (Loop is OFF)');
+            console.log('🚫 V38.12 Mouse OFF');
             return;
         }
 
-        console.log('🖱️ V38.8 Setting up mouse selection (Loop is ON)');
+        console.log('🖱️ V38.12 Mouse ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
