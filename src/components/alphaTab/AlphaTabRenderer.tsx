@@ -1,15 +1,44 @@
 'use client';
 
 /**
- * AlphaTab Renderer V50 - UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * AlphaTab Renderer V50 - UNIFIED HANDLE FIX + CAPTURE MODE
  * 
- * V50 FIXES:
- * ✅ Handle positioning: masterBarBounds.visualBounds with insets
- * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
- * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
- * ✅ Capture mode: ONLY on mousedown/touchstart to block mouse selection
- * ✅ Scroll jump fix: Save/restore scroll position when using position:fixed
- * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
+ * V49 ISSUES (REVERTED):
+ * ❌ SVG finding by Y-coordinate was unreliable
+ * ❌ Start/end handles finding different SVGs
+ * ❌ Right handle separating (bar vs bubble)
+ * ❌ Screen jumping on bubble click
+ * 
+ * V50 APPROACH:
+ * ✅ Use masterBarBounds.visualBounds (includes staff + notation + some padding)
+ * ✅ Subtract margins to match AlphaTab's highlight insets
+ * ✅ Keep both handles using same calculation method
+ * ✅ Simpler = more reliable
+ * 
+ * V50 RESIZE FIX:
+ * ✅ Track pending resize state
+ * ✅ Wait for postRenderFinished (most reliable event)
+ * ✅ Verify boundsLookup is populated before updating
+ * ✅ Shorter delays (50-100ms vs 200-300ms)
+ * ✅ Force AlphaTab selection refresh (clear + restore playbackRange)
+ * 
+ * V50 DRAG FIX (UNIFIED + CAPTURE):
+ * ✅ Handle bar AND bubble act as ONE unit (both draggable)
+ * ✅ Both have cursor: ew-resize for clear drag affordance
+ * ✅ Capture mode ONLY on mousedown/touchstart to block mouse selection
+ * ✅ Immediate drag start without threshold
+ * ✅ Uses timing buffers for Songsterr-style push/pull effect
+ * ✅ No page jump - capture blocks mouse selection interference
+ * 
+ * THE FIX (V50):
+ * - Handle: masterBarBounds.visualBounds with insets
+ * - Bubble: Always relative to handle's top
+ * - No SVG queries needed
+ * - Resize → postRenderFinished → force selection refresh → updateHandles
+ * - Drag: Handle bar + bubble unified, capture mode on mousedown only
+ * 
+ * PRESERVED:
+ * ✅ Real-time drag, scroll prevention, timing buffers
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -204,11 +233,11 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V50 Unified handles created');
+    console.log('✅ V50 Unified handles created (bar+bubble as one unit)');
     return { startHandle, endHandle };
 };
 
-// ==================== HANDLE POSITIONING ====================
+// ==================== HANDLE POSITIONING (V50 - SIMPLIFIED BOUNDS + RESIZE FIX) ====================
 
 const updateHandlePositions = (
     api: AlphaTabApi,
@@ -217,14 +246,18 @@ const updateHandlePositions = (
     endHandle: HTMLDivElement,
     source: string = 'unknown'
 ) => {
+    console.log(`📍 V50 updateHandlePositions from: ${source}`);
+
     if (!api.playbackRange || !api.renderer?.boundsLookup || !api.tracks) {
         startHandle.style.display = 'none';
         endHandle.style.display = 'none';
         return;
     }
 
-    if (!api.renderer.boundsLookup.staffSystems ||
+    // ✅ RESIZE FIX: Verify boundsLookup is actually populated
+    if (!api.renderer.boundsLookup.staffSystems || 
         api.renderer.boundsLookup.staffSystems.length === 0) {
+        console.warn('⚠️ V50 boundsLookup not ready yet, skipping update');
         return;
     }
 
@@ -254,6 +287,7 @@ const updateHandlePositions = (
 
         const HANDLE_INSET = 5;
 
+        // --- START Handle ---
         let startHandleTop: number;
         let startHandleHeight: number;
 
@@ -288,6 +322,7 @@ const updateHandlePositions = (
             startBubble.style.transform = 'translateY(-50%)';
         }
 
+        // --- END Handle ---
         let endHandleTop: number;
         let endHandleHeight: number;
 
@@ -322,14 +357,16 @@ const updateHandlePositions = (
             endBubble.style.transform = 'translateY(-50%)';
         }
 
+        console.log(`📏 V50 Start Handle: ${Math.round(startHandleHeight)}px @ ${Math.round(startHandleTop)}px | End Handle: ${Math.round(endHandleHeight)}px @ ${Math.round(endHandleTop)}px`);
+
     } catch (error) {
-        console.error('❌ Handle positioning error:', error);
+        console.error('❌ V50 Handle positioning error:', error);
         startHandle.style.display = 'none';
         endHandle.style.display = 'none';
     }
 };
 
-// ==================== DRAG HANDLERS (WITH SCROLL FIX) ====================
+// ==================== DRAG HANDLERS ====================
 
 const attachHandleDragHandlers = (
     api: AlphaTabApi,
@@ -339,7 +376,6 @@ const attachHandleDragHandlers = (
 ) => {
     let isDragging = false;
     let dragTarget: 'start' | 'end' | null = null;
-    let scrollY = 0;
 
     const preventSelection = (e: Event) => {
         if (isDragging) {
@@ -349,18 +385,17 @@ const attachHandleDragHandlers = (
     };
 
     const handleStart = (e: MouseEvent | TouchEvent, target: 'start' | 'end') => {
+        console.log(`🎯 V50 ${target.toUpperCase()} DRAG START`);
+
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
         dragTarget = target;
 
-        scrollY = window.scrollY;
-
         document.body.style.overflow = 'hidden';
         document.body.style.userSelect = 'none';
         document.body.style.webkitUserSelect = 'none';
         document.body.style.position = 'fixed';
-        document.body.style.top = `-${scrollY}px`;
         document.body.style.width = '100%';
 
         const handle = target === 'start' ? startHandle : endHandle;
@@ -425,10 +460,7 @@ const attachHandleDragHandlers = (
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
         document.body.style.position = '';
-        document.body.style.top = '';
         document.body.style.width = '';
-
-        window.scrollTo(0, scrollY);
 
         document.removeEventListener('selectstart', preventSelection);
         document.removeEventListener('dragstart', preventSelection);
@@ -442,6 +474,7 @@ const attachHandleDragHandlers = (
             }
         }
 
+        console.log(`✅ V50 ${dragTarget?.toUpperCase()} drag completed`);
         isDragging = false;
         dragTarget = null;
     };
@@ -449,11 +482,13 @@ const attachHandleDragHandlers = (
     const startBubble = startHandle.querySelector('.maestro-loop-bubble');
     const endBubble = endHandle.querySelector('.maestro-loop-bubble');
 
+    // Attach to BOTH bubble AND handle bar (as one unit)
+    // USE CAPTURE MODE on mousedown/touchstart to block mouse selection handler
     if (startBubble) {
         startBubble.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'start'), { capture: true });
         startBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'start'), { passive: false, capture: true });
     }
-
+    
     startHandle.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'start'), { capture: true });
     startHandle.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'start'), { passive: false, capture: true });
 
@@ -461,15 +496,18 @@ const attachHandleDragHandlers = (
         endBubble.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'end'), { capture: true });
         endBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'end'), { passive: false, capture: true });
     }
-
+    
     endHandle.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'end'), { capture: true });
     endHandle.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'end'), { passive: false, capture: true });
 
+    // These don't need capture mode - only the initial mousedown needs to block the mouse selection
     document.addEventListener('mousemove', handleMove, { passive: false });
     document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('mouseup', handleEnd);
     document.addEventListener('touchend', handleEnd);
     document.addEventListener('touchcancel', handleEnd);
+
+    console.log('✅ V50 Unified drag handlers (capture mode on mousedown blocks mouse selection)');
 
     return () => {
         document.removeEventListener('mousemove', handleMove);
@@ -483,12 +521,11 @@ const attachHandleDragHandlers = (
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
         document.body.style.position = '';
-        document.body.style.top = '';
         document.body.style.width = '';
     };
 };
 
-// ==================== TOUCH SELECTION ====================
+// ==================== TOUCH/MOUSE SELECTION ====================
 
 const setupTouchSelection = (
     api: AlphaTabApi,
@@ -638,8 +675,6 @@ const setupTouchSelection = (
     };
 };
 
-// ==================== MOUSE SELECTION ====================
-
 const setupMouseSelection = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -651,7 +686,8 @@ const setupMouseSelection = (
     let isSelecting = false;
 
     const handleMouseDown = (e: MouseEvent) => {
-        if (e.button !== 0 ||
+        // Ignore if not left click OR if clicking on loop handles/bubbles
+        if (e.button !== 0 || 
             (e.target as HTMLElement).closest('.maestro-loop-bubble') ||
             (e.target as HTMLElement).closest('.maestro-loop-handle')) {
             return;
@@ -794,7 +830,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V50 - SCROLL FIX 🎸');
+                console.log('🎸 🎸 🎸 Initializing AlphaTab V50.1 - UNIFIED HANDLE + PINCH-TO-ZOOM 🎸 🎸 🎸');
+                console.log('📏 Using masterBarBounds with insets for reliability');
+                console.log('🛡️ Added scroll prevention to bubbles');
+                console.log('🔄 Resize fix: postRenderFinished + boundsLookup verification + force selection refresh');
+                console.log('🖱️ Drag fix: Unified handle+bubble, capture mode on mousedown blocks mouse selection');
+                console.log('🤏 Pinch-to-zoom: 2-finger pinch scales canvas (0.5x - 5x), 1-finger for loop selection');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -897,12 +938,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
+            console.log(`🔄 V50 API isLooping: ${isLooping}`);
         }
     }, [isLooping]);
 
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
+        console.log('🎨 Creating V50 unified handles (bar+bubble as one unit)');
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
         endHandleRef.current = handles.endHandle;
@@ -936,29 +979,36 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         dragCleanupRef.current = attachHandleDragHandlers(api, container, startHandle, endHandle);
 
+        // ===== IMPROVED RESIZE HANDLING =====
+        
         let pendingResizeUpdate = false;
         let resizeTimer: NodeJS.Timeout;
-
+        
         const resizeObserver = new ResizeObserver(() => {
             clearTimeout(resizeTimer);
             pendingResizeUpdate = true;
-
+            
             resizeTimer = setTimeout(() => {
-                console.log('📐 V50 Container resized');
+                console.log('📐 V50 Container resized - waiting for AlphaTab re-render');
             }, 150);
         });
 
         resizeObserver.observe(container);
 
+        // ===== IMPROVED RENDER FINISHED HANDLING =====
+        
         const renderHandler = () => {
+            console.log('🎨 V50 Render finished');
+            
             setTimeout(() => {
                 if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    console.log(`🔄 V50 Updating handles after render (pendingResize: ${pendingResizeUpdate})`);
                     updateHandlePositions(
-                        apiRef.current,
-                        containerRef.current,
-                        startHandleRef.current,
-                        endHandleRef.current,
-                        'renderFinished'
+                        apiRef.current, 
+                        containerRef.current, 
+                        startHandleRef.current, 
+                        endHandleRef.current, 
+                        pendingResizeUpdate ? 'renderFinished-after-resize' : 'renderFinished'
                     );
                     pendingResizeUpdate = false;
                 }
@@ -969,26 +1019,38 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             api.renderFinished.on(renderHandler);
         }
 
+        // ===== ALSO LISTEN TO postRenderFinished (MORE RELIABLE) =====
+        
         const postRenderHandler = () => {
+            console.log('🎨 V50 Post-render finished');
+            
             setTimeout(() => {
                 if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
                     if (apiRef.current.playbackRange) {
+                        console.log('🔄 V50 Final handle update after post-render');
+                        
+                        // ✅ CRITICAL FIX: Force AlphaTab to refresh selection after resize
                         if (pendingResizeUpdate) {
+                            console.log('🔄 V50 Forcing AlphaTab selection refresh after resize');
                             const currentRange = apiRef.current.playbackRange;
+                            
+                            // Temporarily clear to force re-render of AlphaTab's internal selection divs
                             apiRef.current.playbackRange = null;
-
+                            
+                            // Restore immediately to trigger fresh selection rendering
                             setTimeout(() => {
                                 if (apiRef.current) {
                                     apiRef.current.playbackRange = currentRange;
+                                    console.log('✅ V50 Selection refreshed with new bounds');
                                 }
                             }, 10);
                         }
-
+                        
                         updateHandlePositions(
-                            apiRef.current,
-                            containerRef.current,
-                            startHandleRef.current,
-                            endHandleRef.current,
+                            apiRef.current, 
+                            containerRef.current, 
+                            startHandleRef.current, 
+                            endHandleRef.current, 
                             'postRenderFinished'
                         );
                         pendingResizeUpdate = false;
@@ -1001,6 +1063,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             api.postRenderFinished.on(postRenderHandler);
         }
 
+        // ===== PLAYBACK RANGE CHANGED HANDLER =====
+        
         const rangeHandler = () => {
             if (containerRef.current && startHandleRef.current && endHandleRef.current) {
                 updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current, 'rangeChanged');
@@ -1049,8 +1113,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
+            console.log('🚫 V50 Touch OFF');
             return;
         }
+
+        console.log('🎯 V50 Touch ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
@@ -1088,8 +1155,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
+            console.log('🚫 V50 Mouse OFF');
             return;
         }
+
+        console.log('🖱️ V50 Mouse ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
@@ -1111,6 +1181,80 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
         };
     }, [isRendered, isLooping]);
+
+    // ==================== PINCH-TO-ZOOM (V50.1) ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) {
+            return;
+        }
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        let initialDistance = 0;
+        let initialScale = 1;
+        let isPinching = false;
+
+        const getDistance = (touch1: Touch, touch2: Touch): number => {
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        const handlePinchStart = (e: TouchEvent) => {
+            // Only handle 2+ finger touches (pinch)
+            if (e.touches.length >= 2) {
+                isPinching = true;
+                initialDistance = getDistance(e.touches[0], e.touches[1]);
+                initialScale = (api.settings as any).display?.scale || 1;
+                console.log(`🤏 V50.1 Pinch started - initial scale: ${initialScale}`);
+            }
+        };
+
+        const handlePinchMove = (e: TouchEvent) => {
+            // Only process if we're actively pinching with 2+ fingers
+            if (!isPinching || e.touches.length < 2) return;
+
+            e.preventDefault(); // Prevent default iOS zoom
+
+            const currentDistance = getDistance(e.touches[0], e.touches[1]);
+            const scale = (currentDistance / initialDistance) * initialScale;
+
+            // Clamp scale between 0.5x and 5x
+            const clampedScale = Math.max(0.5, Math.min(5, scale));
+
+            // Update AlphaTab scale
+            if ((api.settings as any).display) {
+                (api.settings as any).display.scale = clampedScale;
+                api.updateSettings();
+                api.render();
+                console.log(`🔍 V50.1 Pinch scale: ${clampedScale.toFixed(2)}x`);
+            }
+        };
+
+        const handlePinchEnd = (e: TouchEvent) => {
+            if (isPinching && e.touches.length < 2) {
+                isPinching = false;
+                const finalScale = (api.settings as any).display?.scale || 1;
+                console.log(`✅ V50.1 Pinch ended - final scale: ${finalScale.toFixed(2)}x`);
+            }
+        };
+
+        // Attach pinch handlers to container
+        container.addEventListener('touchstart', handlePinchStart, { passive: true });
+        container.addEventListener('touchmove', handlePinchMove, { passive: false });
+        container.addEventListener('touchend', handlePinchEnd, { passive: true });
+        container.addEventListener('touchcancel', handlePinchEnd, { passive: true });
+
+        console.log('✅ V50.1 Pinch-to-zoom handlers attached');
+
+        return () => {
+            container.removeEventListener('touchstart', handlePinchStart);
+            container.removeEventListener('touchmove', handlePinchMove);
+            container.removeEventListener('touchend', handlePinchEnd);
+            container.removeEventListener('touchcancel', handlePinchEnd);
+        };
+    }, [isRendered]);
 
     return (
         <div className="relative">
