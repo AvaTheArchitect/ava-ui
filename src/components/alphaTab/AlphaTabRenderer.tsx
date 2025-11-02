@@ -1,24 +1,15 @@
 'use client';
 
 /**
- * AlphaTab Renderer V38.12 - WORKING DRAG LOGIC RESTORED
+ * AlphaTab Renderer V50 - UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
  * 
- * CRITICAL FIX (V38.12):
- * ✅ Restored V13 REAL-TIME drag logic - updates range during handleMove, not after
- * ✅ Simplified beat detection - uses direct getBeatAtPosition (no measure priority)
- * ✅ Added getBarStartTick/getBarEndTick for accurate bar-level snapping
- * ✅ Handles now respond immediately to vertical/horizontal drags
- * ✅ Removed unused isLoopingEnabled parameters (fixed TypeScript errors)
- * 
- * PRESERVED FROM V38.11:
- * ✅ Handle styling: 26px bubbles, 50% D-string alignment
- * ✅ Timing buffers: -20 start, +160 end, -40 cursor lead-in
- * ✅ Handle positioning within bounds
- * 
- * WHY V13 WORKED:
- * - handleMove gets beat and updates range IMMEDIATELY (not deferred)
- * - Uses bar-level snapping (getBarStartTick/getBarEndTick)
- * - Simple, direct beat lookup at cursor position
+ * V50 FIXES:
+ * ✅ Handle positioning: masterBarBounds.visualBounds with insets
+ * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
+ * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
+ * ✅ Capture mode: ONLY on mousedown/touchstart to block mouse selection
+ * ✅ Scroll jump fix: Save/restore scroll position when using position:fixed
+ * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -41,9 +32,9 @@ export interface AlphaTabRendererProps {
 
 // ==================== TIMING CONSTANTS ====================
 
-const TICK_BUFFER_START = -20;   // Synth preparation buffer
-const TICK_BUFFER_END = 160;      // Synth completion buffer
-const CURSOR_LEAD_IN = -40;       // Cursor offset to sync with audio
+const TICK_BUFFER_START = -20;
+const TICK_BUFFER_END = 160;
+const CURSOR_LEAD_IN = -40;
 
 const applyTimingBuffers = (startTick: number, endTick: number): { startTick: number; endTick: number } => {
     return {
@@ -56,7 +47,7 @@ const calculateCursorPosition = (rawTick: number): number => {
     return rawTick + CURSOR_LEAD_IN;
 };
 
-// ==================== HELPER FUNCTIONS (V13 STYLE) ====================
+// ==================== HELPER FUNCTIONS ====================
 
 const getBeatAtPosition = (
     api: AlphaTabApi,
@@ -71,7 +62,6 @@ const getBeatAtPosition = (
     return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
 };
 
-// 🔥 V13: Get bar start tick (first beat in measure)
 const getBarStartTick = (beat: any): number => {
     if (!beat || !beat.voice || !beat.voice.bar) {
         return beat?.absolutePlaybackStart || 0;
@@ -91,7 +81,6 @@ const getBarStartTick = (beat: any): number => {
     return firstBeatTick;
 };
 
-// 🔥 V13: Get bar end tick (last beat in measure)
 const getBarEndTick = (beat: any): number => {
     if (!beat || !beat.voice || !beat.voice.bar) {
         return beat?.absolutePlaybackStart + beat?.playbackDuration || 0;
@@ -112,7 +101,7 @@ const getBarEndTick = (beat: any): number => {
     return lastBeatEnd;
 };
 
-// ==================== HANDLE CREATION (V38.11 STYLE) ====================
+// ==================== HANDLE CREATION ====================
 
 const createLoopHandles = (container: HTMLElement): {
     startHandle: HTMLDivElement;
@@ -128,7 +117,8 @@ const createLoopHandles = (container: HTMLElement): {
         border-radius: 0 !important;
         display: none;
         z-index: 1000;
-        pointer-events: none;
+        cursor: ew-resize;
+        pointer-events: auto;
         user-select: none !important;
         -webkit-user-select: none !important;
     `;
@@ -157,6 +147,11 @@ const createLoopHandles = (container: HTMLElement): {
         right: 1px;
         border-radius: 7px 0 0 7px !important;
     `;
+
+    startBubble.addEventListener('mousedown', (e) => e.preventDefault(), { capture: true });
+    startBubble.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false, capture: true });
+    startBubble.addEventListener('click', (e) => e.preventDefault(), { capture: true });
+
     startHandle.appendChild(startBubble);
 
     const endHandle = document.createElement('div');
@@ -169,7 +164,8 @@ const createLoopHandles = (container: HTMLElement): {
         border-radius: 0 !important;
         display: none;
         z-index: 1000;
-        pointer-events: none;
+        cursor: ew-resize;
+        pointer-events: auto;
         user-select: none !important;
         -webkit-user-select: none !important;
     `;
@@ -198,16 +194,21 @@ const createLoopHandles = (container: HTMLElement): {
         left: 1px;
         border-radius: 0 7px 7px 0 !important;
     `;
+
+    endBubble.addEventListener('mousedown', (e) => e.preventDefault(), { capture: true });
+    endBubble.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false, capture: true });
+    endBubble.addEventListener('click', (e) => e.preventDefault(), { capture: true });
+
     endHandle.appendChild(endBubble);
 
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V38.12 Handles: 26px bubbles, 50% D-string, V13 drag logic');
+    console.log('✅ V50 Unified handles created');
     return { startHandle, endHandle };
 };
 
-// ==================== HANDLE POSITIONING (V38.11 STYLE) ====================
+// ==================== HANDLE POSITIONING ====================
 
 const updateHandlePositions = (
     api: AlphaTabApi,
@@ -216,11 +217,14 @@ const updateHandlePositions = (
     endHandle: HTMLDivElement,
     source: string = 'unknown'
 ) => {
-    console.log(`📍 V38.12 updateHandlePositions from: ${source}`);
-
     if (!api.playbackRange || !api.renderer?.boundsLookup || !api.tracks) {
         startHandle.style.display = 'none';
         endHandle.style.display = 'none';
+        return;
+    }
+
+    if (!api.renderer.boundsLookup.staffSystems ||
+        api.renderer.boundsLookup.staffSystems.length === 0) {
         return;
     }
 
@@ -242,67 +246,90 @@ const updateHandlePositions = (
         const startBounds = api.renderer.boundsLookup.findBeat(startResult.beat);
         const endBounds = api.renderer.boundsLookup.findBeat(endResult.beat);
 
-        if (startBounds && endBounds) {
-            const topExtension = 28;
-            const dStringRatio = 0.50;
-
-            // START Handle
-            const startSelectionHeight = startBounds.realBounds.h;
-            const startSelectionTop = startBounds.realBounds.y;
-            const newStartHeight = startSelectionHeight + topExtension;
-            const newStartTop = startSelectionTop - topExtension;
-
-            startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`;
-            startHandle.style.top = `${newStartTop}px`;
-            startHandle.style.height = `${newStartHeight}px`;
-            startHandle.style.display = 'block';
-
-            const startBubble = startHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
-            if (startBubble) {
-                const dStringOffset = startSelectionHeight * dStringRatio;
-                const bubbleOffsetFromTop = startSelectionTop + dStringOffset - newStartTop;
-                startBubble.style.top = `${bubbleOffsetFromTop}px`;
-                startBubble.style.transform = 'translateY(-50%)';
-            }
-
-            // END Handle
-            const endSelectionHeight = endBounds.realBounds.h;
-            const endSelectionTop = endBounds.realBounds.y;
-            const newEndHeight = endSelectionHeight + topExtension;
-            const newEndTop = endSelectionTop - topExtension;
-
-            endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`;
-            endHandle.style.top = `${newEndTop}px`;
-            endHandle.style.height = `${newEndHeight}px`;
-            endHandle.style.display = 'block';
-
-            const endBubble = endHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
-            if (endBubble) {
-                const dStringOffset = endSelectionHeight * dStringRatio;
-                const bubbleOffsetFromTop = endSelectionTop + dStringOffset - newEndTop;
-                endBubble.style.top = `${bubbleOffsetFromTop}px`;
-                endBubble.style.transform = 'translateY(-50%)';
-            }
-
-            if (source === 'resize' || source === 'renderFinished') {
-                const currentRange = { startTick, endTick };
-                setTimeout(() => {
-                    if (api.playbackRange) {
-                        api.playbackRange = null;
-                        setTimeout(() => {
-                            api.playbackRange = currentRange;
-                        }, 10);
-                    }
-                }, 50);
-            }
+        if (!startBounds?.realBounds || !endBounds?.realBounds) {
+            startHandle.style.display = 'none';
+            endHandle.style.display = 'none';
+            return;
         }
+
+        const HANDLE_INSET = 5;
+
+        let startHandleTop: number;
+        let startHandleHeight: number;
+
+        if (startBounds?.barBounds?.masterBarBounds?.visualBounds) {
+            const masterBounds = startBounds.barBounds.masterBarBounds.visualBounds;
+            startHandleTop = masterBounds.y + HANDLE_INSET;
+            startHandleHeight = masterBounds.h - (HANDLE_INSET * 2);
+        } else if (startBounds?.barBounds?.visualBounds) {
+            const barBounds = startBounds.barBounds.visualBounds;
+            startHandleTop = barBounds.y + HANDLE_INSET;
+            startHandleHeight = barBounds.h - (HANDLE_INSET * 2);
+        } else {
+            const staffBounds = startBounds.realBounds;
+            const extraPadding = 20;
+            startHandleTop = staffBounds.y - extraPadding + HANDLE_INSET;
+            startHandleHeight = staffBounds.h + (extraPadding * 2) - (HANDLE_INSET * 2);
+        }
+
+        startHandle.style.left = `${startBounds.realBounds.x - 1.5}px`;
+        startHandle.style.top = `${startHandleTop}px`;
+        startHandle.style.height = `${startHandleHeight}px`;
+        startHandle.style.display = 'block';
+
+        const startBubble = startHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+        if (startBubble) {
+            const staffBounds = startBounds.realBounds;
+            const dStringOffset = staffBounds.h * 0.50;
+            const bubbleAbsoluteY = staffBounds.y + dStringOffset;
+            const bubbleRelativeY = bubbleAbsoluteY - startHandleTop;
+
+            startBubble.style.top = `${bubbleRelativeY}px`;
+            startBubble.style.transform = 'translateY(-50%)';
+        }
+
+        let endHandleTop: number;
+        let endHandleHeight: number;
+
+        if (endBounds?.barBounds?.masterBarBounds?.visualBounds) {
+            const masterBounds = endBounds.barBounds.masterBarBounds.visualBounds;
+            endHandleTop = masterBounds.y + HANDLE_INSET;
+            endHandleHeight = masterBounds.h - (HANDLE_INSET * 2);
+        } else if (endBounds?.barBounds?.visualBounds) {
+            const barBounds = endBounds.barBounds.visualBounds;
+            endHandleTop = barBounds.y + HANDLE_INSET;
+            endHandleHeight = barBounds.h - (HANDLE_INSET * 2);
+        } else {
+            const staffBounds = endBounds.realBounds;
+            const extraPadding = 20;
+            endHandleTop = staffBounds.y - extraPadding + HANDLE_INSET;
+            endHandleHeight = staffBounds.h + (extraPadding * 2) - (HANDLE_INSET * 2);
+        }
+
+        endHandle.style.left = `${endBounds.realBounds.x + endBounds.realBounds.w - 1.5}px`;
+        endHandle.style.top = `${endHandleTop}px`;
+        endHandle.style.height = `${endHandleHeight}px`;
+        endHandle.style.display = 'block';
+
+        const endBubble = endHandle.querySelector('.maestro-loop-bubble') as HTMLElement;
+        if (endBubble) {
+            const staffBounds = endBounds.realBounds;
+            const dStringOffset = staffBounds.h * 0.50;
+            const bubbleAbsoluteY = staffBounds.y + dStringOffset;
+            const bubbleRelativeY = bubbleAbsoluteY - endHandleTop;
+
+            endBubble.style.top = `${bubbleRelativeY}px`;
+            endBubble.style.transform = 'translateY(-50%)';
+        }
+
     } catch (error) {
+        console.error('❌ Handle positioning error:', error);
         startHandle.style.display = 'none';
         endHandle.style.display = 'none';
     }
 };
 
-// ==================== DRAG HANDLERS (V13 REAL-TIME LOGIC) ====================
+// ==================== DRAG HANDLERS (WITH SCROLL FIX) ====================
 
 const attachHandleDragHandlers = (
     api: AlphaTabApi,
@@ -312,6 +339,7 @@ const attachHandleDragHandlers = (
 ) => {
     let isDragging = false;
     let dragTarget: 'start' | 'end' | null = null;
+    let scrollY = 0;
 
     const preventSelection = (e: Event) => {
         if (isDragging) {
@@ -321,16 +349,19 @@ const attachHandleDragHandlers = (
     };
 
     const handleStart = (e: MouseEvent | TouchEvent, target: 'start' | 'end') => {
-        console.log(`🎯 V38.12 ${target.toUpperCase()} DRAG START (real-time)`);
-
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
         dragTarget = target;
 
+        scrollY = window.scrollY;
+
         document.body.style.overflow = 'hidden';
         document.body.style.userSelect = 'none';
         document.body.style.webkitUserSelect = 'none';
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${scrollY}px`;
+        document.body.style.width = '100%';
 
         const handle = target === 'start' ? startHandle : endHandle;
         const bubble = handle.querySelector('.maestro-loop-bubble') as HTMLElement;
@@ -344,7 +375,6 @@ const attachHandleDragHandlers = (
         document.addEventListener('dragstart', preventSelection);
     };
 
-    // 🔥 V13 LOGIC: Update range IN REAL-TIME during drag
     const handleMove = (e: MouseEvent | TouchEvent) => {
         if (!isDragging || !dragTarget || !api.playbackRange) return;
 
@@ -354,47 +384,35 @@ const attachHandleDragHandlers = (
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
-        // 🔥 Get beat at current position IMMEDIATELY
         const beat = getBeatAtPosition(api, container, clientX, clientY);
         if (!beat) return;
 
         if (dragTarget === 'start') {
-            // Get raw bar start tick
             const rawStartTick = getBarStartTick(beat);
-            
-            // Apply timing buffer for synth
             const bufferedStart = rawStartTick + TICK_BUFFER_START;
-            
+
             if (bufferedStart < api.playbackRange.endTick) {
-                // Update range IMMEDIATELY
                 api.playbackRange = {
                     startTick: bufferedStart,
                     endTick: api.playbackRange.endTick
                 };
-                
-                // Update visual handles
+
                 updateHandlePositions(api, container, startHandle, endHandle, 'drag-move-start');
-                
-                // Update cursor position with lead-in
+
                 if (api.tickPosition !== undefined) {
                     api.tickPosition = calculateCursorPosition(rawStartTick);
                 }
             }
         } else {
-            // Get raw bar end tick
             const rawEndTick = getBarEndTick(beat);
-            
-            // Apply timing buffer for synth
             const bufferedEnd = rawEndTick + TICK_BUFFER_END;
-            
+
             if (bufferedEnd > api.playbackRange.startTick) {
-                // Update range IMMEDIATELY
                 api.playbackRange = {
                     startTick: api.playbackRange.startTick,
                     endTick: bufferedEnd
                 };
-                
-                // Update visual handles
+
                 updateHandlePositions(api, container, startHandle, endHandle, 'drag-move-end');
             }
         }
@@ -406,6 +424,12 @@ const attachHandleDragHandlers = (
         document.body.style.overflow = '';
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+
+        window.scrollTo(0, scrollY);
+
         document.removeEventListener('selectstart', preventSelection);
         document.removeEventListener('dragstart', preventSelection);
 
@@ -418,7 +442,6 @@ const attachHandleDragHandlers = (
             }
         }
 
-        console.log(`✅ V38.12 ${dragTarget?.toUpperCase()} drag completed`);
         isDragging = false;
         dragTarget = null;
     };
@@ -431,33 +454,41 @@ const attachHandleDragHandlers = (
         startBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'start'), { passive: false, capture: true });
     }
 
+    startHandle.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'start'), { capture: true });
+    startHandle.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'start'), { passive: false, capture: true });
+
     if (endBubble) {
         endBubble.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'end'), { capture: true });
         endBubble.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'end'), { passive: false, capture: true });
     }
 
+    endHandle.addEventListener('mousedown', (e) => handleStart(e as MouseEvent, 'end'), { capture: true });
+    endHandle.addEventListener('touchstart', (e) => handleStart(e as TouchEvent, 'end'), { passive: false, capture: true });
+
     document.addEventListener('mousemove', handleMove, { passive: false });
     document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('mouseup', handleEnd, { capture: true });
-    document.addEventListener('touchend', handleEnd, { capture: true });
-    document.addEventListener('touchcancel', handleEnd, { capture: true });
-
-    console.log('✅ V38.12 REAL-TIME drag handlers attached (V13 logic)');
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchend', handleEnd);
+    document.addEventListener('touchcancel', handleEnd);
 
     return () => {
         document.removeEventListener('mousemove', handleMove);
         document.removeEventListener('touchmove', handleMove);
-        document.removeEventListener('mouseup', handleEnd, { capture: true });
-        document.removeEventListener('touchend', handleEnd, { capture: true });
-        document.removeEventListener('touchcancel', handleEnd, { capture: true });
+        document.removeEventListener('mouseup', handleEnd);
+        document.removeEventListener('touchend', handleEnd);
+        document.removeEventListener('touchcancel', handleEnd);
         document.removeEventListener('selectstart', preventSelection);
         document.removeEventListener('dragstart', preventSelection);
+        document.body.style.overflow = '';
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
     };
 };
 
-// ==================== TOUCH/MOUSE SELECTION ====================
+// ==================== TOUCH SELECTION ====================
 
 const setupTouchSelection = (
     api: AlphaTabApi,
@@ -529,7 +560,7 @@ const setupTouchSelection = (
                 if (startBeat && endBeat) {
                     const rawStart = getBarStartTick(startBeat);
                     const rawEnd = getBarEndTick(endBeat);
-                    
+
                     const loopStart = Math.min(rawStart, rawEnd);
                     const loopEnd = Math.max(rawStart, rawEnd);
 
@@ -568,7 +599,7 @@ const setupTouchSelection = (
         if (isSelecting && startBeat && endBeat) {
             const rawStart = getBarStartTick(startBeat);
             const rawEnd = getBarEndTick(endBeat);
-            
+
             const loopStart = Math.min(rawStart, rawEnd);
             const loopEnd = Math.max(rawStart, rawEnd);
 
@@ -607,6 +638,8 @@ const setupTouchSelection = (
     };
 };
 
+// ==================== MOUSE SELECTION ====================
+
 const setupMouseSelection = (
     api: AlphaTabApi,
     container: HTMLElement,
@@ -618,7 +651,9 @@ const setupMouseSelection = (
     let isSelecting = false;
 
     const handleMouseDown = (e: MouseEvent) => {
-        if (e.button !== 0 || (e.target as HTMLElement).closest('.maestro-loop-bubble')) {
+        if (e.button !== 0 ||
+            (e.target as HTMLElement).closest('.maestro-loop-bubble') ||
+            (e.target as HTMLElement).closest('.maestro-loop-handle')) {
             return;
         }
 
@@ -658,7 +693,7 @@ const setupMouseSelection = (
 
             const rawStart = getBarStartTick(startBeat);
             const rawEnd = getBarEndTick(endBeat);
-            
+
             const loopStart = Math.min(rawStart, rawEnd);
             const loopEnd = Math.max(rawStart, rawEnd);
 
@@ -678,7 +713,7 @@ const setupMouseSelection = (
         if (startBeat && endBeat) {
             const rawStart = getBarStartTick(startBeat);
             const rawEnd = getBarEndTick(endBeat);
-            
+
             const loopStart = Math.min(rawStart, rawEnd);
             const loopEnd = Math.max(rawStart, rawEnd);
 
@@ -759,8 +794,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 🎸 🎸 Initializing AlphaTab V38.12 - WORKING DRAG LOGIC 🎸 🎸 🎸');
-                console.log('🔥 V13 real-time drag + V38.11 styling + timing buffers');
+                console.log('🎸 Initializing AlphaTab V50 - SCROLL FIX 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -863,14 +897,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
-            console.log(`🔄 V38.12 API isLooping: ${isLooping}`);
         }
     }, [isLooping]);
 
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
-        console.log('🎨 Creating V38.12 handles: 26px, 50% D-string, real-time drag');
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
         endHandleRef.current = handles.endHandle;
@@ -904,6 +936,71 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         dragCleanupRef.current = attachHandleDragHandlers(api, container, startHandle, endHandle);
 
+        let pendingResizeUpdate = false;
+        let resizeTimer: NodeJS.Timeout;
+
+        const resizeObserver = new ResizeObserver(() => {
+            clearTimeout(resizeTimer);
+            pendingResizeUpdate = true;
+
+            resizeTimer = setTimeout(() => {
+                console.log('📐 V50 Container resized');
+            }, 150);
+        });
+
+        resizeObserver.observe(container);
+
+        const renderHandler = () => {
+            setTimeout(() => {
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    updateHandlePositions(
+                        apiRef.current,
+                        containerRef.current,
+                        startHandleRef.current,
+                        endHandleRef.current,
+                        'renderFinished'
+                    );
+                    pendingResizeUpdate = false;
+                }
+            }, 100);
+        };
+
+        if (api.renderFinished) {
+            api.renderFinished.on(renderHandler);
+        }
+
+        const postRenderHandler = () => {
+            setTimeout(() => {
+                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
+                    if (apiRef.current.playbackRange) {
+                        if (pendingResizeUpdate) {
+                            const currentRange = apiRef.current.playbackRange;
+                            apiRef.current.playbackRange = null;
+
+                            setTimeout(() => {
+                                if (apiRef.current) {
+                                    apiRef.current.playbackRange = currentRange;
+                                }
+                            }, 10);
+                        }
+
+                        updateHandlePositions(
+                            apiRef.current,
+                            containerRef.current,
+                            startHandleRef.current,
+                            endHandleRef.current,
+                            'postRenderFinished'
+                        );
+                        pendingResizeUpdate = false;
+                    }
+                }
+            }, 50);
+        };
+
+        if (api.postRenderFinished) {
+            api.postRenderFinished.on(postRenderHandler);
+        }
+
         const rangeHandler = () => {
             if (containerRef.current && startHandleRef.current && endHandleRef.current) {
                 updateHandlePositions(api, containerRef.current, startHandleRef.current, endHandleRef.current, 'rangeChanged');
@@ -912,32 +1009,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         if ((api as any).playbackRangeChanged) {
             (api as any).playbackRangeChanged.on(rangeHandler);
-        }
-
-        let resizeTimer: NodeJS.Timeout;
-        const resizeObserver = new ResizeObserver(() => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                console.log('📐 V38.12 Container resized');
-                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
-                    updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current, 'resize');
-                }
-            }, 300);
-        });
-
-        resizeObserver.observe(container);
-
-        const renderHandler = () => {
-            console.log('🎨 V38.12 Render finished');
-            setTimeout(() => {
-                if (containerRef.current && startHandleRef.current && endHandleRef.current && apiRef.current) {
-                    updateHandlePositions(apiRef.current, containerRef.current, startHandleRef.current, endHandleRef.current, 'renderFinished');
-                }
-            }, 200);
-        };
-
-        if (api.renderFinished) {
-            api.renderFinished.on(renderHandler);
         }
 
         return () => {
@@ -950,6 +1021,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             if (api.renderFinished) {
                 api.renderFinished.off(renderHandler);
+            }
+
+            if (api.postRenderFinished) {
+                api.postRenderFinished.off(postRenderHandler);
             }
 
             if (dragCleanupRef.current) {
@@ -974,11 +1049,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
-            console.log('🚫 V38.12 Touch OFF');
             return;
         }
-
-        console.log('🎯 V38.12 Touch ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
@@ -1016,11 +1088,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
 
         if (!isLooping) {
-            console.log('🚫 V38.12 Mouse OFF');
             return;
         }
-
-        console.log('🖱️ V38.12 Mouse ON');
 
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
