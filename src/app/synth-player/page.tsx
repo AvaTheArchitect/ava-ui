@@ -21,6 +21,9 @@ export default function SynthPlayerPage() {
     const [isLooping, setIsLooping] = useState<boolean>(true);
     const [hasSelection, setHasSelection] = useState<boolean>(false);
 
+    // 🆕 V51: Playback speed state
+    const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+
     // Diagnostic state - limited to 30 entries
     const [diagnostics, setDiagnostics] = useState<string[]>([]);
     const addDiagnostic = useCallback((msg: string) => {
@@ -236,6 +239,25 @@ export default function SynthPlayerPage() {
         addDiagnostic(`${!isSoloed ? '🎯' : '👥'} Solo ${track.name}`);
     }, [api, trackSoloState, addDiagnostic]);
 
+    // 🆕 V51: Speed control handlers
+    const handleSpeedChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const speed = parseFloat(e.target.value);
+        setPlaybackSpeed(speed);
+
+        if (api) {
+            api.playbackSpeed = speed;
+            addDiagnostic(`🎚️ Speed: ${Math.round(speed * 100)}% (${Math.round(songInfo ? songInfo.tempo * speed : 0)} BPM)`);
+        }
+    }, [api, songInfo, addDiagnostic]);
+
+    const resetSpeed = useCallback(() => {
+        setPlaybackSpeed(1.0);
+        if (api) {
+            api.playbackSpeed = 1.0;
+            addDiagnostic('🎚️ Speed reset to 100%');
+        }
+    }, [api, addDiagnostic]);
+
     const handlePlay = () => {
         if (!api) {
             addDiagnostic('❌ API not ready');
@@ -311,10 +333,10 @@ export default function SynthPlayerPage() {
                 {/* Header */}
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold text-orange-500 mb-2">
-                        🎹 AlphaTab Synthesizer Player (V38.2 - Complete Fix)
+                        🎹 AlphaTab Synthesizer Player (V51 - Speed Control)
                     </h1>
                     <p className="text-gray-400">
-                        Loop selection properly disabled (both custom + AlphaTab native)
+                        Practice at your own pace with variable speed control (25% - 150%)
                     </p>
                 </div>
 
@@ -376,16 +398,24 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* Song Info */}
+                {/* Song Info with Dynamic BPM */}
                 {songInfo && (
                     <div className="mb-6 bg-gradient-to-r from-orange-500/20 to-purple-500/20 rounded-xl p-6 border border-orange-500/30">
                         <h2 className="text-2xl font-bold text-orange-500 mb-1">
                             {songInfo.title}
                         </h2>
-                        <div className="flex gap-4 text-sm text-gray-300">
+                        <div className="flex gap-4 text-sm text-gray-300 items-center flex-wrap">
                             <span>👤 {songInfo.artist}</span>
                             {songInfo.album && <span>💿 {songInfo.album}</span>}
-                            <span>🎵 {songInfo.tempo} BPM</span>
+                            {/* 🆕 V51: Dynamic BPM Display */}
+                            <span className="text-lg font-bold text-green-400">
+                                🎵 {Math.round(songInfo.tempo * playbackSpeed)} BPM
+                            </span>
+                            {playbackSpeed !== 1.0 && (
+                                <span className="text-xs text-gray-400">
+                                    (Base: {songInfo.tempo} BPM @ {Math.round(playbackSpeed * 100)}%)
+                                </span>
+                            )}
                         </div>
                     </div>
                 )}
@@ -465,6 +495,137 @@ export default function SynthPlayerPage() {
                             ℹ️ Loop mode OFF - entire song will play. Toggle Loop ON to enable section selection.
                         </div>
                     )}
+                </div>
+
+                {/* 🆕 V51: Speed Control Section */}
+                <div className="mb-6 bg-gradient-to-r from-blue-900/50 to-purple-900/50 rounded-xl p-6 border border-blue-500/30">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-bold text-blue-400 flex items-center gap-2">
+                            🎚️ Playback Speed
+                        </h3>
+                        <button
+                            onClick={resetSpeed}
+                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-bold transition-all"
+                            disabled={!api}
+                        >
+                            Reset to 100%
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {/* Current Speed Display */}
+                        <div className="flex items-center justify-between">
+                            <div className="text-3xl font-bold text-green-400">
+                                {Math.round(playbackSpeed * 100)}%
+                            </div>
+                            <div className="text-sm text-gray-400">
+                                {playbackSpeed < 0.5 && '🐢 Super Slow'}
+                                {playbackSpeed >= 0.5 && playbackSpeed < 0.75 && '🐢 Slow'}
+                                {playbackSpeed >= 0.75 && playbackSpeed < 1.0 && '⏪ Slower'}
+                                {playbackSpeed === 1.0 && '▶️ Normal'}
+                                {playbackSpeed > 1.0 && playbackSpeed <= 1.25 && '⏩ Faster'}
+                                {playbackSpeed > 1.25 && '🚀 Fast'}
+                            </div>
+                        </div>
+
+                        {/* Range Slider */}
+                        <div className="relative">
+                            <style dangerouslySetInnerHTML={{
+                                __html: `
+                                input[type="range"].speed-slider {
+                                    -webkit-appearance: none;
+                                    appearance: none;
+                                    background: transparent;
+                                    cursor: pointer;
+                                }
+                                input[type="range"].speed-slider::-webkit-slider-track {
+                                    background: #374151;
+                                    height: 0.75rem;
+                                    border-radius: 0.5rem;
+                                }
+                                input[type="range"].speed-slider::-webkit-slider-thumb {
+                                    -webkit-appearance: none;
+                                    appearance: none;
+                                    width: 1.25rem;
+                                    height: 1.25rem;
+                                    border-radius: 50%;
+                                    background: #3b82f6;
+                                    cursor: pointer;
+                                    margin-top: -0.25rem;
+                                    box-shadow: 0 0 0 2px #1e40af;
+                                }
+                                input[type="range"].speed-slider::-moz-range-track {
+                                    background: #374151;
+                                    height: 0.75rem;
+                                    border-radius: 0.5rem;
+                                }
+                                input[type="range"].speed-slider::-moz-range-thumb {
+                                    width: 1.25rem;
+                                    height: 1.25rem;
+                                    border: none;
+                                    border-radius: 50%;
+                                    background: #3b82f6;
+                                    cursor: pointer;
+                                    box-shadow: 0 0 0 2px #1e40af;
+                                }
+                            `}} />
+                            <div className="relative">
+                                {/* Background track */}
+                                <div className="absolute w-full h-3 bg-gray-700 rounded-lg" style={{ pointerEvents: 'none' }} />
+                                {/* Fill track */}
+                                <div
+                                    className="absolute h-3 bg-blue-500 rounded-lg transition-all duration-150"
+                                    style={{
+                                        width: `${((playbackSpeed - 0.25) / (1.5 - 0.25)) * 100}%`,
+                                        pointerEvents: 'none'
+                                    }}
+                                />
+                                {/* Slider input */}
+                                <input
+                                    type="range"
+                                    min="0.25"
+                                    max="1.5"
+                                    step="0.05"
+                                    value={playbackSpeed}
+                                    onChange={handleSpeedChange}
+                                    disabled={!api}
+                                    className="speed-slider relative w-full"
+                                />
+                            </div>
+                            {/* Speed Markers */}
+                            <div className="relative w-full text-xs text-gray-500 mt-2 h-4">
+                                <span className="absolute" style={{ left: '0%', transform: 'translateX(0%)' }}>25%</span>
+                                <span className="absolute" style={{ left: '20%', transform: 'translateX(-50%)' }}>50%</span>
+                                <span className="absolute" style={{ left: '40%', transform: 'translateX(-50%)' }}>75%</span>
+                                <span className="absolute font-bold text-green-500" style={{ left: '60%', transform: 'translateX(-50%)' }}>100%</span>
+                                <span className="absolute" style={{ left: '80%', transform: 'translateX(-50%)' }}>125%</span>
+                                <span className="absolute" style={{ left: '100%', transform: 'translateX(-100%)' }}>150%</span>
+                            </div>
+                        </div>
+
+                        {/* Quick Speed Buttons */}
+                        <div className="grid grid-cols-5 gap-2 mt-4">
+                            {[0.25, 0.5, 0.75, 1.0, 1.25].map((speed) => (
+                                <button
+                                    key={speed}
+                                    onClick={() => {
+                                        setPlaybackSpeed(speed);
+                                        if (api) {
+                                            api.playbackSpeed = speed;
+                                            addDiagnostic(`🎚️ Speed: ${Math.round(speed * 100)}%`);
+                                        }
+                                    }}
+                                    disabled={!api}
+                                    className={`px-3 py-2 rounded-lg font-bold text-sm transition-all ${playbackSpeed === speed
+                                            ? 'bg-blue-600 text-white border-2 border-blue-400'
+                                            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                        }`}
+                                >
+                                    {Math.round(speed * 100)}%
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Track Selector */}
@@ -603,7 +764,7 @@ export default function SynthPlayerPage() {
 
                 {/* Info Panel */}
                 <div className="mt-6 bg-blue-500/20 rounded-xl p-6 border border-blue-500/30">
-                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 V38.2 Features & Controls</h3>
+                    <h3 className="text-xl font-bold text-blue-400 mb-3">🔍 V51 Features & Controls</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <h4 className="font-bold text-blue-300 mb-2">✓ Active Features</h4>
@@ -619,22 +780,25 @@ export default function SynthPlayerPage() {
                                 <li>✓ Click progress bar to seek</li>
                                 <li>✓ Individual track mute/solo</li>
                                 <li>✓ Volume control per track</li>
+                                <li>✓ Playback speed control (25%-150%)</li>
+                                <li>✓ Dynamic BPM display</li>
+                                <li>✓ Quick speed preset buttons</li>
                                 <li>✓ Debug Panel V2 with measure tracking</li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-bold text-yellow-300 mb-2">🎸 How to Use Loop (Songsterr Style)</h4>
+                            <h4 className="font-bold text-yellow-300 mb-2">🎸 How to Use Speed Control</h4>
                             <div className="text-yellow-200 space-y-2 text-sm">
                                 <ol className="list-decimal list-inside space-y-1 ml-2">
-                                    <li><strong>Enable Loop:</strong> Click the Loop button (should show ✓)</li>
-                                    <li><strong>Select Section:</strong> Click & drag on notation to highlight bars</li>
-                                    <li><strong>Adjust Boundaries:</strong> Drag handles to fine-tune selection</li>
-                                    <li><strong>Play Loop:</strong> Press Play - selected section will repeat</li>
-                                    <li><strong>Disable Loop:</strong> Click Loop button again - clears selection & disables clicking on notation</li>
-                                    <li><strong>Change Selection:</strong> While Loop is ON, drag a new selection</li>
+                                    <li><strong>Adjust Speed:</strong> Use slider or quick buttons (25%-150%)</li>
+                                    <li><strong>Watch BPM:</strong> Dynamic BPM updates in real-time</li>
+                                    <li><strong>Practice Slow:</strong> Start at 25-50% to learn</li>
+                                    <li><strong>Build Speed:</strong> Gradually increase to 100%</li>
+                                    <li><strong>Challenge:</strong> Try 125-150% for advanced practice</li>
+                                    <li><strong>Reset:</strong> Click "Reset to 100%" anytime</li>
                                 </ol>
                                 <div className="mt-3 p-2 bg-yellow-900/30 rounded border border-yellow-500/50">
-                                    <strong>💡 V38.2 Fix:</strong> When Loop is OFF, clicking on notation does nothing - both custom handlers AND AlphaTab's native selection are disabled!
+                                    <strong>💡 Practice Tip:</strong> Master difficult sections at 50%, then gradually increase speed. The BPM display shows your effective tempo!
                                 </div>
                             </div>
                         </div>

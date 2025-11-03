@@ -38,13 +38,11 @@ export const metadata: Metadata = {
   },
 };
 
-// ✅ V50.1: Enable pinch-to-zoom for canvas
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,        // ✅ Allow zoom up to 5x
-  minimumScale: 0.5,      // ✅ Allow zoom out to 0.5x
-  userScalable: true,     // ✅ Enable user scaling
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   themeColor: "#1a1a2e",
 };
@@ -133,4 +131,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-}
+}// Force Vercel refresh Mon Oct 27 17:14:44 PDT 2025
