@@ -1,7 +1,13 @@
 'use client';
 
 /**
- * AlphaTab Renderer V50 - UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * AlphaTab Renderer V52 - LANDSCAPE MODE + UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * 
+ * V52 NEW:
+ * ✅ Landscape mode: Single horizontal row with continuous scroll
+ * ✅ Portrait mode: Multi-row vertical page layout
+ * ✅ Auto-detect orientation changes
+ * ✅ Dynamic layout switching with re-render
  * 
  * V50 FIXES:
  * ✅ Handle positioning: masterBarBounds.visualBounds with insets
@@ -204,7 +210,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V50 Unified handles created');
+    console.log('✅ V52 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -786,6 +792,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
 
+    // Initialize AlphaTab
     useEffect(() => {
         let isMounted = true;
 
@@ -794,7 +801,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V50 - SCROLL FIX 🎸');
+                console.log('🎸 Initializing AlphaTab V52 - LANDSCAPE MODE 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -894,12 +901,62 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
+    // 🆕 V52: Landscape Mode Detection and Layout Switching
+    useEffect(() => {
+        if (!apiRef.current || !isRendered) return;
+
+        const api = apiRef.current;
+
+        // Function to apply the correct layout mode based on orientation
+        const setAlphaTabLayout = (isLandscape: boolean) => {
+            if (!api.settings?.display) return;
+
+            console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
+
+            // Import AlphaTab to access LayoutMode enum
+            import('@coderline/alphatab').then((alphaTab) => {
+                if (isLandscape) {
+                    // Landscape: Single horizontal row with continuous scroll
+                    api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+                } else {
+                    // Portrait: Multi-row vertical page layout
+                    api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+                }
+
+                // Apply the new settings and re-render
+                api.updateSettings();
+                api.render();
+
+                console.log(`✅ V52: Layout updated to ${isLandscape ? 'Horizontal' : 'Page'} mode`);
+            });
+        };
+
+        // Check initial orientation and set the layout
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        setAlphaTabLayout(isLandscape);
+
+        // Listen for orientation changes and update the layout
+        const mediaQuery = window.matchMedia('(orientation: landscape)');
+        const handleOrientationChange = (e: MediaQueryListEvent) => {
+            setAlphaTabLayout(e.matches);
+        };
+
+        mediaQuery.addEventListener('change', handleOrientationChange);
+
+        // Cleanup
+        return () => {
+            mediaQuery.removeEventListener('change', handleOrientationChange);
+        };
+    }, [isRendered]);
+
+    // Loop state management
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
         }
     }, [isLooping]);
 
+    // Create loop handles
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
@@ -919,6 +976,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
+    // Handle positioning and dragging
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !startHandleRef.current || !endHandleRef.current) {
             return;
@@ -944,7 +1002,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V50 Container resized');
+                console.log('📐 V52 Container resized');
             }, 150);
         });
 
@@ -1034,6 +1092,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
+    // Touch selection
     useEffect(() => {
         if (touchCleanupRef.current) {
             touchCleanupRef.current();
@@ -1073,6 +1132,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, enableTouchSelection, isLooping]);
 
+    // Mouse selection
     useEffect(() => {
         if (mouseCleanupRef.current) {
             mouseCleanupRef.current();
