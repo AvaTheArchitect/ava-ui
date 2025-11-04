@@ -939,14 +939,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // 🎯 CRITICAL: Manual cursor anchoring (Songsterr-style)
                 // This ensures cursor stays at 15% even if scrollAnchor doesn't work
                 const cursorUpdateHandler = (e: any) => {
-                    if (!containerElement || !e.bounds) return;
+                    // ✅ V54.1: Find AlphaTab's internal scroll container
+                    const atViewport = containerElement.querySelector('.at-viewport') as HTMLElement;
+                    const scrollTarget = atViewport || containerElement;
 
-                    const viewportWidth = containerElement.clientWidth;
+                    if (!scrollTarget || !e.bounds) return;
+
+                    const viewportWidth = scrollTarget.clientWidth;
                     const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
                     const targetScroll = e.bounds.x - fixedCursorPosition;
 
                     // Smooth scroll to keep cursor at 15%
-                    containerElement.scrollTo({
+                    scrollTarget.scrollTo({
                         left: Math.max(0, targetScroll),
                         behavior: 'smooth'
                     });
@@ -955,13 +959,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Attach the manual cursor handler
                 if (api.cursorUpdated) {
                     api.cursorUpdated.on(cursorUpdateHandler);
-                    console.log('🎯 V54: Manual cursor anchoring enabled at 15%');
+                    console.log('🎯 V54.1: Manual cursor anchoring enabled at 15%');
 
                     // Store cleanup function
                     cursorUpdateCleanup = () => {
                         if (api.cursorUpdated) {
                             api.cursorUpdated.off(cursorUpdateHandler);
-                            console.log('🧹 V54: Manual cursor anchoring removed');
+                            console.log('🧹 V54.1: Manual cursor anchoring removed');
                         }
                     };
                 }
@@ -974,16 +978,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Reset scrollAnchor
                 if ((api.settings.player as any).scrollAnchor !== undefined) {
                     (api.settings.player as any).scrollAnchor = 0.0;
-                    console.log('🎯 V54: scrollAnchor reset to 0.0');
+                    console.log('🎯 V54.1: scrollAnchor reset to 0.0');
                 }
 
-                console.log('📱 V54: Page layout enabled');
-                console.log('🎯 V54: ScrollMode = Continuous');
+                console.log('📱 V54.1: Page layout enabled');
+                console.log('🎯 V54.1: ScrollMode = Continuous');
             }
 
-            // Ensure scroll target is always our container
-            api.settings.player.scrollElement = containerElement;
-            console.log('✅ V54: Scroll element confirmed: container');
+            // ✅ V54.1 CRITICAL FIX: Let AlphaTab auto-detect its internal scroll container!
+            // Setting to null allows AlphaTab to find .at-viewport internally
+            // TypeScript doesn't like null, but this is what we need for auto-detection
+            (api.settings.player as any).scrollElement = null;
+            console.log('✅ V54.1: Scroll element set to null (AlphaTab auto-detect)');
 
             // Apply settings and trigger re-render
             api.updateSettings();
@@ -1269,10 +1275,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 style={{
                     minHeight,
                     width: '100%',
-                    overflow: 'auto',
+                    // ✅ V54: Explicit overflow for scroll container
                     overflowX: 'auto',
                     overflowY: 'auto',
-                    backgroundColor: '#ffffff'
+                    backgroundColor: '#ffffff',
+                    // ✅ V54: Ensure container can be scroll target
+                    position: 'relative',
+                    WebkitOverflowScrolling: 'touch'
                 }}
             />
         </div>

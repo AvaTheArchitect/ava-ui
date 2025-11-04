@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - FIXED FOR LANDSCAPE SCROLLING V53
-// Key fix: Enable proper scrolling for external mode in both orientations
+// AlphaTab initialization utility - V54.1 CRITICAL FIX
+// Key fix: Let AlphaTab auto-detect its internal scroll container
 
 import type { AlphaTabApi } from "./types";
 
@@ -76,15 +76,17 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // 🎯 V53 BEST PRACTICE: Set neutral defaults, let component handle specifics
-    // The AlphaTabRenderer will dynamically adjust scrollMode and scrollAnchor
-    // based on orientation (landscape vs portrait)
+    // ✅ V54.1: Set scroll mode to Continuous
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-    settings.player.scrollElement = container;
-    // Note: scrollAnchor is set in component (might not exist in all AlphaTab versions)
 
-    console.log("🎵 EXTERNAL MEDIA MODE - Neutral scroll defaults set");
-    console.log("   Component will handle orientation-specific behavior");
+    // 🎯 V54.1 CRITICAL FIX: Let AlphaTab auto-detect its internal scroll container
+    // AlphaTab creates .at-viewport internally - don't override it!
+    // TypeScript doesn't like null, but this is what we need for auto-detection
+    (settings.player as any).scrollElement = null;
+
+    console.log("🎵 EXTERNAL MEDIA MODE");
+    console.log("✅ V54.1: Scroll mode = Continuous");
+    console.log("✅ V54.1: Scroll element = null (auto-detect)");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
