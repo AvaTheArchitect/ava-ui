@@ -913,14 +913,24 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
-            // Import AlphaTab to access LayoutMode enum
+            // Import AlphaTab to access LayoutMode and ScrollMode enums
             import('@coderline/alphatab').then((alphaTab) => {
                 if (isLandscape) {
                     // Landscape: Single horizontal row with continuous scroll
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+                    // Enable continuous auto-scrolling (adapts to horizontal in this mode)
+                    if (api.settings.player) {
+                        api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                    }
+                    console.log('🎸 V52: Horizontal layout + continuous scroll enabled');
                 } else {
                     // Portrait: Multi-row vertical page layout
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+                    // Enable continuous auto-scrolling (vertical in this mode)
+                    if (api.settings.player) {
+                        api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                    }
+                    console.log('📱 V52: Page layout + continuous scroll enabled');
                 }
 
                 // Apply the new settings and re-render
@@ -1194,6 +1204,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     minHeight,
                     width: '100%',
                     overflow: 'auto',
+                    overflowX: 'auto',
+                    overflowY: 'auto',
                     backgroundColor: '#ffffff'
                 }}
             />
