@@ -800,7 +800,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V54.3 - DIAGNOSTIC VERSION 🎸');
+                console.log('🎸 Initializing AlphaTab V54.4 - EVENT FALLBACK VERSION 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -900,9 +900,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // 🆕 V54.3: DIAGNOSTIC Landscape Mode Detection with comprehensive logging
+    // 🆕 V54.4: DIAGNOSTIC Landscape Mode Detection with comprehensive logging
     useEffect(() => {
-        console.log('🔧 V54.3: Orientation detection effect STARTED');
+        console.log('🔧 V54.4: Orientation detection effect STARTED');
 
         if (!apiRef.current || !isRendered || !containerRef.current) {
             console.warn('⚠️ V54.3: Missing requirements:', {
@@ -937,64 +937,27 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
 
-                // 🚫 V54.3 CRITICAL: Disable AlphaTab's auto-scroll so it doesn't fight our manual handler
+                // 🚫 V54.4 CRITICAL: Disable AlphaTab's auto-scroll so it doesn't fight our manual handler
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
 
                 // ✅ Keep scrollElement set to our container (already set in initAlphaTab.ts)
                 api.settings.player.scrollElement = containerElement;
 
-                console.log('🎸 V54.3: Horizontal layout enabled');
-                console.log('🚫 V54.3: AlphaTab auto-scroll DISABLED (manual control)');
-                console.log('✅ V54.3: ScrollElement = containerElement');
+                console.log('🎸 V54.4: Horizontal layout enabled');
+                console.log('🚫 V54.4: AlphaTab auto-scroll DISABLED (manual control)');
+                console.log('✅ V54.4: ScrollElement = containerElement');
 
-                // 🎯 MANUAL CURSOR ANCHORING - Songsterr style with FULL DIAGNOSTICS
+                // 🎯 V54.4: MANUAL CURSOR ANCHORING with cleaner logging
                 const cursorUpdateHandler = (e: any) => {
-                    // ✅ V54.3: DIAGNOSTIC LOGGING - Event fired check
-                    console.log('🎯 V54.3: cursorUpdated event FIRED!', {
-                        hasBounds: !!e.bounds,
-                        boundsX: e.bounds?.x,
-                        boundsY: e.bounds?.y,
-                        containerElement: !!containerElement
-                    });
+                    if (!containerElement || !e.bounds) return;
 
-                    if (!containerElement || !e.bounds) {
-                        console.warn('⚠️ V54.3: Missing containerElement or bounds', {
-                            containerElement: !!containerElement,
-                            bounds: !!e.bounds
-                        });
-                        return;
-                    }
-
-                    // ✅ V54.3: Find scroll target with diagnostics
+                    // Find scroll target
                     const atSurface = containerElement.querySelector('.at-surface') as HTMLElement;
-                    const atViewport = containerElement.querySelector('.at-viewport') as HTMLElement;
-
-                    console.log('🔍 V54.3: DOM elements found:', {
-                        atSurface: !!atSurface,
-                        atViewport: !!atViewport,
-                        atSurfaceParent: !!atSurface?.parentElement,
-                        atSurfaceParentTag: atSurface?.parentElement?.tagName,
-                        containerTag: containerElement.tagName
-                    });
-
                     const scrollTarget = atSurface?.parentElement || containerElement;
-
-                    console.log('📊 V54.3: Scroll container analysis:', {
-                        scrollWidth: scrollTarget.scrollWidth,
-                        clientWidth: scrollTarget.clientWidth,
-                        currentScrollLeft: scrollTarget.scrollLeft,
-                        hasHorizontalScroll: scrollTarget.scrollWidth > scrollTarget.clientWidth,
-                        element: scrollTarget.className || scrollTarget.tagName
-                    });
 
                     // Safety check: Does this element actually scroll horizontally?
                     if (scrollTarget.scrollWidth <= scrollTarget.clientWidth) {
-                        console.error('❌ V54.3: NO HORIZONTAL OVERFLOW! Cannot scroll.', {
-                            scrollWidth: scrollTarget.scrollWidth,
-                            clientWidth: scrollTarget.clientWidth,
-                            difference: scrollTarget.scrollWidth - scrollTarget.clientWidth
-                        });
-                        return;
+                        return; // No scroll needed
                     }
 
                     const viewportWidth = scrollTarget.clientWidth;
@@ -1002,56 +965,94 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     const targetScroll = e.bounds.x - fixedCursorPosition;
                     const finalScroll = Math.max(0, targetScroll);
 
-                    console.log('🎯 V54.3: Scroll calculation:', {
-                        cursorX: e.bounds.x,
-                        viewportWidth,
-                        fixedPosition: fixedCursorPosition,
-                        targetScroll,
-                        finalScroll,
-                        willActuallyScroll: finalScroll !== scrollTarget.scrollLeft
-                    });
-
                     // ✅ INSTANT scroll (no animation)
-                    const beforeScroll = scrollTarget.scrollLeft;
                     scrollTarget.scrollLeft = finalScroll;
-                    const afterScroll = scrollTarget.scrollLeft;
-
-                    console.log('✅ V54.3: Scroll executed:', {
-                        before: beforeScroll,
-                        attempted: finalScroll,
-                        after: afterScroll,
-                        success: afterScroll === finalScroll
-                    });
                 };
 
-                // Attach the manual cursor handler
-                console.log('🔧 V54.3: Attempting to attach cursor handler...', {
-                    apiExists: !!api,
-                    cursorUpdatedExists: !!api.cursorUpdated,
-                    cursorUpdatedType: typeof api.cursorUpdated
-                });
+                console.log('🔧 V54.4: Checking available API properties...');
+                console.log('   Available events:', Object.keys(api).filter(k => k.includes('Updated') || k.includes('Changed') || k.includes('Position')));
 
+                // 🎯 V54.4: Try multiple event sources (in order of preference)
+                let eventAttached = false;
+
+                // Option 1: cursorUpdated (preferred, but might not exist)
                 if (api.cursorUpdated) {
+                    console.log('✅ V54.4: Using api.cursorUpdated');
                     api.cursorUpdated.on(cursorUpdateHandler);
-                    console.log('✅ V54.3: Manual cursor anchoring ATTACHED at 15%');
-
-                    // Verify it was actually attached
-                    setTimeout(() => {
-                        console.log('🔍 V54.3: Handler verification after 1 second');
-                    }, 1000);
-
-                    // Store cleanup function
-                    cursorUpdateCleanup = () => {
-                        if (api.cursorUpdated) {
-                            api.cursorUpdated.off(cursorUpdateHandler);
-                            console.log('🧹 V54.3: Manual cursor anchoring removed');
+                    eventAttached = true;
+                }
+                // Option 2: playerPositionChanged (alternative)
+                else if ((api as any).playerPositionChanged) {
+                    console.log('✅ V54.4: Using api.playerPositionChanged');
+                    (api as any).playerPositionChanged.on((e: any) => {
+                        // Simulate cursorUpdated structure
+                        const cursorEvent = {
+                            bounds: api.renderer?.boundsLookup?.findBeat((api as any).currentBeat)?.realBounds
+                        };
+                        if (cursorEvent.bounds) {
+                            cursorUpdateHandler(cursorEvent);
                         }
-                    };
-                } else {
-                    console.error('❌ V54.3: api.cursorUpdated NOT AVAILABLE!', {
-                        api: Object.keys(api),
-                        apiType: typeof api
                     });
+                    eventAttached = true;
+                }
+                // Option 3: Manual polling as fallback
+                else {
+                    console.log('⚠️ V54.4: No cursor events available, using polling fallback');
+
+                    let pollInterval: NodeJS.Timeout;
+                    const startPolling = () => {
+                        pollInterval = setInterval(() => {
+                            if (!api.isPlaying) return;
+
+                            // Get current playback position
+                            const currentTick = api.tickPosition;
+                            if (currentTick === undefined) return;
+
+                            // Find beat at current position
+                            const trackIndices = new Set(api.tracks?.map((t: any) => t.index) || []);
+                            const beatResult = (api as any).tickCache?.findBeat(trackIndices, currentTick);
+
+                            if (beatResult?.beat && api.renderer?.boundsLookup) {
+                                const bounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                                if (bounds?.realBounds) {
+                                    cursorUpdateHandler({ bounds: bounds.realBounds });
+                                }
+                            }
+                        }, 50); // Poll every 50ms
+                    };
+
+                    // Start polling when playback starts
+                    if ((api as any).playerStateChanged) {
+                        (api as any).playerStateChanged.on((e: any) => {
+                            if (e.state === 1) { // Playing
+                                startPolling();
+                            } else {
+                                if (pollInterval) clearInterval(pollInterval);
+                            }
+                        });
+                    }
+
+                    eventAttached = true;
+
+                    cursorUpdateCleanup = () => {
+                        if (pollInterval) clearInterval(pollInterval);
+                        console.log('🧹 V54.4: Polling stopped');
+                    };
+                }
+
+                if (eventAttached) {
+                    console.log('✅ V54.4: Cursor tracking ATTACHED');
+
+                    if (!cursorUpdateCleanup) {
+                        cursorUpdateCleanup = () => {
+                            if (api.cursorUpdated) {
+                                api.cursorUpdated.off(cursorUpdateHandler);
+                            }
+                            console.log('🧹 V54.4: Cursor tracking removed');
+                        };
+                    }
+                } else {
+                    console.error('❌ V54.4: Could not attach ANY cursor tracking method!');
                 }
 
             } else {
@@ -1061,31 +1062,38 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // ✅ Re-enable AlphaTab's auto-scroll for portrait
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                console.log('📱 V54.3: Page layout enabled');
-                console.log('✅ V54.3: ScrollMode = Continuous (auto-scroll)');
+                console.log('📱 V54.4: Page layout enabled');
+                console.log('✅ V54.4: ScrollMode = Continuous (auto-scroll)');
             }
 
-            // ✅ V54.3: Apply settings immediately
-            console.log('⚙️  V54.3: Calling api.updateSettings()...');
+            // ✅ V54.4: Apply settings immediately
+            console.log('⚙️  V54.4: Calling api.updateSettings()...');
             api.updateSettings();
-            console.log('✅ V54.3: Settings applied');
+            console.log('✅ V54.4: Settings applied');
 
-            console.log('🎨 V54.3: Calling api.render()...');
+            console.log('🎨 V54.4: Calling api.render()...');
             api.render();
-            console.log('✅ V54.3: Render triggered');
-            // 🔍 V54.3: Enhanced verification logging
+            console.log('✅ V54.4: Render triggered');
+            // 🔍 V54.4: Enhanced verification logging
             setTimeout(() => {
-                console.log('🔍 V54.3: ========== SETTINGS VERIFICATION ==========');
+                console.log('🔍 V54.4: ========== SETTINGS VERIFICATION ==========');
                 console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? '✅ Horizontal' : '❌ Not Horizontal');
                 console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Off ? '✅ Off (manual)' : '❌ Not Off');
                 console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
                 console.log('   - manualAnchor:', cursorUpdateCleanup ? '✅ ACTIVE' : '❌ INACTIVE');
 
+                // Check which tracking method is being used
+                if (api.cursorUpdated) {
+                    console.log('   - Tracking method: ✅ cursorUpdated event');
+                } else if ((api as any).playerPositionChanged) {
+                    console.log('   - Tracking method: ✅ playerPositionChanged event');
+                } else {
+                    console.log('   - Tracking method: ✅ Polling fallback');
+                }
+
                 // Check for actual scroll container
                 const atSurface = containerElement.querySelector('.at-surface');
-                const atViewport = containerElement.querySelector('.at-viewport');
                 console.log('   - .at-surface found:', atSurface ? '✅ YES' : '❌ NO');
-                console.log('   - .at-viewport found:', atViewport ? '✅ YES' : '❌ NO');
 
                 if (atSurface?.parentElement) {
                     const parent = atSurface.parentElement;
@@ -1098,37 +1106,29 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     });
                 }
 
-                // Check container overflow styles
-                const containerStyles = window.getComputedStyle(containerElement);
-                console.log('   - Container overflow:', {
-                    overflow: containerStyles.overflow,
-                    overflowX: containerStyles.overflowX,
-                    overflowY: containerStyles.overflowY
-                });
-
-                console.log('🔍 V54.3: ========================================');
+                console.log('🔍 V54.4: ========================================');
             }, 1000);
         };
 
         // Initial setup based on current orientation
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-        console.log('📱 V54.3: Initial orientation detected:', isLandscape ? 'LANDSCAPE' : 'PORTRAIT');
+        console.log('📱 V54.4: Initial orientation detected:', isLandscape ? 'LANDSCAPE' : 'PORTRAIT');
         setAlphaTabLayout(isLandscape);
 
         // Listen for orientation changes
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleOrientationChange = (e: MediaQueryListEvent) => {
-            console.log('📱 V54.3: Orientation CHANGED to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
+            console.log('📱 V54.4: Orientation CHANGED to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
             setAlphaTabLayout(e.matches);
         };
 
         mediaQuery.addEventListener('change', handleOrientationChange);
-        console.log('✅ V54.3: Orientation change listener attached');
+        console.log('✅ V54.4: Orientation change listener attached');
 
         return () => {
-            console.log('🧹 V54.3: Cleaning up orientation effect');
+            console.log('🧹 V54.4: Cleaning up orientation effect');
             mediaQuery.removeEventListener('change', handleOrientationChange);
-            // ✅ V54.3: Clean up cursor handler on unmount (proper scope!)
+            // ✅ V54.4: Clean up cursor handler on unmount (proper scope!)
             if (cursorUpdateCleanup) {
                 cursorUpdateCleanup();
             }
@@ -1188,7 +1188,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V54.3 Container resized');
+                console.log('📐 V54.4 Container resized');
             }, 150);
         });
 

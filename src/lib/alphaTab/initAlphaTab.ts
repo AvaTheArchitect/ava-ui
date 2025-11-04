@@ -1,4 +1,4 @@
-// AlphaTab initialization utility - V54.2 FINAL FIX
+// AlphaTab initialization utility - V54.4 WITH EVENT FALLBACK
 // Key fix: Keep scrollElement as container for manual cursor control
 
 import type { AlphaTabApi } from "./types";
@@ -76,16 +76,16 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V54.2: Set scroll mode to Continuous (will be changed to Off in landscape by component)
+    // ✅ V54.4: Set scroll mode to Continuous (will be changed to Off in landscape by component)
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V54.2 CRITICAL: Keep scrollElement as container (don't set to null!)
+    // ✅ V54.4 CRITICAL: Keep scrollElement as container (don't set to null!)
     // The component will control scrolling manually in landscape mode
     settings.player.scrollElement = container;
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V54.2: Scroll mode = Continuous");
-    console.log("✅ V54.2: Scroll element = container (manual control ready)");
+    console.log("✅ V54.4: Scroll mode = Continuous");
+    console.log("✅ V54.4: Scroll element = container (manual control ready)");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
