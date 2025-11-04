@@ -925,87 +925,93 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (isLandscape) {
                 // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // Try to use scrollAnchor if available
-                if ((api.settings.player as any).scrollAnchor !== undefined) {
-                    (api.settings.player as any).scrollAnchor = 0.15;
-                    console.log('🎯 V54: Using native scrollAnchor = 0.15');
-                }
+                // 🚫 V54.2 CRITICAL: Disable AlphaTab's auto-scroll so it doesn't fight our manual handler
+                api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
 
-                console.log('🎸 V54: Horizontal layout enabled');
-                console.log('🎯 V54: ScrollMode = Continuous');
+                // ✅ Keep scrollElement set to our container (already set in initAlphaTab.ts)
+                api.settings.player.scrollElement = containerElement;
 
-                // 🎯 CRITICAL: Manual cursor anchoring (Songsterr-style)
-                // This ensures cursor stays at 15% even if scrollAnchor doesn't work
+                console.log('🎸 V54.2: Horizontal layout enabled');
+                console.log('🚫 V54.2: AlphaTab auto-scroll DISABLED (manual control)');
+                console.log('✅ V54.2: ScrollElement = containerElement');
+
+                // 🎯 MANUAL CURSOR ANCHORING - Songsterr style
                 const cursorUpdateHandler = (e: any) => {
-                    // ✅ V54.1: Find AlphaTab's internal scroll container
-                    const atViewport = containerElement.querySelector('.at-viewport') as HTMLElement;
-                    const scrollTarget = atViewport || containerElement;
+                    if (!containerElement || !e.bounds) return;
 
-                    if (!scrollTarget || !e.bounds) return;
+                    // ✅ Find the ACTUAL scroll container
+                    // AlphaTab creates .at-surface, and its parent is the scroll container
+                    const atSurface = containerElement.querySelector('.at-surface') as HTMLElement;
+                    const scrollTarget = atSurface?.parentElement || containerElement;
+
+                    // Safety check: Does this element actually scroll horizontally?
+                    if (scrollTarget.scrollWidth <= scrollTarget.clientWidth) {
+                        console.warn('⚠️ V54.2: ScrollTarget has no horizontal overflow!');
+                        return;
+                    }
 
                     const viewportWidth = scrollTarget.clientWidth;
                     const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
                     const targetScroll = e.bounds.x - fixedCursorPosition;
 
-                    // Smooth scroll to keep cursor at 15%
-                    scrollTarget.scrollTo({
-                        left: Math.max(0, targetScroll),
-                        behavior: 'smooth'
-                    });
+                    // ✅ INSTANT scroll (no smooth animation to avoid lag)
+                    scrollTarget.scrollLeft = Math.max(0, targetScroll);
+
+                    // Debug logging (can be removed after testing)
+                    if (Math.random() < 0.1) { // Log 10% of events to avoid spam
+                        console.log('🎯 V54.2 Cursor at:', e.bounds.x, '→ Scroll to:', targetScroll);
+                    }
                 };
 
                 // Attach the manual cursor handler
                 if (api.cursorUpdated) {
                     api.cursorUpdated.on(cursorUpdateHandler);
-                    console.log('🎯 V54.1: Manual cursor anchoring enabled at 15%');
+                    console.log('✅ V54.2: Manual cursor anchoring enabled at 15%');
 
                     // Store cleanup function
                     cursorUpdateCleanup = () => {
                         if (api.cursorUpdated) {
                             api.cursorUpdated.off(cursorUpdateHandler);
-                            console.log('🧹 V54.1: Manual cursor anchoring removed');
+                            console.log('🧹 V54.2: Manual cursor anchoring removed');
                         }
                     };
+                } else {
+                    console.error('❌ V54.2: api.cursorUpdated not available!');
                 }
 
             } else {
-                // 📱 PORTRAIT: Vertical page layout with moving cursor
+                // 📱 PORTRAIT: Vertical page layout with AlphaTab's auto-scroll
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+
+                // ✅ Re-enable AlphaTab's auto-scroll for portrait
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // Reset scrollAnchor
-                if ((api.settings.player as any).scrollAnchor !== undefined) {
-                    (api.settings.player as any).scrollAnchor = 0.0;
-                    console.log('🎯 V54.1: scrollAnchor reset to 0.0');
-                }
-
-                console.log('📱 V54.1: Page layout enabled');
-                console.log('🎯 V54.1: ScrollMode = Continuous');
+                console.log('📱 V54.2: Page layout enabled');
+                console.log('✅ V54.2: ScrollMode = Continuous (auto-scroll)');
             }
 
-            // ✅ V54.1 CRITICAL FIX: Let AlphaTab auto-detect its internal scroll container!
-            // Setting to null allows AlphaTab to find .at-viewport internally
-            // TypeScript doesn't like null, but this is what we need for auto-detection
-            (api.settings.player as any).scrollElement = null;
-            console.log('✅ V54.1: Scroll element set to null (AlphaTab auto-detect)');
-
-            // Apply settings and trigger re-render
+            // ✅ V54.2: Apply settings immediately
             api.updateSettings();
-            console.log('✅ V54: Settings applied');
+            console.log('✅ V54.2: Settings applied');
 
             api.render();
-            console.log('✅ V54: Render triggered');
+            console.log('✅ V54.2: Render triggered');
 
-            // 🔍 V54: Verification logging (helps debug if scrolling fails)
+            // 🔍 V54.2: Verification logging (helps debug if scrolling fails)
             setTimeout(() => {
-                console.log('🔍 V54: Verifying scroll settings...');
+                console.log('🔍 V54.2: Verifying scroll settings...');
                 console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? 'Horizontal' : 'Page');
-                console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Continuous ? 'Continuous' : 'Other');
-                console.log('   - scrollAnchor:', (api.settings.player as any).scrollAnchor ?? 'N/A (using manual anchoring)');
+                console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Off ? 'Off (manual)' : 'Continuous (auto)');
                 console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
                 console.log('   - manualAnchor:', cursorUpdateCleanup ? '✅ ACTIVE' : '❌ INACTIVE');
+
+                // Check for actual scroll container
+                const atSurface = containerElement.querySelector('.at-surface');
+                console.log('   - .at-surface found:', atSurface ? '✅ YES' : '❌ NO');
+                if (atSurface?.parentElement) {
+                    console.log('   - scrollContainer width:', atSurface.parentElement.scrollWidth, 'vs client:', atSurface.parentElement.clientWidth);
+                }
             }, 500);
         };
 

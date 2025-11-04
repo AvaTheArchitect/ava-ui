@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - V54.1 CRITICAL FIX
-// Key fix: Let AlphaTab auto-detect its internal scroll container
+// AlphaTab initialization utility - V54.2 FINAL FIX
+// Key fix: Keep scrollElement as container for manual cursor control
 
 import type { AlphaTabApi } from "./types";
 
@@ -76,17 +76,16 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V54.1: Set scroll mode to Continuous
+    // ✅ V54.2: Set scroll mode to Continuous (will be changed to Off in landscape by component)
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // 🎯 V54.1 CRITICAL FIX: Let AlphaTab auto-detect its internal scroll container
-    // AlphaTab creates .at-viewport internally - don't override it!
-    // TypeScript doesn't like null, but this is what we need for auto-detection
-    (settings.player as any).scrollElement = null;
+    // ✅ V54.2 CRITICAL: Keep scrollElement as container (don't set to null!)
+    // The component will control scrolling manually in landscape mode
+    settings.player.scrollElement = container;
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V54.1: Scroll mode = Continuous");
-    console.log("✅ V54.1: Scroll element = null (auto-detect)");
+    console.log("✅ V54.2: Scroll mode = Continuous");
+    console.log("✅ V54.2: Scroll element = container (manual control ready)");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
