@@ -919,17 +919,28 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 if (isLandscape) {
                     // Landscape: Single horizontal row with continuous scroll
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+
                     // Enable continuous auto-scrolling (adapts to horizontal in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                    console.log('🎸 V52: Horizontal layout + continuous scroll enabled');
+
+                    // 🎯 BREAKTHROUGH FIX: Lock the cursor position (Songsterr-style)
+                    // The cursor stays FIXED at 15% from the left, content scrolls underneath!
+                    api.settings.player.scrollAnchor = 0.15; // 15% from left edge
+
+                    console.log('🎸 V52: Horizontal layout + fixed cursor at 15% + content scrolls');
                 } else {
                     // Portrait: Multi-row vertical page layout
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+
                     // Enable continuous auto-scrolling (vertical in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                    console.log('📱 V52: Page layout + continuous scroll enabled');
+
+                    // 💡 Portrait mode: Cursor moves normally, no anchor
+                    api.settings.player.scrollAnchor = 0.0; // Reset to default (cursor moves)
+
+                    console.log('📱 V52: Page layout + moving cursor');
                 }
-                
+
                 // 🎯 CRITICAL FIX: Tell alphaTab which specific element handles the scrolling
                 // This forces it to use your component's container instead of the document body
                 api.settings.player.scrollElement = containerElement;
