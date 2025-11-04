@@ -1,9 +1,15 @@
 'use client';
 
 /**
- * AlphaTab Renderer V52 - LANDSCAPE MODE + UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * AlphaTab Renderer V53 - LANDSCAPE SCROLLING ENHANCED
  * 
- * V52 NEW:
+ * V53 CRITICAL FIX:
+ * ✅ initAlphaTab.ts now enables ScrollMode.Continuous for external mode
+ * ✅ Orientation detection properly applies scrollAnchor
+ * ✅ Added verification logging to debug scroll behavior
+ * ✅ Ensured settings persistence across orientation changes
+ * 
+ * V52 FEATURES:
  * ✅ Landscape mode: Single horizontal row with continuous scroll
  * ✅ Portrait mode: Multi-row vertical page layout
  * ✅ Auto-detect orientation changes
@@ -11,10 +17,10 @@
  * 
  * V50 FIXES:
  * ✅ Handle positioning: masterBarBounds.visualBounds with insets
- * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
- * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
- * ✅ Capture mode: ONLY on mousedown/touchstart to block mouse selection
- * ✅ Scroll jump fix: Save/restore scroll position when using position:fixed
+ * ✅ Resize handling: postRenderFinished + boundsLookup verification
+ * ✅ Drag unified: Handle bar + bubble act as ONE unit
+ * ✅ Capture mode: ONLY on mousedown/touchstart
+ * ✅ Scroll jump fix: Save/restore scroll position
  * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
  */
 
@@ -210,7 +216,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V52 Unified handles created');
+    console.log('✅ V53 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -801,7 +807,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V52 - LANDSCAPE MODE 🎸');
+                console.log('🎸 Initializing AlphaTab V53 - LANDSCAPE SCROLLING ENHANCED 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -901,72 +907,89 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // 🆕 V52: Landscape Mode Detection and Layout Switching
+    // 🆕 V53: ENHANCED Landscape Mode Detection with Verification
+    // This effect is now the SINGLE SOURCE OF TRUTH for scroll behavior
+    // initAlphaTab.ts sets neutral defaults, this component handles orientation-specific logic
     useEffect(() => {
         if (!apiRef.current || !isRendered || !containerRef.current) return;
 
         const api = apiRef.current;
-        const containerElement = containerRef.current; // Get the actual DOM element
+        const containerElement = containerRef.current;
 
-        // Function to apply the correct layout mode based on orientation
         const setAlphaTabLayout = (isLandscape: boolean) => {
             if (!api.settings?.display || !api.settings?.player) return;
 
-            console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
+            console.log(`🔄 V53: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
-            // Import AlphaTab to access LayoutMode and ScrollMode enums
             import('@coderline/alphatab').then((alphaTab) => {
                 if (isLandscape) {
-                    // Landscape: Single horizontal row with continuous scroll
+                    // 🎸 LANDSCAPE: Horizontal layout with fixed cursor at 15%
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
-                    // Enable continuous auto-scrolling (adapts to horizontal in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                    // 🎯 BREAKTHROUGH FIX: Lock the cursor position (Songsterr-style)
-                    // The cursor stays FIXED at 15% from the left, content scrolls underneath!
-                    api.settings.player.scrollAnchor = 0.15; // 15% from left edge
+                    // Set scrollAnchor (with optional chaining for safety)
+                    if (api.settings.player.scrollAnchor !== undefined) {
+                        api.settings.player.scrollAnchor = 0.15;
+                        console.log('🎯 V53: ScrollAnchor = 0.15 (Songsterr-style fixed cursor)');
+                    } else {
+                        console.warn('⚠️ V53: scrollAnchor not available, using scrollOffsetX fallback');
+                        api.settings.player.scrollOffsetX = -100;
+                    }
 
-                    console.log('🎸 V52: Horizontal layout + fixed cursor at 15% + content scrolls');
+                    console.log('🎸 V53: Horizontal layout enabled');
+                    console.log('🎯 V53: ScrollMode = Continuous');
                 } else {
-                    // Portrait: Multi-row vertical page layout
+                    // 📱 PORTRAIT: Vertical page layout with moving cursor
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-
-                    // Enable continuous auto-scrolling (vertical in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                    // 💡 Portrait mode: Cursor moves normally, no anchor
-                    api.settings.player.scrollAnchor = 0.0; // Reset to default (cursor moves)
+                    // Reset scrollAnchor
+                    if (api.settings.player.scrollAnchor !== undefined) {
+                        api.settings.player.scrollAnchor = 0.0;
+                        console.log('🎯 V53: ScrollAnchor = 0.0 (natural cursor movement)');
+                    } else {
+                        api.settings.player.scrollOffsetX = 0;
+                    }
 
-                    console.log('📱 V52: Page layout + moving cursor');
+                    console.log('📱 V53: Page layout enabled');
+                    console.log('🎯 V53: ScrollMode = Continuous');
                 }
 
-                // 🎯 CRITICAL FIX: Tell alphaTab which specific element handles the scrolling
-                // This forces it to use your component's container instead of the document body
+                // Ensure scroll target is always our container
                 api.settings.player.scrollElement = containerElement;
-                console.log('✅ V52: Scroll element set to container');
+                console.log('✅ V53: Scroll element confirmed: container');
 
-                // Apply the new settings and re-render
+                // Apply settings and trigger re-render
                 api.updateSettings();
-                api.render();
+                console.log('✅ V53: Settings applied');
 
-                console.log(`✅ V52: Layout updated to ${isLandscape ? 'Horizontal' : 'Page'} mode`);
+                api.render();
+                console.log('✅ V53: Render triggered');
+
+                // 🔍 V53: Verification logging (helps debug if scrolling fails)
+                setTimeout(() => {
+                    console.log('🔍 V53: Verifying scroll settings...');
+                    console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? 'Horizontal' : 'Page');
+                    console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Continuous ? 'Continuous' : 'Other');
+                    console.log('   - scrollAnchor:', api.settings.player.scrollAnchor ?? 'N/A (using scrollOffsetX fallback)');
+                    console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
+                }, 500);
             });
         };
 
-        // Check initial orientation and set the layout
+        // Initial setup based on current orientation
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
         setAlphaTabLayout(isLandscape);
 
-        // Listen for orientation changes and update the layout
+        // Listen for orientation changes
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleOrientationChange = (e: MediaQueryListEvent) => {
+            console.log('📱 V53: Orientation changed to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
             setAlphaTabLayout(e.matches);
         };
 
         mediaQuery.addEventListener('change', handleOrientationChange);
 
-        // Cleanup
         return () => {
             mediaQuery.removeEventListener('change', handleOrientationChange);
         };
@@ -1025,7 +1048,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V52 Container resized');
+                console.log('📐 V53 Container resized');
             }, 150);
         });
 
