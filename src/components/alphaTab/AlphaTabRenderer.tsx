@@ -903,13 +903,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     // 🆕 V52: Landscape Mode Detection and Layout Switching
     useEffect(() => {
-        if (!apiRef.current || !isRendered) return;
+        if (!apiRef.current || !isRendered || !containerRef.current) return;
 
         const api = apiRef.current;
+        const containerElement = containerRef.current; // Get the actual DOM element
 
         // Function to apply the correct layout mode based on orientation
         const setAlphaTabLayout = (isLandscape: boolean) => {
-            if (!api.settings?.display) return;
+            if (!api.settings?.display || !api.settings?.player) return;
 
             console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
@@ -919,19 +920,20 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     // Landscape: Single horizontal row with continuous scroll
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                     // Enable continuous auto-scrolling (adapts to horizontal in this mode)
-                    if (api.settings.player) {
-                        api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                    }
+                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                     console.log('🎸 V52: Horizontal layout + continuous scroll enabled');
                 } else {
                     // Portrait: Multi-row vertical page layout
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                     // Enable continuous auto-scrolling (vertical in this mode)
-                    if (api.settings.player) {
-                        api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                    }
+                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                     console.log('📱 V52: Page layout + continuous scroll enabled');
                 }
+                
+                // 🎯 CRITICAL FIX: Tell alphaTab which specific element handles the scrolling
+                // This forces it to use your component's container instead of the document body
+                api.settings.player.scrollElement = containerElement;
+                console.log('✅ V52: Scroll element set to container');
 
                 // Apply the new settings and re-render
                 api.updateSettings();
