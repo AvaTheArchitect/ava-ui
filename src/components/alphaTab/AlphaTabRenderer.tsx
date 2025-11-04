@@ -906,7 +906,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const api = apiRef.current;
         const containerElement = containerRef.current;
-        
+
         // ✅ V54: Cleanup function declared at proper scope
         let cursorUpdateCleanup: (() => void) | null = null;
 
@@ -926,13 +926,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                
+
                 // Try to use scrollAnchor if available
                 if ((api.settings.player as any).scrollAnchor !== undefined) {
                     (api.settings.player as any).scrollAnchor = 0.15;
                     console.log('🎯 V54: Using native scrollAnchor = 0.15');
                 }
-                
+
                 console.log('🎸 V54: Horizontal layout enabled');
                 console.log('🎯 V54: ScrollMode = Continuous');
 
@@ -940,23 +940,23 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // This ensures cursor stays at 15% even if scrollAnchor doesn't work
                 const cursorUpdateHandler = (e: any) => {
                     if (!containerElement || !e.bounds) return;
-                    
+
                     const viewportWidth = containerElement.clientWidth;
                     const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
                     const targetScroll = e.bounds.x - fixedCursorPosition;
-                    
+
                     // Smooth scroll to keep cursor at 15%
                     containerElement.scrollTo({
                         left: Math.max(0, targetScroll),
                         behavior: 'smooth'
                     });
                 };
-                
+
                 // Attach the manual cursor handler
                 if (api.cursorUpdated) {
                     api.cursorUpdated.on(cursorUpdateHandler);
                     console.log('🎯 V54: Manual cursor anchoring enabled at 15%');
-                    
+
                     // Store cleanup function
                     cursorUpdateCleanup = () => {
                         if (api.cursorUpdated) {
@@ -965,18 +965,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         }
                     };
                 }
-                
+
             } else {
                 // 📱 PORTRAIT: Vertical page layout with moving cursor
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                
+
                 // Reset scrollAnchor
                 if ((api.settings.player as any).scrollAnchor !== undefined) {
                     (api.settings.player as any).scrollAnchor = 0.0;
                     console.log('🎯 V54: scrollAnchor reset to 0.0');
                 }
-                
+
                 console.log('📱 V54: Page layout enabled');
                 console.log('🎯 V54: ScrollMode = Continuous');
             }
@@ -984,14 +984,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             // Ensure scroll target is always our container
             api.settings.player.scrollElement = containerElement;
             console.log('✅ V54: Scroll element confirmed: container');
-            
+
             // Apply settings and trigger re-render
             api.updateSettings();
             console.log('✅ V54: Settings applied');
-            
+
             api.render();
             console.log('✅ V54: Render triggered');
-            
+
             // 🔍 V54: Verification logging (helps debug if scrolling fails)
             setTimeout(() => {
                 console.log('🔍 V54: Verifying scroll settings...');

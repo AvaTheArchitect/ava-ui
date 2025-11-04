@@ -108,7 +108,7 @@ export default function RootLayout({
             user-select: none;
             -webkit-touch-callout: none;
             /* Allow AlphaTab to handle its own touch events */
-            touch-action: manipulation;
+            /* touch-action: manipulation; */ /* V54: Removed - let AlphaTab handle scroll */
           }
           
           /* Ensure containers respect viewport boundaries */

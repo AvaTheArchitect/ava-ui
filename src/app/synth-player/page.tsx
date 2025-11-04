@@ -617,8 +617,8 @@ export default function SynthPlayerPage() {
                                     }}
                                     disabled={!api}
                                     className={`px-3 py-2 rounded-lg font-bold text-sm transition-all ${playbackSpeed === speed
-                                            ? 'bg-blue-600 text-white border-2 border-blue-400'
-                                            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                        ? 'bg-blue-600 text-white border-2 border-blue-400'
+                                        : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                                         }`}
                                 >
                                     {Math.round(speed * 100)}%
@@ -747,7 +747,7 @@ export default function SynthPlayerPage() {
                 )}
 
                 {/* AlphaTab Renderer with ID wrapper for CSS specificity */}
-                <div id="maestro-player" className="bg-white rounded-xl shadow-2xl overflow-hidden">
+                <div id="maestro-player" className="bg-white rounded-xl shadow-2xl">
                     <AlphaTabRenderer
                         fileUrl="/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3"
                         playerMode="synthesizer"
