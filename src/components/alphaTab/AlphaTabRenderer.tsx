@@ -1,30 +1,23 @@
 'use client';
 
 /**
- * AlphaTab Renderer V53 - LANDSCAPE SCROLLING ENHANCED
+ * AlphaTab Renderer V54 - CURSOR ANCHORING FIXED
  * 
- * V53 CRITICAL FIX:
- * ✅ initAlphaTab.ts now enables ScrollMode.Continuous for external mode
- * ✅ Orientation detection properly applies scrollAnchor
- * ✅ Added verification logging to debug scroll behavior
- * ✅ Ensured settings persistence across orientation changes
+ * V54 CRITICAL FIXES:
+ * ✅ Top-level alphaTab import (no more async timing issues)
+ * ✅ Synchronous orientation change handler
+ * ✅ Proper cleanup scope management
+ * ✅ Manual cursor anchoring at 15% for landscape
  * 
- * V52 FEATURES:
+ * V53 FEATURES:
  * ✅ Landscape mode: Single horizontal row with continuous scroll
  * ✅ Portrait mode: Multi-row vertical page layout
  * ✅ Auto-detect orientation changes
  * ✅ Dynamic layout switching with re-render
- * 
- * V50 FIXES:
- * ✅ Handle positioning: masterBarBounds.visualBounds with insets
- * ✅ Resize handling: postRenderFinished + boundsLookup verification
- * ✅ Drag unified: Handle bar + bubble act as ONE unit
- * ✅ Capture mode: ONLY on mousedown/touchstart
- * ✅ Scroll jump fix: Save/restore scroll position
- * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import * as alphaTab from '@coderline/alphatab'; // ✅ V54: Static import at top
 import { initAlphaTab, loadGuitarProFile } from '@/lib/alphaTab/initAlphaTab';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
@@ -216,7 +209,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V53 Unified handles created');
+    console.log('✅ V54 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -807,7 +800,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V53 - LANDSCAPE SCROLLING ENHANCED 🎸');
+                console.log('🎸 Initializing AlphaTab V54 - CURSOR ANCHORING FIXED 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -907,110 +900,107 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // 🆕 V53: ENHANCED Landscape Mode Detection with MANUAL CURSOR ANCHORING
-    // This effect is now the SINGLE SOURCE OF TRUTH for scroll behavior
-    // initAlphaTab.ts sets neutral defaults, this component handles orientation-specific logic
+    // 🆕 V54: FIXED CURSOR ANCHORING - Synchronous with proper cleanup scope
     useEffect(() => {
         if (!apiRef.current || !isRendered || !containerRef.current) return;
 
         const api = apiRef.current;
         const containerElement = containerRef.current;
-
-        // Cleanup function to remove event handlers
+        
+        // ✅ V54: Cleanup function declared at proper scope
         let cursorUpdateCleanup: (() => void) | null = null;
 
+        // ✅ V54: Synchronous function (no async import!)
         const setAlphaTabLayout = (isLandscape: boolean) => {
             if (!api.settings?.display || !api.settings?.player) return;
 
-            console.log(`🔄 V53: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
+            console.log(`🔄 V54: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
-            import('@coderline/alphatab').then((alphaTab) => {
-                // Clean up any previous cursor handler
-                if (cursorUpdateCleanup) {
-                    cursorUpdateCleanup();
-                    cursorUpdateCleanup = null;
+            // Clean up any previous cursor handler
+            if (cursorUpdateCleanup) {
+                cursorUpdateCleanup();
+                cursorUpdateCleanup = null;
+            }
+
+            if (isLandscape) {
+                // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
+                api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                
+                // Try to use scrollAnchor if available
+                if ((api.settings.player as any).scrollAnchor !== undefined) {
+                    (api.settings.player as any).scrollAnchor = 0.15;
+                    console.log('🎯 V54: Using native scrollAnchor = 0.15');
                 }
+                
+                console.log('🎸 V54: Horizontal layout enabled');
+                console.log('🎯 V54: ScrollMode = Continuous');
 
-                if (isLandscape) {
-                    // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
-                    api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                    // Try to use scrollAnchor if available
-                    if (api.settings.player.scrollAnchor !== undefined) {
-                        api.settings.player.scrollAnchor = 0.15;
-                        console.log('🎯 V53: Using native scrollAnchor = 0.15');
-                    }
-
-                    console.log('🎸 V53: Horizontal layout enabled');
-                    console.log('🎯 V53: ScrollMode = Continuous');
-
-                    // 🎯 CRITICAL: Manual cursor anchoring (Songsterr-style)
-                    // This ensures cursor stays at 15% even if scrollAnchor doesn't work
-                    const cursorUpdateHandler = (e: any) => {
-                        if (!containerElement || !e.bounds) return;
-
-                        const viewportWidth = containerElement.clientWidth;
-                        const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
-                        const targetScroll = e.bounds.x - fixedCursorPosition;
-
-                        // Smooth scroll to keep cursor at 15%
-                        containerElement.scrollTo({
-                            left: Math.max(0, targetScroll),
-                            behavior: 'smooth'
-                        });
+                // 🎯 CRITICAL: Manual cursor anchoring (Songsterr-style)
+                // This ensures cursor stays at 15% even if scrollAnchor doesn't work
+                const cursorUpdateHandler = (e: any) => {
+                    if (!containerElement || !e.bounds) return;
+                    
+                    const viewportWidth = containerElement.clientWidth;
+                    const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
+                    const targetScroll = e.bounds.x - fixedCursorPosition;
+                    
+                    // Smooth scroll to keep cursor at 15%
+                    containerElement.scrollTo({
+                        left: Math.max(0, targetScroll),
+                        behavior: 'smooth'
+                    });
+                };
+                
+                // Attach the manual cursor handler
+                if (api.cursorUpdated) {
+                    api.cursorUpdated.on(cursorUpdateHandler);
+                    console.log('🎯 V54: Manual cursor anchoring enabled at 15%');
+                    
+                    // Store cleanup function
+                    cursorUpdateCleanup = () => {
+                        if (api.cursorUpdated) {
+                            api.cursorUpdated.off(cursorUpdateHandler);
+                            console.log('🧹 V54: Manual cursor anchoring removed');
+                        }
                     };
-
-                    // Attach the manual cursor handler
-                    if (api.cursorUpdated) {
-                        api.cursorUpdated.on(cursorUpdateHandler);
-                        console.log('🎯 V53: Manual cursor anchoring enabled at 15%');
-
-                        // Store cleanup function
-                        cursorUpdateCleanup = () => {
-                            if (api.cursorUpdated) {
-                                api.cursorUpdated.off(cursorUpdateHandler);
-                                console.log('🧹 V53: Manual cursor anchoring removed');
-                            }
-                        };
-                    }
-
-                } else {
-                    // 📱 PORTRAIT: Vertical page layout with moving cursor
-                    api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                    // Reset scrollAnchor
-                    if (api.settings.player.scrollAnchor !== undefined) {
-                        api.settings.player.scrollAnchor = 0.0;
-                        console.log('🎯 V53: scrollAnchor reset to 0.0');
-                    }
-
-                    console.log('📱 V53: Page layout enabled');
-                    console.log('🎯 V53: ScrollMode = Continuous');
                 }
+                
+            } else {
+                // 📱 PORTRAIT: Vertical page layout with moving cursor
+                api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                
+                // Reset scrollAnchor
+                if ((api.settings.player as any).scrollAnchor !== undefined) {
+                    (api.settings.player as any).scrollAnchor = 0.0;
+                    console.log('🎯 V54: scrollAnchor reset to 0.0');
+                }
+                
+                console.log('📱 V54: Page layout enabled');
+                console.log('🎯 V54: ScrollMode = Continuous');
+            }
 
-                // Ensure scroll target is always our container
-                api.settings.player.scrollElement = containerElement;
-                console.log('✅ V53: Scroll element confirmed: container');
-
-                // Apply settings and trigger re-render
-                api.updateSettings();
-                console.log('✅ V53: Settings applied');
-
-                api.render();
-                console.log('✅ V53: Render triggered');
-
-                // 🔍 V53: Verification logging (helps debug if scrolling fails)
-                setTimeout(() => {
-                    console.log('🔍 V53: Verifying scroll settings...');
-                    console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? 'Horizontal' : 'Page');
-                    console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Continuous ? 'Continuous' : 'Other');
-                    console.log('   - scrollAnchor:', api.settings.player.scrollAnchor ?? 'N/A (using manual anchoring)');
-                    console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
-                    console.log('   - manualAnchor:', cursorUpdateCleanup ? '✅ ACTIVE' : '❌ INACTIVE');
-                }, 500);
-            });
+            // Ensure scroll target is always our container
+            api.settings.player.scrollElement = containerElement;
+            console.log('✅ V54: Scroll element confirmed: container');
+            
+            // Apply settings and trigger re-render
+            api.updateSettings();
+            console.log('✅ V54: Settings applied');
+            
+            api.render();
+            console.log('✅ V54: Render triggered');
+            
+            // 🔍 V54: Verification logging (helps debug if scrolling fails)
+            setTimeout(() => {
+                console.log('🔍 V54: Verifying scroll settings...');
+                console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? 'Horizontal' : 'Page');
+                console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Continuous ? 'Continuous' : 'Other');
+                console.log('   - scrollAnchor:', (api.settings.player as any).scrollAnchor ?? 'N/A (using manual anchoring)');
+                console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
+                console.log('   - manualAnchor:', cursorUpdateCleanup ? '✅ ACTIVE' : '❌ INACTIVE');
+            }, 500);
         };
 
         // Initial setup based on current orientation
@@ -1020,7 +1010,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         // Listen for orientation changes
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleOrientationChange = (e: MediaQueryListEvent) => {
-            console.log('📱 V53: Orientation changed to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
+            console.log('📱 V54: Orientation changed to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
             setAlphaTabLayout(e.matches);
         };
 
@@ -1028,7 +1018,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return () => {
             mediaQuery.removeEventListener('change', handleOrientationChange);
-            // Clean up cursor handler on unmount
+            // ✅ V54: Clean up cursor handler on unmount (proper scope!)
             if (cursorUpdateCleanup) {
                 cursorUpdateCleanup();
             }
@@ -1088,7 +1078,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V53 Container resized');
+                console.log('📐 V54 Container resized');
             }, 150);
         });
 
