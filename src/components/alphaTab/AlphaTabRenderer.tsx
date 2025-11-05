@@ -780,6 +780,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
     const [isLandscape, setIsLandscape] = useState(false);
+    const [isMobile, setIsMobile] = useState(false); // V60.2: Track if mobile device
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
@@ -787,12 +788,22 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
 
-    // 🆕 V60: Detect orientation (but DON'T re-initialize!)
+    // 🆕 V60.2: Detect device type AND orientation
     useEffect(() => {
+        const detectMobileDevice = () => {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                (window.innerWidth <= 1024 && 'ontouchstart' in window);
+        };
+
         const checkOrientation = () => {
-            const landscape = window.innerWidth > window.innerHeight;
+            const mobile = detectMobileDevice();
+            setIsMobile(mobile);
+
+            // Only use orientation logic on mobile devices
+            const landscape = mobile && window.innerWidth > window.innerHeight;
             setIsLandscape(landscape);
-            console.log(`📱 V60 Orientation detected: ${landscape ? 'LANDSCAPE' : 'PORTRAIT'}`);
+
+            console.log(`📱 V60.2 Device: ${mobile ? 'MOBILE' : 'DESKTOP'}, Orientation: ${landscape ? 'LANDSCAPE' : (mobile ? 'PORTRAIT' : 'PAGE')}`);
         };
 
         checkOrientation();
@@ -809,15 +820,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V60: Initializing AlphaTab (ONCE) 🎸');
+                console.log('🎸 V60.2: Initializing AlphaTab (ONCE) 🎸');
 
-                // Initialize with page layout (portrait default)
+                // V60.2: Pass mobile detection to initAlphaTab
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
                     enableCursor: playerMode !== 'disabled',
                     layoutMode: 'page', // Start with page layout
-                    soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined
+                    soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
+                    isMobile: isMobile // V60.2: Pass mobile state
                 });
 
                 if (!isMounted) {
@@ -978,17 +990,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
             } else {
-                // 📱 PORTRAIT: Page layout + natural scroll + scrollOffsetY for Dynamic Island
-                console.log('📱 V60: Configuring PORTRAIT mode');
+                // 📱 PORTRAIT: Page layout + natural scroll + scroll offset for Dynamic Island
+                console.log('📱 V60.1: Configuring PORTRAIT mode');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = containerElement;
 
-                // 🔧 Fix Dynamic Island issue: Add vertical offset
-                if ((api.settings.player as any).scrollOffsetY !== undefined) {
-                    (api.settings.player as any).scrollOffsetY = 100; // Push cursor down 100px
-                    console.log('✅ V60: scrollOffsetY = 100 (Dynamic Island fix)');
+                // 🔧 Dynamic Island fix: Use scrollOffset (not scrollOffsetY)
+                if ((api.settings.player as any).scrollOffset !== undefined) {
+                    (api.settings.player as any).scrollOffset = 100; // Push cursor down 100px
+                    console.log('✅ V60.1: scrollOffset = 100 (Dynamic Island fix)');
                 }
             }
 
@@ -1000,36 +1012,39 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             api.render();
             console.log('✅ V60: Re-render triggered');
 
-            // ✅ Restore playback state after render
+            // ✅ Restore playback state after render (with better timing)
             setTimeout(() => {
-                console.log('🔄 V60: Restoring playback state...');
+                console.log('🔄 V60.2: Restoring playback state...');
 
                 // Restore tracks
                 if (currentTracks && api.tracks !== currentTracks) {
                     api.tracks = currentTracks;
-                    console.log(`✅ V60: Tracks restored (count: ${currentTracks.length})`);
+                    console.log(`✅ V60.2: Tracks restored (count: ${currentTracks.length})`);
                 }
 
                 // Restore playback range
                 if (currentPlaybackRange && api.playbackRange !== undefined) {
                     api.playbackRange = currentPlaybackRange;
-                    console.log(`✅ V60: Playback range restored`);
+                    console.log(`✅ V60.2: Playback range restored`);
                 }
 
-                // Restore tick position
-                if (currentTick !== undefined && api.tickPosition !== undefined) {
-                    api.tickPosition = currentTick;
-                    console.log(`✅ V60: Tick position restored to ${currentTick}`);
-                }
+                // Wait for render to complete before restoring tick position
+                setTimeout(() => {
+                    // Restore tick position
+                    if (currentTick !== undefined && api.tickPosition !== undefined) {
+                        api.tickPosition = currentTick;
+                        console.log(`✅ V60.2: Tick position restored to ${currentTick}`);
+                    }
 
-                // Resume playback if it was playing
-                if (wasPlaying && api.play) {
-                    setTimeout(() => {
-                        api.play();
-                        console.log('▶️ V60: Playback resumed');
-                    }, 100);
-                }
-            }, 300);
+                    // Resume playback if it was playing (with extra delay to avoid backtrack)
+                    if (wasPlaying && api.play) {
+                        setTimeout(() => {
+                            api.play();
+                            console.log('▶️ V60.2: Playback resumed');
+                        }, 200);
+                    }
+                }, 300);
+            }, 500);
         };
 
         // Apply initial orientation settings
@@ -1040,7 +1055,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 cursorCleanup();
             }
         };
-    }, [isLandscape, isRendered]);
+    }, [isLandscape, isRendered, isMobile]); // V60.2: Added isMobile dependency
 
     // Loop control
     useEffect(() => {
