@@ -9,6 +9,8 @@ export interface AlphaTabConfig {
   enableCursor?: boolean;
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
+  // V60.2: Added isMobile property to the configuration interface
+  isMobile?: boolean;
 }
 
 export async function initAlphaTab(
@@ -20,6 +22,7 @@ export async function initAlphaTab(
     enableCursor = false,
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
+    isMobile = false, // V60.2: Default to false if not provided
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -32,6 +35,13 @@ export async function initAlphaTab(
     "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/";
   settings.core.enableLazyLoading = false;
   settings.core.useWorkers = false; // Disable rendering workers
+
+  // V60.2: Example of using the isMobile property within initAlphaTab
+  if (isMobile) {
+    console.log("📱 Initializing AlphaTab in Mobile Mode.");
+    // You can add specific mobile-only settings here if needed
+    // e.g., settings.display.scale = 0.9;
+  }
 
   console.log("🔧 Core workers disabled for Next.js compatibility");
 
@@ -100,6 +110,7 @@ export async function initAlphaTab(
       playerMode === "synthesizer" ? settings.player.outputMode : "N/A",
     enableCursor: settings.player.enableCursor,
     soundFont: playerMode === "synthesizer" ? soundFontPath : "N/A",
+    isMobile: isMobile, // V60.2: Included in log for debugging
   });
 
   return new alphaTab.AlphaTabApi(container, settings);
