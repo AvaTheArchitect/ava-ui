@@ -131,4 +131,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-}// Force Vercel refresh Mon Oct 27 17:14:44 PDT 2025
+}// Key change: Cursor will be disabled in landscape, let AlphaTab scroll normally
