@@ -67,21 +67,19 @@ export default function RootLayout({
         {/* iOS Icons */}
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
 
-        {/* PWA Optimizations */}
+        {/* PWA Optimizations - ALPHATAB COMPATIBLE */}
         <style>{`
-          /* Base PWA adjustments - Fill entire viewport */
+          /* Base PWA adjustments - AlphaTab scroll-friendly */
           html {
-            height: 100%;
-            overflow-x: hidden;
+            /* REMOVED: height: 100%; - causes issues with dynamic viewport calculations */
+            /* REMOVED: overflow-x: hidden; - BREAKS AlphaTab auto-scroll */
             -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
           }
           
           body {
-            min-height: 100vh;
-            min-height: -webkit-fill-available;
-            overflow-x: hidden;
-            /* Remove safe area padding from body - let individual components handle it */
+            /* REMOVED: min-height rules - causes landscape orientation issues */
+            /* REMOVED: overflow-x: hidden; - BREAKS AlphaTab auto-scroll */
             margin: 0;
             padding: 0;
           }
@@ -107,21 +105,13 @@ export default function RootLayout({
             -ms-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
-            /* Allow AlphaTab to handle its own touch events */
-            /* touch-action: manipulation; */ /* V54: Removed - let AlphaTab handle scroll */
+            /* Let AlphaTab handle its own touch events */
           }
           
-          /* Ensure containers respect viewport boundaries */
-          * {
-            box-sizing: border-box;
-          }
+          /* REMOVED: * { box-sizing: border-box; } - can interfere with AlphaTab's SVG calculations */
+          /* If needed, apply box-sizing to specific non-AlphaTab containers instead */
           
-          /* Fix for iOS Safari viewport height issue */
-          @supports (-webkit-touch-callout: none) {
-            body {
-              min-height: -webkit-fill-available;
-            }
-          }
+          /* REMOVED: iOS viewport height fixes - causes jerky cursor behavior in landscape */
         `}</style>
       </head>
       <body
@@ -131,4 +121,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-}// Force Vercel refresh Mon Oct 27 17:14:44 PDT 2025
+}
