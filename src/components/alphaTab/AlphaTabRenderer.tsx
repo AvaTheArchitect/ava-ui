@@ -1,9 +1,13 @@
 'use client';
 
 /**
- * AlphaTab Renderer V50 - UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * AlphaTab Renderer V55 - ORIENTATION-AWARE + SONGSTERR CURSOR
  * 
- * V50 FIXES:
+ * V55 NEW FEATURES:
+ * ✅ Dynamic layoutMode: 'horizontal' in landscape, 'page' in portrait
+ * ✅ Works with scrollOffsetX for Songsterr-style fixed cursor
+ * 
+ * V50 FEATURES (retained):
  * ✅ Handle positioning: masterBarBounds.visualBounds with insets
  * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
  * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
@@ -204,7 +208,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V50 Unified handles created');
+    console.log('✅ V55 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -780,11 +784,27 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
+    // 🆕 V55: Track orientation for dynamic layout mode
+    const [isLandscape, setIsLandscape] = useState(false);
+
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
+
+    // 🆕 V55: Detect orientation changes
+    useEffect(() => {
+        const checkOrientation = () => {
+            const landscape = window.innerWidth > window.innerHeight;
+            setIsLandscape(landscape);
+            console.log(`📱 V55 Orientation: ${landscape ? 'LANDSCAPE (horizontal)' : 'PORTRAIT (page)'}`);
+        };
+
+        checkOrientation();
+        window.addEventListener('resize', checkOrientation);
+        return () => window.removeEventListener('resize', checkOrientation);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -794,13 +814,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V50 - SCROLL FIX 🎸');
+                console.log('🎸 Initializing AlphaTab V55 - ORIENTATION-AWARE + SONGSTERR CURSOR 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
                     enableCursor: playerMode !== 'disabled',
-                    layoutMode: 'page',
+                    layoutMode: isLandscape ? 'horizontal' : 'page', // ✅ DYNAMIC!
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined
                 });
 
@@ -892,7 +912,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
             }
         };
-    }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
+    }, [fileUrl, playerMode, soundFontPath, isLandscape, onApiReady, onScoreLoaded, onRenderFinished, onError]); // ✅ Added isLandscape dependency
 
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
@@ -944,7 +964,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V50 Container resized');
+                console.log('📐 V55 Container resized');
             }, 150);
         });
 
