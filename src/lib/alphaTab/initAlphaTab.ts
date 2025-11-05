@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - V54.7 STATIC CURSOR APPROACH
-// Key change: Cursor will be disabled in landscape, let AlphaTab scroll normally
+// AlphaTab initialization utility - V55 STATIC CURSOR FIX
+// Key change: scrollOffsetX configured for Songsterr-style fixed cursor
 
 import type { AlphaTabApi } from "./types";
 
@@ -9,6 +9,7 @@ export interface AlphaTabConfig {
   enableCursor?: boolean;
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
+  cursorPosition?: number; // NEW: Cursor position as percentage (0-1), default 0.15 (15%)
 }
 
 export async function initAlphaTab(
@@ -20,6 +21,7 @@ export async function initAlphaTab(
     enableCursor = false,
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
+    cursorPosition = 0.15, // Default: cursor at 15% from left (Songsterr style)
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -76,16 +78,30 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V54.7: Set scroll mode to Continuous (will work with custom static cursor)
+    // ✅ V55: CRITICAL FIX - Set scroll mode to Continuous
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V54.7: Keep scrollElement as container
-    // Component will disable AlphaTab's cursor and show custom static cursor in landscape
+    // ✅ V55: SONGSTERR-STYLE STATIC CURSOR
+    // Calculate scrollOffsetX to keep cursor at fixed position
+    const containerWidth = container.clientWidth;
+    const cursorPixelPosition = containerWidth * cursorPosition;
+
+    // Set NEGATIVE scrollOffsetX to keep cursor stationary
+    // This makes AlphaTab scroll content LEFT, cursor appears fixed on screen
+    settings.player.scrollOffsetX = -cursorPixelPosition;
+
+    // Keep scrollElement as container
     settings.player.scrollElement = container;
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V54.7: Scroll mode = Continuous");
-    console.log("✅ V54.7: Scroll element = container (custom cursor ready)");
+    console.log("✅ V55: Scroll mode = Continuous");
+    console.log(
+      `✅ V55: Static cursor at ${(cursorPosition * 100).toFixed(
+        0
+      )}% (${cursorPixelPosition.toFixed(0)}px)`
+    );
+    console.log(`✅ V55: scrollOffsetX = ${settings.player.scrollOffsetX}px`);
+    console.log("✅ V55: Scroll element = container");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
@@ -100,6 +116,8 @@ export async function initAlphaTab(
       playerMode === "synthesizer" ? settings.player.outputMode : "N/A",
     enableCursor: settings.player.enableCursor,
     soundFont: playerMode === "synthesizer" ? soundFontPath : "N/A",
+    scrollOffsetX:
+      playerMode === "external" ? settings.player.scrollOffsetX : "N/A",
   });
 
   return new alphaTab.AlphaTabApi(container, settings);
