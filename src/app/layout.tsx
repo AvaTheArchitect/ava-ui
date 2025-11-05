@@ -59,14 +59,11 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Maestro AI" />
-
         {/* PWA Meta Tags for Android */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#1a1a2e" />
-
         {/* iOS Icons */}
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
-
         {/* PWA Optimizations */}
         <style>{`
           /* Base PWA adjustments - Fill entire viewport */
@@ -76,7 +73,6 @@ export default function RootLayout({
             -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
           }
-          
           body {
             min-height: 100vh;
             min-height: -webkit-fill-available;
@@ -85,20 +81,16 @@ export default function RootLayout({
             margin: 0;
             padding: 0;
           }
-          
           /* Utility classes for safe area control */
           .safe-area-top {
             padding-top: env(safe-area-inset-top);
           }
-          
           .safe-area-bottom {
             padding-bottom: env(safe-area-inset-bottom);
           }
-          
           .ignore-safe-area {
             margin: calc(-1 * env(safe-area-inset-top)) calc(-1 * env(safe-area-inset-right)) calc(-1 * env(safe-area-inset-bottom)) calc(-1 * env(safe-area-inset-left));
           }
-          
           /* Prevent text selection ONLY in music notation areas */
           .at-surface,
           .at-viewport {
@@ -110,12 +102,10 @@ export default function RootLayout({
             /* Allow AlphaTab to handle its own touch events */
             touch-action: manipulation;
           }
-          
           /* Ensure containers respect viewport boundaries */
           * {
             box-sizing: border-box;
           }
-          
           /* Fix for iOS Safari viewport height issue */
           @supports (-webkit-touch-callout: none) {
             body {
@@ -131,4 +121,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-}// Force Vercel refresh Mon Oct 27 17:14:44 PDT 2025
+}
