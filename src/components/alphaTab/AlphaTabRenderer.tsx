@@ -1,9 +1,15 @@
 'use client';
 
 /**
- * AlphaTab Renderer V52 - LANDSCAPE MODE + UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
+ * AlphaTab Renderer V53 - LANDSCAPE SCROLLING ENHANCED
  * 
- * V52 NEW:
+ * V53 CRITICAL FIX:
+ * ✅ initAlphaTab.ts now enables ScrollMode.Continuous for external mode
+ * ✅ Orientation detection properly applies scrollAnchor
+ * ✅ Added verification logging to debug scroll behavior
+ * ✅ Ensured settings persistence across orientation changes
+ * 
+ * V52 FEATURES:
  * ✅ Landscape mode: Single horizontal row with continuous scroll
  * ✅ Portrait mode: Multi-row vertical page layout
  * ✅ Auto-detect orientation changes
@@ -11,10 +17,10 @@
  * 
  * V50 FIXES:
  * ✅ Handle positioning: masterBarBounds.visualBounds with insets
- * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
- * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
- * ✅ Capture mode: ONLY on mousedown/touchstart to block mouse selection
- * ✅ Scroll jump fix: Save/restore scroll position when using position:fixed
+ * ✅ Resize handling: postRenderFinished + boundsLookup verification
+ * ✅ Drag unified: Handle bar + bubble act as ONE unit
+ * ✅ Capture mode: ONLY on mousedown/touchstart
+ * ✅ Scroll jump fix: Save/restore scroll position
  * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
  */
 
@@ -210,7 +216,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V52 Unified handles created');
+    console.log('✅ V53 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -801,7 +807,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V52 - LANDSCAPE MODE 🎸');
+                console.log('🎸 Initializing AlphaTab V53 - LANDSCAPE SCROLLING ENHANCED 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -901,74 +907,131 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // 🆕 V52: Landscape Mode Detection and Layout Switching
+    // 🆕 V53: ENHANCED Landscape Mode Detection with MANUAL CURSOR ANCHORING
+    // This effect is now the SINGLE SOURCE OF TRUTH for scroll behavior
+    // initAlphaTab.ts sets neutral defaults, this component handles orientation-specific logic
     useEffect(() => {
         if (!apiRef.current || !isRendered || !containerRef.current) return;
 
         const api = apiRef.current;
-        const containerElement = containerRef.current; // Get the actual DOM element
+        const containerElement = containerRef.current;
 
-        // Function to apply the correct layout mode based on orientation
+        // Cleanup function to remove event handlers
+        let cursorUpdateCleanup: (() => void) | null = null;
+
         const setAlphaTabLayout = (isLandscape: boolean) => {
             if (!api.settings?.display || !api.settings?.player) return;
 
-            console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
+            console.log(`🔄 V53: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
-            // Import AlphaTab to access LayoutMode and ScrollMode enums
             import('@coderline/alphatab').then((alphaTab) => {
-                if (isLandscape) {
-                    // Landscape: Single horizontal row with continuous scroll
-                    api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
-                    // Enable continuous auto-scrolling (adapts to horizontal in this mode)
-                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                    // 🎯 BREAKTHROUGH FIX: Lock the cursor position (Songsterr-style)
-                    // The cursor stays FIXED at 15% from the left, content scrolls underneath!
-                    api.settings.player.scrollAnchor = 0.15; // 15% from left edge
-
-                    console.log('🎸 V52: Horizontal layout + fixed cursor at 15% + content scrolls');
-                } else {
-                    // Portrait: Multi-row vertical page layout
-                    api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-
-                    // Enable continuous auto-scrolling (vertical in this mode)
-                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                    // 💡 Portrait mode: Cursor moves normally, no anchor
-                    api.settings.player.scrollAnchor = 0.0; // Reset to default (cursor moves)
-
-                    console.log('📱 V52: Page layout + moving cursor');
+                // Clean up any previous cursor handler
+                if (cursorUpdateCleanup) {
+                    cursorUpdateCleanup();
+                    cursorUpdateCleanup = null;
                 }
 
-                // 🎯 CRITICAL FIX: Tell alphaTab which specific element handles the scrolling
-                // This forces it to use your component's container instead of the document body
+                if (isLandscape) {
+                    // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
+                    api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                    
+                    // Try to use scrollAnchor if available
+                    if (api.settings.player.scrollAnchor !== undefined) {
+                        api.settings.player.scrollAnchor = 0.15;
+                        console.log('🎯 V53: Using native scrollAnchor = 0.15');
+                    }
+                    
+                    console.log('🎸 V53: Horizontal layout enabled');
+                    console.log('🎯 V53: ScrollMode = Continuous');
+
+                    // 🎯 CRITICAL: Manual cursor anchoring (Songsterr-style)
+                    // This ensures cursor stays at 15% even if scrollAnchor doesn't work
+                    const cursorUpdateHandler = (e: any) => {
+                        if (!containerElement || !e.bounds) return;
+                        
+                        const viewportWidth = containerElement.clientWidth;
+                        const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
+                        const targetScroll = e.bounds.x - fixedCursorPosition;
+                        
+                        // Smooth scroll to keep cursor at 15%
+                        containerElement.scrollTo({
+                            left: Math.max(0, targetScroll),
+                            behavior: 'smooth'
+                        });
+                    };
+                    
+                    // Attach the manual cursor handler
+                    if (api.cursorUpdated) {
+                        api.cursorUpdated.on(cursorUpdateHandler);
+                        console.log('🎯 V53: Manual cursor anchoring enabled at 15%');
+                        
+                        // Store cleanup function
+                        cursorUpdateCleanup = () => {
+                            if (api.cursorUpdated) {
+                                api.cursorUpdated.off(cursorUpdateHandler);
+                                console.log('🧹 V53: Manual cursor anchoring removed');
+                            }
+                        };
+                    }
+                    
+                } else {
+                    // 📱 PORTRAIT: Vertical page layout with moving cursor
+                    api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+                    api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+                    
+                    // Reset scrollAnchor
+                    if (api.settings.player.scrollAnchor !== undefined) {
+                        api.settings.player.scrollAnchor = 0.0;
+                        console.log('🎯 V53: scrollAnchor reset to 0.0');
+                    }
+                    
+                    console.log('📱 V53: Page layout enabled');
+                    console.log('🎯 V53: ScrollMode = Continuous');
+                }
+
+                // Ensure scroll target is always our container
                 api.settings.player.scrollElement = containerElement;
-                console.log('✅ V52: Scroll element set to container');
-
-                // Apply the new settings and re-render
+                console.log('✅ V53: Scroll element confirmed: container');
+                
+                // Apply settings and trigger re-render
                 api.updateSettings();
+                console.log('✅ V53: Settings applied');
+                
                 api.render();
-
-                console.log(`✅ V52: Layout updated to ${isLandscape ? 'Horizontal' : 'Page'} mode`);
+                console.log('✅ V53: Render triggered');
+                
+                // 🔍 V53: Verification logging (helps debug if scrolling fails)
+                setTimeout(() => {
+                    console.log('🔍 V53: Verifying scroll settings...');
+                    console.log('   - layoutMode:', api.settings.display.layoutMode === alphaTab.LayoutMode.Horizontal ? 'Horizontal' : 'Page');
+                    console.log('   - scrollMode:', api.settings.player.scrollMode === alphaTab.ScrollMode.Continuous ? 'Continuous' : 'Other');
+                    console.log('   - scrollAnchor:', api.settings.player.scrollAnchor ?? 'N/A (using manual anchoring)');
+                    console.log('   - scrollElement:', api.settings.player.scrollElement === containerElement ? '✅ CORRECT' : '❌ WRONG');
+                    console.log('   - manualAnchor:', cursorUpdateCleanup ? '✅ ACTIVE' : '❌ INACTIVE');
+                }, 500);
             });
         };
 
-        // Check initial orientation and set the layout
+        // Initial setup based on current orientation
         const isLandscape = window.matchMedia('(orientation: landscape)').matches;
         setAlphaTabLayout(isLandscape);
 
-        // Listen for orientation changes and update the layout
+        // Listen for orientation changes
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleOrientationChange = (e: MediaQueryListEvent) => {
+            console.log('📱 V53: Orientation changed to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
             setAlphaTabLayout(e.matches);
         };
 
         mediaQuery.addEventListener('change', handleOrientationChange);
 
-        // Cleanup
         return () => {
             mediaQuery.removeEventListener('change', handleOrientationChange);
+            // Clean up cursor handler on unmount
+            if (cursorUpdateCleanup) {
+                cursorUpdateCleanup();
+            }
         };
     }, [isRendered]);
 
@@ -1025,7 +1088,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V52 Container resized');
+                console.log('📐 V53 Container resized');
             }, 150);
         });
 
