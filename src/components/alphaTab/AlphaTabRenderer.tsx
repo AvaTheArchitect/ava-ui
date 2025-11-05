@@ -1,24 +1,20 @@
 'use client';
 
 /**
- * AlphaTab Renderer V58 - COMPLETE SONGSTERR FIX
+ * AlphaTab Renderer V52 - LANDSCAPE MODE + UNIFIED HANDLE FIX + CAPTURE MODE + SCROLL FIX
  * 
- * V58 FIXES:
- * ✅ Dynamic layout switching on rotation without stopping playback
- * ✅ Manual cursor anchoring at 15% for landscape (V53 style)
- * ✅ Natural scroll positioning for portrait (no scrollAnchor=0)
- * ✅ Playback state preservation during orientation changes
+ * V52 NEW:
+ * ✅ Landscape mode: Single horizontal row with continuous scroll
+ * ✅ Portrait mode: Multi-row vertical page layout
+ * ✅ Auto-detect orientation changes
+ * ✅ Dynamic layout switching with re-render
  * 
- * V55 FEATURES (retained):
- * ✅ Dynamic layoutMode: 'horizontal' in landscape, 'page' in portrait
- * ✅ Simple orientation detection
- * 
- * V50 FEATURES (retained):
+ * V50 FIXES:
  * ✅ Handle positioning: masterBarBounds.visualBounds with insets
- * ✅ Resize handling: postRenderFinished + boundsLookup verification
- * ✅ Drag unified: Handle bar + bubble act as ONE unit
- * ✅ Capture mode: ONLY on mousedown/touchstart
- * ✅ Scroll jump fix: Save/restore scroll position
+ * ✅ Resize handling: postRenderFinished + boundsLookup verification + force selection refresh
+ * ✅ Drag unified: Handle bar + bubble act as ONE unit (both draggable)
+ * ✅ Capture mode: ONLY on mousedown/touchstart to block mouse selection
+ * ✅ Scroll jump fix: Save/restore scroll position when using position:fixed
  * ✅ Push/pull effect: Timing buffers create Songsterr-style lag
  */
 
@@ -214,7 +210,7 @@ const createLoopHandles = (container: HTMLElement): {
     container.appendChild(startHandle);
     container.appendChild(endHandle);
 
-    console.log('✅ V58 Unified handles created');
+    console.log('✅ V52 Unified handles created');
     return { startHandle, endHandle };
 };
 
@@ -790,28 +786,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
-    // 🆕 V58: Track orientation for dynamic layout mode
-    const [isLandscape, setIsLandscape] = useState(false);
-
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
 
-    // 🆕 V58: Detect orientation changes
-    useEffect(() => {
-        const checkOrientation = () => {
-            const landscape = window.innerWidth > window.innerHeight;
-            setIsLandscape(landscape);
-            console.log(`📱 V58 Orientation: ${landscape ? 'LANDSCAPE (horizontal)' : 'PORTRAIT (page)'}`);
-        };
-
-        checkOrientation();
-        window.addEventListener('resize', checkOrientation);
-        return () => window.removeEventListener('resize', checkOrientation);
-    }, []);
-
+    // Initialize AlphaTab
     useEffect(() => {
         let isMounted = true;
 
@@ -820,13 +801,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 Initializing AlphaTab V58 - COMPLETE SONGSTERR FIX 🎸');
+                console.log('🎸 Initializing AlphaTab V52 - LANDSCAPE MODE 🎸');
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
                     enableCursor: playerMode !== 'disabled',
-                    layoutMode: isLandscape ? 'horizontal' : 'page',
+                    layoutMode: 'page',
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined
                 });
 
@@ -918,138 +899,87 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
             }
         };
-    }, [fileUrl, playerMode, soundFontPath, isLandscape, onApiReady, onScoreLoaded, onRenderFinished, onError]);
+    }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError]);
 
-    // 🆕 V58: Dynamic orientation switching with manual cursor anchoring
+    // 🆕 V52: Landscape Mode Detection and Layout Switching
     useEffect(() => {
         if (!apiRef.current || !isRendered || !containerRef.current) return;
 
         const api = apiRef.current;
-        const containerElement = containerRef.current;
-        let cursorUpdateCleanup: (() => void) | null = null;
+        const containerElement = containerRef.current; // Get the actual DOM element
 
-        const setAlphaTabLayout = (isLandscapeMode: boolean) => {
+        // Function to apply the correct layout mode based on orientation
+        const setAlphaTabLayout = (isLandscape: boolean) => {
             if (!api.settings?.display || !api.settings?.player) return;
 
-            console.log(`🔄 V58: Switching to ${isLandscapeMode ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
+            console.log(`🔄 V52: Switching to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'} mode`);
 
-            // ✅ V58: Save playback state BEFORE changing layout
-            const wasPlaying = (api as any).playerState === 1;
-            const currentTick = api.tickPosition;
-            const currentPlaybackRange = api.playbackRange;
-
+            // Import AlphaTab to access LayoutMode and ScrollMode enums
             import('@coderline/alphatab').then((alphaTab) => {
-                // Clean up any previous cursor handler
-                if (cursorUpdateCleanup) {
-                    cursorUpdateCleanup();
-                    cursorUpdateCleanup = null;
-                }
-
-                if (isLandscapeMode) {
-                    // 🎸 LANDSCAPE: Horizontal layout with MANUAL cursor anchoring
+                if (isLandscape) {
+                    // Landscape: Single horizontal row with continuous scroll
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+
+                    // Enable continuous auto-scrolling (adapts to horizontal in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                    console.log('🎸 V58: Horizontal layout enabled');
+                    // 🎯 BREAKTHROUGH FIX: Lock the cursor position (Songsterr-style)
+                    // The cursor stays FIXED at 15% from the left, content scrolls underneath!
+                    api.settings.player.scrollAnchor = 0.15; // 15% from left edge
 
-                    // 🎯 SONGSTERR-STYLE: Manual cursor anchoring at 15%
-                    const cursorUpdateHandler = (e: any) => {
-                        if (!containerElement || !e.bounds) return;
-
-                        const viewportWidth = containerElement.clientWidth;
-                        const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
-                        const targetScroll = e.bounds.x - fixedCursorPosition;
-
-                        // Smooth scroll to keep cursor at 15%
-                        containerElement.scrollTo({
-                            left: Math.max(0, targetScroll),
-                            behavior: 'smooth'
-                        });
-                    };
-
-                    // Attach the manual cursor handler
-                    if (api.cursorUpdated) {
-                        api.cursorUpdated.on(cursorUpdateHandler);
-                        console.log('🎯 V58: Manual cursor anchoring enabled at 15%');
-
-                        // Store cleanup function
-                        cursorUpdateCleanup = () => {
-                            if (api.cursorUpdated) {
-                                api.cursorUpdated.off(cursorUpdateHandler);
-                                console.log('🧹 V58: Manual cursor anchoring removed');
-                            }
-                        };
-                    }
-
+                    console.log('🎸 V52: Horizontal layout + fixed cursor at 15% + content scrolls');
                 } else {
-                    // 📱 PORTRAIT: Vertical page layout with natural scroll
+                    // Portrait: Multi-row vertical page layout
                     api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
+
+                    // Enable continuous auto-scrolling (vertical in this mode)
                     api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                    // ✅ V58: Don't set scrollAnchor - let AlphaTab use natural positioning
-                    console.log('📱 V58: Page layout - using AlphaTab natural scroll');
+                    // 💡 Portrait mode: Cursor moves normally, no anchor
+                    api.settings.player.scrollAnchor = 0.0; // Reset to default (cursor moves)
+
+                    console.log('📱 V52: Page layout + moving cursor');
                 }
 
-                // Ensure scroll target is container
+                // 🎯 CRITICAL FIX: Tell alphaTab which specific element handles the scrolling
+                // This forces it to use your component's container instead of the document body
                 api.settings.player.scrollElement = containerElement;
+                console.log('✅ V52: Scroll element set to container');
 
-                // Apply settings and trigger re-render
+                // Apply the new settings and re-render
                 api.updateSettings();
-                console.log('✅ V58: Settings applied');
-
                 api.render();
-                console.log('✅ V58: Render triggered');
 
-                // ✅ V58: Restore playback state AFTER render
-                setTimeout(() => {
-                    // Restore playback range if it existed
-                    if (currentPlaybackRange && api.playbackRange !== undefined) {
-                        api.playbackRange = currentPlaybackRange;
-                        console.log('✅ V58: Playback range restored');
-                    }
-
-                    // Restore tick position
-                    if (currentTick !== undefined && api.tickPosition !== undefined) {
-                        api.tickPosition = currentTick;
-                        console.log(`✅ V58: Tick position restored to ${currentTick}`);
-                    }
-
-                    // Resume playback if it was playing
-                    if (wasPlaying && api.play) {
-                        api.play();
-                        console.log('✅ V58: Playback resumed');
-                    }
-                }, 300); // Wait for render to complete
+                console.log(`✅ V52: Layout updated to ${isLandscape ? 'Horizontal' : 'Page'} mode`);
             });
         };
 
-        // Initial setup based on current orientation
+        // Check initial orientation and set the layout
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
         setAlphaTabLayout(isLandscape);
 
-        // Listen for orientation changes
+        // Listen for orientation changes and update the layout
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleOrientationChange = (e: MediaQueryListEvent) => {
-            console.log('📱 V58: Orientation changed to', e.matches ? 'LANDSCAPE' : 'PORTRAIT');
             setAlphaTabLayout(e.matches);
         };
 
         mediaQuery.addEventListener('change', handleOrientationChange);
 
+        // Cleanup
         return () => {
             mediaQuery.removeEventListener('change', handleOrientationChange);
-            // Clean up cursor handler on unmount
-            if (cursorUpdateCleanup) {
-                cursorUpdateCleanup();
-            }
         };
-    }, [isRendered, isLandscape]);
+    }, [isRendered]);
 
+    // Loop state management
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
         }
     }, [isLooping]);
 
+    // Create loop handles
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
 
@@ -1069,6 +999,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
+    // Handle positioning and dragging
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !startHandleRef.current || !endHandleRef.current) {
             return;
@@ -1094,7 +1025,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             pendingResizeUpdate = true;
 
             resizeTimer = setTimeout(() => {
-                console.log('📐 V58 Container resized');
+                console.log('📐 V52 Container resized');
             }, 150);
         });
 
@@ -1184,6 +1115,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered]);
 
+    // Touch selection
     useEffect(() => {
         if (touchCleanupRef.current) {
             touchCleanupRef.current();
@@ -1223,6 +1155,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, enableTouchSelection, isLooping]);
 
+    // Mouse selection
     useEffect(() => {
         if (mouseCleanupRef.current) {
             mouseCleanupRef.current();

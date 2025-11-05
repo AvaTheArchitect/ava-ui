@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - V58 FINAL FIX
-// ScrollMode.Continuous for V58's manual cursor anchoring to work
+// AlphaTab initialization utility - V54.7 STATIC CURSOR APPROACH
+// Key change: Cursor will be disabled in landscape, let AlphaTab scroll normally
 
 import type { AlphaTabApi } from "./types";
 
@@ -31,7 +31,7 @@ export async function initAlphaTab(
   settings.core.fontDirectory =
     "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/";
   settings.core.enableLazyLoading = false;
-  settings.core.useWorkers = false;
+  settings.core.useWorkers = false; // Disable rendering workers
 
   console.log("🔧 Core workers disabled for Next.js compatibility");
 
@@ -58,9 +58,13 @@ export async function initAlphaTab(
     settings.player.enableUserInteraction = true;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
+    // ⚡ CRITICAL FIX FOR NEXT.JS:
+    // 1. Use ScriptProcessor for playback (no AudioWorklets)
     settings.player.outputMode =
       alphaTab.PlayerOutputMode.WebAudioScriptProcessor;
 
+    // 2. Enable workers for synthesis to actually make it work
+    // Even though we disabled rendering workers, we NEED synthesis workers
     settings.core.useWorkers = true;
 
     console.log("🎹 SYNTHESIZER MODE enabled");
@@ -72,17 +76,16 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V58: Use Continuous mode - required for V58's manual cursor anchoring
+    // ✅ V54.7: Set scroll mode to Continuous (will work with custom static cursor)
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V58: Don't set scrollAnchor here - V58's manual anchoring will handle it
-    // Portrait: AlphaTab's natural scroll positioning (one row down)
-    // Landscape: V58's cursorUpdated handler keeps cursor at 15%
+    // ✅ V54.7: Keep scrollElement as container
+    // Component will disable AlphaTab's cursor and show custom static cursor in landscape
+    settings.player.scrollElement = container;
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log(
-      "✅ V58: ScrollMode = Continuous (enables cursor events for V58)"
-    );
+    console.log("✅ V54.7: Scroll mode = Continuous");
+    console.log("✅ V54.7: Scroll element = container (custom cursor ready)");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
