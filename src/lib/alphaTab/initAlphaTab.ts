@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - V57 CORRECT FIX
-// Key: ScrollMode.Off for external mode - let V53 manual anchoring handle everything
+// AlphaTab initialization utility - V58 FINAL FIX
+// ScrollMode.Continuous for V58's manual cursor anchoring to work
 
 import type { AlphaTabApi } from "./types";
 
@@ -9,7 +9,6 @@ export interface AlphaTabConfig {
   enableCursor?: boolean;
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
-  cursorPosition?: number;
 }
 
 export async function initAlphaTab(
@@ -21,7 +20,6 @@ export async function initAlphaTab(
     enableCursor = false,
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
-    cursorPosition = 0.15,
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -60,7 +58,6 @@ export async function initAlphaTab(
     settings.player.enableUserInteraction = true;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ⚡ CRITICAL FIX FOR NEXT.JS:
     settings.player.outputMode =
       alphaTab.PlayerOutputMode.WebAudioScriptProcessor;
 
@@ -75,28 +72,17 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V57: CRITICAL - Use ScrollMode.Off for external mode
-    // Let V53's manual cursor anchoring handle ALL scrolling
-    settings.player.scrollMode = alphaTab.ScrollMode.Off;
+    // ✅ V58: Use Continuous mode - required for V58's manual cursor anchoring
+    settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V57: Optional - set scrollOffsetX for additional cursor positioning help
-    // This works WITH V53's manual anchoring as a fallback
-    if (layoutMode === "horizontal") {
-      const containerWidth = container.clientWidth;
-      const cursorPixelPosition = containerWidth * cursorPosition;
-      settings.player.scrollOffsetX = -cursorPixelPosition;
-
-      console.log("🎸 LANDSCAPE MODE");
-      console.log(
-        `✅ V57: Cursor target at ${(cursorPosition * 100).toFixed(0)}%`
-      );
-      console.log(
-        `✅ V57: scrollOffsetX = ${settings.player.scrollOffsetX}px (backup positioning)`
-      );
-    }
+    // ✅ V58: Don't set scrollAnchor here - V58's manual anchoring will handle it
+    // Portrait: AlphaTab's natural scroll positioning (one row down)
+    // Landscape: V58's cursorUpdated handler keeps cursor at 15%
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V57: ScrollMode = Off (V53 manual anchoring in control)");
+    console.log(
+      "✅ V58: ScrollMode = Continuous (enables cursor events for V58)"
+    );
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
@@ -106,8 +92,7 @@ export async function initAlphaTab(
 
   console.log("✅ AlphaTab settings configured:", {
     playerMode: settings.player.playerMode,
-    scrollMode: playerMode === "external" ? "Off" : settings.player.scrollMode,
-    layoutMode: layoutMode,
+    scrollMode: settings.player.scrollMode,
     outputMode:
       playerMode === "synthesizer" ? settings.player.outputMode : "N/A",
     enableCursor: settings.player.enableCursor,
