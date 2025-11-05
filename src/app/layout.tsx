@@ -59,48 +59,31 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Maestro AI" />
-        
+
         {/* PWA Meta Tags for Android */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#1a1a2e" />
-        
+
         {/* iOS Icons */}
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        
-        {/* HYBRID APPROACH: PWA layout + AlphaTab scroll compatibility */}
+
+        {/* PWA Optimizations */}
         <style>{`
-          /* Minimal base styles - no overflow restrictions on html/body */
+          /* Base PWA adjustments - Fill entire viewport */
           html {
+            height: 100%;
+            overflow-x: hidden;
             -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
           }
           
           body {
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            overflow-x: hidden;
+            /* Remove safe area padding from body - let individual components handle it */
             margin: 0;
             padding: 0;
-            /* Prevent horizontal scroll on body ONLY (vertical scroll allowed) */
-            overflow-x: hidden;
-            overflow-y: auto;
-          }
-          
-          /* CRITICAL: Your AlphaTab container needs these rules */
-          /* Apply this class to the div wrapping your AlphaTab component */
-          .alphatab-scroll-container {
-            width: 100%;
-            height: 100vh; /* Use viewport height for consistent sizing */
-            overflow-x: auto; /* Allow horizontal scroll for AlphaTab */
-            overflow-y: auto; /* Allow vertical scroll for AlphaTab */
-            position: relative;
-            /* Prevent iOS momentum scrolling issues */
-            -webkit-overflow-scrolling: touch;
-          }
-          
-          /* For landscape mode stability */
-          @media (orientation: landscape) {
-            .alphatab-scroll-container {
-              height: 100vh;
-              height: 100dvh; /* Dynamic viewport height - more accurate on iOS */
-            }
           }
           
           /* Utility classes for safe area control */
@@ -124,11 +107,20 @@ export default function RootLayout({
             -ms-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
+            /* Allow AlphaTab to handle its own touch events */
+            touch-action: manipulation;
           }
           
-          /* Prevent layout shift during orientation changes */
+          /* Ensure containers respect viewport boundaries */
           * {
             box-sizing: border-box;
+          }
+          
+          /* Fix for iOS Safari viewport height issue */
+          @supports (-webkit-touch-callout: none) {
+            body {
+              min-height: -webkit-fill-available;
+            }
           }
         `}</style>
       </head>
@@ -139,4 +131,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-}
+}// Force Vercel refresh Mon Oct 27 17:14:44 PDT 2025
