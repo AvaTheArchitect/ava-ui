@@ -781,6 +781,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const apiRef = useRef<AlphaTabApi | null>(null);
     const [isLandscape, setIsLandscape] = useState(false);
     const [isMobile, setIsMobile] = useState(false); // V60.2: Track if mobile device
+    const [containerWidth, setContainerWidth] = useState(0); // 🆕 ADD THIS
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
@@ -802,6 +803,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             // Only use orientation logic on mobile devices
             const landscape = mobile && window.innerWidth > window.innerHeight;
             setIsLandscape(landscape);
+
+            // 🆕 ADD THIS: Update the width state on every resize
+            if (containerRef.current) {
+                setContainerWidth(containerRef.current.clientWidth);
+            }
 
             console.log(`📱 V60.2 Device: ${mobile ? 'MOBILE' : 'DESKTOP'}, Orientation: ${landscape ? 'LANDSCAPE' : (mobile ? 'PORTRAIT' : 'PAGE')}`);
         };
@@ -955,46 +961,30 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
 
             if (isLandscapeMode) {
-                // 🎸 LANDSCAPE: Horizontal layout + manual cursor at 15%
-                console.log('🎸 V60: Configuring LANDSCAPE mode');
+                // 🎸 LANDSCAPE: Horizontal layout + AlphaTab automatic cursor anchoring
+                console.log('🎸 V60: Configuring LANDSCAPE mode with AlphaTab auto-scroll');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+
+                // ✅ 1. Enable AlphaTab's continuous scroll engine
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+
+                // ✅ 2. Tell AlphaTab which element scrolls (your container)
                 api.settings.player.scrollElement = containerElement;
 
-                // 🎯 Manual cursor anchoring at 15% (Songsterr style)
-                const cursorHandler = (e: any) => {
-                    if (!containerElement || !e.bounds) return;
-
-                    const viewportWidth = containerElement.clientWidth;
-                    const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
-                    const targetScroll = e.bounds.x - fixedCursorPosition;
-
-                    containerElement.scrollTo({
-                        left: Math.max(0, targetScroll),
-                        behavior: 'smooth'
-                    });
-                };
-
-                if (api.cursorUpdated) {
-                    api.cursorUpdated.on(cursorHandler);
-                    console.log('🎯 V60: Manual cursor anchoring enabled at 15%');
-
-                    cursorCleanup = () => {
-                        if (api.cursorUpdated) {
-                            api.cursorUpdated.off(cursorHandler);
-                            console.log('🧹 V60: Cursor handler removed');
-                        }
-                    };
-                }
+                // ✅ 3. Anchor the cursor at 15% (calculated in pixels)
+                const fixedCursorPositionInPixels = containerElement.clientWidth * 0.15;
+                (api.settings.player as any).scrollOffset = fixedCursorPositionInPixels;
+                console.log(`🎯 V60: Auto-anchoring cursor at ${fixedCursorPositionInPixels}px (15%)`);
 
             } else {
+
                 // 📱 PORTRAIT: Page layout + natural scroll + scroll offset for Dynamic Island
                 console.log('📱 V60.1: Configuring PORTRAIT mode');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = containerElement;
+                api.settings.player.scrollElement = window;
 
                 // 🔧 Dynamic Island fix: Use scrollOffset (not scrollOffsetY)
                 if ((api.settings.player as any).scrollOffset !== undefined) {
@@ -1054,7 +1044,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 cursorCleanup();
             }
         };
-    }, [isLandscape, isRendered, isMobile]); // V60.2: Added isMobile dependency
+        // 🆕 ADD containerWidth HERE
+    }, [isLandscape, isRendered, isMobile, containerWidth]); // V60.2: Added isMobile dependency
 
     // Loop control
     useEffect(() => {
