@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - V54.7 STATIC CURSOR APPROACH
-// Key change: Cursor will be disabled in landscape, let AlphaTab scroll normally
+// AlphaTab initialization utility - V60.5 INITIAL CURSOR ANCHOR FIX
+// Critical: Set scrollOffset during initialization to prevent default cursor behavior
 
 import type { AlphaTabApi } from "./types";
 
@@ -9,8 +9,8 @@ export interface AlphaTabConfig {
   enableCursor?: boolean;
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
-  // V60.2: Added isMobile property to the configuration interface
   isMobile?: boolean;
+  initialScrollOffset?: number; // V60.5: Initial scroll offset for consistent startup
 }
 
 export async function initAlphaTab(
@@ -22,7 +22,8 @@ export async function initAlphaTab(
     enableCursor = false,
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
-    isMobile = false, // V60.2: Default to false if not provided
+    isMobile = false,
+    initialScrollOffset = 0, // V60.5: Default to 0 if not provided
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -36,22 +37,24 @@ export async function initAlphaTab(
   settings.core.enableLazyLoading = false;
   settings.core.useWorkers = false; // Disable rendering workers
 
-  // V60.2: Example of using the isMobile property within initAlphaTab
-  if (isMobile) {
-    console.log("📱 Initializing AlphaTab in Mobile Mode.");
-    // You can add specific mobile-only settings here if needed
-    // e.g., settings.display.scale = 0.9;
-  }
-
   console.log("🔧 Core workers disabled for Next.js compatibility");
 
-  // Display settings
+  // ✅ V60.5: KEEP scale/stretchForce to prevent responsive mode triggering
   settings.display.scale = 1.0;
   settings.display.stretchForce = 0.8;
-  settings.display.layoutMode =
-    layoutMode === "page"
-      ? alphaTab.LayoutMode.Page
-      : alphaTab.LayoutMode.Horizontal;
+
+  // ✅ V60.5: Layout mode based on device type AND initial orientation
+  if (isMobile) {
+    settings.display.layoutMode =
+      layoutMode === "page"
+        ? alphaTab.LayoutMode.Page
+        : alphaTab.LayoutMode.Horizontal;
+    console.log(`📱 V60.5: Mobile layout = ${layoutMode}`);
+  } else {
+    settings.display.layoutMode = alphaTab.LayoutMode.Page;
+    console.log("🖥️ V60.5: Desktop layout = Page (forced)");
+  }
+
   settings.display.staveProfile = alphaTab.StaveProfile.TabMixed;
 
   // Notation settings
@@ -67,14 +70,11 @@ export async function initAlphaTab(
     settings.player.enableAnimatedBeatCursor = true;
     settings.player.enableUserInteraction = true;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+    settings.player.scrollElement = container;
 
     // ⚡ CRITICAL FIX FOR NEXT.JS:
-    // 1. Use ScriptProcessor for playback (no AudioWorklets)
     settings.player.outputMode =
       alphaTab.PlayerOutputMode.WebAudioScriptProcessor;
-
-    // 2. Enable workers for synthesis to actually make it work
-    // Even though we disabled rendering workers, we NEED synthesis workers
     settings.core.useWorkers = true;
 
     console.log("🎹 SYNTHESIZER MODE enabled");
@@ -86,16 +86,36 @@ export async function initAlphaTab(
     settings.player.enableCursor = enableCursor;
     settings.player.enableUserInteraction = true;
 
-    // ✅ V54.7: Set scroll mode to Continuous (will work with custom static cursor)
+    // ✅ V60.5: Always use Continuous scroll mode
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V54.7: Keep scrollElement as container
-    // Component will disable AlphaTab's cursor and show custom static cursor in landscape
-    settings.player.scrollElement = container;
+    // ✅ V60.5: Set initial scrollElement based on layout mode
+    // Page layout (portrait/desktop): window scrolls
+    // Horizontal layout (landscape): container scrolls
+    if (layoutMode === "page") {
+      settings.player.scrollElement = window;
+      console.log("✅ V60.5: Initial scrollElement = window (Page layout)");
+    } else {
+      settings.player.scrollElement = container;
+      console.log(
+        "✅ V60.5: Initial scrollElement = container (Horizontal layout)"
+      );
+    }
+
+    // ✅ V60.5: CRITICAL - Set initial scrollOffset to prevent default cursor behavior
+    // This ensures cursor anchoring works from the very start
+    if (initialScrollOffset > 0) {
+      (settings.player as any).scrollOffset = initialScrollOffset;
+      console.log(
+        `✅ V60.5: Initial scrollOffset = ${initialScrollOffset}px (cursor anchored from start)`
+      );
+    }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V54.7: Scroll mode = Continuous");
-    console.log("✅ V54.7: Scroll element = container (custom cursor ready)");
+    console.log("✅ V60.5: Scroll mode = Continuous");
+    console.log(
+      "✅ V60.5: Initial settings configured (will update on orientation changes)"
+    );
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
@@ -106,11 +126,13 @@ export async function initAlphaTab(
   console.log("✅ AlphaTab settings configured:", {
     playerMode: settings.player.playerMode,
     scrollMode: settings.player.scrollMode,
+    layoutMode: settings.display.layoutMode,
+    scale: settings.display.scale,
+    stretchForce: settings.display.stretchForce,
     outputMode:
       playerMode === "synthesizer" ? settings.player.outputMode : "N/A",
     enableCursor: settings.player.enableCursor,
-    soundFont: playerMode === "synthesizer" ? soundFontPath : "N/A",
-    isMobile: isMobile, // V60.2: Included in log for debugging
+    isMobile,
   });
 
   return new alphaTab.AlphaTabApi(container, settings);

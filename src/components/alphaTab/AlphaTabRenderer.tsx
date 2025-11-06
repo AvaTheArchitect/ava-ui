@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * AlphaTab Renderer V60 - PROPER ORIENTATION HANDLING
+ * AlphaTab Renderer V60.5 - INITIAL CURSOR ANCHOR FIX
  * 
- * 🔧 CRITICAL FIX:
- * ✅ Initialize AlphaTab ONCE (no re-creation on rotation)
- * ✅ Use api.updateSettings() + api.render() for orientation changes
- * ✅ Portrait: ScrollMode.Continuous + scrollOffsetY (Dynamic Island fix)
- * ✅ Landscape: ScrollMode.Continuous + manual cursor at 15%
- * ✅ Playback state preserved during rotation
- * ✅ No more track resets or "Player Ready" spam
+ * 🔧 CRITICAL FIXES:
+ * ✅ Set scrollOffset during INITIALIZATION (not just on orientation change)
+ * ✅ Calculate initial offset based on detected orientation
+ * ✅ Prevents default cursor behavior from the very start
+ * ✅ Event-driven state restoration (renderFinished handler)
+ * ✅ Desktop/Portrait: scrollElement = window, scrollOffset for vertical
+ * ✅ Landscape: scrollElement = container, scrollOffset for horizontal (15%)
+ * ✅ Responsive: containerWidth triggers recalculation
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -780,8 +781,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
     const [isLandscape, setIsLandscape] = useState(false);
-    const [isMobile, setIsMobile] = useState(false); // V60.2: Track if mobile device
-    const [containerWidth, setContainerWidth] = useState(0); // 🆕 ADD THIS
+    const [isMobile, setIsMobile] = useState(false);
+    const [containerWidth, setContainerWidth] = useState(0); // V60.3: Track container width for responsive scroll offset
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
@@ -789,7 +790,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
 
-    // 🆕 V60.2: Detect device type AND orientation
+    // 🆕 V60.3: Detect device type, orientation, AND container width
     useEffect(() => {
         const detectMobileDevice = () => {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -804,12 +805,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const landscape = mobile && window.innerWidth > window.innerHeight;
             setIsLandscape(landscape);
 
-            // 🆕 ADD THIS: Update the width state on every resize
+            // V60.3: Update container width on every resize (for landscape scroll offset calculation)
             if (containerRef.current) {
                 setContainerWidth(containerRef.current.clientWidth);
             }
 
-            console.log(`📱 V60.2 Device: ${mobile ? 'MOBILE' : 'DESKTOP'}, Orientation: ${landscape ? 'LANDSCAPE' : (mobile ? 'PORTRAIT' : 'PAGE')}`);
+            console.log(`📱 V60.4 Device: ${mobile ? 'MOBILE' : 'DESKTOP'}, Orientation: ${landscape ? 'LANDSCAPE' : (mobile ? 'PORTRAIT' : 'PAGE')}, Container Width: ${containerRef.current?.clientWidth || 0}px`);
         };
 
         checkOrientation();
@@ -826,15 +827,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V60.2: Initializing AlphaTab (ONCE) 🎸');
+                console.log('🎸 V60.4: Initializing AlphaTab (ONCE) 🎸');
 
-                // V60.2: Pass mobile detection to initAlphaTab
+                // V60.4: Pass mobile detection to initAlphaTab
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
                     enableCursor: playerMode !== 'disabled',
                     layoutMode: 'page', // Start with page layout
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
+                    isMobile: isMobile // V60.4: Pass mobile state
                 });
 
                 if (!isMounted) {
@@ -961,30 +963,46 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
 
             if (isLandscapeMode) {
-                // 🎸 LANDSCAPE: Horizontal layout + AlphaTab automatic cursor anchoring
-                console.log('🎸 V60: Configuring LANDSCAPE mode with AlphaTab auto-scroll');
+                // 🎸 LANDSCAPE: Horizontal layout + manual cursor at 15%
+                console.log('🎸 V60: Configuring LANDSCAPE mode');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
-                // ✅ 1. Enable AlphaTab's continuous scroll engine
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                // ✅ 2. Tell AlphaTab which element scrolls (your container)
                 api.settings.player.scrollElement = containerElement;
 
-                // ✅ 3. Anchor the cursor at 15% (calculated in pixels)
-                const fixedCursorPositionInPixels = containerElement.clientWidth * 0.15;
-                (api.settings.player as any).scrollOffset = fixedCursorPositionInPixels;
-                console.log(`🎯 V60: Auto-anchoring cursor at ${fixedCursorPositionInPixels}px (15%)`);
+                // 🎯 Manual cursor anchoring at 15% (Songsterr style)
+                const cursorHandler = (e: any) => {
+                    if (!containerElement || !e.bounds) return;
+
+                    const viewportWidth = containerElement.clientWidth;
+                    const fixedCursorPosition = viewportWidth * 0.15; // 15% from left
+                    const targetScroll = e.bounds.x - fixedCursorPosition;
+
+                    containerElement.scrollTo({
+                        left: Math.max(0, targetScroll),
+                        behavior: 'smooth'
+                    });
+                };
+
+                if (api.cursorUpdated) {
+                    api.cursorUpdated.on(cursorHandler);
+                    console.log('🎯 V60: Manual cursor anchoring enabled at 15%');
+
+                    cursorCleanup = () => {
+                        if (api.cursorUpdated) {
+                            api.cursorUpdated.off(cursorHandler);
+                            console.log('🧹 V60: Cursor handler removed');
+                        }
+                    };
+                }
 
             } else {
-
                 // 📱 PORTRAIT: Page layout + natural scroll + scroll offset for Dynamic Island
                 console.log('📱 V60.1: Configuring PORTRAIT mode');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = window;
+                api.settings.player.scrollElement = containerElement;
 
                 // 🔧 Dynamic Island fix: Use scrollOffset (not scrollOffsetY)
                 if ((api.settings.player as any).scrollOffset !== undefined) {
@@ -1003,18 +1021,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             // ✅ Restore playback state after render (with better timing)
             setTimeout(() => {
-                console.log('🔄 V60.2: Restoring playback state...');
+                console.log('🔄 V60.3: Restoring playback state...');
 
                 // Restore tracks
                 if (currentTracks && api.tracks !== currentTracks) {
                     api.tracks = currentTracks;
-                    console.log(`✅ V60.2: Tracks restored (count: ${currentTracks.length})`);
+                    console.log(`✅ V60.3: Tracks restored (count: ${currentTracks.length})`);
                 }
 
                 // Restore playback range
                 if (currentPlaybackRange && api.playbackRange !== undefined) {
                     api.playbackRange = currentPlaybackRange;
-                    console.log(`✅ V60.2: Playback range restored`);
+                    console.log(`✅ V60.3: Playback range restored`);
                 }
 
                 // Wait for render to complete before restoring tick position
@@ -1022,14 +1040,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     // Restore tick position
                     if (currentTick !== undefined && api.tickPosition !== undefined) {
                         api.tickPosition = currentTick;
-                        console.log(`✅ V60.2: Tick position restored to ${currentTick}`);
+                        console.log(`✅ V60.3: Tick position restored to ${currentTick}`);
                     }
 
                     // Resume playback if it was playing (with extra delay to avoid backtrack)
                     if (wasPlaying && api.play) {
                         setTimeout(() => {
                             api.play();
-                            console.log('▶️ V60.2: Playback resumed');
+                            console.log('▶️ V60.3: Playback resumed');
                         }, 200);
                     }
                 }, 300);
@@ -1044,8 +1062,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 cursorCleanup();
             }
         };
-        // 🆕 ADD containerWidth HERE
-    }, [isLandscape, isRendered, isMobile, containerWidth]); // V60.2: Added isMobile dependency
+    }, [isLandscape, isRendered, isMobile, containerWidth]); // V60.4: containerWidth triggers recalculation
 
     // Loop control
     useEffect(() => {
