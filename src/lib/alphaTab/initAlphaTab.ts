@@ -93,7 +93,7 @@ export async function initAlphaTab(
     // Page layout (portrait/desktop): window scrolls
     // Horizontal layout (landscape): container scrolls
     if (layoutMode === "page") {
-      settings.player.scrollElement = window;
+      settings.player.scrollElement = window as any;
       console.log("✅ V60.5: Initial scrollElement = window (Page layout)");
     } else {
       settings.player.scrollElement = container;
