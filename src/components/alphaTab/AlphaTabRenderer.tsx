@@ -983,10 +983,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, isMobile]);
 
-    // Loop control
+
+    // Loop control - V63 FIX: Re-enable user interaction
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
+
+            // ✅ CRITICAL FIX: Always ensure user interaction is enabled
+            // This fixes the "click lock" after loop drag is toggled off
+            (apiRef.current.settings.player as any).enableUserInteraction = true;
+            apiRef.current.updateSettings();
+
+            console.log(`🔄 V63: isLooping = ${isLooping}, enableUserInteraction = true`);
         }
     }, [isLooping]);
 
@@ -1161,6 +1169,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             clearTimeout(setupTimer);
             if (touchCleanupRef.current) {
                 touchCleanupRef.current();
+
+                // ✅ CRITICAL FIX: Re-enable user interaction after touch cleanup
+                if (apiRef.current) {
+                    (apiRef.current.settings.player as any).enableUserInteraction = true;
+                    apiRef.current.updateSettings();
+                    console.log('🔄 V63: Touch cleanup - enableUserInteraction restored');
+                }
+
                 touchCleanupRef.current = null;
             }
         };
@@ -1201,10 +1217,72 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             clearTimeout(setupTimer);
             if (mouseCleanupRef.current) {
                 mouseCleanupRef.current();
+
+                // ✅ CRITICAL FIX: Re-enable user interaction after mouse cleanup
+                if (apiRef.current) {
+                    (apiRef.current.settings.player as any).enableUserInteraction = true;
+                    apiRef.current.updateSettings();
+                    console.log('🔄 V63: Mouse cleanup - enableUserInteraction restored');
+                }
+
                 mouseCleanupRef.current = null;
             }
         };
     }, [isRendered, isLooping]);
+
+    // ==================== DOUBLE-CLICK TO PLAY ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
+        if (playerMode === 'disabled') return;
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        const handleDoubleClick = (e: MouseEvent) => {
+            // Ignore double-clicks on loop handles
+            if ((e.target as HTMLElement).closest('.maestro-loop-handle') ||
+                (e.target as HTMLElement).closest('.maestro-loop-bubble')) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+
+            if (beat && beat.absolutePlaybackStart !== undefined) {
+                console.log('🎵 V63: Double-click at tick:', beat.absolutePlaybackStart);
+
+                // Set cursor position
+                if (api.tickPosition !== undefined) {
+                    api.tickPosition = beat.absolutePlaybackStart;
+                }
+
+                // Start playback after brief delay
+                setTimeout(() => {
+                    try {
+                        if (api.play) {
+                            api.play();
+                        } else if ((api as any).playPause) {
+                            (api as any).playPause();
+                        }
+                        console.log('✅ V63: Playback started from double-click');
+                    } catch (err) {
+                        console.error('❌ V63: Failed to start playback:', err);
+                    }
+                }, 50);
+            }
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const target = (surface as HTMLElement) || container;
+
+        target.addEventListener('dblclick', handleDoubleClick as EventListener);
+
+        return () => {
+            target.removeEventListener('dblclick', handleDoubleClick as EventListener);
+        };
+    }, [isRendered, playerMode]);
 
     return (
         <div className="relative">
