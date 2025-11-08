@@ -33,7 +33,7 @@ export interface AlphaTabRendererProps {
 
 const TICK_BUFFER_START = -20;
 const TICK_BUFFER_END = 160;
-const CURSOR_LEAD_IN = -40;
+const CURSOR_LEAD_IN = -20;
 
 const applyTimingBuffers = (startTick: number, endTick: number): { startTick: number; endTick: number } => {
     return {
@@ -777,6 +777,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isRendered, setIsRendered] = useState(false);
+    const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
@@ -864,6 +865,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     console.log(`✅ V61: Score loaded - ${songInfo.title}`);
                     onScoreLoaded?.(songInfo, trackList);
                     setIsLoading(false);
+                    setScoreIsLoaded(true); // ✅ Signal that score is ready
                 });
 
                 if (playerMode === 'synthesizer') {
@@ -934,7 +936,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const handleOrientationChange = async () => {
             const isLandscape = window.innerWidth > window.innerHeight;
             console.log(`🔄 V61.3: Orientation changed to ${isLandscape ? 'LANDSCAPE' : 'PORTRAIT'}`);
-
+            let horizontalOffset = 0; // Initialize outside of the if/else block
             const alphaTab = await import('@coderline/alphatab');
 
             // Set Layout and Scroll Settings based on Orientation
@@ -942,15 +944,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // 🎸 LANDSCAPE: Horizontal layout + Container Scroll
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                // ✅ Scroll element is the container
+                // ✅ Scroll element is the container (CORRECT)
                 api.settings.player.scrollElement = container;
 
-                // ✅ Horizontal offset: Anchor cursor at 15%
-                const horizontalOffset = container.clientWidth * 0.15;
-                (api.settings.player as any).scrollOffset = horizontalOffset;
+                // ✅ Horizontal offset: Anchor cursor at 15% (CORRECT PROPERTY NAME)
+                // Calculate and set the correct property
+                horizontalOffset = container.clientWidth * 0.15; // Assigned here
+                (api.settings.player as any).scrollOffsetX = horizontalOffset;
 
-                console.log(`🎸 V61.3: Horizontal layout, scrollElement=container, offset=${horizontalOffset}px (15%)`);
+                // ✅ CRITICAL CLEANUP: Reset vertical offset
+                (api.settings.player as any).scrollOffsetY = 0;
+
+                console.log(`🎸 V63: Horizontal layout, scrollElement=container, scrollOffsetX=${horizontalOffset}px (15%)`);
 
             } else {
                 // 📱 PORTRAIT: Page layout + Document Body Scroll
@@ -984,23 +989,29 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     }, [isRendered, isMobile]);
 
 
-    // Loop control - V63 FIX: Re-enable user interaction
+    // Loop control - V63 FIX: Clear selection when disabled
     useEffect(() => {
         if (apiRef.current && apiRef.current.isLooping !== undefined) {
             apiRef.current.isLooping = isLooping;
 
-            // ✅ CRITICAL FIX: Always ensure user interaction is enabled
-            // This fixes the "click lock" after loop drag is toggled off
+            // Always ensure user interaction is enabled
             (apiRef.current.settings.player as any).enableUserInteraction = true;
             apiRef.current.updateSettings();
 
-            console.log(`🔄 V63: isLooping = ${isLooping}, enableUserInteraction = true`);
+            // 🆕 ADD THIS: Clear selection when loop is turned off
+            if (!isLooping && apiRef.current.playbackRange !== undefined) {
+                apiRef.current.playbackRange = null;
+                console.log('🔄 V63: Loop disabled - cleared selection');
+            }
+
+            console.log(`🔄 V63: Loop=${isLooping}, UserInteraction=enabled`);
         }
     }, [isLooping]);
 
     // Create loop handles
     useEffect(() => {
         if (!containerRef.current || !isRendered) return;
+        if (!scoreIsLoaded) return;
 
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
@@ -1016,7 +1027,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 endHandleRef.current = null;
             }
         };
-    }, [isRendered]);
+    }, [isRendered, scoreIsLoaded]);
 
     // Handle positioning and drag handlers
     useEffect(() => {
@@ -1201,6 +1212,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             return;
         }
 
+        if (!scoreIsLoaded) return; // Wait for score to be ready
+
         const setupTimer = setTimeout(() => {
             if (apiRef.current && containerRef.current && startHandleRef.current && endHandleRef.current) {
                 const cleanup = setupMouseSelection(
@@ -1218,7 +1231,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (mouseCleanupRef.current) {
                 mouseCleanupRef.current();
 
-                // ✅ CRITICAL FIX: Re-enable user interaction after mouse cleanup
                 if (apiRef.current) {
                     (apiRef.current.settings.player as any).enableUserInteraction = true;
                     apiRef.current.updateSettings();
@@ -1228,12 +1240,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 mouseCleanupRef.current = null;
             }
         };
-    }, [isRendered, isLooping]);
+    }, [isRendered, isLooping, scoreIsLoaded]);
 
     // ==================== DOUBLE-CLICK TO PLAY ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
         if (playerMode === 'disabled') return;
+        if (!scoreIsLoaded) return; // 🆕 ADD THIS LINE
 
         const api = apiRef.current;
         const container = containerRef.current;
@@ -1282,7 +1295,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('dblclick', handleDoubleClick as EventListener);
         };
-    }, [isRendered, playerMode]);
+    }, [isRendered, playerMode, scoreIsLoaded]);
 
     return (
         <div className="relative">
