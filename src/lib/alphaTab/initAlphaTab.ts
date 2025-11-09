@@ -75,11 +75,12 @@ export async function initAlphaTab(
 
     // ✅ V63 FIX: Proper scroll element and offset handling
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      (settings.player as any).scrollElement = document.body;
+      // 🎯 FIX: Use document.documentElement for better mobile compatibility
+      (settings.player as any).scrollElement = document.documentElement;
       (settings.player as any).scrollOffsetY = -200;
       (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V62: SYNTH: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ V62: SYNTH: scrollElement = document.documentElement, scrollOffsetY = -200px"
       );
     } else {
       (settings.player as any).scrollElement = container;

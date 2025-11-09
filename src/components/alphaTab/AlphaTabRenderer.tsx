@@ -193,18 +193,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
 
-                // 🎯 CRITICAL FIX: Ensure container is scrollable
+                // 🎯 CRITICAL FIX: Set CSS BEFORE applying scroll settings
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
-                container.style.whiteSpace = 'nowrap';
+                container.style.whiteSpace = 'nowrap'; // Prevents wrapping!
+                container.style.width = '100%';
 
-                // Wait for DOM to settle
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Wait for DOM to settle with new CSS
+                await new Promise(resolve => setTimeout(resolve, 150));
 
                 // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container; // Container must be scrollable!
-                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Fixed cursor at 15%
+                api.settings.player.scrollElement = container;
+                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
 
                 console.log('✅ STAGE1: Horizontal - scrollElement=container, offsetX=15%');
 
@@ -214,27 +215,25 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
 
-                // Reset container scroll
+                // Reset container CSS
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
 
                 // Wait for DOM to settle
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 150));
 
-                // Now set scroll settings
+                // 🎯 FIX: Use document.documentElement instead of document.body
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = document.body; // Use body for vertical
-                (api.settings.player as any).scrollOffsetY = -200; // 🎯 FIX: Was "scrollOffset", now "scrollOffsetY"
+                api.settings.player.scrollElement = document.documentElement;
+                (api.settings.player as any).scrollOffsetY = -200;
 
-                console.log('✅ STAGE1: Page - scrollElement=body, offsetY=-200px');
+                console.log('✅ STAGE1: Page - scrollElement=documentElement, offsetY=-200px');
             }
 
-            // 🚨 CRITICAL: Use await to ensure settings apply before render
-            await api.updateSettings();
-
-            // Wait a bit more for settings to fully apply
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // 🚨 CRITICAL: Apply settings and wait before render
+            api.updateSettings();
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             // Now render
             api.render();
