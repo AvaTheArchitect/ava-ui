@@ -1,6 +1,5 @@
-// AlphaTab initialization utility - V63 SCROLL ELEMENT FIX
-// ✅ FIXED: document.body for Page mode + explicit offset resets
-// ✅ FIXED: Landscape horizontal scroll with proper container reference
+// AlphaTab initialization utility - STAGE 1
+// ✅ ADDED: enableUserInteraction parameter to disable native loop selection
 
 import type { AlphaTabApi } from "./types";
 
@@ -11,6 +10,8 @@ export interface AlphaTabConfig {
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
   isMobile?: boolean;
+  // 🆕 STAGE 1: Allow disabling user interaction to prevent native loop
+  enableUserInteraction?: boolean;
 }
 
 export async function initAlphaTab(
@@ -23,6 +24,7 @@ export async function initAlphaTab(
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
     isMobile = false,
+    enableUserInteraction = true, // Default to true for backward compatibility
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -67,25 +69,24 @@ export async function initAlphaTab(
     settings.player.soundFont = soundFontPath;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
-    settings.player.enableUserInteraction = true;
+    // 🎯 STAGE 1: Use parameter instead of hardcoded true
+    settings.player.enableUserInteraction = enableUserInteraction;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // FIX #1: Use document.body for vertical scroll anchor (Portrait/Page)
       (settings.player as any).scrollElement = document.body;
-      (settings.player as any).scrollOffsetY = -200; // Vertical offset
-      (settings.player as any).scrollOffsetX = 0; // Reset horizontal
+      (settings.player as any).scrollOffsetY = -200;
+      (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V63: SYNTH: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ V62: SYNTH: scrollElement = document.body, scrollOffsetY = -200px"
       );
     } else {
-      // FIX #2: Use container for horizontal scroll (Landscape/Continuous)
       (settings.player as any).scrollElement = container;
-      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Horizontal offset
-      (settings.player as any).scrollOffsetY = 0; // Reset vertical
+      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+      (settings.player as any).scrollOffsetY = 0;
       console.log(
-        "✅ V63: SYNTH: scrollElement = container, scrollOffsetX = 15%"
+        "✅ V62: SYNTH: scrollElement = container, scrollOffsetX = 15%"
       );
     }
 
@@ -98,33 +99,38 @@ export async function initAlphaTab(
     console.log("🎼 SoundFont:", soundFontPath);
     console.log("🔊 Output: ScriptProcessor");
     console.log("⚡ Synthesis workers: ENABLED");
+    console.log(
+      `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
+    );
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
-    settings.player.enableUserInteraction = true;
+    // 🎯 STAGE 1: Use parameter instead of hardcoded true
+    settings.player.enableUserInteraction = enableUserInteraction;
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // FIX #1: Use document.body for vertical scroll anchor (Portrait/Page)
       (settings.player as any).scrollElement = document.body;
-      (settings.player as any).scrollOffsetY = -200; // Vertical offset
-      (settings.player as any).scrollOffsetX = 0; // Reset horizontal
+      (settings.player as any).scrollOffsetY = -200;
+      (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V63: EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ V62: EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
       );
     } else {
-      // FIX #2: Use container for horizontal scroll (Landscape/Continuous)
       (settings.player as any).scrollElement = container;
-      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Horizontal offset
-      (settings.player as any).scrollOffsetY = 0; // Reset vertical
+      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+      (settings.player as any).scrollOffsetY = 0;
       console.log(
-        "✅ V63: EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
+        "✅ V62: EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
       );
     }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V63: Scroll mode = Continuous (AlphaTab auto-scroll)");
+    console.log("✅ V62: Scroll mode = Continuous (AlphaTab auto-scroll)");
+    console.log(
+      `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
+    );
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
@@ -141,6 +147,7 @@ export async function initAlphaTab(
         ? settings.player.outputMode
         : "N/A",
     enableCursor: settings.player.enableCursor,
+    enableUserInteraction: settings.player.enableUserInteraction,
     isMobile,
   });
 
