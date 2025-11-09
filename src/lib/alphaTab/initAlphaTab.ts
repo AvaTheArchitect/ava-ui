@@ -26,7 +26,7 @@ export async function initAlphaTab(
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
     isMobile = false,
-    enableUserInteraction = true, // Default true - native AlphaTab behavior
+    enableUserInteraction = false, // Default false - prevent AlphaTab's cursors/clicks
     enableLoopSelection = false, // Default false - prevent drag-to-loop highlight
   } = config;
 
