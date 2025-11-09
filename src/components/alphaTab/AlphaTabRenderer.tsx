@@ -1,20 +1,14 @@
 'use client';
 
 /**
- * AlphaTab Renderer - FINAL VERSION
+ * AlphaTab Renderer - COMPLETE PWA FIX
  * 
- * APPROACH:
- * ✅ enableUserInteraction: false (prevents AlphaTab's cursors and drag-to-loop)
- * ✅ Custom click handlers for single/double-click (full control)
- * ✅ Explicit track detection in clicks (handle track switching)
- * ✅ Aggressive landscape CSS (force single row)
- * 
- * BENEFITS:
- * ✅ No double cursor (AlphaTab doesn't create any)
- * ✅ Single-click seek (our handler)
- * ✅ Double-click play (our handler)
- * ✅ No drag-to-loop highlight (disabled by enableUserInteraction: false)
- * ✅ Track switching works (our detection + external buttons)
+ * FIXES:
+ * ✅ Reliable mobile detection (checks multiple signals)
+ * ✅ Force enableCursor: false consistently 
+ * ✅ Touch event handlers (not just click)
+ * ✅ More aggressive landscape CSS
+ * ✅ Consistent state management
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -48,6 +42,28 @@ const getBeatAtPosition = (
     return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
 };
 
+// 🔧 FIX: More reliable mobile detection
+const detectMobile = (): boolean => {
+    // Check multiple signals
+    const userAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const touchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const smallScreen = window.innerWidth <= 1024;
+    
+    // Mobile if ANY of these are true
+    const isMobile = userAgent || (touchScreen && smallScreen);
+    
+    console.log('📱 PWA-FIX: Mobile detection:', {
+        userAgent,
+        touchScreen,
+        smallScreen,
+        maxTouchPoints: navigator.maxTouchPoints,
+        innerWidth: window.innerWidth,
+        RESULT: isMobile
+    });
+    
+    return isMobile;
+};
+
 // ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
@@ -68,20 +84,23 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const apiRef = useRef<AlphaTabApi | null>(null);
     const [currentOrientation, setCurrentOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
-    // Click detection refs (persist between renders)
-    const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const clickCountRef = useRef<number>(0);
-    const lastClickTimeRef = useRef<number>(0);
+    // Touch/Click detection refs
+    const lastTouchTimeRef = useRef<number>(0);
+    const touchCountRef = useRef<number>(0);
+    const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Detect mobile device
+    // Detect mobile device (RELIABLE)
     const [isMobile, setIsMobile] = useState(false);
     useEffect(() => {
         const checkMobile = () => {
-            const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-                (window.innerWidth <= 1024 && 'ontouchstart' in window);
+            const mobile = detectMobile();
             setIsMobile(mobile);
         };
+        
+        // Check immediately
         checkMobile();
+        
+        // Re-check on resize
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
@@ -95,37 +114,50 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 FINAL: Initializing AlphaTab');
+                console.log('🎸 PWA-FIX: Initializing AlphaTab');
 
                 // Detect initial orientation
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
                 const layoutMode = isLandscape ? 'horizontal' : 'page';
                 setCurrentOrientation(isLandscape ? 'landscape' : 'portrait');
 
-                console.log(`📱 FINAL: Initial mode = ${layoutMode}, isMobile = ${isMobile}`);
+                console.log(`📱 PWA-FIX: Initial mode = ${layoutMode}, isMobile = ${isMobile}`);
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
-                    enableCursor: playerMode !== 'disabled',
+                    enableCursor: false, // 🔧 FIX: Explicitly disable cursor
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
-                    // 🎯 KEY: Disable AlphaTab's user interaction
-                    // This prevents: duplicate cursors, drag-to-loop, AlphaTab's click handling
-                    // We implement our own click handling below
-                    enableUserInteraction: false,
+                    enableUserInteraction: false, // Disable AlphaTab's handlers
                     isMobile,
                 });
 
                 if (!isMounted) return;
 
+                // 🔧 FIX: Force disable cursor AGAIN after init
+                if (api.settings?.player) {
+                    api.settings.player.enableCursor = false;
+                    (api.settings.player as any).enableLoopSelection = false;
+                    console.log('✅ PWA-FIX: Force-disabled cursor and loop selection');
+                }
+
                 apiRef.current = api;
-                console.log('✅ FINAL: AlphaTab initialized (user interaction disabled)');
+                console.log('✅ PWA-FIX: AlphaTab initialized');
+
+                // Dump settings to console for debugging
+                console.log('🔍 PWA-FIX: Settings dump:', {
+                    enableCursor: api.settings?.player?.enableCursor,
+                    enableUserInteraction: api.settings?.player?.enableUserInteraction,
+                    enableLoopSelection: (api.settings?.player as any)?.enableLoopSelection,
+                    layoutMode: api.settings?.display?.layoutMode,
+                    isMobile
+                });
 
                 // Setup event handlers
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ FINAL: Render finished');
+                        console.log('✅ PWA-FIX: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -135,13 +167,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 if (fileUrl) {
-                    console.log('📄 FINAL: Loading score from:', fileUrl);
+                    console.log('📄 PWA-FIX: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
 
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ FINAL: Score loaded');
+                            console.log('✅ PWA-FIX: Score loaded');
 
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
@@ -161,7 +193,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ FINAL: Initialization failed:', error);
+                console.error('❌ PWA-FIX: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -192,7 +224,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 return;
             }
 
-            console.log(`🔄 FINAL: Orientation changing from ${currentOrientation} → ${newOrientation}`);
+            console.log(`🔄 PWA-FIX: Orientation changing from ${currentOrientation} → ${newOrientation}`);
             setCurrentOrientation(newOrientation);
 
             const alphaTab = (window as any).alphaTab;
@@ -205,31 +237,36 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 FINAL: Switching to LANDSCAPE (Horizontal)');
+                console.log('📱 PWA-FIX: Switching to LANDSCAPE (Horizontal)');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
 
-                // AGGRESSIVE CSS for single-row
-                container.style.overflowX = 'auto';
+                // 🔧 FIX: ULTRA-AGGRESSIVE CSS for single-row
+                container.style.overflowX = 'scroll';
                 container.style.overflowY = 'hidden';
                 container.style.whiteSpace = 'nowrap';
                 container.style.width = '100%';
+                container.style.maxWidth = '100vw';
                 container.style.height = '100%';
-                container.style.display = 'flex';
-                container.style.flexDirection = 'row';
-                container.style.flexWrap = 'nowrap';
-                container.style.alignItems = 'flex-start';
+                container.style.display = 'block'; // Change to block with nowrap
+                
+                // Force the at-surface to be inline
+                const surface = container.querySelector('.at-surface') as HTMLElement;
+                if (surface) {
+                    surface.style.whiteSpace = 'nowrap';
+                    surface.style.display = 'inline-block';
+                }
 
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 250));
 
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
 
-                console.log('✅ FINAL: Horizontal mode configured');
+                console.log('✅ PWA-FIX: Horizontal mode configured');
 
             } else {
-                console.log('📱 FINAL: Switching to PORTRAIT (Page)');
+                console.log('📱 PWA-FIX: Switching to PORTRAIT (Page)');
 
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
 
@@ -237,24 +274,29 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
                 container.style.height = 'auto';
+                container.style.maxWidth = '100%';
                 container.style.display = 'block';
-                container.style.flexDirection = 'column';
-                container.style.flexWrap = 'wrap';
+                
+                const surface = container.querySelector('.at-surface') as HTMLElement;
+                if (surface) {
+                    surface.style.whiteSpace = 'normal';
+                    surface.style.display = 'block';
+                }
 
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 250));
 
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = document.documentElement;
                 (api.settings.player as any).scrollOffsetY = -200;
 
-                console.log('✅ FINAL: Page mode configured');
+                console.log('✅ PWA-FIX: Page mode configured');
             }
 
             await api.updateSettings();
-            await new Promise(resolve => setTimeout(resolve, 150));
+            await new Promise(resolve => setTimeout(resolve, 200));
 
             api.render();
-            console.log('✅ FINAL: Re-render complete');
+            console.log('✅ PWA-FIX: Re-render complete');
         };
 
         handleOrientationChange();
@@ -266,61 +308,67 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, scoreIsLoaded, currentOrientation, isMobile]);
 
-    // ==================== CUSTOM CLICK HANDLING ====================
+    // ==================== TOUCH EVENT HANDLING ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
         if (playerMode === 'disabled') return;
         if (!scoreIsLoaded) return;
+        if (!isMobile) return; // Only on mobile
 
         const api = apiRef.current;
         const container = containerRef.current;
 
-        const handleClick = (e: MouseEvent) => {
+        console.log('👆 PWA-FIX: Setting up TOUCH handlers');
+
+        const handleTouch = (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+
+            const touch = e.touches[0];
             const now = Date.now();
-            const timeSinceLastClick = now - lastClickTimeRef.current;
-            
+            const timeSinceLastTouch = now - lastTouchTimeRef.current;
+
             // Reset if too much time passed
-            if (timeSinceLastClick > 400) {
-                clickCountRef.current = 0;
+            if (timeSinceLastTouch > 400) {
+                touchCountRef.current = 0;
             }
 
-            clickCountRef.current++;
-            lastClickTimeRef.current = now;
+            touchCountRef.current++;
+            lastTouchTimeRef.current = now;
 
-            if (clickCountRef.current === 1) {
-                // First click - wait for potential double-click
-                if (clickTimerRef.current) {
-                    clearTimeout(clickTimerRef.current);
+            if (touchCountRef.current === 1) {
+                // First touch - wait for potential double-tap
+                if (touchTimerRef.current) {
+                    clearTimeout(touchTimerRef.current);
                 }
 
-                clickTimerRef.current = setTimeout(() => {
-                    // Single click confirmed - SEEK ONLY
-                    const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+                touchTimerRef.current = setTimeout(() => {
+                    // Single tap confirmed - SEEK ONLY
+                    const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
 
                     if (beat && beat.absolutePlaybackStart !== undefined) {
                         if (api.tickPosition !== undefined) {
                             api.tickPosition = beat.absolutePlaybackStart;
-                            console.log('🎯 FINAL: Single-click seek to tick:', beat.absolutePlaybackStart);
+                            console.log('🎯 PWA-FIX: Single-tap seek to tick:', beat.absolutePlaybackStart);
                         }
                     }
 
-                    clickCountRef.current = 0;
+                    touchCountRef.current = 0;
                 }, 250);
-                
-            } else if (clickCountRef.current === 2) {
-                // Double-click detected - SEEK AND PLAY
-                if (clickTimerRef.current) {
-                    clearTimeout(clickTimerRef.current);
-                    clickTimerRef.current = null;
+
+            } else if (touchCountRef.current === 2) {
+                // Double-tap detected - SEEK AND PLAY
+                if (touchTimerRef.current) {
+                    clearTimeout(touchTimerRef.current);
+                    touchTimerRef.current = null;
                 }
 
                 e.preventDefault();
                 e.stopPropagation();
 
-                const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+                const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
 
                 if (beat && beat.absolutePlaybackStart !== undefined) {
-                    console.log('🎵 FINAL: Double-click at tick:', beat.absolutePlaybackStart);
+                    console.log('🎵 PWA-FIX: Double-tap at tick:', beat.absolutePlaybackStart);
 
                     // Set cursor position
                     if (api.tickPosition !== undefined) {
@@ -335,14 +383,108 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             } else if ((api as any).playPause) {
                                 (api as any).playPause();
                             }
-                            console.log('✅ FINAL: Playback started from double-click');
+                            console.log('✅ PWA-FIX: Playback started from double-tap');
                         } catch (err) {
-                            console.error('❌ FINAL: Failed to start playback:', err);
+                            console.error('❌ PWA-FIX: Failed to start playback:', err);
                         }
                     }, 50);
                 }
 
-                clickCountRef.current = 0;
+                touchCountRef.current = 0;
+            }
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const target = (surface as HTMLElement) || container;
+
+        target.addEventListener('touchstart', handleTouch as EventListener, { passive: false });
+
+        return () => {
+            target.removeEventListener('touchstart', handleTouch as EventListener);
+            if (touchTimerRef.current) {
+                clearTimeout(touchTimerRef.current);
+                touchTimerRef.current = null;
+            }
+        };
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
+
+    // ==================== MOUSE EVENT HANDLING (Desktop) ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
+        if (playerMode === 'disabled') return;
+        if (!scoreIsLoaded) return;
+        if (isMobile) return; // Only on desktop
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        console.log('🖱️ PWA-FIX: Setting up MOUSE handlers');
+
+        let clickTimer: NodeJS.Timeout | null = null;
+        let clickCount = 0;
+        let lastClickTime = 0;
+
+        const handleClick = (e: MouseEvent) => {
+            const now = Date.now();
+            const timeSinceLastClick = now - lastClickTime;
+
+            if (timeSinceLastClick > 400) {
+                clickCount = 0;
+            }
+
+            clickCount++;
+            lastClickTime = now;
+
+            if (clickCount === 1) {
+                if (clickTimer) clearTimeout(clickTimer);
+
+                clickTimer = setTimeout(() => {
+                    // Single click - SEEK ONLY
+                    const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+
+                    if (beat && beat.absolutePlaybackStart !== undefined) {
+                        if (api.tickPosition !== undefined) {
+                            api.tickPosition = beat.absolutePlaybackStart;
+                            console.log('🎯 PWA-FIX: Single-click seek to tick:', beat.absolutePlaybackStart);
+                        }
+                    }
+
+                    clickCount = 0;
+                }, 250);
+
+            } else if (clickCount === 2) {
+                if (clickTimer) {
+                    clearTimeout(clickTimer);
+                    clickTimer = null;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+
+                if (beat && beat.absolutePlaybackStart !== undefined) {
+                    console.log('🎵 PWA-FIX: Double-click at tick:', beat.absolutePlaybackStart);
+
+                    if (api.tickPosition !== undefined) {
+                        api.tickPosition = beat.absolutePlaybackStart;
+                    }
+
+                    setTimeout(() => {
+                        try {
+                            if (api.play) {
+                                api.play();
+                            } else if ((api as any).playPause) {
+                                (api as any).playPause();
+                            }
+                            console.log('✅ PWA-FIX: Playback started from double-click');
+                        } catch (err) {
+                            console.error('❌ PWA-FIX: Failed to start playback:', err);
+                        }
+                    }, 50);
+                }
+
+                clickCount = 0;
             }
         };
 
@@ -353,12 +495,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return () => {
             target.removeEventListener('click', handleClick as EventListener);
-            if (clickTimerRef.current) {
-                clearTimeout(clickTimerRef.current);
-                clickTimerRef.current = null;
-            }
+            if (clickTimer) clearTimeout(clickTimer);
         };
-    }, [isRendered, playerMode, scoreIsLoaded]);
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
 
     return (
         <div className="relative">
@@ -377,27 +516,41 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container-final`}
+                className={`${className} alphatab-container-pwa-fix`}
                 style={{
                     minHeight,
                     width: '100%',
                     overflow: 'auto',
-                    overflowX: 'auto',
-                    overflowY: 'auto',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
                 }}
             />
 
-            {/* 🎨 CSS for single-row horizontal layout */}
-            <style jsx>{`
-                .alphatab-container-final {
+            {/* 🎨 AGGRESSIVE CSS for landscape single-row */}
+            <style jsx global>{`
+                .alphatab-container-pwa-fix {
                     overflow-x: auto !important;
                 }
                 
+                /* 🔧 FIX: Ultra-aggressive single-row enforcement */
+                .alphatab-container-pwa-fix .at-surface,
+                .alphatab-container-pwa-fix .at-surface > svg {
+                    white-space: nowrap !important;
+                    display: inline-block !important;
+                }
+                
+                .alphatab-container-pwa-fix .at-viewport {
+                    white-space: nowrap !important;
+                }
+                
+                .alphatab-container-pwa-fix .at-staff-group {
+                    display: inline-block !important;
+                    white-space: nowrap !important;
+                }
+                
                 /* Bottom row fade */
-                .alphatab-container-final :global(.at-surface) {
+                .alphatab-container-pwa-fix .at-surface {
                     -webkit-mask-image: linear-gradient(to bottom, 
                         black 0%, 
                         black calc(100% - 30px), 
@@ -410,24 +563,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         rgba(0,0,0,0.3) calc(100% - 15px),
                         transparent 100%
                     );
-                }
-
-                /* 🔧 FIX: Aggressive single-row horizontal layout */
-                .alphatab-container-final :global(.at-surface > *) {
-                    display: inline-block !important;
-                    vertical-align: top !important;
-                    white-space: nowrap !important;
-                }
-                
-                .alphatab-container-final :global(.at-viewport) {
-                    white-space: nowrap !important;
-                    display: inline-flex !important;
-                    flex-wrap: nowrap !important;
-                }
-
-                .alphatab-container-final :global(.at-staff-group) {
-                    display: inline-block !important;
-                    white-space: nowrap !important;
                 }
             `}</style>
         </div>

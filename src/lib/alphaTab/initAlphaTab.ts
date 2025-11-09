@@ -70,15 +70,16 @@ export async function initAlphaTab(
   if (playerMode === "synthesizer") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledSynthesizer;
     settings.player.soundFont = soundFontPath;
-    settings.player.enableCursor = true;
+    // 🔧 FIX: Use enableCursor parameter, don't hardcode
+    settings.player.enableCursor = enableCursor;
     settings.player.enableAnimatedBeatCursor = true;
-
+    
     // ✅ PROPER FIX: Enable user interaction (native click/seek behavior)
     settings.player.enableUserInteraction = enableUserInteraction;
-
+    
     // 🎯 CRITICAL: Disable loop selection to prevent drag-to-loop highlight
     (settings.player as any).enableLoopSelection = enableLoopSelection;
-
+    
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
@@ -93,7 +94,9 @@ export async function initAlphaTab(
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log("✅ SYNTH: scrollElement = container, scrollOffsetX = 15%");
+      console.log(
+        "✅ SYNTH: scrollElement = container, scrollOffsetX = 15%"
+      );
     }
 
     // ⚡ CRITICAL FIX FOR NEXT.JS:
@@ -109,20 +112,19 @@ export async function initAlphaTab(
       `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
     );
     console.log(
-      `🔄 Loop Selection: ${
-        enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"
-      }`
+      `🔄 Loop Selection: ${enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"}`
     );
+    
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
-
+    
     // ✅ PROPER FIX: Enable user interaction
     settings.player.enableUserInteraction = enableUserInteraction;
-
+    
     // 🎯 CRITICAL: Disable loop selection
     (settings.player as any).enableLoopSelection = enableLoopSelection;
-
+    
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
@@ -148,10 +150,9 @@ export async function initAlphaTab(
       `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
     );
     console.log(
-      `🔄 Loop Selection: ${
-        enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"
-      }`
+      `🔄 Loop Selection: ${enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"}`
     );
+    
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
