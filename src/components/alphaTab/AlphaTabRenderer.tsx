@@ -1,14 +1,18 @@
 'use client';
 
 /**
- * AlphaTab Renderer - COMPLETE PWA FIX
+ * AlphaTab Renderer - STAGE 1 (Core Features Only)
  * 
- * FIXES:
- * ✅ Reliable mobile detection (checks multiple signals)
- * ✅ Force enableCursor: false consistently 
- * ✅ Touch event handlers (not just click)
- * ✅ More aggressive landscape CSS
- * ✅ Consistent state management
+ * REMOVED (for Stage 2):
+ * - Loop logic (constants, handles, selection, drag)
+ * - isLooping prop
+ * 
+ * FOCUS:
+ * ✅ Double-click to play
+ * ✅ Auto-scroll (landscape + portrait)
+ * ✅ Orientation handling
+ * ✅ Cursor rendering
+ * ✅ Track switching
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -42,28 +46,6 @@ const getBeatAtPosition = (
     return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
 };
 
-// 🔧 FIX: More reliable mobile detection
-const detectMobile = (): boolean => {
-    // Check multiple signals
-    const userAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const touchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const smallScreen = window.innerWidth <= 1024;
-    
-    // Mobile if ANY of these are true
-    const isMobile = userAgent || (touchScreen && smallScreen);
-    
-    console.log('📱 PWA-FIX: Mobile detection:', {
-        userAgent,
-        touchScreen,
-        smallScreen,
-        maxTouchPoints: navigator.maxTouchPoints,
-        innerWidth: window.innerWidth,
-        RESULT: isMobile
-    });
-    
-    return isMobile;
-};
-
 // ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
@@ -82,25 +64,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
-    const [currentOrientation, setCurrentOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
-    // Touch/Click detection refs
-    const lastTouchTimeRef = useRef<number>(0);
-    const touchCountRef = useRef<number>(0);
-    const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Detect mobile device (RELIABLE)
+    // Detect mobile device
     const [isMobile, setIsMobile] = useState(false);
     useEffect(() => {
         const checkMobile = () => {
-            const mobile = detectMobile();
+            const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                (window.innerWidth <= 1024 && 'ontouchstart' in window);
             setIsMobile(mobile);
         };
-        
-        // Check immediately
         checkMobile();
-        
-        // Re-check on resize
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
@@ -114,50 +87,32 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 PWA-FIX: Initializing AlphaTab');
+                console.log('🎸 STAGE1: Initializing AlphaTab');
 
                 // Detect initial orientation
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
                 const layoutMode = isLandscape ? 'horizontal' : 'page';
-                setCurrentOrientation(isLandscape ? 'landscape' : 'portrait');
-
-                console.log(`📱 PWA-FIX: Initial mode = ${layoutMode}, isMobile = ${isMobile}`);
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
-                    enableCursor: false, // 🔧 FIX: Explicitly disable cursor
+                    enableCursor: playerMode !== 'disabled',
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
-                    enableUserInteraction: false, // Disable AlphaTab's handlers
-                    isMobile,
+                    // 🎯 STAGE 1: Disable native user interaction (prevents drag-to-loop)
+                    // We handle double-click ourselves, so we don't need AlphaTab's native interaction
+                    enableUserInteraction: false,
                 });
 
                 if (!isMounted) return;
 
-                // 🔧 FIX: Force disable cursor AGAIN after init
-                if (api.settings?.player) {
-                    api.settings.player.enableCursor = false;
-                    (api.settings.player as any).enableLoopSelection = false;
-                    console.log('✅ PWA-FIX: Force-disabled cursor and loop selection');
-                }
-
                 apiRef.current = api;
-                console.log('✅ PWA-FIX: AlphaTab initialized');
-
-                // Dump settings to console for debugging
-                console.log('🔍 PWA-FIX: Settings dump:', {
-                    enableCursor: api.settings?.player?.enableCursor,
-                    enableUserInteraction: api.settings?.player?.enableUserInteraction,
-                    enableLoopSelection: (api.settings?.player as any)?.enableLoopSelection,
-                    layoutMode: api.settings?.display?.layoutMode,
-                    isMobile
-                });
+                console.log('✅ STAGE1: AlphaTab initialized');
 
                 // Setup event handlers
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ PWA-FIX: Render finished');
+                        console.log('✅ STAGE1: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -166,15 +121,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     });
                 }
 
+                // 🔧 FIX 1: Use loadGuitarProFile correctly with api as first param
                 if (fileUrl) {
-                    console.log('📄 PWA-FIX: Loading score from:', fileUrl);
+                    console.log('📄 STAGE1: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
 
+                    // Wait for score to be ready
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ PWA-FIX: Score loaded');
+                            console.log('✅ STAGE1: Score loaded');
 
+                            // 🔧 FIX 2: Include tempo in SongInfo
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
                                 artist: api.score.artist || 'Unknown',
@@ -193,7 +151,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ PWA-FIX: Initialization failed:', error);
+                console.error('❌ STAGE1: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -206,298 +164,142 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
         };
-    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]);
+    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]); // 🔧 FIX 3: Added all dependencies
 
     // ==================== ORIENTATION CHANGE HANDLER ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered || !scoreIsLoaded) return;
-        if (!isMobile) return;
 
         const api = apiRef.current;
         const container = containerRef.current;
 
         const handleOrientationChange = async () => {
+            console.log('🔄 STAGE1: Orientation change detected');
+
             const isLandscape = window.innerWidth > window.innerHeight;
-            const newOrientation = isLandscape ? 'landscape' : 'portrait';
-
-            if (newOrientation === currentOrientation) {
-                return;
-            }
-
-            console.log(`🔄 PWA-FIX: Orientation changing from ${currentOrientation} → ${newOrientation}`);
-            setCurrentOrientation(newOrientation);
-
             const alphaTab = (window as any).alphaTab;
+
             if (!alphaTab) return;
 
-            // Reset scroll settings
+            // 🚨 CRITICAL: Reset ALL scroll settings first to avoid conflicts
             api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
             api.settings.player.scrollElement = null;
             (api.settings.player as any).scrollOffsetX = 0;
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 PWA-FIX: Switching to LANDSCAPE (Horizontal)');
+                console.log('📱 STAGE1: Switching to LANDSCAPE (Horizontal)');
 
+                // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
 
-                // 🔧 FIX: ULTRA-AGGRESSIVE CSS for single-row
-                container.style.overflowX = 'scroll';
+                // 🎯 CRITICAL FIX: Ensure container is scrollable
+                container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
                 container.style.whiteSpace = 'nowrap';
-                container.style.width = '100%';
-                container.style.maxWidth = '100vw';
-                container.style.height = '100%';
-                container.style.display = 'block'; // Change to block with nowrap
-                
-                // Force the at-surface to be inline
-                const surface = container.querySelector('.at-surface') as HTMLElement;
-                if (surface) {
-                    surface.style.whiteSpace = 'nowrap';
-                    surface.style.display = 'inline-block';
-                }
 
-                await new Promise(resolve => setTimeout(resolve, 250));
+                // Wait for DOM to settle
+                await new Promise(resolve => setTimeout(resolve, 100));
 
+                // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container;
-                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+                api.settings.player.scrollElement = container; // Container must be scrollable!
+                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Fixed cursor at 15%
 
-                console.log('✅ PWA-FIX: Horizontal mode configured');
+                console.log('✅ STAGE1: Horizontal - scrollElement=container, offsetX=15%');
 
             } else {
-                console.log('📱 PWA-FIX: Switching to PORTRAIT (Page)');
+                console.log('📱 STAGE1: Switching to PORTRAIT (Page)');
 
+                // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
 
+                // Reset container scroll
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
-                container.style.height = 'auto';
-                container.style.maxWidth = '100%';
-                container.style.display = 'block';
-                
-                const surface = container.querySelector('.at-surface') as HTMLElement;
-                if (surface) {
-                    surface.style.whiteSpace = 'normal';
-                    surface.style.display = 'block';
-                }
 
-                await new Promise(resolve => setTimeout(resolve, 250));
+                // Wait for DOM to settle
+                await new Promise(resolve => setTimeout(resolve, 100));
 
+                // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = document.documentElement;
-                (api.settings.player as any).scrollOffsetY = -200;
+                api.settings.player.scrollElement = document.body; // Use body for vertical
+                (api.settings.player as any).scrollOffsetY = -200; // 🎯 FIX: Was "scrollOffset", now "scrollOffsetY"
 
-                console.log('✅ PWA-FIX: Page mode configured');
+                console.log('✅ STAGE1: Page - scrollElement=body, offsetY=-200px');
             }
 
+            // 🚨 CRITICAL: Use await to ensure settings apply before render
             await api.updateSettings();
-            await new Promise(resolve => setTimeout(resolve, 200));
 
+            // Wait a bit more for settings to fully apply
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Now render
             api.render();
-            console.log('✅ PWA-FIX: Re-render complete');
+            console.log('✅ STAGE1: Re-render complete');
         };
 
+        // Initial setup
         handleOrientationChange();
 
+        // Listen for orientation changes
         window.addEventListener('resize', handleOrientationChange);
 
         return () => {
             window.removeEventListener('resize', handleOrientationChange);
         };
-    }, [isRendered, scoreIsLoaded, currentOrientation, isMobile]);
+    }, [isRendered, scoreIsLoaded]);
 
-    // ==================== TOUCH EVENT HANDLING ====================
+    // ==================== DOUBLE-CLICK TO PLAY ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
         if (playerMode === 'disabled') return;
         if (!scoreIsLoaded) return;
-        if (!isMobile) return; // Only on mobile
 
         const api = apiRef.current;
         const container = containerRef.current;
 
-        console.log('👆 PWA-FIX: Setting up TOUCH handlers');
+        const handleDoubleClick = (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
 
-        const handleTouch = (e: TouchEvent) => {
-            if (e.touches.length !== 1) return;
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
 
-            const touch = e.touches[0];
-            const now = Date.now();
-            const timeSinceLastTouch = now - lastTouchTimeRef.current;
+            if (beat && beat.absolutePlaybackStart !== undefined) {
+                console.log('🎵 STAGE1: Double-click at tick:', beat.absolutePlaybackStart);
 
-            // Reset if too much time passed
-            if (timeSinceLastTouch > 400) {
-                touchCountRef.current = 0;
-            }
-
-            touchCountRef.current++;
-            lastTouchTimeRef.current = now;
-
-            if (touchCountRef.current === 1) {
-                // First touch - wait for potential double-tap
-                if (touchTimerRef.current) {
-                    clearTimeout(touchTimerRef.current);
+                // Set cursor position
+                if (api.tickPosition !== undefined) {
+                    api.tickPosition = beat.absolutePlaybackStart;
                 }
 
-                touchTimerRef.current = setTimeout(() => {
-                    // Single tap confirmed - SEEK ONLY
-                    const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
-
-                    if (beat && beat.absolutePlaybackStart !== undefined) {
-                        if (api.tickPosition !== undefined) {
-                            api.tickPosition = beat.absolutePlaybackStart;
-                            console.log('🎯 PWA-FIX: Single-tap seek to tick:', beat.absolutePlaybackStart);
+                // Start playback after brief delay
+                setTimeout(() => {
+                    try {
+                        if (api.play) {
+                            api.play();
+                        } else if ((api as any).playPause) {
+                            (api as any).playPause();
                         }
+                        console.log('✅ STAGE1: Playback started from double-click');
+                    } catch (err) {
+                        console.error('❌ STAGE1: Failed to start playback:', err);
                     }
-
-                    touchCountRef.current = 0;
-                }, 250);
-
-            } else if (touchCountRef.current === 2) {
-                // Double-tap detected - SEEK AND PLAY
-                if (touchTimerRef.current) {
-                    clearTimeout(touchTimerRef.current);
-                    touchTimerRef.current = null;
-                }
-
-                e.preventDefault();
-                e.stopPropagation();
-
-                const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
-
-                if (beat && beat.absolutePlaybackStart !== undefined) {
-                    console.log('🎵 PWA-FIX: Double-tap at tick:', beat.absolutePlaybackStart);
-
-                    // Set cursor position
-                    if (api.tickPosition !== undefined) {
-                        api.tickPosition = beat.absolutePlaybackStart;
-                    }
-
-                    // Start playback
-                    setTimeout(() => {
-                        try {
-                            if (api.play) {
-                                api.play();
-                            } else if ((api as any).playPause) {
-                                (api as any).playPause();
-                            }
-                            console.log('✅ PWA-FIX: Playback started from double-tap');
-                        } catch (err) {
-                            console.error('❌ PWA-FIX: Failed to start playback:', err);
-                        }
-                    }, 50);
-                }
-
-                touchCountRef.current = 0;
+                }, 50);
             }
         };
 
         const surface = container.querySelector('.at-surface');
         const target = (surface as HTMLElement) || container;
 
-        target.addEventListener('touchstart', handleTouch as EventListener, { passive: false });
+        target.addEventListener('dblclick', handleDoubleClick as EventListener);
 
         return () => {
-            target.removeEventListener('touchstart', handleTouch as EventListener);
-            if (touchTimerRef.current) {
-                clearTimeout(touchTimerRef.current);
-                touchTimerRef.current = null;
-            }
+            target.removeEventListener('dblclick', handleDoubleClick as EventListener);
         };
-    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
-
-    // ==================== MOUSE EVENT HANDLING (Desktop) ====================
-    useEffect(() => {
-        if (!apiRef.current || !containerRef.current || !isRendered) return;
-        if (playerMode === 'disabled') return;
-        if (!scoreIsLoaded) return;
-        if (isMobile) return; // Only on desktop
-
-        const api = apiRef.current;
-        const container = containerRef.current;
-
-        console.log('🖱️ PWA-FIX: Setting up MOUSE handlers');
-
-        let clickTimer: NodeJS.Timeout | null = null;
-        let clickCount = 0;
-        let lastClickTime = 0;
-
-        const handleClick = (e: MouseEvent) => {
-            const now = Date.now();
-            const timeSinceLastClick = now - lastClickTime;
-
-            if (timeSinceLastClick > 400) {
-                clickCount = 0;
-            }
-
-            clickCount++;
-            lastClickTime = now;
-
-            if (clickCount === 1) {
-                if (clickTimer) clearTimeout(clickTimer);
-
-                clickTimer = setTimeout(() => {
-                    // Single click - SEEK ONLY
-                    const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-
-                    if (beat && beat.absolutePlaybackStart !== undefined) {
-                        if (api.tickPosition !== undefined) {
-                            api.tickPosition = beat.absolutePlaybackStart;
-                            console.log('🎯 PWA-FIX: Single-click seek to tick:', beat.absolutePlaybackStart);
-                        }
-                    }
-
-                    clickCount = 0;
-                }, 250);
-
-            } else if (clickCount === 2) {
-                if (clickTimer) {
-                    clearTimeout(clickTimer);
-                    clickTimer = null;
-                }
-
-                e.preventDefault();
-                e.stopPropagation();
-
-                const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-
-                if (beat && beat.absolutePlaybackStart !== undefined) {
-                    console.log('🎵 PWA-FIX: Double-click at tick:', beat.absolutePlaybackStart);
-
-                    if (api.tickPosition !== undefined) {
-                        api.tickPosition = beat.absolutePlaybackStart;
-                    }
-
-                    setTimeout(() => {
-                        try {
-                            if (api.play) {
-                                api.play();
-                            } else if ((api as any).playPause) {
-                                (api as any).playPause();
-                            }
-                            console.log('✅ PWA-FIX: Playback started from double-click');
-                        } catch (err) {
-                            console.error('❌ PWA-FIX: Failed to start playback:', err);
-                        }
-                    }, 50);
-                }
-
-                clickCount = 0;
-            }
-        };
-
-        const surface = container.querySelector('.at-surface');
-        const target = (surface as HTMLElement) || container;
-
-        target.addEventListener('click', handleClick as EventListener);
-
-        return () => {
-            target.removeEventListener('click', handleClick as EventListener);
-            if (clickTimer) clearTimeout(clickTimer);
-        };
-    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
+    }, [isRendered, playerMode, scoreIsLoaded]);
 
     return (
         <div className="relative">
@@ -516,41 +318,30 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container-pwa-fix`}
+                className={`${className} alphatab-container-stage1`}
                 style={{
                     minHeight,
                     width: '100%',
                     overflow: 'auto',
+                    overflowX: 'auto',
+                    overflowY: 'auto',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
                 }}
             />
 
-            {/* 🎨 AGGRESSIVE CSS for landscape single-row */}
-            <style jsx global>{`
-                .alphatab-container-pwa-fix {
+            {/* 🎨 Stage 1 CSS Fix for Bottom Row Bleed */}
+            <style jsx>{`
+                .alphatab-container-stage1 {
+                    /* Ensure container scrolls properly in landscape */
                     overflow-x: auto !important;
                 }
                 
-                /* 🔧 FIX: Ultra-aggressive single-row enforcement */
-                .alphatab-container-pwa-fix .at-surface,
-                .alphatab-container-pwa-fix .at-surface > svg {
-                    white-space: nowrap !important;
-                    display: inline-block !important;
-                }
-                
-                .alphatab-container-pwa-fix .at-viewport {
-                    white-space: nowrap !important;
-                }
-                
-                .alphatab-container-pwa-fix .at-staff-group {
-                    display: inline-block !important;
-                    white-space: nowrap !important;
-                }
-                
-                /* Bottom row fade */
-                .alphatab-container-pwa-fix .at-surface {
+                /* 🔧 FIX: Minimal fade at very bottom to reduce 3rd row bleed */
+                /* Keeps notation visible while hiding partial rows */
+                .alphatab-container-stage1 :global(.at-surface) {
+                    /* Gradient mask: fully visible until very close to bottom */
                     -webkit-mask-image: linear-gradient(to bottom, 
                         black 0%, 
                         black calc(100% - 30px), 
