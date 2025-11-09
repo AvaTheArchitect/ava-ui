@@ -1,14 +1,16 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1 (Core Features Only)
+ * AlphaTab Renderer - STAGE 1 FIXED
  * 
- * REMOVED (for Stage 2):
- * - Loop logic (constants, handles, selection, drag)
- * - isLooping prop
+ * FIXES APPLIED:
+ * ✅ Fixed single/double-click using refs (not local variables)
+ * ✅ Added CSS for true Horizontal single-row layout
+ * ✅ Fixed orientation handler to prevent multiple rows in landscape
  * 
  * FOCUS:
  * ✅ Double-click to play
+ * ✅ Single-click to seek
  * ✅ Auto-scroll (landscape + portrait)
  * ✅ Orientation handling
  * ✅ Cursor rendering
@@ -65,6 +67,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
+    // 🔧 FIX: Use refs for click tracking to persist between renders
+    const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const clickCountRef = useRef<number>(0);
+    const lastClickTimeRef = useRef<number>(0);
+
     // Detect mobile device
     const [isMobile, setIsMobile] = useState(false);
     useEffect(() => {
@@ -87,7 +94,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 STAGE1: Initializing AlphaTab');
+                console.log('🎸 STAGE1-FIXED: Initializing AlphaTab');
 
                 // Detect initial orientation
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
@@ -100,19 +107,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
                     // 🎯 STAGE 1: Disable native user interaction (prevents drag-to-loop)
-                    // We handle double-click ourselves, so we don't need AlphaTab's native interaction
+                    // We handle clicks ourselves
                     enableUserInteraction: false,
                 });
 
                 if (!isMounted) return;
 
                 apiRef.current = api;
-                console.log('✅ STAGE1: AlphaTab initialized');
+                console.log('✅ STAGE1-FIXED: AlphaTab initialized');
 
                 // Setup event handlers
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ STAGE1: Render finished');
+                        console.log('✅ STAGE1-FIXED: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -121,18 +128,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     });
                 }
 
-                // 🔧 FIX 1: Use loadGuitarProFile correctly with api as first param
                 if (fileUrl) {
-                    console.log('📄 STAGE1: Loading score from:', fileUrl);
+                    console.log('📄 STAGE1-FIXED: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
 
                     // Wait for score to be ready
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ STAGE1: Score loaded');
+                            console.log('✅ STAGE1-FIXED: Score loaded');
 
-                            // 🔧 FIX 2: Include tempo in SongInfo
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
                                 artist: api.score.artist || 'Unknown',
@@ -151,7 +156,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ STAGE1: Initialization failed:', error);
+                console.error('❌ STAGE1-FIXED: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -164,7 +169,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
         };
-    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]); // 🔧 FIX 3: Added all dependencies
+    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]);
 
     // ==================== ORIENTATION CHANGE HANDLER ====================
     useEffect(() => {
@@ -174,32 +179,34 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         const handleOrientationChange = async () => {
-            console.log('🔄 STAGE1: Orientation change detected');
+            console.log('🔄 STAGE1-FIXED: Orientation change detected');
 
             const isLandscape = window.innerWidth > window.innerHeight;
             const alphaTab = (window as any).alphaTab;
 
             if (!alphaTab) return;
 
-            // 🚨 CRITICAL: Reset ALL scroll settings first to avoid conflicts
+            // 🚨 CRITICAL: Reset ALL scroll settings first
             api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
             api.settings.player.scrollElement = null;
             (api.settings.player as any).scrollOffsetX = 0;
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 STAGE1: Switching to LANDSCAPE (Horizontal)');
+                console.log('📱 STAGE1-FIXED: Switching to LANDSCAPE (Horizontal)');
 
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
 
-                // 🎯 CRITICAL FIX: Set CSS BEFORE applying scroll settings
+                // 🔧 FIX: Enhanced CSS for true single-row horizontal layout
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
-                container.style.whiteSpace = 'nowrap'; // Prevents wrapping!
+                container.style.whiteSpace = 'nowrap';
                 container.style.width = '100%';
+                container.style.display = 'flex'; // Force flex layout
+                container.style.flexWrap = 'nowrap'; // Prevent wrapping
 
-                // Wait for DOM to settle with new CSS
+                // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 150));
 
                 // Now set scroll settings
@@ -207,10 +214,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
 
-                console.log('✅ STAGE1: Horizontal - scrollElement=container, offsetX=15%');
+                console.log('✅ STAGE1-FIXED: Horizontal - single row mode active');
 
             } else {
-                console.log('📱 STAGE1: Switching to PORTRAIT (Page)');
+                console.log('📱 STAGE1-FIXED: Switching to PORTRAIT (Page)');
 
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
@@ -219,25 +226,27 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
+                container.style.display = 'block'; // Reset to block
+                container.style.flexWrap = 'wrap'; // Reset wrap
 
                 // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 150));
 
-                // 🎯 FIX: Use document.documentElement instead of document.body
+                // Use document.documentElement for page scroll
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = document.documentElement;
                 (api.settings.player as any).scrollOffsetY = -200;
 
-                console.log('✅ STAGE1: Page - scrollElement=documentElement, offsetY=-200px');
+                console.log('✅ STAGE1-FIXED: Page - multi-row mode active');
             }
 
-            // 🚨 CRITICAL: Apply settings and wait before render
-            api.updateSettings();
+            // Apply settings and wait before render
+            await api.updateSettings();
             await new Promise(resolve => setTimeout(resolve, 100));
 
             // Now render
             api.render();
-            console.log('✅ STAGE1: Re-render complete');
+            console.log('✅ STAGE1-FIXED: Re-render complete');
         };
 
         // Initial setup
@@ -251,7 +260,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, scoreIsLoaded]);
 
-    // ==================== CLICK INTERACTIONS ====================
+    // ==================== CLICK INTERACTIONS (FIXED) ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
         if (playerMode === 'disabled') return;
@@ -259,32 +268,45 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const api = apiRef.current;
         const container = containerRef.current;
-        let clickTimer: NodeJS.Timeout | null = null;
-        let clickCount = 0;
 
+        // 🔧 FIX: Improved double-click detection using refs
         const handleClick = (e: MouseEvent) => {
-            clickCount++;
+            const now = Date.now();
+            const timeSinceLastClick = now - lastClickTimeRef.current;
 
-            if (clickCount === 1) {
-                // Wait to see if it's a double-click
-                clickTimer = setTimeout(() => {
-                    // Single click - seek only (don't play)
+            // Reset if too much time has passed (>400ms)
+            if (timeSinceLastClick > 400) {
+                clickCountRef.current = 0;
+            }
+
+            clickCountRef.current++;
+            lastClickTimeRef.current = now;
+
+            if (clickCountRef.current === 1) {
+                // First click - wait to see if double-click follows
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                }
+
+                clickTimerRef.current = setTimeout(() => {
+                    // Single click confirmed - seek only (don't play)
                     const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
 
                     if (beat && beat.absolutePlaybackStart !== undefined) {
                         if (api.tickPosition !== undefined) {
                             api.tickPosition = beat.absolutePlaybackStart;
-                            console.log('🎯 STAGE1: Single-click seek to tick:', beat.absolutePlaybackStart);
+                            console.log('🎯 STAGE1-FIXED: Single-click seek to tick:', beat.absolutePlaybackStart);
                         }
                     }
 
-                    clickCount = 0;
-                }, 250); // 250ms delay to detect double-click
-            } else if (clickCount === 2) {
-                // Double-click - seek AND play
-                if (clickTimer) {
-                    clearTimeout(clickTimer);
-                    clickTimer = null;
+                    clickCountRef.current = 0;
+                }, 250); // 250ms window for double-click
+
+            } else if (clickCountRef.current === 2) {
+                // Double-click detected - seek AND play
+                if (clickTimerRef.current) {
+                    clearTimeout(clickTimerRef.current);
+                    clickTimerRef.current = null;
                 }
 
                 e.preventDefault();
@@ -293,14 +315,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
 
                 if (beat && beat.absolutePlaybackStart !== undefined) {
-                    console.log('🎵 STAGE1: Double-click at tick:', beat.absolutePlaybackStart);
+                    console.log('🎵 STAGE1-FIXED: Double-click at tick:', beat.absolutePlaybackStart);
 
                     // Set cursor position
                     if (api.tickPosition !== undefined) {
                         api.tickPosition = beat.absolutePlaybackStart;
                     }
 
-                    // Start playback after brief delay
+                    // Start playback
                     setTimeout(() => {
                         try {
                             if (api.play) {
@@ -308,14 +330,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             } else if ((api as any).playPause) {
                                 (api as any).playPause();
                             }
-                            console.log('✅ STAGE1: Playback started from double-click');
+                            console.log('✅ STAGE1-FIXED: Playback started from double-click');
                         } catch (err) {
-                            console.error('❌ STAGE1: Failed to start playback:', err);
+                            console.error('❌ STAGE1-FIXED: Failed to start playback:', err);
                         }
                     }, 50);
                 }
 
-                clickCount = 0;
+                clickCountRef.current = 0;
             }
         };
 
@@ -326,7 +348,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return () => {
             target.removeEventListener('click', handleClick as EventListener);
-            if (clickTimer) clearTimeout(clickTimer);
+            if (clickTimerRef.current) {
+                clearTimeout(clickTimerRef.current);
+                clickTimerRef.current = null;
+            }
         };
     }, [isRendered, playerMode, scoreIsLoaded]);
 
@@ -360,17 +385,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }}
             />
 
-            {/* 🎨 Stage 1 CSS Fix for Bottom Row Bleed */}
+            {/* 🎨 Enhanced CSS for proper layout modes */}
             <style jsx>{`
                 .alphatab-container-stage1 {
-                    /* Ensure container scrolls properly in landscape */
                     overflow-x: auto !important;
                 }
                 
-                /* 🔧 FIX: Minimal fade at very bottom to reduce 3rd row bleed */
-                /* Keeps notation visible while hiding partial rows */
+                /* 🔧 FIX: Force single row in horizontal mode */
                 .alphatab-container-stage1 :global(.at-surface) {
-                    /* Gradient mask: fully visible until very close to bottom */
+                    /* Gradient mask for bottom row bleed */
                     -webkit-mask-image: linear-gradient(to bottom, 
                         black 0%, 
                         black calc(100% - 30px), 
@@ -383,6 +406,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         rgba(0,0,0,0.3) calc(100% - 15px),
                         transparent 100%
                     );
+                }
+
+                /* 🔧 FIX: Ensure horizontal layout stays in single row */
+                .alphatab-container-stage1 :global(.at-surface > *) {
+                    display: inline-block !important;
+                    vertical-align: top !important;
+                }
+                
+                /* 🔧 FIX: Prevent wrapping of staff elements in horizontal mode */
+                .alphatab-container-stage1 :global(.at-viewport) {
+                    white-space: nowrap !important;
                 }
             `}</style>
         </div>
