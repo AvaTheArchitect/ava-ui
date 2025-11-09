@@ -99,9 +99,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     enableCursor: playerMode !== 'disabled',
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
-                    // 🎯 STAGE 1: Disable native user interaction (prevents drag-to-loop)
-                    // We handle double-click ourselves, so we don't need AlphaTab's native interaction
-                    enableUserInteraction: false,
                 });
 
                 if (!isMounted) return;
@@ -125,13 +122,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 if (fileUrl) {
                     console.log('📄 STAGE1: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
-
+                    
                     // Wait for score to be ready
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
                             console.log('✅ STAGE1: Score loaded');
-
+                            
                             // 🔧 FIX 2: Include tempo in SongInfo
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
@@ -189,53 +186,53 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             if (isLandscape) {
                 console.log('📱 STAGE1: Switching to LANDSCAPE (Horizontal)');
-
+                
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
+                
                 // 🎯 CRITICAL FIX: Ensure container is scrollable
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
                 container.style.whiteSpace = 'nowrap';
-
+                
                 // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 100));
-
+                
                 // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container; // Container must be scrollable!
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Fixed cursor at 15%
-
+                
                 console.log('✅ STAGE1: Horizontal - scrollElement=container, offsetX=15%');
-
+                
             } else {
                 console.log('📱 STAGE1: Switching to PORTRAIT (Page)');
-
+                
                 // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-
+                
                 // Reset container scroll
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
-
+                
                 // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 100));
-
+                
                 // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = document.body; // Use body for vertical
                 (api.settings.player as any).scrollOffsetY = -200; // 🎯 FIX: Was "scrollOffset", now "scrollOffsetY"
-
+                
                 console.log('✅ STAGE1: Page - scrollElement=body, offsetY=-200px');
             }
 
             // 🚨 CRITICAL: Use await to ensure settings apply before render
             await api.updateSettings();
-
+            
             // Wait a bit more for settings to fully apply
             await new Promise(resolve => setTimeout(resolve, 50));
-
+            
             // Now render
             api.render();
             console.log('✅ STAGE1: Re-render complete');
@@ -318,7 +315,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container-stage1`}
+                className={className}
                 style={{
                     minHeight,
                     width: '100%',
@@ -328,34 +325,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
+                    // ✅ Add bottom mask to prevent 3rd row bleed
+                    maskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
+                    WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
                 }}
             />
-
-            {/* 🎨 Stage 1 CSS Fix for Bottom Row Bleed */}
-            <style jsx>{`
-                .alphatab-container-stage1 {
-                    /* Ensure container scrolls properly in landscape */
-                    overflow-x: auto !important;
-                }
-                
-                /* 🔧 FIX: Minimal fade at very bottom to reduce 3rd row bleed */
-                /* Keeps notation visible while hiding partial rows */
-                .alphatab-container-stage1 :global(.at-surface) {
-                    /* Gradient mask: fully visible until very close to bottom */
-                    -webkit-mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                    mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                }
-            `}</style>
         </div>
     );
 };
