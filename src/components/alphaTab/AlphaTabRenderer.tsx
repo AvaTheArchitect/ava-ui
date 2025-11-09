@@ -1,17 +1,17 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1 (Core Features Only)
+ * AlphaTab Renderer - STAGE 1 FIXED (No Loop, Native Interaction Disabled)
  * 
- * REMOVED (for Stage 2):
- * - Loop logic (constants, handles, selection, drag)
- * - isLooping prop
+ * FIXES:
+ * ✅ Disabled AlphaTab's native user interaction (fixes double cursors + loop highlight)
+ * ✅ Implemented touch-based double-tap for mobile (replaces unreliable dblclick)
+ * ✅ Single playback system (no conflicting cursors)
  * 
  * FOCUS:
- * ✅ Double-click to play
+ * ✅ Double-tap/click to play
  * ✅ Auto-scroll (landscape + portrait)
  * ✅ Orientation handling
- * ✅ Cursor rendering
  * ✅ Track switching
  */
 
@@ -87,9 +87,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 STAGE1: Initializing AlphaTab');
+                console.log('🎸 STAGE1-FIXED: Initializing AlphaTab');
 
-                // Detect initial orientation
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
                 const layoutMode = isLandscape ? 'horizontal' : 'page';
 
@@ -103,13 +102,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 if (!isMounted) return;
 
+                // 🚨 CRITICAL FIX #1: Disable AlphaTab's native user interaction
+                // This prevents: double cursors, loop selection highlights, native click handlers
+                if (api.settings?.player) {
+                    api.settings.player.enableUserInteraction = false;
+                    await api.updateSettings();
+                    console.log('✅ STAGE1-FIXED: Native user interaction DISABLED');
+                }
+
                 apiRef.current = api;
-                console.log('✅ STAGE1: AlphaTab initialized');
+                console.log('✅ STAGE1-FIXED: AlphaTab initialized');
 
                 // Setup event handlers
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ STAGE1: Render finished');
+                        console.log('✅ STAGE1-FIXED: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -118,18 +125,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     });
                 }
 
-                // 🔧 FIX 1: Use loadGuitarProFile correctly with api as first param
+                // Load score
                 if (fileUrl) {
-                    console.log('📄 STAGE1: Loading score from:', fileUrl);
+                    console.log('📄 STAGE1-FIXED: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
                     
-                    // Wait for score to be ready
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ STAGE1: Score loaded');
+                            console.log('✅ STAGE1-FIXED: Score loaded');
                             
-                            // 🔧 FIX 2: Include tempo in SongInfo
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
                                 artist: api.score.artist || 'Unknown',
@@ -148,7 +153,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ STAGE1: Initialization failed:', error);
+                console.error('❌ STAGE1-FIXED: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -161,7 +166,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
         };
-    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]); // 🔧 FIX 3: Added all dependencies
+    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]);
 
     // ==================== ORIENTATION CHANGE HANDLER ====================
     useEffect(() => {
@@ -171,77 +176,55 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         const handleOrientationChange = async () => {
-            console.log('🔄 STAGE1: Orientation change detected');
+            console.log('🔄 STAGE1-FIXED: Orientation change detected');
 
             const isLandscape = window.innerWidth > window.innerHeight;
             const alphaTab = (window as any).alphaTab;
 
             if (!alphaTab) return;
 
-            // 🚨 CRITICAL: Reset ALL scroll settings first to avoid conflicts
+            // Reset scroll settings
             api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
             api.settings.player.scrollElement = null;
             (api.settings.player as any).scrollOffsetX = 0;
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 STAGE1: Switching to LANDSCAPE (Horizontal)');
+                console.log('📱 STAGE1-FIXED: Switching to LANDSCAPE');
                 
-                // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-                
-                // 🎯 CRITICAL FIX: Ensure container is scrollable
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
                 container.style.whiteSpace = 'nowrap';
                 
-                // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container; // Container must be scrollable!
-                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Fixed cursor at 15%
-                
-                console.log('✅ STAGE1: Horizontal - scrollElement=container, offsetX=15%');
+                api.settings.player.scrollElement = container;
+                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
                 
             } else {
-                console.log('📱 STAGE1: Switching to PORTRAIT (Page)');
+                console.log('📱 STAGE1-FIXED: Switching to PORTRAIT');
                 
-                // Set layout mode
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-                
-                // Reset container scroll
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
                 
-                // Wait for DOM to settle
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Now set scroll settings
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = document.body; // Use body for vertical
-                (api.settings.player as any).scrollOffsetY = -200; // 🎯 FIX: Was "scrollOffset", now "scrollOffsetY"
-                
-                console.log('✅ STAGE1: Page - scrollElement=body, offsetY=-200px');
+                api.settings.player.scrollElement = document.body;
+                (api.settings.player as any).scrollOffsetY = -200;
             }
 
-            // 🚨 CRITICAL: Use await to ensure settings apply before render
             await api.updateSettings();
-            
-            // Wait a bit more for settings to fully apply
             await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Now render
             api.render();
-            console.log('✅ STAGE1: Re-render complete');
+            console.log('✅ STAGE1-FIXED: Re-render complete');
         };
 
-        // Initial setup
         handleOrientationChange();
-
-        // Listen for orientation changes
         window.addEventListener('resize', handleOrientationChange);
 
         return () => {
@@ -249,11 +232,89 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, scoreIsLoaded]);
 
-    // ==================== DOUBLE-CLICK TO PLAY ====================
+    // ==================== 🚨 FIX #2: TOUCH-BASED DOUBLE-TAP FOR MOBILE ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
         if (playerMode === 'disabled') return;
         if (!scoreIsLoaded) return;
+        if (!isMobile) return; // Only use touch handling on mobile
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
+        const DOUBLE_TAP_DELAY = 300; // ms
+        const DOUBLE_TAP_DISTANCE = 50; // px
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (e.changedTouches.length === 0) return;
+            
+            const touch = e.changedTouches[0];
+            const currentTime = Date.now();
+            const timeDiff = currentTime - lastTapTime;
+            
+            // Check if this is a double-tap
+            const isDoubleTap = timeDiff < DOUBLE_TAP_DELAY &&
+                Math.abs(touch.clientX - lastTapX) < DOUBLE_TAP_DISTANCE &&
+                Math.abs(touch.clientY - lastTapY) < DOUBLE_TAP_DISTANCE;
+
+            if (isDoubleTap) {
+                e.preventDefault();
+                console.log('👆 STAGE1-FIXED: Double-tap detected');
+
+                const beat = getBeatAtPosition(api, container, lastTapX, lastTapY);
+
+                if (beat && beat.absolutePlaybackStart !== undefined) {
+                    console.log('🎵 STAGE1-FIXED: Seeking to tick:', beat.absolutePlaybackStart);
+
+                    // Set cursor position
+                    if (api.tickPosition !== undefined) {
+                        api.tickPosition = beat.absolutePlaybackStart;
+                    }
+
+                    // Start playback
+                    setTimeout(() => {
+                        try {
+                            if (api.play) {
+                                api.play();
+                            } else if ((api as any).playPause) {
+                                (api as any).playPause();
+                            }
+                            console.log('✅ STAGE1-FIXED: Playback started from double-tap');
+                        } catch (err) {
+                            console.error('❌ STAGE1-FIXED: Failed to start playback:', err);
+                        }
+                    }, 50);
+                }
+
+                // Reset tap tracking
+                lastTapTime = 0;
+            } else {
+                // Record this tap for potential double-tap
+                lastTapTime = currentTime;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+            }
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const target = (surface as HTMLElement) || container;
+
+        target.addEventListener('touchend', handleTouchEnd as EventListener);
+
+        return () => {
+            target.removeEventListener('touchend', handleTouchEnd as EventListener);
+        };
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
+
+    // ==================== DESKTOP: DOUBLE-CLICK HANDLER ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
+        if (playerMode === 'disabled') return;
+        if (!scoreIsLoaded) return;
+        if (isMobile) return; // Only use double-click on desktop
 
         const api = apiRef.current;
         const container = containerRef.current;
@@ -265,14 +326,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
 
             if (beat && beat.absolutePlaybackStart !== undefined) {
-                console.log('🎵 STAGE1: Double-click at tick:', beat.absolutePlaybackStart);
+                console.log('🎵 STAGE1-FIXED: Double-click at tick:', beat.absolutePlaybackStart);
 
-                // Set cursor position
                 if (api.tickPosition !== undefined) {
                     api.tickPosition = beat.absolutePlaybackStart;
                 }
 
-                // Start playback after brief delay
                 setTimeout(() => {
                     try {
                         if (api.play) {
@@ -280,9 +339,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         } else if ((api as any).playPause) {
                             (api as any).playPause();
                         }
-                        console.log('✅ STAGE1: Playback started from double-click');
+                        console.log('✅ STAGE1-FIXED: Playback started from double-click');
                     } catch (err) {
-                        console.error('❌ STAGE1: Failed to start playback:', err);
+                        console.error('❌ STAGE1-FIXED: Failed to start playback:', err);
                     }
                 }, 50);
             }
@@ -296,7 +355,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('dblclick', handleDoubleClick as EventListener);
         };
-    }, [isRendered, playerMode, scoreIsLoaded]);
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
 
     return (
         <div className="relative">
@@ -325,7 +384,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
-                    // ✅ Add bottom mask to prevent 3rd row bleed
                     maskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
                     WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
                 }}
