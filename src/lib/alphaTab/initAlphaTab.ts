@@ -1,5 +1,5 @@
-// AlphaTab initialization utility - STAGE 1
-// ✅ ADDED: enableUserInteraction parameter to disable native loop selection
+// AlphaTab initialization utility - PROPER FIX
+// ✅ PROPER FIX: Keep enableUserInteraction, add enableLoopSelection control
 
 import type { AlphaTabApi } from "./types";
 
@@ -10,8 +10,10 @@ export interface AlphaTabConfig {
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
   isMobile?: boolean;
-  // 🆕 STAGE 1: Allow disabling user interaction to prevent native loop
+  // ✅ PROPER: Control user interaction (should be true for native behavior)
   enableUserInteraction?: boolean;
+  // ✅ NEW: Control loop selection specifically (set false to prevent drag-to-loop)
+  enableLoopSelection?: boolean;
 }
 
 export async function initAlphaTab(
@@ -24,7 +26,8 @@ export async function initAlphaTab(
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
     isMobile = false,
-    enableUserInteraction = true, // Default to true for backward compatibility
+    enableUserInteraction = true, // Default true - native AlphaTab behavior
+    enableLoopSelection = false, // Default false - prevent drag-to-loop highlight
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -69,26 +72,28 @@ export async function initAlphaTab(
     settings.player.soundFont = soundFontPath;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
-    // 🎯 STAGE 1: Use parameter instead of hardcoded true
+
+    // ✅ PROPER FIX: Enable user interaction (native click/seek behavior)
     settings.player.enableUserInteraction = enableUserInteraction;
+
+    // 🎯 CRITICAL: Disable loop selection to prevent drag-to-loop highlight
+    (settings.player as any).enableLoopSelection = enableLoopSelection;
+
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // 🎯 FIX: Use document.documentElement for better mobile compatibility
       (settings.player as any).scrollElement = document.documentElement;
       (settings.player as any).scrollOffsetY = -200;
       (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V62: SYNTH: scrollElement = document.documentElement, scrollOffsetY = -200px"
+        "✅ SYNTH: scrollElement = document.documentElement, scrollOffsetY = -200px"
       );
     } else {
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log(
-        "✅ V62: SYNTH: scrollElement = container, scrollOffsetX = 15%"
-      );
+      console.log("✅ SYNTH: scrollElement = container, scrollOffsetX = 15%");
     }
 
     // ⚡ CRITICAL FIX FOR NEXT.JS:
@@ -103,11 +108,21 @@ export async function initAlphaTab(
     console.log(
       `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
     );
+    console.log(
+      `🔄 Loop Selection: ${
+        enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"
+      }`
+    );
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
-    // 🎯 STAGE 1: Use parameter instead of hardcoded true
+
+    // ✅ PROPER FIX: Enable user interaction
     settings.player.enableUserInteraction = enableUserInteraction;
+
+    // 🎯 CRITICAL: Disable loop selection
+    (settings.player as any).enableLoopSelection = enableLoopSelection;
+
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // ✅ V63 FIX: Proper scroll element and offset handling
@@ -116,21 +131,26 @@ export async function initAlphaTab(
       (settings.player as any).scrollOffsetY = -200;
       (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V62: EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
       );
     } else {
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
       console.log(
-        "✅ V62: EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
+        "✅ EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
       );
     }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V62: Scroll mode = Continuous (AlphaTab auto-scroll)");
+    console.log("✅ Scroll mode = Continuous (AlphaTab auto-scroll)");
     console.log(
       `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
+    );
+    console.log(
+      `🔄 Loop Selection: ${
+        enableLoopSelection ? "ENABLED" : "DISABLED (no drag-to-loop)"
+      }`
     );
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
@@ -149,6 +169,7 @@ export async function initAlphaTab(
         : "N/A",
     enableCursor: settings.player.enableCursor,
     enableUserInteraction: settings.player.enableUserInteraction,
+    enableLoopSelection,
     isMobile,
   });
 
