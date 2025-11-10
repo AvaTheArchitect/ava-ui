@@ -83,7 +83,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     enableCursor: playerMode !== 'disabled',
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
-                    isMobile,
                 });
 
                 if (!isMounted) return;
