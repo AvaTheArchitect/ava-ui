@@ -76,29 +76,6 @@ export default function SynthPlayerPage() {
                 durationRef.current = e.endTime / 1000;
             });
         }
-
-        // 🚨 CRITICAL FIX: Block AlphaTab's native drag-to-loop in Stage 1
-        if (alphaTabApi.playbackRangeChanged) {
-            const handlePlaybackRangeChanged = () => {
-                // Instantly destroy any native loop selection
-                if (alphaTabApi.playbackRange !== null) {
-                    // 1. Clear the playback range
-                    alphaTabApi.playbackRange = null;
-
-                    // 2. Clear the visual selection highlight (CRITICAL!)
-                    if ((alphaTabApi as any).setSelection) {
-                        (alphaTabApi as any).setSelection(0, 0, 0, 0);
-                    }
-
-                    // 3. Force immediate re-render
-                    alphaTabApi.render();
-
-                    console.log('❌ STAGE1: Native loop blocked - range + visual selection cleared');
-                }
-            };
-
-            alphaTabApi.playbackRangeChanged.on(handlePlaybackRangeChanged);
-        }
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
@@ -118,24 +95,9 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleTrackChange = useCallback((trackIndex: number) => {
-        if (api?.score?.tracks) {
-            console.log(`🔄 STAGE1: Switching to Track ${trackIndex}`);
-            api.renderTracks([api.score.tracks[trackIndex]]);
-            setSelectedTrack(trackIndex);
-
-            // 🎯 FIX: Wait for render to complete before allowing interactions
-            // This ensures boundsLookup is ready on mobile
-            if (api.renderFinished) {
-                const waitForRender = () => {
-                    console.log('✅ STAGE1: Track render complete, boundsLookup ready');
-                };
-                api.renderFinished.on(waitForRender);
-                setTimeout(() => {
-                    api.renderFinished?.off(waitForRender);
-                }, 1000);
-            }
-        }
-    }, [api]);
+        console.log(`🔄 STAGE1: Track changed to ${trackIndex}`);
+        setSelectedTrack(trackIndex);
+    }, []);
 
     const handlePlay = useCallback(() => {
         if (!api) return;
@@ -225,18 +187,20 @@ export default function SynthPlayerPage() {
                     <div className="bg-gray-800/80 rounded-xl p-6 border border-purple-500/30">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
-                                {/* 🎵 Single Play/Pause Toggle Button (Songsterr style) */}
                                 <button
-                                    onClick={isPlaying ? handlePause : handlePlay}
-                                    disabled={!api}
-                                    className={`px-6 py-3 rounded-lg border font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isPlaying
-                                            ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/30'
-                                            : 'bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30'
-                                        }`}
+                                    onClick={handlePlay}
+                                    disabled={!api || isPlaying}
+                                    className="px-6 py-3 bg-green-500/20 text-green-400 rounded-lg border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-bold transition-all"
                                 >
-                                    {isPlaying ? '⏸️ Pause' : '▶️ Play'}
+                                    ▶️ Play
                                 </button>
-
+                                <button
+                                    onClick={handlePause}
+                                    disabled={!api || !isPlaying}
+                                    className="px-6 py-3 bg-yellow-500/20 text-yellow-400 rounded-lg border border-yellow-500/30 hover:bg-yellow-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-bold transition-all"
+                                >
+                                    ⏸️ Pause
+                                </button>
                                 <button
                                     onClick={handleStop}
                                     disabled={!api}
