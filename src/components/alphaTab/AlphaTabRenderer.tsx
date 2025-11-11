@@ -1,19 +1,20 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1 CLEAN BUILD
+ * AlphaTab Renderer - STAGE 1 with iOS PWA Resume Fix
+ * 
+ * 🚨 CRITICAL FIX: iOS PWA state persistence bug
+ * - First launch = Works perfectly ✅
+ * - Reopen without reinstall = Broken (ghost cursors, track switching fails) ❌
+ * 
+ * SOLUTION: Force clean reinitialization when PWA resumes from background
  * 
  * WORKING FEATURES:
- * ✅ Single unified row in landscape (scale + stretchForce)
- * ✅ Auto-scroll in both orientations (await updateSettings)
- * ✅ Orientation switching (landscape ↔ portrait)
+ * ✅ Single unified row in landscape
+ * ✅ Auto-scroll in both orientations
+ * ✅ Orientation switching
  * ✅ Track selection
- * ✅ Native AlphaTab cursor (default behavior)
- * 
- * EXCLUDED FOR STAGE 2:
- * ❌ Loop logic
- * ❌ Double-click/tap playback
- * ❌ Custom user interaction
+ * ✅ Survives app suspend/resume cycles
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -48,6 +49,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
+    
+    // 🚨 NEW: Track initialization attempts to force reload on resume
+    const initCountRef = useRef<number>(0);
+    const [forceReload, setForceReload] = useState<number>(0);
 
     // Detect mobile device
     const [isMobile, setIsMobile] = useState(false);
@@ -62,7 +67,57 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    // ==================== INITIALIZE ALPHATAB (ONCE) ====================
+    // 🚨 iOS PWA FIX: Detect when app resumes from background
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible' && initCountRef.current > 0) {
+                console.log('🔄 iOS PWA: App resumed - forcing clean reinitialization');
+                
+                // Destroy existing API completely
+                if (apiRef.current) {
+                    try {
+                        if ((apiRef.current as any).destroy) {
+                            (apiRef.current as any).destroy();
+                        }
+                        apiRef.current = null;
+                    } catch (e) {
+                        console.warn('⚠️ Error destroying API:', e);
+                    }
+                }
+                
+                // Clear container
+                if (containerRef.current) {
+                    containerRef.current.innerHTML = '';
+                }
+                
+                // Reset all state
+                setIsLoading(true);
+                setIsRendered(false);
+                setScoreIsLoaded(false);
+                
+                // Trigger reinitialization
+                setForceReload(prev => prev + 1);
+            }
+        };
+
+        const handlePageShow = (event: PageTransitionEvent) => {
+            if (event.persisted && initCountRef.current > 0) {
+                console.log('🔄 iOS PWA: Page restored from bfcache - forcing reload');
+                handleVisibilityChange();
+            }
+        };
+
+        // iOS Safari uses both visibilitychange and pageshow
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, []);
+
+    // ==================== INITIALIZE ALPHATAB ====================
     useEffect(() => {
         let isMounted = true;
 
@@ -71,7 +126,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 STAGE1-CLEAN: Initializing AlphaTab');
+                console.log(`🎸 STAGE1-iOS: Initializing AlphaTab (attempt ${initCountRef.current + 1})`);
 
                 // Detect initial orientation
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
@@ -83,17 +138,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     enableCursor: playerMode !== 'disabled',
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
+                    isMobile,
                 });
 
                 if (!isMounted) return;
 
+                // Increment initialization counter
+                initCountRef.current += 1;
+
                 apiRef.current = api;
-                console.log('✅ STAGE1-CLEAN: AlphaTab initialized');
+                console.log('✅ STAGE1-iOS: AlphaTab initialized');
 
                 // Setup event handlers
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ STAGE1-CLEAN: Render finished');
+                        console.log('✅ STAGE1-iOS: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -104,14 +163,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 // Load score
                 if (fileUrl) {
-                    console.log('📄 STAGE1-CLEAN: Loading score from:', fileUrl);
+                    console.log('📄 STAGE1-iOS: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
-
+                    
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ STAGE1-CLEAN: Score loaded');
-
+                            console.log('✅ STAGE1-iOS: Score loaded');
+                            
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
                                 artist: api.score.artist || 'Unknown',
@@ -130,7 +189,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ STAGE1-CLEAN: Initialization failed:', error);
+                console.error('❌ STAGE1-iOS: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -143,9 +202,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
         };
-    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]);
+    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath, forceReload]); // Added forceReload
 
-    // ==================== ORIENTATION CHANGE HANDLER (WITH AUTO-SCROLL) ====================
+    // ==================== ORIENTATION CHANGE HANDLER ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered || !scoreIsLoaded) return;
 
@@ -153,85 +212,65 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         const handleOrientationChange = async () => {
-            console.log('🔄 STAGE1-CLEAN: Orientation change detected');
+            console.log('🔄 STAGE1-iOS: Orientation change detected');
 
             const isLandscape = window.innerWidth > window.innerHeight;
             const alphaTab = (window as any).alphaTab;
 
             if (!alphaTab) return;
 
-            // 🚨 CRITICAL: Reset ALL scroll settings first
+            // Reset scroll settings
             api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
             api.settings.player.scrollElement = null;
             (api.settings.player as any).scrollOffsetX = 0;
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 STAGE1-CLEAN: Switching to LANDSCAPE (Horizontal)');
-
-                // Layout mode
+                console.log('📱 STAGE1-iOS: Switching to LANDSCAPE');
+                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
-                // 🎯 KEY FIX: Single unified row
                 api.settings.display.scale = 1.0;
                 api.settings.display.stretchForce = 0.8;
-
-                // Container scroll setup
+                
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
                 container.style.whiteSpace = 'nowrap';
-
-                // Wait for DOM
+                
                 await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Auto-scroll settings
+                
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
-
-                console.log('✅ STAGE1-CLEAN: Horizontal - scrollElement=container, offsetX=15%');
-
+                
+                console.log('✅ STAGE1-iOS: Horizontal setup complete');
+                
             } else {
-                console.log('📱 STAGE1-CLEAN: Switching to PORTRAIT (Page)');
-
-                // Layout mode
+                console.log('📱 STAGE1-iOS: Switching to PORTRAIT');
+                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-
-                // Reset scale for page mode
                 api.settings.display.scale = 1.0;
                 api.settings.display.stretchForce = 0.8;
-
-                // Reset container scroll
+                
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
                 container.style.whiteSpace = 'normal';
-
-                // Wait for DOM
+                
                 await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Auto-scroll settings
+                
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = document.body;
                 (api.settings.player as any).scrollOffsetY = -200;
-
-                console.log('✅ STAGE1-CLEAN: Page - scrollElement=body, offsetY=-200px');
+                
+                console.log('✅ STAGE1-iOS: Page setup complete');
             }
 
-            // 🚨 CRITICAL: Use await to ensure settings apply before render
             await api.updateSettings();
-
-            // Wait a bit more for settings to fully apply
             await new Promise(resolve => setTimeout(resolve, 50));
-
-            // Now render
             api.render();
-            console.log('✅ STAGE1-CLEAN: Re-render complete');
+            console.log('✅ STAGE1-iOS: Re-render complete');
         };
 
-        // Initial setup
         handleOrientationChange();
-
-        // Listen for orientation changes
         window.addEventListener('resize', handleOrientationChange);
 
         return () => {
@@ -246,7 +285,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-2"></div>
                         <p className="text-orange-400 font-semibold">
-                            {playerMode === 'synthesizer'
+                            {initCountRef.current > 0
+                                ? 'Reinitializing...'
+                                : playerMode === 'synthesizer'
                                 ? 'Loading tab & initializing synthesizer...'
                                 : 'Loading tab...'}
                         </p>
@@ -266,6 +307,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
+                    maskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
+                    WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
                 }}
             />
         </div>
