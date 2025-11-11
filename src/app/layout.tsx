@@ -1,5 +1,15 @@
+/**
+ * Root Layout Component
+ * 
+ * @version Nov 11, 2025
+ * @updated Added PWAStorageCleanup to fix iOS PWA ghost cursor bug
+ * 
+ * Path: src/app/layout.tsx
+ */
+
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { PWAStorageCleanup } from '@/components/PWAStorageCleanup';
 import '@/styles/alphaTab.css';
 import "./globals.css";
 import '@/styles/maestroCursor.css';
@@ -127,8 +137,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {/* iOS PWA Fix: Clears corrupted storage on app resume - Nov 11, 2025 */}
+        <PWAStorageCleanup />
         {children}
       </body>
     </html>
   );
-}// Key change: Cursor will be disabled in landscape, let AlphaTab scroll normally
+}

@@ -1,6 +1,15 @@
-// AlphaTab initialization utility - V63 SCROLL ELEMENT FIX
-// ✅ FIXED: document.body for Page mode + explicit offset resets
-// ✅ FIXED: Landscape horizontal scroll with proper container reference
+/**
+ * AlphaTab Initialization Utility - STAGE 1 CLEAN
+ *
+ * @version Nov 11, 2025
+ * @updated Added enableUserInteraction = false to prevent desktop loop highlight
+ *
+ * ✅ Native user interaction DISABLED (prevents desktop loop highlight)
+ * ✅ Scale/stretchForce preserved (creates single unified row in landscape)
+ * ✅ Proper scroll element handling for both orientations
+ *
+ * Path: src/lib/alphaTab/initAlphaTab.ts
+ */
 
 import type { AlphaTabApi } from "./types";
 
@@ -38,20 +47,22 @@ export async function initAlphaTab(
 
   console.log("🔧 Core workers disabled for Next.js compatibility");
 
-  // ✅ V61: KEEP scale/stretchForce to prevent responsive mode triggering
+  // 🎯 CRITICAL: Scale + stretchForce create single unified row in landscape
+  // Without these, horizontal mode wraps into multiple rows
   settings.display.scale = 1.0;
   settings.display.stretchForce = 0.8;
+  console.log("🎸 Scale/stretchForce set for unified row display");
 
-  // ✅ V61: Layout mode based on device type AND initial orientation
+  // Layout mode based on device type AND initial orientation
   if (isMobile) {
     settings.display.layoutMode =
       layoutMode === "page"
         ? alphaTab.LayoutMode.Page
         : alphaTab.LayoutMode.Horizontal;
-    console.log(`📱 V61: Mobile layout = ${layoutMode}`);
+    console.log(`📱 Mobile layout = ${layoutMode}`);
   } else {
     settings.display.layoutMode = alphaTab.LayoutMode.Page;
-    console.log("🖥️ V61: Desktop layout = Page (forced)");
+    console.log("🖥️ Desktop layout = Page (forced)");
   }
 
   settings.display.staveProfile = alphaTab.StaveProfile.TabMixed;
@@ -67,29 +78,32 @@ export async function initAlphaTab(
     settings.player.soundFont = soundFontPath;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
-    settings.player.enableUserInteraction = true;
+
+    // 🚨 CRITICAL FIX: Disable native user interaction
+    // This prevents AlphaTab's built-in click/drag selection
+    settings.player.enableUserInteraction = false;
+    console.log(
+      "🚫 Native user interaction DISABLED (prevents loop highlight)"
+    );
+
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V63 FIX: Proper scroll element and offset handling
+    // Initial scroll settings (will be updated by orientation handler)
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // FIX #1: Use document.body for vertical scroll anchor (Portrait/Page)
       (settings.player as any).scrollElement = document.body;
-      (settings.player as any).scrollOffsetY = -200; // Vertical offset
-      (settings.player as any).scrollOffsetX = 0; // Reset horizontal
+      (settings.player as any).scrollOffsetY = -200;
+      (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V63: SYNTH: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ SYNTH: scrollElement = document.body, scrollOffsetY = -200px"
       );
     } else {
-      // FIX #2: Use container for horizontal scroll (Landscape/Continuous)
       (settings.player as any).scrollElement = container;
-      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Horizontal offset
-      (settings.player as any).scrollOffsetY = 0; // Reset vertical
-      console.log(
-        "✅ V63: SYNTH: scrollElement = container, scrollOffsetX = 15%"
-      );
+      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+      (settings.player as any).scrollOffsetY = 0;
+      console.log("✅ SYNTH: scrollElement = container, scrollOffsetX = 15%");
     }
 
-    // ⚡ CRITICAL FIX FOR NEXT.JS:
+    // CRITICAL FIX FOR NEXT.JS:
     settings.player.outputMode =
       alphaTab.PlayerOutputMode.WebAudioScriptProcessor;
     settings.core.useWorkers = true;
@@ -101,33 +115,38 @@ export async function initAlphaTab(
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
-    settings.player.enableUserInteraction = true;
+
+    // 🚨 CRITICAL FIX: Disable native user interaction
+    settings.player.enableUserInteraction = false;
+    console.log(
+      "🚫 Native user interaction DISABLED (prevents loop highlight)"
+    );
+
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-    // ✅ V63 FIX: Proper scroll element and offset handling
+    // Initial scroll settings (will be updated by orientation handler)
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // FIX #1: Use document.body for vertical scroll anchor (Portrait/Page)
       (settings.player as any).scrollElement = document.body;
-      (settings.player as any).scrollOffsetY = -200; // Vertical offset
-      (settings.player as any).scrollOffsetX = 0; // Reset horizontal
+      (settings.player as any).scrollOffsetY = -200;
+      (settings.player as any).scrollOffsetX = 0;
       console.log(
-        "✅ V63: EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
+        "✅ EXTERNAL: scrollElement = document.body, scrollOffsetY = -200px"
       );
     } else {
-      // FIX #2: Use container for horizontal scroll (Landscape/Continuous)
       (settings.player as any).scrollElement = container;
-      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15; // Horizontal offset
-      (settings.player as any).scrollOffsetY = 0; // Reset vertical
+      (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+      (settings.player as any).scrollOffsetY = 0;
       console.log(
-        "✅ V63: EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
+        "✅ EXTERNAL: scrollElement = container, scrollOffsetX = 15%"
       );
     }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
-    console.log("✅ V63: Scroll mode = Continuous (AlphaTab auto-scroll)");
+    console.log("✅ Scroll mode = Continuous (AlphaTab auto-scroll)");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
+    settings.player.enableUserInteraction = false;
 
     console.log("🚫 PLAYER DISABLED");
   }
@@ -136,33 +155,36 @@ export async function initAlphaTab(
     engine: settings.core.engine,
     layoutMode: settings.display.layoutMode,
     playerMode: settings.player.playerMode,
-    outputMode:
-      settings.player.playerMode === alphaTab.PlayerMode.EnabledSynthesizer
-        ? settings.player.outputMode
-        : "N/A",
-    enableCursor: settings.player.enableCursor,
-    isMobile,
+    enableUserInteraction: settings.player.enableUserInteraction,
+    scale: settings.display.scale,
+    stretchForce: settings.display.stretchForce,
   });
 
-  return new alphaTab.AlphaTabApi(container, settings);
+  const api = new alphaTab.AlphaTabApi(container, settings);
+
+  return api as AlphaTabApi;
 }
 
 export async function loadGuitarProFile(
   api: AlphaTabApi,
   fileUrl: string
 ): Promise<void> {
-  console.log(`📂 Loading Guitar Pro file: ${fileUrl}`);
-
-  const response = await fetch(fileUrl);
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status}: Failed to load file from ${fileUrl}`
-    );
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-
-  console.log(`✅ File loaded - Size: ${uint8Array.byteLength} bytes`);
-  api.load(uint8Array);
+  return new Promise((resolve, reject) => {
+    fetch(fileUrl)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.statusText}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then((arrayBuffer) => {
+        const uint8Array = new Uint8Array(arrayBuffer);
+        api.load(uint8Array);
+        resolve();
+      })
+      .catch((error) => {
+        console.error("Failed to load Guitar Pro file:", error);
+        reject(error);
+      });
+  });
 }

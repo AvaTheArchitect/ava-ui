@@ -3,11 +3,14 @@
 /**
  * AlphaTab Renderer - STAGE 1 with iOS PWA Resume Fix
  * 
+ * @version Nov 11, 2025
+ * @updated Added aggressive localStorage + DOM cleanup for ghost cursor fix
+ * 
  * 🚨 CRITICAL FIX: iOS PWA state persistence bug
  * - First launch = Works perfectly ✅
  * - Reopen without reinstall = Broken (ghost cursors, track switching fails) ❌
  * 
- * SOLUTION: Force clean reinitialization when PWA resumes from background
+ * SOLUTION: Force clean reinitialization + storage cleanup when PWA resumes
  * 
  * WORKING FEATURES:
  * ✅ Single unified row in landscape
@@ -15,6 +18,7 @@
  * ✅ Orientation switching
  * ✅ Track selection
  * ✅ Survives app suspend/resume cycles
+ * ✅ Clears ghost cursors on resume
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -73,6 +77,32 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (document.visibilityState === 'visible' && initCountRef.current > 0) {
                 console.log('🔄 iOS PWA: App resumed - forcing clean reinitialization');
                 
+                // 🆕 CRITICAL: Clear ALL persistent storage (fixes ghost cursor)
+                try {
+                    // Clear localStorage (AlphaTab may cache data here)
+                    console.log('🧹 Clearing localStorage...');
+                    const keysToPreserve = ['auth_token', 'user_preferences']; // Add keys you want to keep
+                    const storage: Record<string, string> = {};
+                    
+                    // Preserve important data
+                    keysToPreserve.forEach(key => {
+                        const value = localStorage.getItem(key);
+                        if (value) storage[key] = value;
+                    });
+                    
+                    // Clear everything
+                    localStorage.clear();
+                    
+                    // Restore preserved data
+                    Object.keys(storage).forEach(key => {
+                        localStorage.setItem(key, storage[key]);
+                    });
+                    
+                    console.log('✅ localStorage cleared (preserved important keys)');
+                } catch (e) {
+                    console.warn('⚠️ Error clearing localStorage:', e);
+                }
+                
                 // Destroy existing API completely
                 if (apiRef.current) {
                     try {
@@ -85,9 +115,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     }
                 }
                 
-                // Clear container
+                // 🆕 AGGRESSIVE: Clear ALL DOM content + CSS cursor artifacts
                 if (containerRef.current) {
+                    // Remove all child elements
                     containerRef.current.innerHTML = '';
+                    
+                    // Force style reset
+                    containerRef.current.style.cssText = '';
+                    
+                    // Clear any orphaned cursor elements in document
+                    const cursors = document.querySelectorAll('[class*="cursor"], [class*="at-cursor"]');
+                    cursors.forEach(el => el.remove());
+                    
+                    console.log('🧹 Cleared DOM + removed orphaned cursor elements');
                 }
                 
                 // Reset all state
