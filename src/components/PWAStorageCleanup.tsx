@@ -31,50 +31,32 @@ export function PWAStorageCleanup() {
         const isSubsequentRun = localStorage.getItem('pwa_run_marker');
 
         if (isSubsequentRun) {
-            console.warn('⚠️ Subsequent PWA run detected - clearing potentially corrupted storage');
+            console.warn('⚠️ Subsequent PWA run detected - checking for corruption');
 
-            // 1. Clear AlphaTab-specific data
-            const alphaTabKeys = Object.keys(localStorage).filter(key =>
-                key.includes('alphatab') ||
-                key.includes('at-') ||
-                key.includes('cursor') ||
-                key.includes('player')
-            );
+            // 1. Only clear if we detect orphaned cursors (actual corruption)
+            const orphanedCursors = document.querySelectorAll('[class*="at-cursor"], [class*="cursor"]');
 
-            alphaTabKeys.forEach(key => {
-                localStorage.removeItem(key);
-                console.log(`🧹 Removed localStorage key: ${key}`);
-            });
+            if (orphanedCursors.length > 0) {
+                console.warn(`🚨 Found ${orphanedCursors.length} orphaned cursors - clearing storage`);
 
-            // 2. Clear any orphaned DOM elements from previous session
-            // This catches ghost cursors that might persist in the DOM
-            const cleanupSelectors = [
-                '[class*="at-cursor"]',
-                '[class*="cursor"]',
-                '[class*="at-selection"]',
-                '[class*="at-highlight"]',
-                '.at-surface [style*="cursor"]',
-            ];
+                // Clear AlphaTab-specific localStorage only
+                const alphaTabKeys = Object.keys(localStorage).filter(key =>
+                    key.includes('alphatab') ||
+                    key.includes('at-') ||
+                    key.includes('cursor')
+                );
 
-            cleanupSelectors.forEach(selector => {
-                const elements = document.querySelectorAll(selector);
-                if (elements.length > 0) {
-                    console.log(`🧹 Removing ${elements.length} orphaned elements: ${selector}`);
-                    elements.forEach(el => el.remove());
-                }
-            });
+                alphaTabKeys.forEach(key => {
+                    localStorage.removeItem(key);
+                    console.log(`🧹 Removed localStorage key: ${key}`);
+                });
 
-            // 3. Force garbage collection hint (if available)
-            if ('gc' in window && typeof (window as any).gc === 'function') {
-                try {
-                    (window as any).gc();
-                    console.log('♻️ Forced garbage collection');
-                } catch (e) {
-                    // Not available in production, only with --expose-gc flag
-                }
+                // Remove orphaned cursors
+                orphanedCursors.forEach(el => el.remove());
+                console.log(`🧹 Removed ${orphanedCursors.length} orphaned cursor elements`);
+            } else {
+                console.log('✅ No corruption detected - skipping cleanup');
             }
-
-            console.log('✅ PWA storage cleanup complete');
         } else {
             console.log('✨ First PWA run - setting run marker');
         }

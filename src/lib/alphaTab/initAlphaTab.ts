@@ -2,9 +2,10 @@
  * AlphaTab Initialization Utility - STAGE 1 CLEAN
  *
  * @version Nov 11, 2025
- * @updated Added enableUserInteraction = false to prevent desktop loop highlight
+ * @updated Added enableUserInteraction and enableLoopSelection parameters
  *
- * ✅ Native user interaction DISABLED (prevents desktop loop highlight)
+ * ✅ enableUserInteraction: Controls click-to-seek behavior
+ * ✅ enableLoopSelection: Controls drag-to-loop highlight (desktop)
  * ✅ Scale/stretchForce preserved (creates single unified row in landscape)
  * ✅ Proper scroll element handling for both orientations
  *
@@ -20,6 +21,10 @@ export interface AlphaTabConfig {
   layoutMode?: "page" | "horizontal";
   soundFontPath?: string;
   isMobile?: boolean;
+  // ✅ NEW: Control user interaction (click-to-seek)
+  enableUserInteraction?: boolean;
+  // ✅ NEW: Control loop selection specifically (drag-to-loop highlight)
+  enableLoopSelection?: boolean;
 }
 
 export async function initAlphaTab(
@@ -32,6 +37,8 @@ export async function initAlphaTab(
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
     isMobile = false,
+    enableUserInteraction = true, // ✅ Default true - enables click-to-seek
+    enableLoopSelection = false, // ✅ Default false - prevents desktop loop highlight
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -79,12 +86,9 @@ export async function initAlphaTab(
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
 
-    // 🚨 CRITICAL FIX: Disable native user interaction
-    // This prevents AlphaTab's built-in click/drag selection
-    settings.player.enableUserInteraction = false;
-    console.log(
-      "🚫 Native user interaction DISABLED (prevents loop highlight)"
-    );
+    // ✅ Use parameter values
+    settings.player.enableUserInteraction = enableUserInteraction;
+    (settings.player as any).enableLoopSelection = enableLoopSelection;
 
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -112,15 +116,19 @@ export async function initAlphaTab(
     console.log("🎼 SoundFont:", soundFontPath);
     console.log("🔊 Output: ScriptProcessor");
     console.log("⚡ Synthesis workers: ENABLED");
+    console.log(
+      `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
+    );
+    console.log(
+      `🔄 Loop Selection: ${enableLoopSelection ? "ENABLED" : "DISABLED"}`
+    );
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
 
-    // 🚨 CRITICAL FIX: Disable native user interaction
-    settings.player.enableUserInteraction = false;
-    console.log(
-      "🚫 Native user interaction DISABLED (prevents loop highlight)"
-    );
+    // ✅ Use parameter values
+    settings.player.enableUserInteraction = enableUserInteraction;
+    (settings.player as any).enableLoopSelection = enableLoopSelection;
 
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -143,6 +151,12 @@ export async function initAlphaTab(
 
     console.log("🎵 EXTERNAL MEDIA MODE");
     console.log("✅ Scroll mode = Continuous (AlphaTab auto-scroll)");
+    console.log(
+      `🖱️ User Interaction: ${enableUserInteraction ? "ENABLED" : "DISABLED"}`
+    );
+    console.log(
+      `🔄 Loop Selection: ${enableLoopSelection ? "ENABLED" : "DISABLED"}`
+    );
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
