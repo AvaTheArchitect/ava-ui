@@ -247,7 +247,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             <div
                 ref={containerRef}
-                className={className}
+                className={`${className} ${isMobile ? 'alphatab-mobile' : 'alphatab-desktop'}`}
                 style={{
                     minHeight,
                     width: '100%',
@@ -261,6 +261,33 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 40px), transparent 100%)',
                 }}
             />
+
+            {/* 💥 CRITICAL FIX: Force single horizontal row ONLY in mobile landscape */}
+            <style jsx global>{`
+                /* Only apply to mobile devices in landscape orientation */
+                @media (orientation: landscape) and (max-width: 1024px) {
+                    .alphatab-mobile .at-surface > svg {
+                        /* Force width to be determined by content (one long row) */
+                        width: max-content !important; 
+                        min-width: 100%;
+                        display: block !important;
+                        /* CRITICAL: Prevents measures from breaking onto next row */
+                        white-space: nowrap !important; 
+                    }
+                    
+                    /* Ensure the at-surface container doesn't constrain width */
+                    .alphatab-mobile .at-surface {
+                        width: max-content !important;
+                        min-width: 100%;
+                    }
+                }
+                
+                /* Desktop stays in normal page mode (multiple rows) */
+                .alphatab-desktop .at-surface > svg {
+                    /* Let desktop use normal page layout */
+                    width: 100%;
+                }
+            `}</style>
         </div>
     );
 };
