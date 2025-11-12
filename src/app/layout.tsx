@@ -136,8 +136,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* iOS PWA Fix: Clears corrupted storage on app resume - Nov 11, 2025 */}
-        <PWAStorageCleanup />
         {children}
       </body>
     </html>
