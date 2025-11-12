@@ -2,14 +2,13 @@
  * Root Layout Component
  * 
  * @version Nov 11, 2025
- * @updated Added PWAStorageCleanup to fix iOS PWA ghost cursor bug
+ * @updated Removed PWAStorageCleanup (iOS 18.1 bug cannot be fixed with JS)
  * 
  * Path: src/app/layout.tsx
  */
 
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { PWAStorageCleanup } from '@/components/PWAStorageCleanup';
 import '@/styles/alphaTab.css';
 import "./globals.css";
 import '@/styles/maestroCursor.css';
