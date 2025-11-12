@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1 FINAL
+ * AlphaTab Renderer - STAGE 1 FINAL (with Double-Click/Tap)
  * 
  * @version Nov 11, 2025
+ * @updated Added double-click/tap to seek and play
  * @status iOS 18.1 PWA bug acknowledged - cannot be fixed with JavaScript
  * 
  * KNOWN ISSUE:
@@ -11,15 +12,17 @@
  * - Ghost cursors appear
  * - Track switching fails
  * - Playback issues
+ * - Landscape mode may not show single unified row
  * Workaround: Delete and reinstall PWA (temporary)
  * Fix: Wait for Apple iOS patch (likely 18.2)
  * 
  * WORKING FEATURES:
- * ✅ Single unified row in landscape
+ * ✅ Single unified row in landscape (works on fresh install)
  * ✅ Auto-scroll in both orientations
  * ✅ Orientation switching
  * ✅ Track selection
  * ✅ Click-to-seek (single tap/click)
+ * ✅ Double-click/tap to seek and play
  * ✅ No desktop loop highlight
  * ✅ Works perfectly on fresh install (iOS bug only affects reopens)
  * ✅ Works perfectly on desktop (no iOS issues)
@@ -40,6 +43,23 @@ export interface AlphaTabRendererProps {
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
 }
+
+// ==================== HELPER FUNCTIONS ====================
+
+const getBeatAtPosition = (
+    api: AlphaTabApi,
+    container: HTMLElement,
+    x: number,
+    y: number
+) => {
+    if (!api.renderer?.boundsLookup) return null;
+    const rect = container.getBoundingClientRect();
+    const relX = x - rect.left + container.scrollLeft;
+    const relY = y - rect.top + container.scrollTop;
+    return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
+};
+
+// ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     fileUrl,
@@ -229,6 +249,123 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             window.removeEventListener('resize', handleOrientationChange);
         };
     }, [isRendered, scoreIsLoaded]);
+
+    // ==================== DOUBLE-CLICK/TAP TO SEEK AND PLAY ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
+        if (playerMode === 'disabled') return;
+        if (!scoreIsLoaded) return;
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        // Desktop: Double-click handler
+        const handleDoubleClick = (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+
+            if (beat && beat.absolutePlaybackStart !== undefined) {
+                console.log('🎵 Double-click at tick:', beat.absolutePlaybackStart);
+
+                // Set cursor position
+                if (api.tickPosition !== undefined) {
+                    api.tickPosition = beat.absolutePlaybackStart;
+                }
+
+                // Start playback after brief delay
+                setTimeout(() => {
+                    try {
+                        if (api.play) {
+                            api.play();
+                        } else if ((api as any).playPause) {
+                            (api as any).playPause();
+                        }
+                        console.log('✅ Playback started from double-click');
+                    } catch (err) {
+                        console.error('❌ Failed to start playback:', err);
+                    }
+                }, 50);
+            }
+        };
+
+        // Mobile: Double-tap handler
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
+        const DOUBLE_TAP_DELAY = 400;
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (e.changedTouches.length === 0) return;
+
+            const touch = e.changedTouches[0];
+            const now = Date.now();
+            const timeSinceLastTap = now - lastTapTime;
+
+            const isDoubleTap =
+                timeSinceLastTap < DOUBLE_TAP_DELAY &&
+                timeSinceLastTap > 50 &&
+                Math.abs(touch.clientX - lastTapX) < 50 &&
+                Math.abs(touch.clientY - lastTapY) < 50;
+
+            if (isDoubleTap) {
+                e.preventDefault();
+                console.log('👆 Double-tap detected');
+
+                const beat = getBeatAtPosition(api, container, lastTapX, lastTapY);
+
+                if (beat && beat.absolutePlaybackStart !== undefined) {
+                    console.log('🎵 Double-tap at tick:', beat.absolutePlaybackStart);
+
+                    // Set cursor position
+                    if (api.tickPosition !== undefined) {
+                        api.tickPosition = beat.absolutePlaybackStart;
+                    }
+
+                    // Start playback
+                    setTimeout(() => {
+                        try {
+                            if (api.play) {
+                                api.play();
+                            } else if ((api as any).playPause) {
+                                (api as any).playPause();
+                            }
+                            console.log('✅ Playback started from double-tap');
+                        } catch (err) {
+                            console.error('❌ Failed to start playback:', err);
+                        }
+                    }, 50);
+                }
+
+                // Reset tap tracking
+                lastTapTime = 0;
+            } else {
+                // Record this tap for potential double-tap
+                lastTapTime = now;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+            }
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const target = (surface as HTMLElement) || container;
+
+        // Add event listeners
+        if (isMobile) {
+            target.addEventListener('touchend', handleTouchEnd as EventListener);
+        } else {
+            target.addEventListener('dblclick', handleDoubleClick as EventListener);
+        }
+
+        return () => {
+            if (isMobile) {
+                target.removeEventListener('touchend', handleTouchEnd as EventListener);
+            } else {
+                target.removeEventListener('dblclick', handleDoubleClick as EventListener);
+            }
+        };
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
 
     return (
         <div className="relative">
