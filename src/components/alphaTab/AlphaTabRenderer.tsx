@@ -2,7 +2,7 @@
 
 /**
  * AlphaTab Renderer - STAGE 1 (Core Features Only)
- * V64 - Mobile PWA Touch Event Fix
+ * V65 - Fixed Mobile Detection & Touch Event Logging
  * 
  * REMOVED (for Stage 2):
  * - Loop logic (constants, handles, selection, drag)
@@ -16,6 +16,12 @@
  * ✅ Cursor rendering
  * ✅ Track switching
  * ✅ Mobile PWA touch support
+ * 
+ * V65 FIXES:
+ * - Synchronous mobile detection (before initAlphaTab)
+ * - Defensive element selection (.at-surface fallback chain)
+ * - Extensive touch event logging for debugging
+ * - Always attach touch listeners (not just on mobile)
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -68,18 +74,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
-    // Detect mobile device
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const checkMobile = () => {
-            const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-                (window.innerWidth <= 1024 && 'ontouchstart' in window);
-            setIsMobile(mobile);
-        };
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
+    // 🎯 V65: SYNCHRONOUS mobile detection - must happen before initAlphaTab
+    const detectMobile = (): boolean => {
+        const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+        const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+        const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
+        const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 1024;
+        const mobile = isMobileUA || (isTouchDevice && isSmallScreen);
+        console.log(`📱 V65: Mobile detection - UA:${isMobileUA}, Touch:${isTouchDevice}, Small:${isSmallScreen} → ${mobile ? 'MOBILE' : 'DESKTOP'}`);
+        return mobile;
+    };
+
+    const [isMobile] = useState(() => detectMobile());
 
     // ==================== INITIALIZE ALPHATAB (ONCE) ====================
     useEffect(() => {
@@ -90,10 +96,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V64: Initializing AlphaTab');
+                console.log('🎸 V65: Initializing AlphaTab');
 
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
                 const layoutMode = isLandscape ? 'horizontal' : 'page';
+
+                console.log(`📐 V65: Layout decision - isMobile:${isMobile}, isLandscape:${isLandscape} → ${layoutMode}`);
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -107,11 +115,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 if (!isMounted) return;
 
                 apiRef.current = api;
-                console.log('✅ V64: AlphaTab initialized');
+                console.log('✅ V65: AlphaTab initialized');
 
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ V64: Render finished');
+                        console.log('✅ V65: Render finished');
                         if (isMounted) {
                             setIsRendered(true);
                             setIsLoading(false);
@@ -121,13 +129,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 if (fileUrl) {
-                    console.log('📄 V64: Loading score from:', fileUrl);
+                    console.log('📄 V65: Loading score from:', fileUrl);
                     await loadGuitarProFile(api, fileUrl);
 
                     setTimeout(() => {
                         if (isMounted && api.score) {
                             setScoreIsLoaded(true);
-                            console.log('✅ V64: Score loaded');
+                            console.log('✅ V65: Score loaded');
 
                             const info: SongInfo = {
                                 title: api.score.title || 'Unknown',
@@ -147,7 +155,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 onApiReady?.(api);
 
             } catch (error) {
-                console.error('❌ V64: Initialization failed:', error);
+                console.error('❌ V65: Initialization failed:', error);
                 if (isMounted) {
                     onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
@@ -170,7 +178,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         const handleOrientationChange = async () => {
-            console.log('🔄 V64: Orientation change detected');
+            console.log('🔄 V65: Orientation change detected');
 
             const isLandscape = window.innerWidth > window.innerHeight;
             const alphaTab = (window as any).alphaTab;
@@ -183,7 +191,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             (api.settings.player as any).scrollOffsetY = 0;
 
             if (isLandscape) {
-                console.log('📱 V64: Switching to LANDSCAPE');
+                console.log('📱 V65: Switching to LANDSCAPE');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'hidden';
@@ -195,7 +203,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
             } else {
-                console.log('📱 V64: Switching to PORTRAIT');
+                console.log('📱 V65: Switching to PORTRAIT');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 container.style.overflowX = 'auto';
                 container.style.overflowY = 'auto';
@@ -211,7 +219,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             await api.updateSettings();
             await new Promise(resolve => setTimeout(resolve, 50));
             api.render();
-            console.log('✅ V64: Re-render complete');
+            console.log('✅ V65: Re-render complete');
         };
 
         handleOrientationChange();
@@ -230,14 +238,24 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const api = apiRef.current;
         const container = containerRef.current;
-        const surface = container.querySelector('.at-surface') as HTMLElement || container;
+
+        // 🎯 V65: More defensive element selection
+        let surface = container.querySelector('.at-surface') as HTMLElement;
+        if (!surface) {
+            surface = container.querySelector('.at-viewport') as HTMLElement;
+        }
+        if (!surface) {
+            surface = container;
+        }
+
+        console.log(`🎯 V65: Attaching to element:`, surface.className || 'container', `isMobile:${isMobile}`);
 
         // Shared state for both mouse and touch
         let tapCount = 0;
         let tapTimer: NodeJS.Timeout | null = null;
         const TAP_DELAY = 250; // ms to wait for double tap
 
-        // 🎯 V64: UNIFIED TAP HANDLER - works for both mouse and touch
+        // 🎯 V65: UNIFIED TAP HANDLER - works for both mouse and touch
         const handleTap = (x: number, y: number, isDoubleTap: boolean) => {
             const beat = getBeatAtPosition(api, container, x, y);
 
@@ -247,8 +265,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     api.tickPosition = beat.absolutePlaybackStart;
                     console.log(
                         isDoubleTap
-                            ? `🎵 V64: Double-tap/click at tick ${beat.absolutePlaybackStart}`
-                            : `🎯 V64: Single-tap/click seek to tick ${beat.absolutePlaybackStart}`
+                            ? `🎵 V65: Double-tap/click at tick ${beat.absolutePlaybackStart}`
+                            : `🎯 V65: Single-tap/click seek to tick ${beat.absolutePlaybackStart}`
                     );
                 }
 
@@ -261,9 +279,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             } else if ((api as any).playPause) {
                                 (api as any).playPause();
                             }
-                            console.log('✅ V64: Playback started from double-tap/click');
+                            console.log('✅ V65: Playback started from double-tap/click');
                         } catch (err) {
-                            console.error('❌ V64: Failed to start playback:', err);
+                            console.error('❌ V65: Failed to start playback:', err);
                         }
                     }, 50);
                 }
@@ -300,6 +318,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const MAX_TAP_DURATION = 300; // Max ms for a tap
 
         const handleTouchStart = (e: TouchEvent) => {
+            console.log('👆 V65: touchstart fired');
             const touch = e.touches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
@@ -307,6 +326,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
+            console.log('👆 V65: touchend fired');
             // Prevent default to avoid synthetic click events
             e.preventDefault();
 
@@ -320,8 +340,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const moveY = Math.abs(touchEndY - touchStartY);
             const isTap = moveX < MAX_TAP_MOVE && moveY < MAX_TAP_MOVE && duration < MAX_TAP_DURATION;
 
+            console.log(`👆 V65: Touch end - moveX:${moveX}, moveY:${moveY}, duration:${duration}, isTap:${isTap}`);
+
             if (!isTap) {
-                console.log('🚫 V64: Touch moved too much - not a tap');
+                console.log('🚫 V65: Touch moved too much - not a tap');
                 return;
             }
 
@@ -345,17 +367,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         // 🎯 Attach event listeners
-        console.log('🎮 V64: Attaching unified click/tap handlers');
+        console.log(`🎮 V65: Attaching unified click/tap handlers to:`, surface.tagName, surface.className);
+        console.log(`🎮 V65: isMobile=${isMobile}, has ontouchstart=${'ontouchstart' in window}`);
 
         // Mouse events for desktop
         surface.addEventListener('click', handleMouseClick as EventListener);
+        console.log('🖱️ V65: Mouse click listener attached');
 
-        // Touch events for mobile/PWA
+        // Touch events for mobile/PWA - ALWAYS attach, even on desktop for safety
         surface.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
         surface.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
+        console.log('👆 V65: Touch listeners attached (passive touchstart, active touchend)');
 
         // Cleanup
         return () => {
+            console.log('🧹 V65: Cleaning up event listeners');
             surface.removeEventListener('click', handleMouseClick as EventListener);
             surface.removeEventListener('touchstart', handleTouchStart as EventListener);
             surface.removeEventListener('touchend', handleTouchEnd as EventListener);
