@@ -1,12 +1,18 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1 (Core Features Only)
+ * AlphaTab Renderer - STAGE 1+ (Menu Tray Integration)
+ * V66 - Added Menu Tray Props (isLooping, onLoopRangeChange)
  * V65 - Fixed Mobile Detection & Touch Event Logging
  * 
+ * NEW IN V66:
+ * ✅ isLooping prop (syncs with menu tray loop button)
+ * ✅ onLoopRangeChange callback (for future loop selection sync)
+ * ✅ Loop state management via useEffect
+ * 
  * REMOVED (for Stage 2):
- * - Loop logic (constants, handles, selection, drag)
- * - isLooping prop
+ * - Loop geometry logic (handles, selection UI, drag handlers)
+ * - Loop constants and helper functions
  * 
  * FOCUS:
  * ✅ Double-click/tap to play
@@ -16,6 +22,7 @@
  * ✅ Cursor rendering
  * ✅ Track switching
  * ✅ Mobile PWA touch support
+ * ✅ Menu tray integration (loop state)
  * 
  * V65 FIXES:
  * - Synchronous mobile detection (before initAlphaTab)
@@ -38,6 +45,10 @@ export interface AlphaTabRendererProps {
     minHeight?: string;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
+    
+    // 🆕 MENU TRAY INTEGRATION (Stage 1+)
+    isLooping?: boolean;
+    onLoopRangeChange?: (start: number, end: number) => void;
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -67,6 +78,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     minHeight = '600px',
     playerMode = 'external',
     soundFontPath = '/soundfont/sonivox.sf2',
+    isLooping,
+    onLoopRangeChange,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -230,6 +243,34 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, scoreIsLoaded]);
 
+    // ==================== LOOP CONTROL - MENU TRAY INTEGRATION ====================
+    // Watch isLooping prop from MaestroControlPanel
+    // This enables/disables loop functionality based on menu tray button state
+    useEffect(() => {
+        if (!apiRef.current) return;
+        
+        const api = apiRef.current;
+        
+        // Sync isLooping state with AlphaTab API
+        if (api.isLooping !== undefined) {
+            api.isLooping = isLooping ?? false;
+        }
+        
+        // Always ensure user interaction is enabled (for future loop implementation)
+        if (api.settings?.player) {
+            (api.settings.player as any).enableUserInteraction = true;
+            api.updateSettings();
+        }
+        
+        // Clear any existing loop selection when loop is disabled
+        if (!isLooping && api.playbackRange !== undefined) {
+            api.playbackRange = null;
+            console.log('🔄 V65: Loop disabled - cleared playback range');
+        }
+        
+        console.log(`🔄 V65: Loop state synced - isLooping=${isLooping ?? false}`);
+    }, [isLooping]);
+
     // ==================== UNIFIED CLICK/TAP INTERACTION ====================
     useEffect(() => {
         if (!apiRef.current || !containerRef.current || !isRendered) return;
@@ -387,7 +428,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             surface.removeEventListener('touchend', handleTouchEnd as EventListener);
             if (tapTimer) clearTimeout(tapTimer);
         };
-    }, [isRendered, playerMode, scoreIsLoaded]);
+    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
 
     return (
         <div className="relative">
