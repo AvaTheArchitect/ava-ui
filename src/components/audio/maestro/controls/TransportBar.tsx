@@ -1,7 +1,9 @@
 'use client';
 
 /**
- * TransportBar.tsx
+ * TransportBar.tsx - Desktop Bottom Bar
+ * 🔧 V67: Increased z-index to 9999 to prevent cursor overlap
+ * 
  * Desktop bottom bar - Songsterr-style horizontal control layout
  * Fixed at bottom of screen, contains all playback controls
  */
@@ -34,7 +36,8 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   onTrackSoloToggle,
 }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
+    // 🔧 V67: Changed z-50 to z-[9999] to prevent AlphaTab cursor (z-1000) from appearing on top
+    <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
       <div className="max-w-screen-2xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           {/* Left Section: Track Mixer + Playback */}

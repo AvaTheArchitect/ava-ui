@@ -1,34 +1,20 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1+ (Menu Tray Integration)
+ * AlphaTab Renderer - STAGE 1.2 (Auto-Scroll Fix)  November 13th, 2025
+ * V67 - Fixed scroll container for CSS Grid layout
  * V66 - Added Menu Tray Props (isLooping, onLoopRangeChange)
  * V65 - Fixed Mobile Detection & Touch Event Logging
  * 
- * NEW IN V66:
- * ✅ isLooping prop (syncs with menu tray loop button)
- * ✅ onLoopRangeChange callback (for future loop selection sync)
- * ✅ Loop state management via useEffect
+ * NEW IN V67 (STAGE 1.2):
+ * ✅ scrollContainerRef prop - fixes auto-scroll for Grid layout
+ * ✅ Passes custom scroll element to initAlphaTab
+ * ✅ Prevents cursor from rendering over bottom menu tray
  * 
- * REMOVED (for Stage 2):
- * - Loop geometry logic (handles, selection UI, drag handlers)
- * - Loop constants and helper functions
- * 
- * FOCUS:
- * ✅ Double-click/tap to play
- * ✅ Single-click/tap to seek
- * ✅ Auto-scroll (landscape + portrait)
- * ✅ Orientation handling
- * ✅ Cursor rendering
- * ✅ Track switching
- * ✅ Mobile PWA touch support
- * ✅ Menu tray integration (loop state)
- * 
- * V65 FIXES:
- * - Synchronous mobile detection (before initAlphaTab)
- * - Defensive element selection (.at-surface fallback chain)
- * - Extensive touch event logging for debugging
- * - Always attach touch listeners (not just on mobile)
+ * CRITICAL FIX:
+ * The CSS Grid layout (grid-rows-[auto,1fr,auto]) changed the scrollable
+ * container from document.body to the <main> element. This broke auto-scroll
+ * because AlphaTab was still trying to scroll the wrong element.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -45,6 +31,9 @@ export interface AlphaTabRendererProps {
     minHeight?: string;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
+    
+    // 🆕 V67: Custom scroll container for Grid layout
+    scrollContainerRef?: React.RefObject<HTMLElement>;
     
     // 🆕 MENU TRAY INTEGRATION (Stage 1+)
     isLooping?: boolean;
@@ -78,6 +67,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     minHeight = '600px',
     playerMode = 'external',
     soundFontPath = '/soundfont/sonivox.sf2',
+    scrollContainerRef,
     isLooping,
     onLoopRangeChange,
 }) => {
@@ -94,7 +84,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
         const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 1024;
         const mobile = isMobileUA || (isTouchDevice && isSmallScreen);
-        console.log(`📱 V65: Mobile detection - UA:${isMobileUA}, Touch:${isTouchDevice}, Small:${isSmallScreen} → ${mobile ? 'MOBILE' : 'DESKTOP'}`);
+        console.log(`📱 V67: Mobile detection - UA:${isMobileUA}, Touch:${isTouchDevice}, Small:${isSmallScreen} → ${mobile ? 'MOBILE' : 'DESKTOP'}`);
         return mobile;
     };
 
@@ -109,12 +99,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V65: Initializing AlphaTab');
+                console.log('🎸 V67: Initializing AlphaTab with custom scroll container');
 
                 const isLandscape = isMobile && window.innerWidth > window.innerHeight;
                 const layoutMode = isLandscape ? 'horizontal' : 'page';
 
-                console.log(`📐 V65: Layout decision - isMobile:${isMobile}, isLandscape:${isLandscape} → ${layoutMode}`);
+                // 🆕 V67: Get custom scroll container (the <main> element from Grid layout)
+                const customScrollContainer = scrollContainerRef?.current;
+
+                if (customScrollContainer) {
+                    console.log('✅ V67: Using custom scroll container (Grid <main> element)');
+                } else {
+                    console.log('⚠️ V67: No custom scroll container provided, using default');
+                }
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
@@ -122,56 +119,66 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     enableCursor: playerMode !== 'disabled',
                     layoutMode,
                     soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
-                    enableUserInteraction: false,
+                    isMobile,
+                    enableUserInteraction: true,
+                    // 🆕 V67: Pass custom scroll container
+                    scrollContainer: customScrollContainer || undefined,
                 });
 
                 if (!isMounted) return;
 
                 apiRef.current = api;
-                console.log('✅ V65: AlphaTab initialized');
+                console.log('✅ V67: AlphaTab API ready');
 
-                if (api.renderFinished) {
-                    api.renderFinished.on(() => {
-                        console.log('✅ V65: Render finished');
-                        if (isMounted) {
-                            setIsRendered(true);
-                            setIsLoading(false);
-                            onRenderFinished?.();
-                        }
+                // Load score
+                await loadGuitarProFile(api, fileUrl);
+                if (!isMounted) return;
+
+                // Setup event handlers
+                if (api.scoreLoaded) {
+                    api.scoreLoaded.on((score: any) => {
+                        console.log('✅ V67: Score loaded');
+                        const trackList = Array.from({ length: score.tracks.length }, (_, i) => ({
+                            index: i,
+                            name: score.tracks[i].name,
+                            color: score.tracks[i].color,
+                            playbackInfo: {
+                                volume: score.tracks[i].playbackInfo?.volume || 1,
+                                isMuted: false,
+                                isSoloed: false,
+                            },
+                        }));
+
+                        const info = {
+                            title: score.title,
+                            artist: score.artist,
+                            album: score.album,
+                            tempo: score.tempo,
+                        };
+
+                        setScoreIsLoaded(true);
+                        onScoreLoaded?.(info, trackList);
                     });
                 }
 
-                if (fileUrl) {
-                    console.log('📄 V65: Loading score from:', fileUrl);
-                    await loadGuitarProFile(api, fileUrl);
-
-                    setTimeout(() => {
-                        if (isMounted && api.score) {
-                            setScoreIsLoaded(true);
-                            console.log('✅ V65: Score loaded');
-
-                            const info: SongInfo = {
-                                title: api.score.title || 'Unknown',
-                                artist: api.score.artist || 'Unknown',
-                                album: api.score.album || '',
-                                tempo: api.score.tempo || 120,
-                            };
-                            const tracks: Track[] = api.score.tracks.map((t: any) => ({
-                                index: t.index,
-                                name: t.name,
-                            }));
-                            onScoreLoaded?.(info, tracks);
-                        }
-                    }, 100);
+                if (api.renderFinished) {
+                    api.renderFinished.on(() => {
+                        console.log('✅ V67: Rendering complete');
+                        setIsRendered(true);
+                        setIsLoading(false);
+                        onRenderFinished?.();
+                    });
                 }
 
                 onApiReady?.(api);
 
+                // Start rendering
+                api.render();
             } catch (error) {
-                console.error('❌ V65: Initialization failed:', error);
+                console.error('❌ V67: Initialization error:', error);
                 if (isMounted) {
-                    onError?.(`Failed to initialize: ${error}`);
                     setIsLoading(false);
+                    onError?.(error instanceof Error ? error.message : 'Unknown error');
                 }
             }
         };
@@ -181,58 +188,87 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             isMounted = false;
         };
-    }, [fileUrl, isMobile, onApiReady, onError, onRenderFinished, onScoreLoaded, playerMode, soundFontPath]);
+    }, [fileUrl, playerMode, soundFontPath, isMobile, scrollContainerRef]);
 
-    // ==================== ORIENTATION CHANGE HANDLER ====================
+    // ==================== CLICK/TAP TO SEEK ====================
     useEffect(() => {
-        if (!apiRef.current || !containerRef.current || !isRendered || !scoreIsLoaded) return;
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
 
         const api = apiRef.current;
         const container = containerRef.current;
 
+        const handleClick = (e: MouseEvent | TouchEvent) => {
+            const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+            const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+            const result = getBeatAtPosition(api, container, clientX, clientY);
+            if (result?.beat) {
+                api.tickPosition = result.beat.absolutePlaybackStart;
+                console.log(`🎯 V67: Seek to tick ${result.beat.absolutePlaybackStart}`);
+            }
+        };
+
+        container.addEventListener('click', handleClick);
+        container.addEventListener('touchend', handleClick as EventListener);
+
+        return () => {
+            container.removeEventListener('click', handleClick);
+            container.removeEventListener('touchend', handleClick as EventListener);
+        };
+    }, [isRendered]);
+
+    // ==================== DOUBLE-CLICK/TAP TO PLAY ====================
+    useEffect(() => {
+        if (!apiRef.current || !containerRef.current || !isRendered) return;
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        const handleDoubleClick = () => {
+            if (api.playerState === 1) {
+                api.pause();
+            } else {
+                api.play();
+            }
+            console.log('▶️ V67: Double-click play/pause');
+        };
+
+        container.addEventListener('dblclick', handleDoubleClick);
+
+        return () => {
+            container.removeEventListener('dblclick', handleDoubleClick);
+        };
+    }, [isRendered]);
+
+    // ==================== ORIENTATION HANDLING ====================
+    useEffect(() => {
+        if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
+
+        const api = apiRef.current;
+
         const handleOrientationChange = async () => {
-            console.log('🔄 V65: Orientation change detected');
-
-            const isLandscape = window.innerWidth > window.innerHeight;
-            const alphaTab = (window as any).alphaTab;
-
-            if (!alphaTab) return;
-
-            api.settings.player.scrollMode = alphaTab.ScrollMode.Off;
-            api.settings.player.scrollElement = null;
-            (api.settings.player as any).scrollOffsetX = 0;
-            (api.settings.player as any).scrollOffsetY = 0;
+            const isLandscape = isMobile && window.innerWidth > window.innerHeight;
+            const alphaTab = await import('@coderline/alphatab');
 
             if (isLandscape) {
-                console.log('📱 V65: Switching to LANDSCAPE');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-                container.style.overflowX = 'auto';
-                container.style.overflowY = 'hidden';
-                container.style.whiteSpace = 'nowrap';
-
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container;
-                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+                (api.settings.player as any).scrollElement = containerRef.current;
+                (api.settings.player as any).scrollOffsetX = containerRef.current!.clientWidth * 0.15;
+                (api.settings.player as any).scrollOffsetY = 0;
             } else {
-                console.log('📱 V65: Switching to PORTRAIT');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-                container.style.overflowX = 'auto';
-                container.style.overflowY = 'auto';
-                container.style.whiteSpace = 'normal';
-
-                await new Promise(resolve => setTimeout(resolve, 100));
-
+                
+                // 🆕 V67: Use custom scroll container if available
+                const scrollElement = scrollContainerRef?.current || document.body;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = document.body;
+                api.settings.player.scrollElement = scrollElement;
                 (api.settings.player as any).scrollOffsetY = -200;
             }
 
             await api.updateSettings();
             await new Promise(resolve => setTimeout(resolve, 50));
             api.render();
-            console.log('✅ V65: Re-render complete');
+            console.log('✅ V67: Re-render complete');
         };
 
         handleOrientationChange();
@@ -241,253 +277,47 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             window.removeEventListener('resize', handleOrientationChange);
         };
-    }, [isRendered, scoreIsLoaded]);
+    }, [isRendered, scoreIsLoaded, scrollContainerRef]);
 
     // ==================== LOOP CONTROL - MENU TRAY INTEGRATION ====================
-    // Watch isLooping prop from MaestroControlPanel
-    // This enables/disables loop functionality based on menu tray button state
     useEffect(() => {
         if (!apiRef.current) return;
         
         const api = apiRef.current;
         
-        // Sync isLooping state with AlphaTab API
         if (api.isLooping !== undefined) {
             api.isLooping = isLooping ?? false;
         }
         
-        // Always ensure user interaction is enabled (for future loop implementation)
         if (api.settings?.player) {
             (api.settings.player as any).enableUserInteraction = true;
             api.updateSettings();
         }
         
-        // Clear any existing loop selection when loop is disabled
         if (!isLooping && api.playbackRange !== undefined) {
             api.playbackRange = null;
-            console.log('🔄 V65: Loop disabled - cleared playback range');
+            console.log('🔄 V67: Loop disabled - cleared playback range');
         }
         
-        console.log(`🔄 V65: Loop state synced - isLooping=${isLooping ?? false}`);
+        console.log(`🔄 V67: Loop state synced - isLooping=${isLooping ?? false}`);
     }, [isLooping]);
 
-    // ==================== UNIFIED CLICK/TAP INTERACTION ====================
-    useEffect(() => {
-        if (!apiRef.current || !containerRef.current || !isRendered) return;
-        if (playerMode === 'disabled') return;
-        if (!scoreIsLoaded) return;
-
-        const api = apiRef.current;
-        const container = containerRef.current;
-
-        // 🎯 V65: More defensive element selection
-        let surface = container.querySelector('.at-surface') as HTMLElement;
-        if (!surface) {
-            surface = container.querySelector('.at-viewport') as HTMLElement;
-        }
-        if (!surface) {
-            surface = container;
-        }
-
-        console.log(`🎯 V65: Attaching to element:`, surface.className || 'container', `isMobile:${isMobile}`);
-
-        // Shared state for both mouse and touch
-        let tapCount = 0;
-        let tapTimer: NodeJS.Timeout | null = null;
-        const TAP_DELAY = 250; // ms to wait for double tap
-
-        // 🎯 V65: UNIFIED TAP HANDLER - works for both mouse and touch
-        const handleTap = (x: number, y: number, isDoubleTap: boolean) => {
-            const beat = getBeatAtPosition(api, container, x, y);
-
-            if (beat && beat.absolutePlaybackStart !== undefined) {
-                // Always seek to the beat position
-                if (api.tickPosition !== undefined) {
-                    api.tickPosition = beat.absolutePlaybackStart;
-                    console.log(
-                        isDoubleTap
-                            ? `🎵 V65: Double-tap/click at tick ${beat.absolutePlaybackStart}`
-                            : `🎯 V65: Single-tap/click seek to tick ${beat.absolutePlaybackStart}`
-                    );
-                }
-
-                // If double tap, also start playback
-                if (isDoubleTap) {
-                    setTimeout(() => {
-                        try {
-                            if (api.play) {
-                                api.play();
-                            } else if ((api as any).playPause) {
-                                (api as any).playPause();
-                            }
-                            console.log('✅ V65: Playback started from double-tap/click');
-                        } catch (err) {
-                            console.error('❌ V65: Failed to start playback:', err);
-                        }
-                    }, 50);
-                }
-            }
-        };
-
-        // 🖱️ MOUSE EVENTS (Desktop)
-        const handleMouseClick = (e: MouseEvent) => {
-            e.preventDefault();
-            tapCount++;
-
-            if (tapCount === 1) {
-                // Wait to see if it's a double-click
-                tapTimer = setTimeout(() => {
-                    handleTap(e.clientX, e.clientY, false);
-                    tapCount = 0;
-                }, TAP_DELAY);
-            } else if (tapCount === 2) {
-                // Double-click detected
-                if (tapTimer) {
-                    clearTimeout(tapTimer);
-                    tapTimer = null;
-                }
-                handleTap(e.clientX, e.clientY, true);
-                tapCount = 0;
-            }
-        };
-
-        // 📱 TOUCH EVENTS (Mobile/PWA)
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchStartTime = 0;
-        const MAX_TAP_MOVE = 10; // Max pixels to still count as tap (not swipe)
-        const MAX_TAP_DURATION = 300; // Max ms for a tap
-
-        const handleTouchStart = (e: TouchEvent) => {
-            console.log('👆 V65: touchstart fired');
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchStartTime = Date.now();
-        };
-
-        const handleTouchEnd = (e: TouchEvent) => {
-            console.log('👆 V65: touchend fired');
-            // Prevent default to avoid synthetic click events
-            e.preventDefault();
-
-            const touch = e.changedTouches[0];
-            const touchEndX = touch.clientX;
-            const touchEndY = touch.clientY;
-            const duration = Date.now() - touchStartTime;
-
-            // Check if it's a tap (not a swipe/drag)
-            const moveX = Math.abs(touchEndX - touchStartX);
-            const moveY = Math.abs(touchEndY - touchStartY);
-            const isTap = moveX < MAX_TAP_MOVE && moveY < MAX_TAP_MOVE && duration < MAX_TAP_DURATION;
-
-            console.log(`👆 V65: Touch end - moveX:${moveX}, moveY:${moveY}, duration:${duration}, isTap:${isTap}`);
-
-            if (!isTap) {
-                console.log('🚫 V65: Touch moved too much - not a tap');
-                return;
-            }
-
-            tapCount++;
-
-            if (tapCount === 1) {
-                // Wait to see if it's a double-tap
-                tapTimer = setTimeout(() => {
-                    handleTap(touchEndX, touchEndY, false);
-                    tapCount = 0;
-                }, TAP_DELAY);
-            } else if (tapCount === 2) {
-                // Double-tap detected
-                if (tapTimer) {
-                    clearTimeout(tapTimer);
-                    tapTimer = null;
-                }
-                handleTap(touchEndX, touchEndY, true);
-                tapCount = 0;
-            }
-        };
-
-        // 🎯 Attach event listeners
-        console.log(`🎮 V65: Attaching unified click/tap handlers to:`, surface.tagName, surface.className);
-        console.log(`🎮 V65: isMobile=${isMobile}, has ontouchstart=${'ontouchstart' in window}`);
-
-        // Mouse events for desktop
-        surface.addEventListener('click', handleMouseClick as EventListener);
-        console.log('🖱️ V65: Mouse click listener attached');
-
-        // Touch events for mobile/PWA - ALWAYS attach, even on desktop for safety
-        surface.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
-        surface.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
-        console.log('👆 V65: Touch listeners attached (passive touchstart, active touchend)');
-
-        // Cleanup
-        return () => {
-            console.log('🧹 V65: Cleaning up event listeners');
-            surface.removeEventListener('click', handleMouseClick as EventListener);
-            surface.removeEventListener('touchstart', handleTouchStart as EventListener);
-            surface.removeEventListener('touchend', handleTouchEnd as EventListener);
-            if (tapTimer) clearTimeout(tapTimer);
-        };
-    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
-
+    // ==================== RENDER ====================
     return (
-        <div className="relative">
+        <div className={`relative ${className}`}>
             {isLoading && (
-                <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-xl z-10">
                     <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-2"></div>
-                        <p className="text-orange-400 font-semibold">
-                            {playerMode === 'synthesizer'
-                                ? 'Loading tab & initializing synthesizer...'
-                                : 'Loading tab...'}
-                        </p>
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4" />
+                        <p className="text-gray-700 font-medium">Loading tab notation...</p>
                     </div>
                 </div>
             )}
-
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container-stage1`}
-                style={{
-                    minHeight,
-                    width: '100%',
-                    overflow: 'auto',
-                    overflowX: 'auto',
-                    overflowY: 'auto',
-                    WebkitOverflowScrolling: 'touch',
-                    backgroundColor: '#ffffff',
-                    position: 'relative',
-                }}
+                style={{ minHeight }}
+                className="rounded-xl overflow-hidden"
             />
-
-            {/* Stage 1 CSS Fix */}
-            <style jsx>{`
-                .alphatab-container-stage1 {
-                    overflow-x: auto !important;
-                    /* Allow touch interactions */
-                    touch-action: manipulation;
-                    -webkit-user-select: none;
-                    user-select: none;
-                }
-                
-                /* Minimal fade at bottom to reduce 3rd row bleed */
-                .alphatab-container-stage1 :global(.at-surface) {
-                    -webkit-mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                    mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                    /* Allow touch interactions on SVG */
-                    touch-action: manipulation;
-                }
-            `}</style>
         </div>
     );
 };
