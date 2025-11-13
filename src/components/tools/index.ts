@@ -4,3 +4,4 @@ export * from "./ToolPanel";
 // Note: TempoSlider, VolumeSlider moved to components/audio/controls/
 // Note: KeySelector moved to components/theory/keys/
 // Note: ProgressBar moved to components/audio/controls/
+export { default as ToolPanel } from "./ToolPanel";

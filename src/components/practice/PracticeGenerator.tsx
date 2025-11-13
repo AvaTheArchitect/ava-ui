@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import PlayerTransport from "@/modules/practice/PlayerTransport";
 import { generateChordTimeline, ChordEvent } from "@/modules/practice/ChordProgressionEngine";
 import VisualPracticeHUD from "@/components/practice/VisualPracticeHUD";
-import ToolPanel from "@/components/tools/ToolPanel";
+import { ToolPanel } from "@/components/tools";
 import TunerDial from "@/components/tuner/TunerDial";
 
 // ✅ TypeScript interfaces
