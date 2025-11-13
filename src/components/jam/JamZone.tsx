@@ -55,4 +55,4 @@ export default function JamZone() {
             </div>
         </div>
     )
-}
+}//Attempted to convert to the new MaestroControlPanel, but decided to keep ToolPanel for now

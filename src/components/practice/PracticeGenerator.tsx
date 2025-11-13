@@ -190,6 +190,6 @@ export default function PracticeGenerator({
     </div>
   );
 }
-
+//Attempted to convert to the new MaestroControlPanel, but decided to keep ToolPanel for now
 // ✅ Export types for other components
 export type { ActiveTool, PracticeGeneratorProps };
