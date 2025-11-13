@@ -4,7 +4,7 @@ import React from "react"
 // ✅ JamEngine 
 import JamEngine from '@/modules/jam/JamEngine'
 // ✅ ToolPanel 
-import ToolPanel from "@/components/tools/ToolPanel"
+import ToolPanel from "@/components/tools/ToolPanel";
 
 export default function JamZone() {
     return (
