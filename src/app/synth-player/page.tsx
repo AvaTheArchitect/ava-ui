@@ -2,7 +2,16 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 13th, 2025
+ * November 14th, 2025 - V70: Version update (no code changes)
+ * 
+ * NEW IN V69:
+ * ✅ Fixed gap between top menu and canvas (changed py-4 to pb-4 on line 242)
+ * 
+ * NEW IN V68:
+ * ✅ Removed horizontal padding (px-*) from main content wrapper
+ * ✅ Added Notes Section below AlphaTab canvas
+ * ✅ Debug Panel kept for desktop/dev (hidden on mobile)
+ * 
  * NEW IN STAGE 1.2:
  * ✅ Mobile-first CSS Grid architecture (grid-rows-[auto,1fr,auto])
  * ✅ Top menu tray placeholder (for future implementation)
@@ -66,12 +75,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ STAGE1.2: API Ready');
+        console.log('✅ V70: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ STAGE1.2: Player Ready');
+                console.log('✅ V70: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -91,7 +100,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ STAGE1.2: Score loaded - ${info.title}`);
+        console.log(`✅ V70: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -101,11 +110,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ STAGE1.2: Rendering Complete');
+        console.log('✅ V70: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ ERROR: ${errorMsg}`);
+        console.error(`❌ V70 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -128,7 +137,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 STAGE1.2: Track ${trackIndex}`);
+            console.log(`🔄 V70: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -143,9 +152,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 Loop disabled');
+            console.log('🔄 V70: Loop disabled');
         } else {
-            console.log('🔄 Loop enabled');
+            console.log('🔄 V70: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -153,20 +162,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 Loop range: ${start} - ${end}`);
+        console.log(`🔁 V70: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V70: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 Audio: ${source}`);
+        console.log(`🎵 V70: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -179,7 +188,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V70: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -196,13 +205,13 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V70: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 Theme: ${newTheme}`);
+        console.log(`🎨 V70: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== SCROLL CONTAINER REF ====================
@@ -265,26 +274,28 @@ export default function SynthPlayerPage() {
                 className="w-full overflow-y-auto pb-32"
             >
                 {/* 👆 pb-32 (128px) outer padding for menu clearance */}
-                <div className="max-w-7xl mx-auto p-4 space-y-4 pb-24">
-                    {/* 👆 pb-24 (96px) inner padding = 224px total clearance */}
-                    {/* Mobile Title (shown only on mobile) */}
-                    <div className="md:hidden text-center mb-4">
+                {/* 🆕 V69: Changed py-4 to pb-4 to remove top gap */}
+                <div className="pb-4">
+                    {/* Mobile Title (shown only on mobile) - with horizontal padding */}
+                    <div className="md:hidden text-center mb-4 px-4">
                         <h2 className="text-xl font-bold text-white truncate">
                             {songInfo ? songInfo.title : 'Loading...'}
                         </h2>
                         <p className="text-sm text-gray-400">{songInfo?.artist || 'Maestro Player'}</p>
                     </div>
 
-                    {/* Error Display */}
+                    {/* Error Display - with horizontal padding */}
                     {error && (
-                        <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
-                            <h3 className="text-red-400 font-bold mb-2">Error</h3>
-                            <p className="text-red-300">{error}</p>
+                        <div className="px-4 mb-4">
+                            <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
+                                <h3 className="text-red-400 font-bold mb-2">Error</h3>
+                                <p className="text-red-300">{error}</p>
+                            </div>
                         </div>
                     )}
 
-                    {/* AlphaTab Renderer */}
-                    <div id="maestro-player" className="bg-white rounded-xl shadow-2xl">
+                    {/* AlphaTab Renderer - NO horizontal padding for edge-to-edge */}
+                    <div id="maestro-player" className="bg-white">
                         <AlphaTabRenderer
                             fileUrl="/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3"
                             playerMode="synthesizer"
@@ -300,14 +311,40 @@ export default function SynthPlayerPage() {
                         />
                     </div>
 
+                    {/* 🆕 V68: Notes Section (for both mobile and desktop) */}
+                    <div className="px-4 mt-8">
+                        <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
+                            <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
+                            <div className="space-y-3 text-gray-300">
+                                <p className="text-sm">
+                                    <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up
+                                </p>
+                                <p className="text-sm">
+                                    <strong className="text-white">Key Points:</strong> Focus on clean transitions between chords. 
+                                    Watch finger placement on the bends in measure 157.
+                                </p>
+                                <p className="text-sm">
+                                    <strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase 
+                                    tempo as you gain confidence.
+                                </p>
+                                <p className="text-sm text-gray-400 italic">
+                                    💡 Use the Loop button to repeat difficult sections
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Debug Panel (hidden on mobile, visible on desktop) */}
-                    <div className="hidden lg:block">
+                    <div className="hidden lg:block px-4 mt-4">
                         <DebugPanel
                             api={api}
                             currentTime={displayTime}
                             isPlaying={isPlaying}
                         />
                     </div>
+
+                    {/* Bottom clearance spacer - with padding */}
+                    <div className="h-24 px-4"></div>
                 </div>
             </main>
 
