@@ -1,22 +1,28 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V71 MOBILE REDESIGN
- * Date: November 14th, 2025
+ * MaestroControlPanel.tsx - V76 MOBILE FIX
+ * Date: November 15th, 2025
+ * 
+ * 🔧 V76 FIXES:
+ * ✅ Mobile now uses REAL components (TrackMixerPanel, SpeedControl, LoopControl)
+ * ✅ Replaced placeholder buttons with actual working components
+ * ✅ Components have z-[50] fix for clickable buttons
  * 
  * MOBILE CHANGES (Songsterr-style):
- * ✅ Bottom tray: 5 icon-only buttons (no text labels)
- * ✅ No visible boxes/backgrounds on buttons
- * ✅ Small play arrow icon (not large round button)
- * ✅ Synth/Original moved to Gear menu
+ * ✅ Bottom tray: 5 buttons with real functionality
  * ✅ Clean, minimal mobile UI
+ * ✅ Synth/Original in Gear menu
  * 
- * DESKTOP: Unchanged (V70 TransportBar)
+ * DESKTOP: Unchanged (TransportBar)
  */
 
 import React, { useState } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
+import { TrackMixerPanel } from './TrackMixerPanel';
+import { SpeedControl } from './SpeedControl';
+import { LoopControl } from './LoopControl';
 import type { MaestroControlPanelProps } from './MaestroControlTypes';
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
@@ -29,76 +35,55 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
         <TransportBar {...props} />
       </div>
 
-      {/* ==================== MOBILE LAYOUT (< md:) - V71 REDESIGN ==================== */}
+      {/* ==================== 🔧 V76: MOBILE LAYOUT - REAL COMPONENTS ==================== */}
       <div className="md:hidden">
-        {/* Compact Bottom Bar - 5 Icon-Only Buttons (Songsterr Style) */}
+        {/* Compact Bottom Bar - 5 Functional Buttons */}
         <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
           <div className="px-6 py-4 flex items-center justify-between">
 
-            {/* 1. Track Mixer - Far Left */}
-            <button
-              onClick={() => {/* TODO: Open track selector */ }}
-              disabled={!props.api || props.tracks.length === 0}
-              className="p-2 text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-              title="Switch tracks"
-            >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-              </svg>
-            </button>
+            {/* 🔧 V76: 1. Track Mixer - REAL COMPONENT */}
+            <div className="flex-shrink-0">
+              <TrackMixerPanel
+                api={props.api}
+                tracks={props.tracks}
+                selectedTrack={props.selectedTrack}
+                trackMuteState={props.trackMuteState}
+                trackSoloState={props.trackSoloState}
+                onTrackChange={props.onTrackChange}
+                onMuteToggle={props.onTrackMuteToggle}
+                onSoloToggle={props.onTrackSoloToggle}
+              />
+            </div>
 
-            {/* 2. Speed Control */}
-            <button
-              onClick={() => {/* TODO: Open speed panel */ }}
-              disabled={!props.api}
-              className="p-2 text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
-              title="Playback speed"
-            >
-              {/* Speedometer Icon */}
-              <svg width="28" height="24" viewBox="0 0 32 24">
-                <path
-                  d="M 4 20 A 12 12 0 0 1 28 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  opacity="0.5"
-                />
-                <path
-                  d="M 4 20 A 12 12 0 0 1 28 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeDasharray={`${props.playbackSpeed * 37.7} 100`}
-                  opacity="0.9"
-                />
-                <g transform={`rotate(${(props.playbackSpeed - 0.25) * 144 - 90}, 16, 20)`}>
-                  <line x1="16" y1="20" x2="16" y2="10" stroke="currentColor" strokeWidth="2" />
-                  <circle cx="16" cy="20" r="2" fill="currentColor" />
-                </g>
-              </svg>
-            </button>
+            {/* 🔧 V76: 2. Speed Control - REAL COMPONENT */}
+            <div className="flex-shrink-0">
+              <SpeedControl
+                api={props.api}
+                playbackSpeed={props.playbackSpeed}
+                songInfo={props.songInfo}
+                onSpeedChange={props.onSpeedChange}
+              />
+            </div>
 
-            {/* 3. Loop Control */}
-            <button
-              onClick={props.onLoopToggle}
-              disabled={!props.api}
-              className={`p-2 transition-colors disabled:opacity-50 ${props.isLooping ? 'text-blue-400' : 'text-gray-400 hover:text-gray-300'
-                }`}
-              title="Toggle loop"
-            >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
-              </svg>
-            </button>
+            {/* 🔧 V76: 3. Loop Control - REAL COMPONENT */}
+            <div className="flex-shrink-0">
+              <LoopControl
+                api={props.api}
+                isLooping={props.isLooping}
+                hasSelection={props.hasLoopSelection}
+                onLoopToggle={props.onLoopToggle}
+              />
+            </div>
 
-            {/* 4. Play/Pause - Small Arrow Icon (Far Right) */}
+            {/* 4. Play/Pause - Small Arrow Icon */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`p-2 transition-colors disabled:opacity-50 ${props.isPlaying
+              className={`p-2 transition-colors disabled:opacity-50 flex-shrink-0 ${
+                props.isPlaying
                   ? 'text-orange-400 hover:text-orange-300'
                   : 'text-cyan-400 hover:text-cyan-300'
-                }`}
+              }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -115,10 +100,10 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 5. Gear Menu - Settings (Far Right Corner) */}
+            {/* 5. Gear Menu - Settings */}
             <button
               onClick={() => setIsDrawerOpen(true)}
-              className="p-2 text-gray-400 hover:text-gray-300 transition-colors"
+              className="p-2 text-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
               title="More options"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -133,8 +118,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
           audioSource={props.audioSource}
+          theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
-        // Future: onThemeToggle, onMetronomeToggle, etc.
+          onThemeToggle={props.onThemeToggle}
         />
       </div>
     </>
