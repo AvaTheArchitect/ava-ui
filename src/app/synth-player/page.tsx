@@ -2,27 +2,20 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 14th, 2025 - V74: Fixed Header + Landscape Scroll
+ * November 15th, 2025 - V75: Header Lock + Fixed Footer
  * 
- * 🔧 NEW IN V74:
+ * 🔧 NEW IN V75:
+ * ✅ Header locked hidden during playback (fixes stuttering)
+ * ✅ Footer now position: fixed (like header) for responsive buttons
+ * ✅ Grid changed to grid-rows-[0px,1fr,0px] (both header/footer outside flow)
+ * ✅ Footer gets dynamic padding-bottom (pb-safe when visible)
+ * 
+ * NEW IN V74:
  * ✅ Header now position: fixed (removed from Grid flow)
- * ✅ Grid changed to grid-rows-[0px,1fr,auto] (header height = 0)
+ * ✅ Grid changed to grid-rows-[0px,1fr,auto]
  * ✅ Dynamic padding-top on <main> (pt-16 when visible, pt-0 when hidden)
  * ✅ Canvas immediately fills space when header hides (no purple gap)
  * ✅ Simplified landscape overflow logic for horizontal auto-scroll
- * 
- * NEW IN V73:
- * ✅ Added overflow-x-hidden to outermost grid container (prevents desktop overflow)
- * ✅ Fixed orientation detection to only trigger on mobile/touch devices
- * ✅ Desktop now always uses portrait mode (standard vertical scroll)
- * ✅ Mobile landscape uses horizontal scroll with 200vw canvas width
- * 
- * NEW IN V72:
- * ✅ Auto-hide header on scroll (Google AI scroll-and-hide pattern)
- * ✅ Landscape orientation detection and responsive behavior
- * ✅ Hide practice notes in landscape mode (canvas-only view)
- * ✅ Conditional overflow (vertical portrait, horizontal landscape)
- * ✅ Horizontal auto-scroll support for landscape mode
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -85,9 +78,16 @@ export default function SynthPlayerPage() {
         return () => clearInterval(interval);
     }, [isPlaying]);
 
-    // ==================== V72: SCROLL HANDLER (AUTO-HIDE HEADER) ====================
+    // ==================== 🔧 V75: SCROLL HANDLER - LOCKS HEADER DURING PLAYBACK ====================
     const handleScroll = useCallback(() => {
         if (!mainScrollContainerRef.current) return;
+
+        // 🔧 V75: Lock header hidden during playback (prevents stuttering)
+        if (isPlaying) {
+            setIsHeaderVisible(false);
+            lastScrollY.current = mainScrollContainerRef.current.scrollTop;
+            return; // Exit early - don't process scroll during playback
+        }
 
         const currentScrollY = mainScrollContainerRef.current.scrollTop;
         const scrollDirection = currentScrollY > lastScrollY.current ? 'down' : 'up';
@@ -102,7 +102,7 @@ export default function SynthPlayerPage() {
         }
 
         lastScrollY.current = currentScrollY;
-    }, []);
+    }, [isPlaying]); // 🔧 V75: Added isPlaying dependency
 
     // Attach scroll listener
     useEffect(() => {
@@ -124,7 +124,7 @@ export default function SynthPlayerPage() {
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             const isSmallScreen = window.innerWidth < 768; // md breakpoint
-            
+
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isSmallScreen);
         };
@@ -141,12 +141,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V74: API Ready');
+        console.log('✅ V75: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V74: Player Ready');
+                console.log('✅ V75: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -166,7 +166,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V74: Score loaded - ${info.title}`);
+        console.log(`✅ V75: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -176,11 +176,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V74: Rendering Complete');
+        console.log('✅ V75: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V74 ERROR: ${errorMsg}`);
+        console.error(`❌ V75 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -203,7 +203,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V74: Track ${trackIndex}`);
+            console.log(`🔄 V75: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -218,9 +218,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 V74: Loop disabled');
+            console.log('🔄 V75: Loop disabled');
         } else {
-            console.log('🔄 V74: Loop enabled');
+            console.log('🔄 V75: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -228,20 +228,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 V74: Loop range: ${start} - ${end}`);
+        console.log(`🔁 V75: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V74: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V75: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V74: Audio: ${source}`);
+        console.log(`🎵 V75: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -254,7 +254,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V74: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V75: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -271,21 +271,21 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V74: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V75: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V74: Theme: ${newTheme}`);
+        console.log(`🎨 V75: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== RENDER ====================
     return (
-        <div className="h-screen grid grid-rows-[0px,1fr,auto] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
-            {/* 🔧 V74: Grid now has 0px top row, header is position: fixed below ^^^^^^^^ */}
-            
-            {/* ==================== 🔧 V74: FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
+        <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+            {/* 🔧 V75: Grid now has 0px for BOTH header and footer rows ^^^^^^^^ */}
+
+            {/* ==================== V74: FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
                     fixed top-0 inset-x-0 w-full z-50
@@ -339,7 +339,7 @@ export default function SynthPlayerPage() {
                 </div>
             </header>
 
-            {/* ==================== 🔧 V74: MAIN CONTENT - DYNAMIC PADDING ==================== */}
+            {/* ==================== V74: MAIN CONTENT - DYNAMIC PADDING ==================== */}
             <main
                 ref={mainScrollContainerRef}
                 className={`
@@ -362,7 +362,7 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* 🔧 V73: AlphaTab Container - Mobile Landscape-aware width */}
+                {/* V73: AlphaTab Container - Mobile Landscape-aware width */}
                 <div
                     id="maestro-player"
                     className={`
@@ -385,7 +385,7 @@ export default function SynthPlayerPage() {
                     />
                 </div>
 
-                {/* 🔧 V74: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
+                {/* V74: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
                 <div className={`${isMobileLandscape ? 'hidden' : 'block'} px-4 mt-8`}>
                     <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
                         <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
@@ -421,8 +421,8 @@ export default function SynthPlayerPage() {
                 <div className="h-24 px-4"></div>
             </main>
 
-            {/* ==================== BOTTOM MENU TRAY ==================== */}
-            <footer className="w-full">
+            {/* ==================== 🔧 V75: FIXED FOOTER (OUTSIDE GRID FLOW) ==================== */}
+            <footer className="fixed bottom-0 inset-x-0 w-full z-50">
                 {playerReady && (
                     <MaestroControlPanel
                         api={api}
