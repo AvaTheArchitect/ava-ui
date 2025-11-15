@@ -24,7 +24,7 @@ export const SpeedControl: React.FC<SpeedControlProps> = ({
   const currentBPM = songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 0;
 
   return (
-    <div id="c-speed" className="relative">
+    <div id="c-speed" className="relative z-[50]">
       {/* Speed Button */}
       <button
         id="control-speed"

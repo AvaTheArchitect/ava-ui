@@ -28,7 +28,7 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
   const instrumentIcon = '🎸'; // TODO: Map track.name to actual instrument icons
 
   return (
-    <div id="mixer-button" className="relative">
+    <div id="mixer-button" className="relative z-[50]">
       {/* Mixer Button - Shows Current Track */}
       <button
         id="control-mixer"
@@ -64,9 +64,8 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
           width="13"
           height="8"
           viewBox="0 0 13 8"
-          className={`text-gray-400 transition-transform ${
-            isPanelOpen ? 'rotate-180' : ''
-          }`}
+          className={`text-gray-400 transition-transform ${isPanelOpen ? 'rotate-180' : ''
+            }`}
           fill="currentColor"
         >
           <path d="M12.68 7.74a1 1 0 0 0 .06-1.42L7.38.5a1.95 1.95 0 0 0-.88-.4c-.24 0-.66.23-.88.4L.26 6.32a1 1 0 0 0 1.48 1.36l5.35-5.84c-.14.08-.46.26-.59.26-.13 0-.45-.18-.59-.26l5.35 5.84a1 1 0 0 0 1.42.06Z" />
@@ -117,9 +116,8 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
                   >
                     <span className="text-lg">{instrumentIcon}</span>
                     <div className="flex flex-col">
-                      <span className={`text-sm font-medium ${
-                        isSelected ? 'text-blue-300' : 'text-gray-300'
-                      }`}>
+                      <span className={`text-sm font-medium ${isSelected ? 'text-blue-300' : 'text-gray-300'
+                        }`}>
                         {track.name}
                       </span>
                       <span className="text-xs text-gray-500">
