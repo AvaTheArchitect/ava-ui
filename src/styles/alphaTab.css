@@ -1,14 +1,33 @@
 /**
- * alphaTab Required Styles - V6 REFACTORED
+ * alphaTab Required Styles - V72 LANDSCAPE SUPPORT
  * Real DOM handles instead of CSS pseudo-elements
  * Place in: src/styles/alphaTab.css
+ * 
+ * NEW IN V72:
+ * ✅ Orientation-aware overflow (vertical portrait, horizontal landscape)
+ * ✅ Supports horizontal auto-scroll in landscape mode
  */
 
-/* Main alphaTab container */
+/* ========================================
+   MAIN ALPHATAB CONTAINER - V72 UPDATED
+   ======================================== */
+
+/* Portrait mode (default) - vertical scroll */
 .at-surface {
     width: 100%;
-    overflow: auto;
     position: relative;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Landscape mode - horizontal scroll */
+@media (orientation: landscape) and (max-height: 600px) {
+    .at-surface {
+        overflow-x: auto;
+        overflow-y: hidden;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch; /* iOS smooth scrolling */
+    }
 }
 
 /* SVG wrapper */
@@ -17,6 +36,10 @@
     height: auto;
     overflow: visible;
 }
+
+/* ========================================
+   CURSOR STYLES
+   ======================================== */
 
 /* HIDE the bar cursor - we only want the beat line */
 .at-cursor-bar {
@@ -145,6 +168,10 @@
     stroke: #a855f7 !important;
 }
 
+/* ========================================
+   MUSIC FONT
+   ======================================== */
+
 /* Music font - alphaTab uses Bravura font */
 @font-face {
     font-family: 'alphaTab';
@@ -164,6 +191,10 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
+
+/* ========================================
+   TAB NOTATION ELEMENTS
+   ======================================== */
 
 /* Tab notation elements */
 .at-tab-line {
@@ -189,6 +220,10 @@
     stroke-width: 1.5;
 }
 
+/* ========================================
+   UI ELEMENTS
+   ======================================== */
+
 /* Loading overlay */
 .at-loading {
     display: flex;
@@ -203,7 +238,11 @@
     z-index: 10000;
 }
 
-/* Scrollbar styling */
+/* ========================================
+   SCROLLBAR STYLING
+   ======================================== */
+
+/* Portrait scrollbar (vertical) */
 .at-surface::-webkit-scrollbar {
     width: 12px;
     height: 12px;
@@ -222,7 +261,17 @@
     background: #555;
 }
 
-/* Print styles */
+/* Landscape scrollbar (horizontal) */
+@media (orientation: landscape) and (max-height: 600px) {
+    .at-surface::-webkit-scrollbar {
+        height: 8px; /* Thinner horizontal scrollbar */
+    }
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+
 @media print {
     .at-cursor-bar,
     .at-cursor-beat,

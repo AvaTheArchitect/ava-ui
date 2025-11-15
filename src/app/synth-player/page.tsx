@@ -2,34 +2,27 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 14th, 2025 - V71: Remove Mobile Title Gap
+ * November 14th, 2025 - V74: Fixed Header + Landscape Scroll
  * 
- * NEW IN V71:
- * ✅ Removed mobile title section to eliminate gap (title shows on canvas only)
+ * 🔧 NEW IN V74:
+ * ✅ Header now position: fixed (removed from Grid flow)
+ * ✅ Grid changed to grid-rows-[0px,1fr,auto] (header height = 0)
+ * ✅ Dynamic padding-top on <main> (pt-16 when visible, pt-0 when hidden)
+ * ✅ Canvas immediately fills space when header hides (no purple gap)
+ * ✅ Simplified landscape overflow logic for horizontal auto-scroll
  * 
- * NEW IN V70:
- * ✅ Restored sophisticated unified click/tap handler from Stage 1.2
+ * NEW IN V73:
+ * ✅ Added overflow-x-hidden to outermost grid container (prevents desktop overflow)
+ * ✅ Fixed orientation detection to only trigger on mobile/touch devices
+ * ✅ Desktop now always uses portrait mode (standard vertical scroll)
+ * ✅ Mobile landscape uses horizontal scroll with 200vw canvas width
  * 
- * NEW IN V69:
- * ✅ Fixed gap between top menu and canvas (changed py-4 to pb-4 on line 242)
- * 
- * NEW IN V68:
- * ✅ Removed horizontal padding (px-*) from main content wrapper
- * ✅ Added Notes Section below AlphaTab canvas
- * ✅ Debug Panel kept for desktop/dev (hidden on mobile)
- * 
- * NEW IN STAGE 1.2:
- * ✅ Mobile-first CSS Grid architecture (grid-rows-[auto,1fr,auto])
- * ✅ Top menu tray placeholder (for future implementation)
- * ✅ Main content area with overflow-y-auto (scrolls independently)
- * ✅ Fixed bottom menu tray (MaestroControlPanel)
- * ✅ Proper safe-area-inset handling for mobile PWA
- * ✅ Responsive breakpoints (md: and lg:)
- * 
- * KEPT FROM STAGE 1+:
- * ✅ MaestroControlPanel integration
- * ✅ All playback controls and state management
- * ✅ Loop, speed, track mixer functionality
+ * NEW IN V72:
+ * ✅ Auto-hide header on scroll (Google AI scroll-and-hide pattern)
+ * ✅ Landscape orientation detection and responsive behavior
+ * ✅ Hide practice notes in landscape mode (canvas-only view)
+ * ✅ Conditional overflow (vertical portrait, horizontal landscape)
+ * ✅ Horizontal auto-scroll support for landscape mode
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -37,6 +30,9 @@ import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+
+// Scroll threshold for hiding header
+const SCROLL_THRESHOLD = 50; // px
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -63,11 +59,21 @@ export default function SynthPlayerPage() {
     // ==================== THEME STATE ====================
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
+    // ==================== V72: AUTO-HIDE HEADER STATE ====================
+    const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
+    const lastScrollY = useRef<number>(0);
+
+    // ==================== V73: MOBILE-ONLY ORIENTATION STATE ====================
+    const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
+
     // ==================== TIME TRACKING ====================
     const currentTimeRef = useRef<number>(0);
     const durationRef = useRef<number>(0);
     const [displayTime, setDisplayTime] = useState<number>(0);
     const [displayDuration, setDisplayDuration] = useState<number>(0);
+
+    // ==================== SCROLL CONTAINER REF ====================
+    const mainScrollContainerRef = useRef<HTMLElement>(null);
 
     // Update display every 500ms to avoid excessive re-renders
     useEffect(() => {
@@ -79,14 +85,68 @@ export default function SynthPlayerPage() {
         return () => clearInterval(interval);
     }, [isPlaying]);
 
+    // ==================== V72: SCROLL HANDLER (AUTO-HIDE HEADER) ====================
+    const handleScroll = useCallback(() => {
+        if (!mainScrollContainerRef.current) return;
+
+        const currentScrollY = mainScrollContainerRef.current.scrollTop;
+        const scrollDirection = currentScrollY > lastScrollY.current ? 'down' : 'up';
+
+        // Hide when scrolling DOWN past threshold
+        if (scrollDirection === 'down' && currentScrollY > SCROLL_THRESHOLD) {
+            setIsHeaderVisible(false);
+        }
+        // Show when scrolling UP or at top
+        else if (scrollDirection === 'up' || currentScrollY <= SCROLL_THRESHOLD) {
+            setIsHeaderVisible(true);
+        }
+
+        lastScrollY.current = currentScrollY;
+    }, []);
+
+    // Attach scroll listener
+    useEffect(() => {
+        const scrollElement = mainScrollContainerRef.current;
+        if (scrollElement) {
+            scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+        }
+        return () => {
+            if (scrollElement) {
+                scrollElement.removeEventListener('scroll', handleScroll);
+            }
+        };
+    }, [handleScroll]);
+
+    // ==================== V73: MOBILE-ONLY ORIENTATION DETECTION ====================
+    useEffect(() => {
+        const checkOrientation = () => {
+            // Only enable landscape mode on mobile/touch devices
+            const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+            const isSmallScreen = window.innerWidth < 768; // md breakpoint
+            
+            // Only set landscape mode if ALL THREE conditions are met
+            setIsMobileLandscape(isTouchDevice && isLandscape && isSmallScreen);
+        };
+
+        checkOrientation();
+        window.addEventListener('resize', checkOrientation);
+        window.addEventListener('orientationchange', checkOrientation);
+
+        return () => {
+            window.removeEventListener('resize', checkOrientation);
+            window.removeEventListener('orientationchange', checkOrientation);
+        };
+    }, []);
+
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V71: API Ready');
+        console.log('✅ V74: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V71: Player Ready');
+                console.log('✅ V74: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -106,7 +166,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V71: Score loaded - ${info.title}`);
+        console.log(`✅ V74: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -116,11 +176,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V71: Rendering Complete');
+        console.log('✅ V74: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V71 ERROR: ${errorMsg}`);
+        console.error(`❌ V74 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -143,7 +203,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V71: Track ${trackIndex}`);
+            console.log(`🔄 V74: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -158,9 +218,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 V71: Loop disabled');
+            console.log('🔄 V74: Loop disabled');
         } else {
-            console.log('🔄 V71: Loop enabled');
+            console.log('🔄 V74: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -168,20 +228,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 V71: Loop range: ${start} - ${end}`);
+        console.log(`🔁 V74: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V71: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V74: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V71: Audio: ${source}`);
+        console.log(`🎵 V74: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -194,7 +254,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V71: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V74: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -211,24 +271,29 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V71: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V74: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V71: Theme: ${newTheme}`);
+        console.log(`🎨 V74: Theme: ${newTheme}`);
     }, [theme]);
-
-    // ==================== SCROLL CONTAINER REF ====================
-    // CRITICAL: Pass this to AlphaTab so it knows where to scroll
-    const mainScrollContainerRef = useRef<HTMLElement>(null);
 
     // ==================== RENDER ====================
     return (
-        <div className="h-screen grid grid-rows-[auto,1fr,auto] bg-gradient-to-br from-purple-900 via-gray-900 to-black">
-            {/* ==================== TOP MENU TRAY (PLACEHOLDER) ==================== */}
-            <header className="w-full bg-gray-900/95 border-b border-purple-500/30 backdrop-blur-sm">
+        <div className="h-screen grid grid-rows-[0px,1fr,auto] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+            {/* 🔧 V74: Grid now has 0px top row, header is position: fixed below ^^^^^^^^ */}
+            
+            {/* ==================== 🔧 V74: FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
+            <header
+                className={`
+                    fixed top-0 inset-x-0 w-full z-50
+                    bg-gray-900/95 border-b border-purple-500/30 backdrop-blur-sm
+                    transform transition-transform duration-300 ease-in-out
+                    ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
+                `}
+            >
                 <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between">
                     {/* Left: Back/Navigation */}
                     <div className="flex items-center gap-2">
@@ -274,76 +339,86 @@ export default function SynthPlayerPage() {
                 </div>
             </header>
 
-            {/* ==================== MAIN CONTENT AREA ==================== */}
+            {/* ==================== 🔧 V74: MAIN CONTENT - DYNAMIC PADDING ==================== */}
             <main
                 ref={mainScrollContainerRef}
-                className="w-full overflow-y-auto pb-32"
+                className={`
+                    w-full pb-32
+                    ${isHeaderVisible ? 'pt-16' : 'pt-0'}
+                    ${isMobileLandscape
+                        ? 'overflow-x-auto overflow-y-hidden'
+                        : 'overflow-y-auto overflow-x-hidden'
+                    }
+                    transition-[padding] duration-300 ease-in-out
+                `}
             >
-                {/* 👆 pb-32 (128px) outer padding for menu clearance */}
-                {/* 🆕 V71: Removed mobile title section - title shows on canvas only */}
-                <div className="pb-4">
-                    {/* Error Display - with horizontal padding */}
-                    {error && (
-                        <div className="px-4 mb-4">
-                            <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
-                                <h3 className="text-red-400 font-bold mb-2">Error</h3>
-                                <p className="text-red-300">{error}</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* AlphaTab Renderer - NO horizontal padding for edge-to-edge */}
-                    <div id="maestro-player" className="bg-white">
-                        <AlphaTabRenderer
-                            fileUrl="/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3"
-                            playerMode="synthesizer"
-                            soundFontPath="/soundfont/sonivox.sf2"
-                            scrollContainerRef={mainScrollContainerRef}
-                            onApiReady={handleApiReady}
-                            onScoreLoaded={handleScoreLoaded}
-                            onRenderFinished={handleRenderFinished}
-                            onError={handleError}
-                            minHeight="600px"
-                            isLooping={isLooping}
-                            onLoopRangeChange={handleLoopRangeChange}
-                        />
-                    </div>
-
-                    {/* 🆕 V68: Notes Section (for both mobile and desktop) */}
-                    <div className="px-4 mt-8">
-                        <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
-                            <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
-                            <div className="space-y-3 text-gray-300">
-                                <p className="text-sm">
-                                    <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up
-                                </p>
-                                <p className="text-sm">
-                                    <strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.
-                                    Watch finger placement on the bends in measure 157.
-                                </p>
-                                <p className="text-sm">
-                                    <strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase
-                                    tempo as you gain confidence.
-                                </p>
-                                <p className="text-sm text-gray-400 italic">
-                                    💡 Use the Loop button to repeat difficult sections
-                                </p>
-                            </div>
+                {/* Error Display */}
+                {error && (
+                    <div className="px-4 mb-4">
+                        <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
+                            <h3 className="text-red-400 font-bold mb-2">Error</h3>
+                            <p className="text-red-300">{error}</p>
                         </div>
                     </div>
+                )}
 
-                    {/* Debug Panel (hidden on mobile, visible on desktop) */}
-                    <div className="hidden lg:block px-4 mt-4">
-                        <DebugPanel
-                            api={api}
-                            currentTime={displayTime}
-                            isPlaying={isPlaying}
-                        />
-                    </div>
-
-                    {/* Bottom clearance spacer - with padding */}
-                    <div className="h-24 px-4"></div>
+                {/* 🔧 V73: AlphaTab Container - Mobile Landscape-aware width */}
+                <div
+                    id="maestro-player"
+                    className={`
+                        bg-white
+                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
+                    `}
+                >
+                    <AlphaTabRenderer
+                        fileUrl="/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3"
+                        playerMode="synthesizer"
+                        soundFontPath="/soundfont/sonivox.sf2"
+                        scrollContainerRef={mainScrollContainerRef}
+                        onApiReady={handleApiReady}
+                        onScoreLoaded={handleScoreLoaded}
+                        onRenderFinished={handleRenderFinished}
+                        onError={handleError}
+                        minHeight="600px"
+                        isLooping={isLooping}
+                        onLoopRangeChange={handleLoopRangeChange}
+                    />
                 </div>
+
+                {/* 🔧 V74: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
+                <div className={`${isMobileLandscape ? 'hidden' : 'block'} px-4 mt-8`}>
+                    <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
+                        <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
+                        <div className="space-y-3 text-gray-300">
+                            <p className="text-sm">
+                                <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up
+                            </p>
+                            <p className="text-sm">
+                                <strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.
+                                Watch finger placement on the bends in measure 157.
+                            </p>
+                            <p className="text-sm">
+                                <strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase
+                                tempo as you gain confidence.
+                            </p>
+                            <p className="text-sm text-gray-400 italic">
+                                💡 Use the Loop button to repeat difficult sections
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Debug Panel (hidden on mobile, visible on desktop) */}
+                <div className="hidden lg:block px-4 mt-4">
+                    <DebugPanel
+                        api={api}
+                        currentTime={displayTime}
+                        isPlaying={isPlaying}
+                    />
+                </div>
+
+                {/* Bottom clearance spacer */}
+                <div className="h-24 px-4"></div>
             </main>
 
             {/* ==================== BOTTOM MENU TRAY ==================== */}
