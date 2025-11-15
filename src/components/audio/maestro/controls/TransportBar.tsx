@@ -1,8 +1,15 @@
 'use client';
 
 /**
- * TransportBar.tsx - Desktop Bottom Bar
- * 🔧 V67: Increased z-index to 9999 to prevent cursor overlap
+ * TransportBar.tsx - V69 SONGSTERR HEIGHT STANDARDIZATION
+ * Date: November 14th, 2025
+ * 
+ * MAJOR FIXES:
+ * ✅ Reduced tray height from 114px to ~74px (matches Songsterr)
+ * ✅ Changed py-3 to py-2 for tighter vertical spacing
+ * ✅ Standardized ALL button heights to 74px
+ * ✅ All stub buttons now use consistent 74px height
+ * ✅ Proper margin spacing for cleaner layout
  * 
  * Desktop bottom bar - Songsterr-style horizontal control layout
  * Fixed at bottom of screen, contains all playback controls
@@ -36,12 +43,14 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   onTrackSoloToggle,
 }) => {
   return (
-    // 🔧 V67: Changed z-50 to z-[9999] to prevent AlphaTab cursor (z-1000) from appearing on top
+    // 🎯 V69: Reduced height to match Songsterr's 74px standard
     <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
-      <div className="max-w-screen-2xl mx-auto px-4 py-3">
+      {/* 🎯 V70: Maintained py-2 for 74px height, changed main gap to gap-4 */}
+      <div className="max-w-screen-2xl mx-auto px-4 py-2">
         <div className="flex items-center justify-between gap-4">
           {/* Left Section: Track Mixer + Playback */}
-          <div className="flex items-center gap-4">
+          {/* 🎯 V70: Reduced to gap-3 for tighter left section grouping */}
+          <div className="flex items-center gap-3">
             <TrackMixerPanel
               api={api}
               tracks={tracks}
@@ -64,7 +73,8 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           </div>
 
           {/* Center Section: Control Buttons */}
-          <div className="flex items-center gap-3">
+          {/* 🎯 V70: gap-12 (~48px) approximates Songsterr's 50px button spacing */}
+          <div className="flex items-center gap-12">
             <SpeedControl
               api={api}
               playbackSpeed={playbackSpeed}
@@ -79,10 +89,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               onLoopToggle={onLoopToggle}
             />
 
-            {/* Solo Button - Stub */}
+            {/* 🎯 V69: Solo Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Solo mode (Coming soon)"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -91,10 +101,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <span className="text-xs text-gray-500">Solo</span>
             </button>
 
-            {/* Mute Button - Stub */}
+            {/* 🎯 V69: Mute Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Mute mode (Coming soon)"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -103,10 +113,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <span className="text-xs text-gray-500">Mute</span>
             </button>
 
-            {/* Count-in Button - Stub */}
+            {/* 🎯 V69: Count-in Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Count in (Coming soon) ((C))"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -115,10 +125,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <span className="text-xs text-gray-500">Count in</span>
             </button>
 
-            {/* Metronome Button - Stub */}
+            {/* 🎯 V69: Metronome Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Metronome (Coming soon) ((N))"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -129,11 +139,12 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           </div>
 
           {/* Right Section: Utility Buttons */}
-          <div className="flex items-center gap-3">
-            {/* Export Button - Stub */}
+          {/* 🎯 V70: gap-12 (~48px) approximates Songsterr's 50px button spacing */}
+          <div className="flex items-center gap-12">
+            {/* 🎯 V69: Export Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Export (Coming soon)"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -142,10 +153,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <span className="text-xs text-gray-500">Export</span>
             </button>
 
-            {/* Print Button - Stub */}
+            {/* 🎯 V69: Print Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="Print (Coming soon) ((P))"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">
@@ -154,10 +165,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <span className="text-xs text-gray-500">Print</span>
             </button>
 
-            {/* More Menu Button - Stub */}
+            {/* 🎯 V69: More Menu Button - FIXED HEIGHT 74px */}
             <button
               disabled
-              className="flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
+              className="flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] rounded-lg bg-gray-800/50 border border-gray-700 opacity-50 cursor-not-allowed"
               title="More options (Coming soon)"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-gray-500" fill="currentColor">

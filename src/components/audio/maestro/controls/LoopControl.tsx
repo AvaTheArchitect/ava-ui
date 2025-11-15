@@ -1,7 +1,14 @@
 'use client';
 
 /**
- * LoopControl.tsx
+ * LoopControl.tsx - V69 HEIGHT STANDARDIZATION
+ * Date: November 14th, 2025
+ * 
+ * FIXES:
+ * ✅ Fixed button height to 74px (was varying with py-2)
+ * ✅ Reduced gap from gap-1 to gap-0.5 for tighter spacing
+ * ✅ Optimized internal layout for consistent 74px height
+ * 
  * Simple loop toggle button - Songsterr style
  * 
  * STATE MANAGEMENT ONLY - No coordinate geometry!
@@ -24,6 +31,7 @@ export const LoopControl: React.FC<LoopControlProps> = ({
 }) => {
     return (
         <div id="c-loop" className="relative">
+            {/* Loop Button - FIXED HEIGHT 74px */}
             <button
                 id="control-loop"
                 onClick={onLoopToggle}
@@ -32,7 +40,7 @@ export const LoopControl: React.FC<LoopControlProps> = ({
                 aria-haspopup="false"
                 title="Toggle Loop ((L)) - Click & drag on notation to select section"
                 className={`
-          flex flex-col items-center justify-center gap-1 px-4 py-2
+          flex flex-col items-center justify-center gap-0.5 px-4 h-[74px]
           rounded-lg transition-all duration-200
           ${isLooping
                         ? 'bg-blue-500/20 border-2 border-blue-400/50'
