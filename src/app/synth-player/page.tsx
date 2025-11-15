@@ -343,7 +343,7 @@ export default function SynthPlayerPage() {
             <main
                 ref={mainScrollContainerRef}
                 className={`
-                    w-full pb-32
+                    w-full pb-32 overscroll-y-contain
                     ${isHeaderVisible ? 'pt-16' : 'pt-0'}
                     ${isMobileLandscape
                         ? 'overflow-x-auto overflow-y-hidden'
