@@ -1,21 +1,21 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V77 MOBILE ICONS RESTORED
+ * MaestroControlPanel.tsx - V77.1 PLAYBACK FIX
  * Date: November 15th, 2025
  * 
- * 🔧 V77 FIXES:
- * ✅ Restored icon-only mobile buttons (Songsterr style)
- * ✅ Mobile buttons now FUNCTIONAL (not placeholders)
- * ✅ Track Mixer opens with z-[50] panel
- * ✅ Speed opens with z-[50] panel
- * ✅ Clean minimal mobile UI (no text labels, just icons)
+ * 🔧 V77.1 FIXES:
+ * ✅ Close other panels when opening one (only one panel at a time)
+ * ✅ Auto-close all panels when playback starts (prevents interference)
+ * ✅ Fixed intermittent playback issues
  * 
- * DESKTOP: Full TransportBar with labels
- * MOBILE: Icon-only buttons with dropdown panels
+ * V77 FEATURES:
+ * ✅ Icon-only mobile buttons (Songsterr style)
+ * ✅ Functional dropdown panels with z-[50] wrappers
+ * ✅ Clean minimal mobile UI
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { MaestroControlPanelProps } from './MaestroControlTypes';
@@ -26,6 +26,30 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   // 🔧 V77: Mobile panel states
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
+  // 🔧 V77.1: Close other panels when opening one
+  const handleTrackMixerToggle = () => {
+    if (!isTrackMixerOpen) {
+      setIsSpeedPanelOpen(false); // Close speed panel
+    }
+    setIsTrackMixerOpen(!isTrackMixerOpen);
+  };
+
+  const handleSpeedToggle = () => {
+    if (!isSpeedPanelOpen) {
+      setIsTrackMixerOpen(false); // Close track mixer
+    }
+    setIsSpeedPanelOpen(!isSpeedPanelOpen);
+  };
+
+  // 🔧 V77.1: Close all panels when playback starts (prevents interference)
+  useEffect(() => {
+    if (props.isPlaying) {
+      setIsTrackMixerOpen(false);
+      setIsSpeedPanelOpen(false);
+      setIsDrawerOpen(false);
+    }
+  }, [props.isPlaying]);
 
   // Speed presets for mobile panel
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
@@ -46,7 +70,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 1. Track Mixer - Icon Only */}
             <div className="relative z-[50]">
               <button
-                onClick={() => setIsTrackMixerOpen(!isTrackMixerOpen)}
+                onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
                 className={`p-2 transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-400' : 'text-blue-400 hover:text-blue-300'
                   }`}
@@ -100,7 +124,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 2. Speed Control - Icon Only */}
             <div className="relative z-[50]">
               <button
-                onClick={() => setIsSpeedPanelOpen(!isSpeedPanelOpen)}
+                onClick={handleSpeedToggle}
                 disabled={!props.api}
                 className={`p-2 transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
                   }`}
@@ -137,6 +161,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       step="0.05"
                       value={props.playbackSpeed}
                       onChange={(e) => props.onSpeedChange(parseFloat(e.target.value))}
+                      onMouseUp={() => setIsSpeedPanelOpen(false)}
+                      onTouchEnd={() => setIsSpeedPanelOpen(false)}
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
                     />
                   </div>
