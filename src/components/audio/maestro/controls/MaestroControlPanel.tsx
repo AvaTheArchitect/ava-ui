@@ -1,13 +1,15 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V77.1 PLAYBACK FIX
+ * MaestroControlPanel.tsx - V77.2 COMPLETE PANEL MANAGEMENT
  * Date: November 15th, 2025
  * 
- * 🔧 V77.1 FIXES:
- * ✅ Close other panels when opening one (only one panel at a time)
- * ✅ Auto-close all panels when playback starts (prevents interference)
- * ✅ Fixed intermittent playback issues
+ * 🔧 V77.2 FIXES:
+ * ✅ ALL buttons close other panels (only one panel at a time)
+ * ✅ Loop button closes Track Mixer & Speed panels
+ * ✅ Gear button closes Track Mixer & Speed panels
+ * ✅ Auto-close all panels when playback starts
+ * ✅ Fixed playback interference (panels no longer block audio)
  * 
  * V77 FEATURES:
  * ✅ Icon-only mobile buttons (Songsterr style)
@@ -50,6 +52,20 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
       setIsDrawerOpen(false);
     }
   }, [props.isPlaying]);
+
+  // 🔧 V77.2: Handle Loop toggle - close other panels
+  const handleLoopToggle = () => {
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+    props.onLoopToggle();
+  };
+
+  // 🔧 V77.2: Handle Gear menu - close other panels
+  const handleGearToggle = () => {
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+    setIsDrawerOpen(true);
+  };
 
   // Speed presets for mobile panel
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
@@ -161,8 +177,6 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       step="0.05"
                       value={props.playbackSpeed}
                       onChange={(e) => props.onSpeedChange(parseFloat(e.target.value))}
-                      onMouseUp={() => setIsSpeedPanelOpen(false)}
-                      onTouchEnd={() => setIsSpeedPanelOpen(false)}
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
                     />
                   </div>
@@ -186,7 +200,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
             {/* 3. Loop Control - Icon Only */}
             <button
-              onClick={props.onLoopToggle}
+              onClick={handleLoopToggle}
               disabled={!props.api}
               className={`p-2 transition-colors disabled:opacity-50 ${props.isLooping ? 'text-blue-400' : 'text-gray-400 hover:text-gray-300'
                 }`}
@@ -219,7 +233,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
             {/* 5. Gear Menu - Settings */}
             <button
-              onClick={() => setIsDrawerOpen(true)}
+              onClick={handleGearToggle}
               className="p-2 text-gray-400 hover:text-gray-300 transition-colors"
               title="More options"
             >
