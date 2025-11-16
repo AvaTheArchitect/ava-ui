@@ -2,20 +2,17 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 15th, 2025 - V75: Header Lock + Fixed Footer
+ * November 16th, 2025 - V79: LANDSCAPE MODE FIX
  * 
- * 🔧 NEW IN V75:
- * ✅ Header locked hidden during playback (fixes stuttering)
- * ✅ Footer now position: fixed (like header) for responsive buttons
- * ✅ Grid changed to grid-rows-[0px,1fr,0px] (both header/footer outside flow)
- * ✅ Footer gets dynamic padding-bottom (pb-safe when visible)
+ * 🔧 NEW IN V79:
+ * ✅ Fixed orientation detection - now checks innerHeight < 600 (not innerWidth < 768)
+ * ✅ Landscape phones always have height < 600px, width is irrelevant
+ * ✅ Passes isMobileLandscape to MaestroControlPanel for UI override
+ * ✅ Fixes desktop UI showing on rotated phones
  * 
- * NEW IN V74:
- * ✅ Header now position: fixed (removed from Grid flow)
- * ✅ Grid changed to grid-rows-[0px,1fr,auto]
- * ✅ Dynamic padding-top on <main> (pt-16 when visible, pt-0 when hidden)
- * ✅ Canvas immediately fills space when header hides (no purple gap)
- * ✅ Simplified landscape overflow logic for horizontal auto-scroll
+ * V75: Header Lock + Fixed Footer
+ * V74: Fixed Header Outside Grid
+ * V73: Canvas Overflow Fix
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -56,7 +53,7 @@ export default function SynthPlayerPage() {
     const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
     const lastScrollY = useRef<number>(0);
 
-    // ==================== V73: MOBILE-ONLY ORIENTATION STATE ====================
+    // ==================== 🔧 V79: FIXED MOBILE LANDSCAPE DETECTION ====================
     const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
     // ==================== TIME TRACKING ====================
@@ -78,11 +75,11 @@ export default function SynthPlayerPage() {
         return () => clearInterval(interval);
     }, [isPlaying]);
 
-    // ==================== 🔧 V75: SCROLL HANDLER - LOCKS HEADER DURING PLAYBACK ====================
+    // ==================== V75: SCROLL HANDLER - LOCKS HEADER DURING PLAYBACK ====================
     const handleScroll = useCallback(() => {
         if (!mainScrollContainerRef.current) return;
 
-        // 🔧 V75: Lock header hidden during playback (prevents stuttering)
+        // V75: Lock header hidden during playback (prevents stuttering)
         if (isPlaying) {
             setIsHeaderVisible(false);
             lastScrollY.current = mainScrollContainerRef.current.scrollTop;
@@ -102,7 +99,7 @@ export default function SynthPlayerPage() {
         }
 
         lastScrollY.current = currentScrollY;
-    }, [isPlaying]); // 🔧 V75: Added isPlaying dependency
+    }, [isPlaying]);
 
     // Attach scroll listener
     useEffect(() => {
@@ -117,16 +114,21 @@ export default function SynthPlayerPage() {
         };
     }, [handleScroll]);
 
-    // ==================== V73: MOBILE-ONLY ORIENTATION DETECTION ====================
+    // ==================== 🔧 V79: FIXED ORIENTATION DETECTION ====================
     useEffect(() => {
         const checkOrientation = () => {
             // Only enable landscape mode on mobile/touch devices
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-            const isSmallScreen = window.innerWidth < 768; // md breakpoint
+            
+            // 🔧 V79 FIX: Check HEIGHT not WIDTH for landscape detection
+            // Landscape phones always have height < 600px, regardless of width
+            const isCompactHeight = window.innerHeight < 600;
             
             // Only set landscape mode if ALL THREE conditions are met
-            setIsMobileLandscape(isTouchDevice && isLandscape && isSmallScreen);
+            setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
+            
+            console.log(`🔄 V79: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
         };
 
         checkOrientation();
@@ -141,12 +143,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V75: API Ready');
+        console.log('✅ V79: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V75: Player Ready');
+                console.log('✅ V79: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -166,7 +168,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V75: Score loaded - ${info.title}`);
+        console.log(`✅ V79: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -176,11 +178,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V75: Rendering Complete');
+        console.log('✅ V79: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V75 ERROR: ${errorMsg}`);
+        console.error(`❌ V79 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -203,7 +205,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V75: Track ${trackIndex}`);
+            console.log(`🔄 V79: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -218,9 +220,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 V75: Loop disabled');
+            console.log('🔄 V79: Loop disabled');
         } else {
-            console.log('🔄 V75: Loop enabled');
+            console.log('🔄 V79: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -228,20 +230,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 V75: Loop range: ${start} - ${end}`);
+        console.log(`🔁 V79: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V75: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V79: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V75: Audio: ${source}`);
+        console.log(`🎵 V79: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -254,7 +256,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V75: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V79: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -271,21 +273,21 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V75: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V79: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V75: Theme: ${newTheme}`);
+        console.log(`🎨 V79: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== RENDER ====================
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
-            {/* 🔧 V75: Grid now has 0px for BOTH header and footer rows ^^^^^^^^ */}
+            {/* Grid: 0px header, flexible main, 0px footer (both fixed outside flow) */}
             
-            {/* ==================== V74: FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
+            {/* ==================== FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
                     fixed top-0 inset-x-0 w-full z-50
@@ -339,7 +341,7 @@ export default function SynthPlayerPage() {
                 </div>
             </header>
 
-            {/* ==================== V74: MAIN CONTENT - DYNAMIC PADDING ==================== */}
+            {/* ==================== MAIN CONTENT - DYNAMIC PADDING ==================== */}
             <main
                 ref={mainScrollContainerRef}
                 className={`
@@ -362,7 +364,7 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* V73: AlphaTab Container - Mobile Landscape-aware width */}
+                {/* AlphaTab Container - Mobile Landscape-aware width */}
                 <div
                     id="maestro-player"
                     className={`
@@ -386,28 +388,30 @@ export default function SynthPlayerPage() {
                     />
                 </div>
 
-                {/* V74: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
-                <div className={`${isMobileLandscape ? 'hidden' : 'block'} px-4 mt-8`}>
-                    <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
-                        <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
-                        <div className="space-y-3 text-gray-300">
-                            <p className="text-sm">
-                                <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up
-                            </p>
-                            <p className="text-sm">
-                                <strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.
-                                Watch finger placement on the bends in measure 157.
-                            </p>
-                            <p className="text-sm">
-                                <strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase
-                                tempo as you gain confidence.
-                            </p>
-                            <p className="text-sm text-gray-400 italic">
-                                💡 Use the Loop button to repeat difficult sections
-                            </p>
+                {/* 🔧 V79: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
+                {!isMobileLandscape && (
+                    <div className="px-4 mt-8">
+                        <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
+                            <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
+                            <div className="space-y-3 text-gray-300">
+                                <p className="text-sm">
+                                    <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up
+                                </p>
+                                <p className="text-sm">
+                                    <strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.
+                                    Watch finger placement on the bends in measure 157.
+                                </p>
+                                <p className="text-sm">
+                                    <strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase
+                                    tempo as you gain confidence.
+                                </p>
+                                <p className="text-sm text-gray-400 italic">
+                                    💡 Use the Loop button to repeat difficult sections
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Debug Panel (hidden on mobile, visible on desktop) */}
                 <div className="hidden lg:block px-4 mt-4">
@@ -422,7 +426,7 @@ export default function SynthPlayerPage() {
                 <div className="h-24 px-4"></div>
             </main>
 
-            {/* ==================== 🔧 V75: FIXED FOOTER (OUTSIDE GRID FLOW) ==================== */}
+            {/* ==================== FIXED FOOTER (OUTSIDE GRID FLOW) ==================== */}
             <footer className="fixed bottom-0 inset-x-0 w-full z-50">
                 {playerReady && (
                     <MaestroControlPanel
@@ -440,6 +444,7 @@ export default function SynthPlayerPage() {
                         trackMuteState={trackMuteState}
                         trackSoloState={trackSoloState}
                         theme={theme}
+                        isMobileLandscape={isMobileLandscape} // 🔧 V79: Pass landscape state
                         onPlayPause={handlePlayPause}
                         onStop={handleStop}
                         onLoopToggle={handleLoopToggle}

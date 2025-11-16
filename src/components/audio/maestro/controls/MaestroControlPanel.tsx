@@ -1,35 +1,61 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V77.2 COMPLETE PANEL MANAGEMENT
- * Date: November 15th, 2025
+ * MaestroControlPanel.tsx - V79: LANDSCAPE UI FIX
+ * Date: November 16th, 2025
  * 
- * 🔧 V77.2 FIXES:
- * ✅ ALL buttons close other panels (only one panel at a time)
- * ✅ Loop button closes Track Mixer & Speed panels
- * ✅ Gear button closes Track Mixer & Speed panels
- * ✅ Auto-close all panels when playback starts
- * ✅ Fixed playback interference (panels no longer block audio)
+ * 🔧 NEW IN V79:
+ * ✅ Receives isMobileLandscape prop from page.tsx
+ * ✅ Overrides Tailwind md: breakpoint when isMobileLandscape is true
+ * ✅ Forces mobile UI on rotated phones regardless of screen width
+ * ✅ Desktop UI only shows when NOT landscape AND screen >= md
  * 
- * V77 FEATURES:
- * ✅ Icon-only mobile buttons (Songsterr style)
- * ✅ Functional dropdown panels with z-[50] wrappers
- * ✅ Clean minimal mobile UI
+ * V77.2: Complete panel management
+ * V77: Icon-only mobile buttons
  */
 
 import React, { useState, useEffect } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
-import type { MaestroControlPanelProps } from './MaestroControlTypes';
+import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+
+// 🔧 V79: Updated interface to include isMobileLandscape
+export interface MaestroControlPanelProps {
+  api: AlphaTabApi | null;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  playbackSpeed: number;
+  tracks: Track[];
+  selectedTrack: number;
+  songInfo: SongInfo | null;
+  isLooping: boolean;
+  hasLoopSelection: boolean;
+  audioSource: 'synth' | 'original';
+  trackMuteState: Map<number, boolean>;
+  trackSoloState: Map<number, boolean>;
+  theme: 'light' | 'dark';
+  isMobileLandscape: boolean; // 🔧 V79: NEW PROP
+  onPlayPause: () => void;
+  onStop: () => void;
+  onLoopToggle: () => void;
+  onLoopRangeChange: (start: number, end: number) => void;
+  onSpeedChange: (speed: number) => void;
+  onTrackChange: (trackIndex: number) => void;
+  onAudioSourceChange: (source: 'synth' | 'original') => void;
+  onTrackMuteToggle: (trackIndex: number) => void;
+  onTrackSoloToggle: (trackIndex: number) => void;
+  onThemeToggle: () => void;
+}
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // 🔧 V77: Mobile panel states
+  // V77: Mobile panel states
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
 
-  // 🔧 V77.1: Close other panels when opening one
+  // V77.1: Close other panels when opening one
   const handleTrackMixerToggle = () => {
     if (!isTrackMixerOpen) {
       setIsSpeedPanelOpen(false); // Close speed panel
@@ -44,7 +70,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     setIsSpeedPanelOpen(!isSpeedPanelOpen);
   };
 
-  // 🔧 V77.1: Close all panels when playback starts (prevents interference)
+  // V77.1: Close all panels when playback starts (prevents interference)
   useEffect(() => {
     if (props.isPlaying) {
       setIsTrackMixerOpen(false);
@@ -53,14 +79,14 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     }
   }, [props.isPlaying]);
 
-  // 🔧 V77.2: Handle Loop toggle - close other panels
+  // V77.2: Handle Loop toggle - close other panels
   const handleLoopToggle = () => {
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
     props.onLoopToggle();
   };
 
-  // 🔧 V77.2: Handle Gear menu - close other panels
+  // V77.2: Handle Gear menu - close other panels
   const handleGearToggle = () => {
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
@@ -73,13 +99,17 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   return (
     <>
-      {/* ==================== DESKTOP LAYOUT (md: and up) ==================== */}
-      <div className="hidden md:block">
-        <TransportBar {...props} />
-      </div>
+      {/* ==================== 🔧 V79: DESKTOP LAYOUT - CONDITIONAL RENDERING ==================== */}
+      {/* Show TransportBar ONLY if NOT in mobile landscape AND screen is md or larger */}
+      {!props.isMobileLandscape && (
+        <div className="hidden md:block">
+          <TransportBar {...props} />
+        </div>
+      )}
 
-      {/* ==================== 🔧 V77: MOBILE LAYOUT - ICON-ONLY BUTTONS ==================== */}
-      <div className="md:hidden">
+      {/* ==================== 🔧 V79: MOBILE LAYOUT - LANDSCAPE OVERRIDE ==================== */}
+      {/* Show mobile UI if screen < md OR if isMobileLandscape is true */}
+      <div className={props.isMobileLandscape ? 'block' : 'md:hidden'}>
         <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
           <div className="px-6 py-4 flex items-center justify-between">
 
