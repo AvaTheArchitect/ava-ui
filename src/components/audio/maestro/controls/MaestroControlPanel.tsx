@@ -1,32 +1,35 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V76 MOBILE FIX
+ * MaestroControlPanel.tsx - V77 MOBILE ICONS RESTORED
  * Date: November 15th, 2025
  * 
- * 🔧 V76 FIXES:
- * ✅ Mobile now uses REAL components (TrackMixerPanel, SpeedControl, LoopControl)
- * ✅ Replaced placeholder buttons with actual working components
- * ✅ Components have z-[50] fix for clickable buttons
+ * 🔧 V77 FIXES:
+ * ✅ Restored icon-only mobile buttons (Songsterr style)
+ * ✅ Mobile buttons now FUNCTIONAL (not placeholders)
+ * ✅ Track Mixer opens with z-[50] panel
+ * ✅ Speed opens with z-[50] panel
+ * ✅ Clean minimal mobile UI (no text labels, just icons)
  * 
- * MOBILE CHANGES (Songsterr-style):
- * ✅ Bottom tray: 5 buttons with real functionality
- * ✅ Clean, minimal mobile UI
- * ✅ Synth/Original in Gear menu
- * 
- * DESKTOP: Unchanged (TransportBar)
+ * DESKTOP: Full TransportBar with labels
+ * MOBILE: Icon-only buttons with dropdown panels
  */
 
 import React, { useState } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
-import { TrackMixerPanel } from './TrackMixerPanel';
-import { SpeedControl } from './SpeedControl';
-import { LoopControl } from './LoopControl';
 import type { MaestroControlPanelProps } from './MaestroControlTypes';
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // 🔧 V77: Mobile panel states
+  const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
+  const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
+  // Speed presets for mobile panel
+  const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
+  const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
 
   return (
     <>
@@ -35,66 +38,154 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
         <TransportBar {...props} />
       </div>
 
-      {/* ==================== 🔧 V76: MOBILE LAYOUT - REAL COMPONENTS ==================== */}
+      {/* ==================== 🔧 V77: MOBILE LAYOUT - ICON-ONLY BUTTONS ==================== */}
       <div className="md:hidden">
-        {/* Compact Bottom Bar - 5 Functional Buttons */}
         <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
           <div className="px-6 py-4 flex items-center justify-between">
 
-            {/* 🔧 V76: 1. Track Mixer - REAL COMPONENT */}
-            <div className="flex-shrink-0">
-              <TrackMixerPanel
-                api={props.api}
-                tracks={props.tracks}
-                selectedTrack={props.selectedTrack}
-                trackMuteState={props.trackMuteState}
-                trackSoloState={props.trackSoloState}
-                onTrackChange={props.onTrackChange}
-                onMuteToggle={props.onTrackMuteToggle}
-                onSoloToggle={props.onTrackSoloToggle}
-              />
+            {/* 1. Track Mixer - Icon Only */}
+            <div className="relative z-[50]">
+              <button
+                onClick={() => setIsTrackMixerOpen(!isTrackMixerOpen)}
+                disabled={!props.api || props.tracks.length === 0}
+                className={`p-2 transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-400' : 'text-blue-400 hover:text-blue-300'
+                  }`}
+                title="Switch tracks"
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                </svg>
+              </button>
+
+              {/* Track Mixer Panel */}
+              {isTrackMixerOpen && (
+                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[320px] max-h-[400px] overflow-y-auto z-[100]">
+                  <div className="flex items-center justify-between mb-3 sticky top-0 bg-gray-900/95 pb-2 border-b border-gray-700">
+                    <span className="text-sm font-bold text-blue-400">Tracks ({props.tracks.length})</span>
+                    <button onClick={() => setIsTrackMixerOpen(false)} className="text-gray-500 hover:text-white">✕</button>
+                  </div>
+                  <div className="space-y-2">
+                    {props.tracks.map((track, idx) => {
+                      const isMuted = props.trackMuteState.get(idx) || false;
+                      const isSoloed = props.trackSoloState.get(idx) || false;
+                      const isSelected = idx === props.selectedTrack;
+                      return (
+                        <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg ${isSelected ? 'bg-blue-500/20 border border-blue-400/50' : 'bg-gray-800/50'}`}>
+                          <button
+                            onClick={() => { props.onTrackChange(idx); setIsTrackMixerOpen(false); }}
+                            className="flex-1 flex items-center gap-2 text-left"
+                          >
+                            <span className="text-lg">🎸</span>
+                            <div className="flex flex-col">
+                              <span className={`text-sm font-medium ${isSelected ? 'text-blue-300' : 'text-gray-300'}`}>{track.name}</span>
+                              <span className="text-xs text-gray-500">Track {idx + 1}</span>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => props.onTrackMuteToggle(idx)}
+                            className={`px-3 py-1.5 rounded text-xs font-bold ${isMuted ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-400'}`}
+                          >{isMuted ? '🔇' : '🔊'}</button>
+                          <button
+                            onClick={() => props.onTrackSoloToggle(idx)}
+                            className={`px-3 py-1.5 rounded text-xs font-bold ${isSoloed ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400'}`}
+                          >{isSoloed ? '🎯' : '👥'}</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* 🔧 V76: 2. Speed Control - REAL COMPONENT */}
-            <div className="flex-shrink-0">
-              <SpeedControl
-                api={props.api}
-                playbackSpeed={props.playbackSpeed}
-                songInfo={props.songInfo}
-                onSpeedChange={props.onSpeedChange}
-              />
+            {/* 2. Speed Control - Icon Only */}
+            <div className="relative z-[50]">
+              <button
+                onClick={() => setIsSpeedPanelOpen(!isSpeedPanelOpen)}
+                disabled={!props.api}
+                className={`p-2 transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
+                  }`}
+                title="Playback speed"
+              >
+                <svg width="28" height="24" viewBox="0 0 32 24">
+                  <path d="M 4 20 A 12 12 0 0 1 28 20" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.5" />
+                  <path d="M 4 20 A 12 12 0 0 1 28 20" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${props.playbackSpeed * 37.7} 100`} opacity="0.9" />
+                  <g transform={`rotate(${(props.playbackSpeed - 0.25) * 144 - 90}, 16, 20)`}>
+                    <line x1="16" y1="16" x2="16" y2="6" stroke="currentColor" strokeWidth="2" />
+                    <circle cx="16" cy="16" r="2" fill="currentColor" />
+                  </g>
+                </svg>
+              </button>
+
+              {/* Speed Panel */}
+              {isSpeedPanelOpen && (
+                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[280px] z-[100]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-blue-400">Speed</span>
+                    <button onClick={() => setIsSpeedPanelOpen(false)} className="text-gray-500 hover:text-white">✕</button>
+                  </div>
+                  {props.songInfo && (
+                    <div className="mb-4 text-center">
+                      <div className="text-2xl font-bold text-cyan-400">{currentBPM} BPM</div>
+                      <div className="text-xs text-gray-500">Original: {props.songInfo.tempo} BPM</div>
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <input
+                      type="range"
+                      min="0.25"
+                      max="1.5"
+                      step="0.05"
+                      value={props.playbackSpeed}
+                      onChange={(e) => props.onSpeedChange(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {speedPresets.map((speed) => (
+                      <button
+                        key={speed}
+                        onClick={() => props.onSpeedChange(speed)}
+                        className={`px-3 py-2 rounded-lg text-sm font-bold ${props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                          }`}
+                      >{Math.round(speed * 100)}%</button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => props.onSpeedChange(1.0)}
+                    className="w-full mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold"
+                  >Reset to 100%</button>
+                </div>
+              )}
             </div>
 
-            {/* 🔧 V76: 3. Loop Control - REAL COMPONENT */}
-            <div className="flex-shrink-0">
-              <LoopControl
-                api={props.api}
-                isLooping={props.isLooping}
-                hasSelection={props.hasLoopSelection}
-                onLoopToggle={props.onLoopToggle}
-              />
-            </div>
+            {/* 3. Loop Control - Icon Only */}
+            <button
+              onClick={props.onLoopToggle}
+              disabled={!props.api}
+              className={`p-2 transition-colors disabled:opacity-50 ${props.isLooping ? 'text-blue-400' : 'text-gray-400 hover:text-gray-300'
+                }`}
+              title="Toggle loop"
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+              </svg>
+            </button>
 
             {/* 4. Play/Pause - Small Arrow Icon */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`p-2 transition-colors disabled:opacity-50 flex-shrink-0 ${
-                props.isPlaying
-                  ? 'text-orange-400 hover:text-orange-300'
-                  : 'text-cyan-400 hover:text-cyan-300'
-              }`}
+              className={`p-2 transition-colors disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
+                }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 {props.isPlaying ? (
-                  // Pause Icon
                   <>
                     <rect x="7" y="5" width="3" height="14" rx="1" />
                     <rect x="14" y="5" width="3" height="14" rx="1" />
                   </>
                 ) : (
-                  // Play Icon (Triangle)
                   <path d="M8 5v14l11-7z" />
                 )}
               </svg>
@@ -103,7 +194,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 5. Gear Menu - Settings */}
             <button
               onClick={() => setIsDrawerOpen(true)}
-              className="p-2 text-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
+              className="p-2 text-gray-400 hover:text-gray-300 transition-colors"
               title="More options"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -113,7 +204,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           </div>
         </div>
 
-        {/* Mobile Drawer - Settings Menu (Gear Icon) */}
+        {/* Mobile Drawer - Settings Menu */}
         <MobileDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
