@@ -18,14 +18,6 @@
     overflow-x: hidden;
 }
 
-/* 🔧 V75: LANDSCAPE MODE - Horizontal scroll for mobile landscape */
-@media (orientation: landscape) and (max-height: 600px) {
-    .at-surface {
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
-    }
-}
-
 /* SVG wrapper */
 .at-viewport {
     width: 100%;
