@@ -124,7 +124,7 @@ export default function SynthPlayerPage() {
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             const isSmallScreen = window.innerWidth < 768; // md breakpoint
-
+            
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isSmallScreen);
         };
@@ -284,7 +284,7 @@ export default function SynthPlayerPage() {
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             {/* 🔧 V75: Grid now has 0px for BOTH header and footer rows ^^^^^^^^ */}
-
+            
             {/* ==================== V74: FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
@@ -375,6 +375,7 @@ export default function SynthPlayerPage() {
                         playerMode="synthesizer"
                         soundFontPath="/soundfont/sonivox.sf2"
                         scrollContainerRef={mainScrollContainerRef}
+                        isMobileLandscape={isMobileLandscape}
                         onApiReady={handleApiReady}
                         onScoreLoaded={handleScoreLoaded}
                         onRenderFinished={handleRenderFinished}
