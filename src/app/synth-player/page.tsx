@@ -2,11 +2,13 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 16th, 2025 - V80: Canvas Overscroll + Layout Persistence Fix
+ * November 16th, 2025 - V81: Revert V80 Canvas Constraints
  * 
- * 🔧 NEW IN V80:
- * ✅ Fixed canvas vertical overscroll in landscape (h-full + overflow-y-hidden)
- * ✅ Prevents purple background from showing on drag up/down
+ * 🔧 NEW IN V81:
+ * ✅ REVERTED: h-full constraint (was cutting off canvas)
+ * ✅ RESTORED: Original canvas wrapper from V79
+ * ✅ KEPT: api.resize() from AlphaTabRenderer V80 (helps layout persistence)
+ * ✅ Accept purple background issue as iOS 26.1 bug (unfixable)
  * 
  * V79: LANDSCAPE MODE FIX
  * ✅ Fixed orientation detection - innerHeight < 600 (not innerWidth < 768)
@@ -122,15 +124,15 @@ export default function SynthPlayerPage() {
             // Only enable landscape mode on mobile/touch devices
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-
+            
             // 🔧 V79 FIX: Check HEIGHT not WIDTH for landscape detection
             // Landscape phones always have height < 600px, regardless of width
             const isCompactHeight = window.innerHeight < 600;
-
+            
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
-
-            console.log(`🔄 V80: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
+            
+            console.log(`🔄 V81: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
         };
 
         checkOrientation();
@@ -145,12 +147,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V80: API Ready');
+        console.log('✅ V81: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V80: Player Ready');
+                console.log('✅ V81: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -170,7 +172,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V80: Score loaded - ${info.title}`);
+        console.log(`✅ V81: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -180,11 +182,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V80: Rendering Complete');
+        console.log('✅ V81: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V80 ERROR: ${errorMsg}`);
+        console.error(`❌ V81 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -207,7 +209,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V80: Track ${trackIndex}`);
+            console.log(`🔄 V81: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -222,9 +224,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 V80: Loop disabled');
+            console.log('🔄 V81: Loop disabled');
         } else {
-            console.log('🔄 V80: Loop enabled');
+            console.log('🔄 V81: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -232,20 +234,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 V80: Loop range: ${start} - ${end}`);
+        console.log(`🔁 V81: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V80: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V81: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V80: Audio: ${source}`);
+        console.log(`🎵 V81: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -258,7 +260,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V80: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V81: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -275,20 +277,20 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V80: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V81: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V80: Theme: ${newTheme}`);
+        console.log(`🎨 V81: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== RENDER ====================
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             {/* Grid: 0px header, flexible main, 0px footer (both fixed outside flow) */}
-
+            
             {/* ==================== FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
@@ -366,15 +368,12 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* 🔧 V80: AlphaTab Container - Fixed vertical overscroll in landscape */}
+                {/* 🔧 V81: REVERTED to V79 - Canvas wrapper without h-full constraint */}
                 <div
                     id="maestro-player"
                     className={`
                         bg-white
-                        ${isMobileLandscape
-                            ? 'min-w-[200vw] h-full inline-block overflow-y-hidden overflow-x-auto'
-                            : 'w-full'
-                        }
+                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
                     `}
                 >
                     <AlphaTabRenderer
@@ -393,7 +392,7 @@ export default function SynthPlayerPage() {
                     />
                 </div>
 
-                {/* 🔧 V79: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
+                {/* 🔧 V81: Practice Notes - HIDDEN IN MOBILE LANDSCAPE */}
                 {!isMobileLandscape && (
                     <div className="px-4 mt-8">
                         <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
@@ -449,7 +448,7 @@ export default function SynthPlayerPage() {
                         trackMuteState={trackMuteState}
                         trackSoloState={trackSoloState}
                         theme={theme}
-                        isMobileLandscape={isMobileLandscape} // 🔧 V79: Pass landscape state
+                        isMobileLandscape={isMobileLandscape} // 🔧 V81: Pass landscape state
                         onPlayPause={handlePlayPause}
                         onStop={handleStop}
                         onLoopToggle={handleLoopToggle}
