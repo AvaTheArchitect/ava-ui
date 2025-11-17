@@ -2,13 +2,15 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 16th, 2025 - V79: LANDSCAPE MODE FIX
+ * November 16th, 2025 - V80: Canvas Overscroll + Layout Persistence Fix
  * 
- * 🔧 NEW IN V79:
- * ✅ Fixed orientation detection - now checks innerHeight < 600 (not innerWidth < 768)
- * ✅ Landscape phones always have height < 600px, width is irrelevant
+ * 🔧 NEW IN V80:
+ * ✅ Fixed canvas vertical overscroll in landscape (h-full + overflow-y-hidden)
+ * ✅ Prevents purple background from showing on drag up/down
+ * 
+ * V79: LANDSCAPE MODE FIX
+ * ✅ Fixed orientation detection - innerHeight < 600 (not innerWidth < 768)
  * ✅ Passes isMobileLandscape to MaestroControlPanel for UI override
- * ✅ Fixes desktop UI showing on rotated phones
  * 
  * V75: Header Lock + Fixed Footer
  * V74: Fixed Header Outside Grid
@@ -120,15 +122,15 @@ export default function SynthPlayerPage() {
             // Only enable landscape mode on mobile/touch devices
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-            
+
             // 🔧 V79 FIX: Check HEIGHT not WIDTH for landscape detection
             // Landscape phones always have height < 600px, regardless of width
             const isCompactHeight = window.innerHeight < 600;
-            
+
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
-            
-            console.log(`🔄 V79: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
+
+            console.log(`🔄 V80: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
         };
 
         checkOrientation();
@@ -143,12 +145,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V79: API Ready');
+        console.log('✅ V80: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V79: Player Ready');
+                console.log('✅ V80: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -168,7 +170,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V79: Score loaded - ${info.title}`);
+        console.log(`✅ V80: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -178,11 +180,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V79: Rendering Complete');
+        console.log('✅ V80: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V79 ERROR: ${errorMsg}`);
+        console.error(`❌ V80 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -205,7 +207,7 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V79: Track ${trackIndex}`);
+            console.log(`🔄 V80: Track ${trackIndex}`);
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -220,9 +222,9 @@ export default function SynthPlayerPage() {
             if (api?.playbackRange !== undefined) {
                 api.playbackRange = null;
             }
-            console.log('🔄 V79: Loop disabled');
+            console.log('🔄 V80: Loop disabled');
         } else {
-            console.log('🔄 V79: Loop enabled');
+            console.log('🔄 V80: Loop enabled');
         }
     }, [api, isLooping]);
 
@@ -230,20 +232,20 @@ export default function SynthPlayerPage() {
         if (!api) return;
         setHasLoopSelection(true);
         api.playbackRange = { startTick: start, endTick: end };
-        console.log(`🔁 V79: Loop range: ${start} - ${end}`);
+        console.log(`🔁 V80: Loop range: ${start} - ${end}`);
     }, [api]);
 
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V79: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V80: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V79: Audio: ${source}`);
+        console.log(`🎵 V80: Audio: ${source}`);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -256,7 +258,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V79: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V80: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -273,20 +275,20 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V79: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V80: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V79: Theme: ${newTheme}`);
+        console.log(`🎨 V80: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== RENDER ====================
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             {/* Grid: 0px header, flexible main, 0px footer (both fixed outside flow) */}
-            
+
             {/* ==================== FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
@@ -364,12 +366,15 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* AlphaTab Container - Mobile Landscape-aware width */}
+                {/* 🔧 V80: AlphaTab Container - Fixed vertical overscroll in landscape */}
                 <div
                     id="maestro-player"
                     className={`
                         bg-white
-                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
+                        ${isMobileLandscape
+                            ? 'min-w-[200vw] h-full inline-block overflow-y-hidden overflow-x-auto'
+                            : 'w-full'
+                        }
                     `}
                 >
                     <AlphaTabRenderer
