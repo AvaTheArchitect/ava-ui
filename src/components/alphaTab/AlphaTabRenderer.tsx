@@ -2,20 +2,18 @@
 
 /**
  * AlphaTab Renderer - STAGE 1.2
- * November 16th, 2025 - V81: Revert Overflow Constraints
+ * November 16th, 2025 - V82: Bottom Canvas Padding for Menu Clearance
  * 
- * 🔧 NEW IN V81:
- * ✅ REVERTED: overflow-y: hidden (was cutting off canvas in landscape)
- * ✅ RESTORED: Original overflow behavior (auto for both axes)
- * ✅ KEPT: api.resize() for layout persistence fix
- * ✅ Accept canvas sliding/purple background as iOS 26.1 bug
+ * 🔧 NEW IN V82:
+ * ✅ Added 300px bottom padding to .at-surface (Songsterr-style)
+ * ✅ Creates extra scrollable space below last measure
+ * ✅ Allows last row to position in middle of screen (above menu tray)
+ * ✅ Prevents music staff from sitting on top of bottom menu
  * 
+ * V81: Revert Overflow Constraints
  * V80: Canvas Overscroll + Layout Persistence Fix (PARTIALLY REVERTED)
  * V78: Landscape Mode Integration
  * V70: Restore Click/Tap Detection
- * V69: Fix Loop Highlight Issue
- * V68: Remove Rounded Corners
- * V67: Fixed scroll container for CSS Grid layout
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -89,7 +87,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
         const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 1024;
         const mobile = isMobileUA || (isTouchDevice && isSmallScreen);
-        console.log(`📱 V81: Mobile detection - ${mobile ? 'MOBILE' : 'DESKTOP'}`);
+        console.log(`📱 V82: Mobile detection - ${mobile ? 'MOBILE' : 'DESKTOP'}`);
         return mobile;
     };
 
@@ -104,18 +102,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V81: Initializing AlphaTab');
+                console.log('🎸 V82: Initializing AlphaTab');
 
-                // V81: Use prop for initial layout mode
+                // V82: Use prop for initial layout mode
                 const layoutMode = isMobileLandscape ? 'horizontal' : 'page';
-                console.log(`📱 V81: Initial layout mode: ${layoutMode}`);
+                console.log(`📱 V82: Initial layout mode: ${layoutMode}`);
 
                 const customScrollContainer = scrollContainerRef?.current;
 
                 if (customScrollContainer) {
-                    console.log('✅ V81: Using custom scroll container (Grid <main> element)');
+                    console.log('✅ V82: Using custom scroll container (Grid <main> element)');
                 } else {
-                    console.log('⚠️ V81: No custom scroll container provided');
+                    console.log('⚠️ V82: No custom scroll container provided');
                 }
 
                 const api = await initAlphaTab({
@@ -132,7 +130,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 if (!isMounted) return;
 
                 apiRef.current = api;
-                console.log('✅ V81: AlphaTab API ready');
+                console.log('✅ V82: AlphaTab API ready');
 
                 // Load score
                 await loadGuitarProFile(api, fileUrl);
@@ -141,7 +139,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Setup event handlers
                 if (api.scoreLoaded) {
                     api.scoreLoaded.on((score: any) => {
-                        console.log('✅ V81: Score loaded');
+                        console.log('✅ V82: Score loaded');
                         const trackList = Array.from({ length: score.tracks.length }, (_, i) => ({
                             index: i,
                             name: score.tracks[i].name,
@@ -167,7 +165,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 if (api.renderFinished) {
                     api.renderFinished.on(() => {
-                        console.log('✅ V81: Rendering complete');
+                        console.log('✅ V82: Rendering complete');
                         setIsRendered(true);
                         setIsLoading(false);
                         onRenderFinished?.();
@@ -179,7 +177,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // Start rendering
                 api.render();
             } catch (error) {
-                console.error('❌ V81: Initialization error:', error);
+                console.error('❌ V82: Initialization error:', error);
                 if (isMounted) {
                     setIsLoading(false);
                     onError?.(error instanceof Error ? error.message : 'Unknown error');
@@ -212,7 +210,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             surface = container;
         }
 
-        console.log(`🎯 V81: Attaching click/tap handlers`);
+        console.log(`🎯 V82: Attaching click/tap handlers`);
 
         // Shared state for both mouse and touch
         let tapCount = 0;
@@ -229,8 +227,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     api.tickPosition = beat.absolutePlaybackStart;
                     console.log(
                         isDoubleTap
-                            ? `🎵 V81: Double-tap at tick ${beat.absolutePlaybackStart}`
-                            : `🎯 V81: Single-tap seek to tick ${beat.absolutePlaybackStart}`
+                            ? `🎵 V82: Double-tap at tick ${beat.absolutePlaybackStart}`
+                            : `🎯 V82: Single-tap seek to tick ${beat.absolutePlaybackStart}`
                     );
                 }
 
@@ -243,9 +241,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             } else if ((api as any).playPause) {
                                 (api as any).playPause();
                             }
-                            console.log('✅ V81: Playback started from double-tap');
+                            console.log('✅ V82: Playback started from double-tap');
                         } catch (err) {
-                            console.error('❌ V81: Failed to start playback:', err);
+                            console.error('❌ V82: Failed to start playback:', err);
                         }
                     }, 50);
                 }
@@ -331,7 +329,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
 
-    // ==================== 🔧 V81: ORIENTATION HANDLING - KEEPS api.resize() ====================
+    // ==================== 🔧 V82: ORIENTATION HANDLING - KEEPS api.resize() ====================
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
 
@@ -342,21 +340,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const updateOrientation = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
-            console.log(`🔄 V81: Orientation change - Landscape: ${isMobileLandscape}`);
+            console.log(`🔄 V82: Orientation change - Landscape: ${isMobileLandscape}`);
 
             if (isMobileLandscape) {
                 // 🎸 LANDSCAPE: Horizontal layout + container scroll
-                console.log('🎸 V81: Switching to LANDSCAPE mode');
+                console.log('🎸 V82: Switching to LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
                 (api.settings.player as any).scrollOffsetY = 0;
 
-                console.log(`✅ V81: Horizontal scroll - element: container, offsetX: 15%`);
+                console.log(`✅ V82: Horizontal scroll - element: container, offsetX: 15%`);
             } else {
                 // 📱 PORTRAIT/DESKTOP: Page layout + Grid container scroll
-                console.log('📱 V81: Switching to PORTRAIT/DESKTOP mode');
+                console.log('📱 V82: Switching to PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -365,23 +363,23 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 (api.settings.player as any).scrollOffsetY = -200;
                 (api.settings.player as any).scrollOffsetX = 0;
 
-                console.log(`✅ V81: Vertical scroll - element: ${scrollContainerRef?.current ? '<main>' : 'document.body'}, offsetY: -200px`);
+                console.log(`✅ V82: Vertical scroll - element: ${scrollContainerRef?.current ? '<main>' : 'document.body'}, offsetY: -200px`);
             }
 
             await api.updateSettings();
-            
-            // 🔧 V81: KEPT from V80 - Force full layout reset to prevent persistence
+
+            // 🔧 V82: KEPT from V80 - Force full layout reset to prevent persistence
             if (api.resize) {
                 api.resize();
-                console.log('✅ V81: Forced layout resize');
+                console.log('✅ V82: Forced layout resize');
             } else {
                 window.dispatchEvent(new Event('resize'));
-                console.log('✅ V81: Dispatched resize event');
+                console.log('✅ V82: Dispatched resize event');
             }
-            
+
             await new Promise(resolve => setTimeout(resolve, 50));
             api.render();
-            console.log('✅ V81: Re-render complete');
+            console.log('✅ V82: Re-render complete');
         };
 
         updateOrientation();
@@ -404,10 +402,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         if (!isLooping && api.playbackRange !== undefined) {
             api.playbackRange = null;
-            console.log('🔄 V81: Loop disabled');
+            console.log('🔄 V82: Loop disabled');
         }
 
-        console.log(`🔄 V81: Loop state - isLooping=${isLooping ?? false}`);
+        console.log(`🔄 V82: Loop state - isLooping=${isLooping ?? false}`);
     }, [isLooping]);
 
     // ==================== RENDER ====================
@@ -426,7 +424,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 </div>
             )}
 
-            {/* 🔧 V81: REVERTED overflow behavior - back to auto for both axes */}
+            {/* 🔧 V82: RESTORED overflow behavior - auto for both axes */}
             <div
                 ref={containerRef}
                 className={`${className} alphatab-container-stage1`}
@@ -442,7 +440,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }}
             />
 
-            {/* V81: Stage 1 CSS Fix for touch/overflow */}
+            {/* V82: Stage 1 CSS Fix for touch/overflow + bottom padding */}
             <style jsx>{`
                 .alphatab-container-stage1 {
                     overflow-x: auto !important;
@@ -452,8 +450,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     user-select: none;
                 }
                 
-                /* Minimal fade at bottom to reduce 3rd row bleed */
+                /* 🔧 V82: Bottom padding + visual effects for .at-surface */
                 .alphatab-container-stage1 :global(.at-surface) {
+                    /* Creates extra scrollable space below last measure (Songsterr-style) */
+                    /* Allows final row to position in middle of screen, above menu tray */
+                    padding-bottom: 300px !important;
+                    
+                    /* Minimal fade at bottom to reduce 3rd row bleed */
                     -webkit-mask-image: linear-gradient(to bottom, 
                         black 0%, 
                         black calc(100% - 30px), 
@@ -466,6 +469,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         rgba(0,0,0,0.3) calc(100% - 15px),
                         transparent 100%
                     );
+                    
                     /* Allow touch interactions on SVG */
                     touch-action: manipulation;
                 }
