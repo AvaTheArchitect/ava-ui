@@ -1,15 +1,14 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V87: Button Styling & Hover Tooltips
- * Date: November 18th, 2025
+ * MaestroControlPanel.tsx - V91: Mobile Icon Alignment Fix
+ * Date: November 19th, 2025
  * 
- * 🔧 NEW IN V87:
- * ✅ Updated button colors to text-blue-200 (#bfdbfe) - Simon's Guitar style
- * ✅ Added hover:brightness-125 for button hover effects
- * ✅ Added hover tooltips (black bg, white text, slight transparency)
- * ✅ TrackMixerPanel button width adjusted to 264px
- * ✅ All keyboard shortcuts displayed in tooltips
+ * 🔧 NEW IN V91:
+ * ✅ Fixed mobile icon vertical alignment (icons centered in purple bar)
+ * ✅ Explicit height control for mobile buttons (80px container)
+ * ✅ Added flex-shrink-0 to prevent icon distortion
+ * ✅ Explicit button sizing: 44x44 all icons
  * 
  * V86: Z-INDEX !IMPORTANT FIX
  * V79: Landscape UI fix
@@ -22,7 +21,7 @@ import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
-// 🔧 V79: Updated interface to include isMobileLandscape
+// 🔧 V79: Interface includes isMobileLandscape
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
   isPlaying: boolean;
@@ -53,22 +52,20 @@ export interface MaestroControlPanelProps {
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-
-  // V77: Mobile panel states
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
 
   // V77.1: Close other panels when opening one
   const handleTrackMixerToggle = () => {
     if (!isTrackMixerOpen) {
-      setIsSpeedPanelOpen(false); // Close speed panel
+      setIsSpeedPanelOpen(false);
     }
     setIsTrackMixerOpen(!isTrackMixerOpen);
   };
 
   const handleSpeedToggle = () => {
     if (!isSpeedPanelOpen) {
-      setIsTrackMixerOpen(false); // Close track mixer
+      setIsTrackMixerOpen(false);
     }
     setIsSpeedPanelOpen(!isSpeedPanelOpen);
   };
@@ -96,7 +93,6 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     setIsDrawerOpen(true);
   };
 
-  // Speed presets for mobile panel
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
   const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
 
@@ -115,32 +111,28 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
       <div className={props.isMobileLandscape ? 'block' : 'md:hidden'}>
         {/* 🔧 V86: CRITICAL FIX - Added ! prefix to force z-index above cursor */}
         <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
-          <div className="px-6 py-4 flex items-center justify-between">
+          {/* 🔧 V91: Container with explicit height for proper icon centering */}
+          <div className="h-[80px] px-6 flex items-center justify-between">
 
-            {/* 1. Track Mixer - 🆕 V87: 264px width with icon */}
-            <div className="relative z-[50]">
+            {/* 1. Track Mixer - Icon Only */}
+            <div className="relative z-[50] flex-shrink-0">
               <button
                 onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
-                className={`group relative flex items-center justify-center w-[264px] h-[74px] transition-all disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-200' : 'text-blue-200 hover:brightness-125'
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-400 bg-blue-500/10' : 'text-blue-400 hover:text-blue-300'
                   }`}
                 title="Switch tracks"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                 </svg>
-
-                {/* 🆕 V87: Hover Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[200]">
-                  Switch tracks
-                </div>
               </button>
 
               {/* Track Mixer Panel */}
               {isTrackMixerOpen && (
                 <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[320px] max-h-[400px] overflow-y-auto z-[100]">
                   <div className="flex items-center justify-between mb-3 sticky top-0 bg-gray-900/95 pb-2 border-b border-gray-700">
-                    <span className="text-sm font-bold text-blue-200">Tracks ({props.tracks.length})</span>
+                    <span className="text-sm font-bold text-blue-400">Tracks ({props.tracks.length})</span>
                     <button onClick={() => setIsTrackMixerOpen(false)} className="text-gray-500 hover:text-white">✕</button>
                   </div>
                   <div className="space-y-2">
@@ -149,8 +141,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       const isSoloed = props.trackSoloState.get(idx) || false;
                       const isSelected = idx === props.selectedTrack;
                       return (
-                        <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg ${isSelected ? 'bg-blue-500/20 border border-blue-400/50' : 'bg-gray-800/50'
-                          }`}>
+                        <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg ${isSelected ? 'bg-blue-500/20 border border-blue-400/50' : 'bg-gray-800/50'}`}>
                           <button
                             onClick={() => { props.onTrackChange(idx); setIsTrackMixerOpen(false); }}
                             className="flex-1 flex items-center gap-2 text-left"
@@ -164,11 +155,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                           <button
                             onClick={() => props.onTrackMuteToggle(idx)}
                             className={`px-3 py-1.5 rounded text-xs font-bold ${isMuted ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-400'}`}
-                          >{isMuted ? '🔇' : '🔊'}</button>
+                          >M</button>
                           <button
                             onClick={() => props.onTrackSoloToggle(idx)}
                             className={`px-3 py-1.5 rounded text-xs font-bold ${isSoloed ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400'}`}
-                          >{isSoloed ? '🎯' : '👥'}</button>
+                          >S</button>
                         </div>
                       );
                     })}
@@ -177,12 +168,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               )}
             </div>
 
-            {/* 2. Speed Control - 🆕 V87: Updated colors & tooltip */}
-            <div className="relative z-[50]">
+            {/* 2. Speed Control - Icon Only */}
+            <div className="relative z-[50] flex-shrink-0">
               <button
                 onClick={handleSpeedToggle}
                 disabled={!props.api}
-                className={`group relative p-2 transition-all disabled:opacity-50 ${isSpeedPanelOpen ? 'text-blue-200' : 'text-blue-200 hover:brightness-125'
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400 bg-cyan-500/10' : 'text-cyan-400 hover:text-cyan-300'
                   }`}
                 title="Playback speed"
               >
@@ -194,23 +185,18 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                     <circle cx="16" cy="16" r="2" fill="currentColor" />
                   </g>
                 </svg>
-
-                {/* 🆕 V87: Hover Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[200]">
-                  Change tempo <kbd className="ml-1 px-1 py-0.5 bg-white/20 rounded text-xs">Opt</kbd> <kbd className="px-1 py-0.5 bg-white/20 rounded text-xs">1-8</kbd>
-                </div>
               </button>
 
               {/* Speed Panel */}
               {isSpeedPanelOpen && (
                 <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[280px] z-[100]">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-bold text-blue-200">Speed</span>
+                    <span className="text-sm font-bold text-blue-400">Speed</span>
                     <button onClick={() => setIsSpeedPanelOpen(false)} className="text-gray-500 hover:text-white">✕</button>
                   </div>
                   {props.songInfo && (
                     <div className="mb-4 text-center">
-                      <div className="text-2xl font-bold text-blue-200">{currentBPM} BPM</div>
+                      <div className="text-2xl font-bold text-cyan-400">{currentBPM} BPM</div>
                       <div className="text-xs text-gray-500">Original: {props.songInfo.tempo} BPM</div>
                     </div>
                   )}
@@ -222,7 +208,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       step="0.05"
                       value={props.playbackSpeed}
                       onChange={(e) => props.onSpeedChange(parseFloat(e.target.value))}
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
                     />
                   </div>
                   <div className="grid grid-cols-3 gap-2">
@@ -243,29 +229,24 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               )}
             </div>
 
-            {/* 3. Loop Control - 🆕 V87: Updated colors & tooltip */}
+            {/* 3. Loop Control - Icon Only */}
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
-              className={`group relative p-2 transition-all disabled:opacity-50 ${props.isLooping ? 'text-green-400' : 'text-blue-200 hover:brightness-125'
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400 hover:text-gray-300'
                 }`}
               title="Toggle loop"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
               </svg>
-
-              {/* 🆕 V87: Hover Tooltip */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[200]">
-                Loop <kbd className="ml-1 px-1 py-0.5 bg-white/20 rounded text-xs">L</kbd>
-              </div>
             </button>
 
-            {/* 4. Play/Pause - 🆕 V87: Updated colors & tooltip */}
+            {/* 4. Play/Pause - Icon Only */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`group relative p-2 transition-all disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:brightness-125' : 'text-blue-200 hover:brightness-125'
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
@@ -279,27 +260,17 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                   <path d="M8 5v14l11-7z" />
                 )}
               </svg>
-
-              {/* 🆕 V87: Hover Tooltip */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[200]">
-                {props.isPlaying ? 'Pause' : 'Play'} <kbd className="ml-1 px-1 py-0.5 bg-white/20 rounded text-xs">Space</kbd>
-              </div>
             </button>
 
-            {/* 5. Gear Menu - Settings - 🆕 V87: Updated colors & tooltip */}
+            {/* 5. Gear Menu - Settings */}
             <button
               onClick={handleGearToggle}
-              className="group relative p-2 text-blue-200 hover:brightness-125 transition-all"
+              className="w-[44px] h-[44px] flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
               title="More options"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
               </svg>
-
-              {/* 🆕 V87: Hover Tooltip */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[200]">
-                More options
-              </div>
             </button>
           </div>
         </div>
