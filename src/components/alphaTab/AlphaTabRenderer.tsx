@@ -2,7 +2,7 @@
 
 /**
  * AlphaTab Renderer - STAGE 1.2
- * November 16th, 2025 - V83: Bottom Padding via AlphaTab API
+ * November 17th, 2025 - V83: Bottom Padding via AlphaTab API
  * 
  * 🔧 NEW IN V83:
  * ✅ REMOVED CSS padding approach (was fading last rows with gradient mask)
@@ -373,11 +373,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
 
             await api.updateSettings();
-            
+
             // 🔧 V83: Force layout reset via window resize event
             window.dispatchEvent(new Event('resize'));
             console.log('✅ V83: Dispatched resize event for layout reset');
-            
+
             await new Promise(resolve => setTimeout(resolve, 50));
             api.render();
             console.log('✅ V83: Re-render complete');
@@ -438,6 +438,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
+                    zIndex: 10,  // 🚨 ADD THIS LINE
                 }}
             />
 

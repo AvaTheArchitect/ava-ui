@@ -2,7 +2,7 @@
 
 /**
  * STAGE 1.2 - Synth Player with Mobile-First PWA Layout
- * November 16th, 2025 - V81: Revert V80 Canvas Constraints
+ * November 17th, 2025 - V81: Revert V80 Canvas Constraints
  * 
  * 🔧 NEW IN V81:
  * ✅ REVERTED: h-full constraint (was cutting off canvas)
@@ -124,14 +124,14 @@ export default function SynthPlayerPage() {
             // Only enable landscape mode on mobile/touch devices
             const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-            
+
             // 🔧 V79 FIX: Check HEIGHT not WIDTH for landscape detection
             // Landscape phones always have height < 600px, regardless of width
             const isCompactHeight = window.innerHeight < 600;
-            
+
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
-            
+
             console.log(`🔄 V81: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
         };
 
@@ -290,7 +290,7 @@ export default function SynthPlayerPage() {
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             {/* Grid: 0px header, flexible main, 0px footer (both fixed outside flow) */}
-            
+
             {/* ==================== FIXED HEADER (OUTSIDE GRID FLOW) ==================== */}
             <header
                 className={`
