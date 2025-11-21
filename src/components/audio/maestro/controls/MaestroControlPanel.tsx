@@ -11,6 +11,7 @@
  * ✅ TrackMixer: text-cyan-400 (standardized)
  * ✅ Gear: text-cyan-400 (standardized)
  * ✅ Play keeps orange when playing (text-orange-400)
+ * ✅ TrackMixer panel auto-closes when track selected (mobile fix)
  * 
  * V91: Mobile Icon Alignment Fix
  * V86: Z-INDEX !IMPORTANT FIX
@@ -93,6 +94,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     setIsDrawerOpen(true);
   };
 
+  // Handle Track Change - close mixer panel after selection
+  const handleTrackChange = (trackIndex: number) => {
+    props.onTrackChange(trackIndex);
+    setIsTrackMixerOpen(false);
+  };
+
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
   const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
 
@@ -115,9 +122,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
-                  isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
-                }`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
+                  }`}
                 title="Track mixer"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -146,7 +152,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       return (
                         <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-gray-800 hover:bg-gray-700">
                           <button
-                            onClick={() => props.onTrackChange(idx)}
+                            onClick={() => handleTrackChange(idx)}
                             className="flex-1 text-left flex flex-col gap-0.5"
                           >
                             <div className="flex items-center gap-2">
@@ -176,9 +182,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleSpeedToggle}
                 disabled={!props.api}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
-                  isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
-                }`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
+                  }`}
                 title="Playback speed"
               >
                 <svg width="28" height="24" viewBox="0 0 32 24">
@@ -220,9 +225,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       <button
                         key={speed}
                         onClick={() => props.onSpeedChange(speed)}
-                        className={`px-3 py-2 rounded-lg text-sm font-bold ${
-                          props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-                        }`}
+                        className={`px-3 py-2 rounded-lg text-sm font-bold ${props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                          }`}
                       >{Math.round(speed * 100)}%</button>
                     ))}
                   </div>
@@ -238,9 +242,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${
-                props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'
-              }`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'
+                }`}
               title="Toggle loop"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -252,9 +255,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${
-                props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
-              }`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
+                }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -276,7 +278,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               title="Settings"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
               </svg>
             </button>
 
