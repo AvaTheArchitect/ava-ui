@@ -1,19 +1,20 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V91: Mobile Icon Alignment Fix
- * Date: November 19th, 2025
+ * MaestroControlPanel.tsx - V92: Mobile Icon Color Standardization
+ * Date: November 21st, 2025
  * 
- * 🔧 NEW IN V91:
- * ✅ Fixed mobile icon vertical alignment (icons centered in purple bar)
- * ✅ Explicit height control for mobile buttons (80px container)
- * ✅ Added flex-shrink-0 to prevent icon distortion
- * ✅ Explicit button sizing: 44x44 all icons
+ * 🎨 NEW IN V92:
+ * ✅ All mobile icons use standard cyan-400 blue (matching Speed/Play)
+ * ✅ Loop OFF: text-cyan-400 (no background box)
+ * ✅ Loop ON: text-green-400 (no background box)
+ * ✅ TrackMixer: text-cyan-400 (standardized)
+ * ✅ Gear: text-cyan-400 (standardized)
+ * ✅ Play keeps orange when playing (text-orange-400)
  * 
+ * V91: Mobile Icon Alignment Fix
  * V86: Z-INDEX !IMPORTANT FIX
  * V79: Landscape UI fix
- * V77.2: Complete panel management
- * V77: Icon-only mobile buttons
  */
 
 import React, { useState, useEffect } from 'react';
@@ -21,9 +22,6 @@ import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
-// 🔒 LOCKED INTERFACE - DO NOT MODIFY WITHOUT BACKUP
-// This interface MUST remain in this file (not external types file)
-// 🔧 V79: Interface includes isMobileLandscape
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
   isPlaying: boolean;
@@ -39,7 +37,7 @@ export interface MaestroControlPanelProps {
   trackMuteState: Map<number, boolean>;
   trackSoloState: Map<number, boolean>;
   theme: 'light' | 'dark';
-  isMobileLandscape: boolean; // 🔒 CRITICAL: Required for mobile landscape detection
+  isMobileLandscape: boolean;
   onPlayPause: () => void;
   onStop: () => void;
   onLoopToggle: () => void;
@@ -57,7 +55,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
 
-  // V77.1: Close other panels when opening one
+  // Close other panels when opening one
   const handleTrackMixerToggle = () => {
     if (!isTrackMixerOpen) {
       setIsSpeedPanelOpen(false);
@@ -72,7 +70,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     setIsSpeedPanelOpen(!isSpeedPanelOpen);
   };
 
-  // V77.1: Close all panels when playback starts (prevents interference)
+  // Close all panels when playback starts
   useEffect(() => {
     if (props.isPlaying) {
       setIsTrackMixerOpen(false);
@@ -81,14 +79,14 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     }
   }, [props.isPlaying]);
 
-  // V77.2: Handle Loop toggle - close other panels
+  // Handle Loop toggle - close other panels
   const handleLoopToggle = () => {
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
     props.onLoopToggle();
   };
 
-  // V77.2: Handle Gear menu - close other panels
+  // Handle Gear menu - close other panels
   const handleGearToggle = () => {
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
@@ -100,23 +98,16 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   return (
     <>
-      {/* 🔒 LOCKED: DESKTOP LAYOUT - CONDITIONAL RENDERING ==================== */}
-      {/* 🔒 CRITICAL: Show TransportBar ONLY if NOT in mobile landscape AND screen is md or larger */}
-      {/* Do not remove !props.isMobileLandscape check - breaks mobile landscape mode */}
+      {/* DESKTOP LAYOUT */}
       {!props.isMobileLandscape && (
         <div className="hidden md:block">
           <TransportBar {...props} />
         </div>
       )}
 
-      {/* 🔒 LOCKED: MOBILE LAYOUT - LANDSCAPE OVERRIDE ==================== */}
-      {/* 🔒 CRITICAL: Show mobile UI if screen < md OR if isMobileLandscape is true */}
-      {/* Do not change conditional logic - breaks responsive behavior */}
+      {/* MOBILE LAYOUT */}
       <div className={props.isMobileLandscape ? 'block' : 'md:hidden'}>
-        {/* 🔧 V86: CRITICAL FIX - Added ! prefix to force z-index above cursor */}
         <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
-          {/* 🔒 LOCKED: h-[80px] - V91 Mobile Icon Centering Fix */}
-          {/* Do not change to py-4 or other padding - breaks icon vertical alignment */}
           <div className="h-[80px] px-6 flex items-center justify-between">
 
             {/* 1. Track Mixer - Icon Only */}
@@ -125,36 +116,42 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                 onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
                 className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
-                  isTrackMixerOpen ? 'text-blue-400 bg-blue-500/10' : 'text-blue-400 hover:text-blue-300'
+                  isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
                 }`}
-                title="Switch tracks"
+                title="Track mixer"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                  <rect x="3" y="3" width="3" height="18" rx="1" />
+                  <rect x="10.5" y="3" width="3" height="18" rx="1" />
+                  <rect x="18" y="3" width="3" height="18" rx="1" />
+                  <circle cx="4.5" cy="8" r="2" fill="currentColor" />
+                  <circle cx="12" cy="14" r="2" fill="currentColor" />
+                  <circle cx="19.5" cy="10" r="2" fill="currentColor" />
                 </svg>
               </button>
 
               {/* Track Mixer Panel */}
               {isTrackMixerOpen && (
-                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[320px] max-h-[400px] overflow-y-auto z-[100]">
-                  <div className="flex items-center justify-between mb-3 sticky top-0 bg-gray-900/95 pb-2 border-b border-gray-700">
-                    <span className="text-sm font-bold text-blue-400">Tracks ({props.tracks.length})</span>
+                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 min-w-[280px] max-h-[400px] overflow-y-auto z-[100]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-bold text-blue-400">Tracks</span>
                     <button onClick={() => setIsTrackMixerOpen(false)} className="text-gray-500 hover:text-white">✕</button>
                   </div>
                   <div className="space-y-2">
                     {props.tracks.map((track, idx) => {
+                      const isActive = props.selectedTrack === idx;
                       const isMuted = props.trackMuteState.get(idx) || false;
                       const isSoloed = props.trackSoloState.get(idx) || false;
-                      const isSelected = idx === props.selectedTrack;
+
                       return (
-                        <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg ${isSelected ? 'bg-blue-500/20 border border-blue-400/50' : 'bg-gray-800/50'}`}>
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-gray-800 hover:bg-gray-700">
                           <button
-                            onClick={() => { props.onTrackChange(idx); setIsTrackMixerOpen(false); }}
-                            className="flex-1 flex items-center gap-2 text-left"
+                            onClick={() => props.onTrackChange(idx)}
+                            className="flex-1 text-left flex flex-col gap-0.5"
                           >
-                            <span className="text-lg">🎸</span>
-                            <div className="flex flex-col">
-                              <span className={`text-sm font-medium ${isSelected ? 'text-blue-300' : 'text-gray-300'}`}>{track.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-blue-400' : 'bg-gray-600'}`} />
+                              <span className={`text-sm font-medium ${isActive ? 'text-blue-300' : 'text-gray-300'}`}>{track.name}</span>
                               <span className="text-xs text-gray-500">Track {idx + 1}</span>
                             </div>
                           </button>
@@ -180,7 +177,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                 onClick={handleSpeedToggle}
                 disabled={!props.api}
                 className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
-                  isSpeedPanelOpen ? 'text-cyan-400 bg-cyan-500/10' : 'text-cyan-400 hover:text-cyan-300'
+                  isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'
                 }`}
                 title="Playback speed"
               >
@@ -237,12 +234,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               )}
             </div>
 
-            {/* 3. Loop Control - Icon Only */}
+            {/* 3. Loop Control - Icon Only (V92: Green when ON, Cyan when OFF, NO background box) */}
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${
-                props.isLooping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400 hover:text-gray-300'
+                props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'
               }`}
               title="Toggle loop"
             >
@@ -251,7 +248,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 4. Play/Pause - Icon Only */}
+            {/* 4. Play/Pause - Icon Only (V92: Keep Cyan/Orange) */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
@@ -272,20 +269,21 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 5. Gear Menu - Settings */}
+            {/* 5. Gear (Settings) - Icon Only (V92: Standardized to Cyan) */}
             <button
               onClick={handleGearToggle}
-              className="w-[44px] h-[44px] flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
-              title="More options"
+              className="w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 text-cyan-400 hover:text-cyan-300"
+              title="Settings"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
               </svg>
             </button>
+
           </div>
         </div>
 
-        {/* Mobile Drawer - Settings Menu */}
+        {/* Mobile Drawer */}
         <MobileDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
