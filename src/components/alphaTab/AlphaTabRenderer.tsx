@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * AlphaTab Renderer - Gemini Architecture (Minimal)
- * November 20th, 2025
+ * AlphaTab Renderer - Gemini Architecture (with Touch Selection)
+ * November 21st, 2025
  * 
  * 🎯 RESPONSIBILITIES (Per Gemini's Plan):
  * 1. Initialize AlphaTab API
@@ -10,6 +10,19 @@
  * 3. Create/destroy loop handles based on isLooping prop
  * 4. Manage mouse/touch selection handlers based on isLooping prop
  * 5. Handle orientation changes
+ * 
+ * ✨ NEW IN THIS VERSION:
+ * - Touch selection for mobile PWA (extracted from V61)
+ * - Horizontal vs vertical swipe detection
+ * - Double-tap to clear loop
+ * - Prevents page scroll during touch drag
+ * - Instant loop creation at cursor position when loop enabled (Songsterr behavior)
+ * 
+ * 🎸 SONGSTERR PARITY:
+ * - Loop button ON → Instant loop at cursor position
+ * - Handles control loop movement (push/pull highlight)
+ * - Drag handles to reposition loop
+ * - Highlight follows handles with slight lag
  * 
  * ❌ NOT RESPONSIBLE FOR:
  * - Managing isLooping state (page.tsx owns this)
@@ -94,6 +107,153 @@ const getBarEndTick = (beat: any): number => {
     return lastBeatEnd;
 };
 
+// ==================== TOUCH SELECTION (Extracted from V61) ====================
+
+const setupTouchSelection = (
+    api: AlphaTabApi,
+    container: HTMLElement,
+    _startHandle: HTMLDivElement,
+    _endHandle: HTMLDivElement
+) => {
+    let startBeat: any = null;
+    let endBeat: any = null;
+    let isSelecting = false;
+    let touchStartTime = 0;
+    let touchMoved = false;
+    let startX = 0;
+    let startY = 0;
+    let lastTapTime = 0;
+
+    const DOUBLE_TAP_DELAY = 400;
+
+    const handleTouchStart = (e: Event) => {
+        const touchEvent = e as TouchEvent;
+        if (touchEvent.touches.length !== 1) return;
+
+        const touch = touchEvent.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        touchStartTime = Date.now();
+        touchMoved = false;
+
+        const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
+        if (beat) {
+            startBeat = beat;
+            endBeat = beat;
+        }
+    };
+
+    const handleTouchMove = (e: Event) => {
+        const touchEvent = e as TouchEvent;
+        if (touchEvent.touches.length !== 1) return;
+
+        const touch = touchEvent.touches[0];
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
+
+        if (!startBeat) return;
+
+        // Detect vertical scroll vs horizontal selection
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+            startBeat = null;
+            endBeat = null;
+            return;
+        }
+
+        const isHorizontalDrag = Math.abs(deltaX) > 30;
+
+        if (isHorizontalDrag) {
+            touchMoved = true;
+
+            if (!isSelecting) {
+                isSelecting = true;
+                document.body.style.overflow = 'hidden';
+            }
+
+            e.preventDefault();
+
+            const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
+
+            if (beat && beat !== endBeat) {
+                endBeat = beat;
+
+                if (startBeat && endBeat) {
+                    const rawStart = getBarStartTick(startBeat);
+                    const rawEnd = getBarEndTick(endBeat);
+
+                    const loopStart = Math.min(rawStart, rawEnd);
+                    const loopEnd = Math.max(rawStart, rawEnd);
+
+                    api.playbackRange = {
+                        startTick: loopStart,
+                        endTick: loopEnd
+                    };
+
+                    console.log('📱 Touch drag selection');
+                }
+            }
+        }
+    };
+
+    const handleTouchEnd = (e: Event) => {
+        const now = Date.now();
+        document.body.style.overflow = '';
+
+        const timeSinceLastTap = now - lastTapTime;
+        const isDoubleTap = timeSinceLastTap < DOUBLE_TAP_DELAY && timeSinceLastTap > 50;
+        lastTapTime = now;
+
+        // Double-tap to clear loop
+        if (!touchMoved && Date.now() - touchStartTime < 400) {
+            if (isDoubleTap) {
+                if (api.playbackRange) {
+                    api.playbackRange = null;
+                    console.log('📱 Double-tap cleared loop');
+                }
+            }
+        }
+
+        if (isSelecting && startBeat && endBeat) {
+            const rawStart = getBarStartTick(startBeat);
+            const rawEnd = getBarEndTick(endBeat);
+
+            const loopStart = Math.min(rawStart, rawEnd);
+            const loopEnd = Math.max(rawStart, rawEnd);
+
+            api.playbackRange = {
+                startTick: loopStart,
+                endTick: loopEnd
+            };
+
+            console.log('📱 Touch selection completed');
+        }
+
+        isSelecting = false;
+        startBeat = null;
+        endBeat = null;
+        touchMoved = false;
+    };
+
+    const surface = container.querySelector('.at-surface');
+    const target = (surface as HTMLElement) || container;
+
+    target.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
+    target.addEventListener('touchmove', handleTouchMove as EventListener, { passive: false });
+    target.addEventListener('touchend', handleTouchEnd as EventListener);
+    target.addEventListener('touchcancel', handleTouchEnd as EventListener);
+
+    console.log('✅ Touch selection attached');
+
+    return () => {
+        target.removeEventListener('touchstart', handleTouchStart as EventListener);
+        target.removeEventListener('touchmove', handleTouchMove as EventListener);
+        target.removeEventListener('touchend', handleTouchEnd as EventListener);
+        target.removeEventListener('touchcancel', handleTouchEnd as EventListener);
+        document.body.style.overflow = '';
+        console.log('🧹 Touch selection cleaned up');
+    };
+};
+
 // ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
@@ -134,6 +294,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     };
 
     const [isMobile] = useState(detectMobile);
+
+    // Touch selection cleanup ref
+    const touchCleanupRef = useRef<(() => void) | null>(null);
 
     // ==================== ALPHATAB INITIALIZATION ====================
     useEffect(() => {
@@ -253,6 +416,43 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         console.log(`🔄 api.settings.player.enableUserInteraction set to ${isLooping}`);
     }, [isLooping]);
+
+    // ==================== INSTANT LOOP AT CURSOR (Songsterr behavior) ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        if (!api || !container || !isRendered || !isLooping) {
+            return;
+        }
+
+        // When loop is turned ON, create a loop at current cursor position
+        // This matches Songsterr's behavior
+        if (!api.playbackRange && api.tickPosition !== undefined) {
+            const currentTick = api.tickPosition;
+            
+            // Find the beat at current cursor position
+            const trackIndices = api.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]);
+            const tickCache = (api as any).tickCache;
+            
+            if (tickCache) {
+                const beatResult = tickCache.findBeat(trackIndices, currentTick);
+                
+                if (beatResult?.beat) {
+                    const barStartTick = getBarStartTick(beatResult.beat);
+                    const barEndTick = getBarEndTick(beatResult.beat);
+                    
+                    // Create loop at cursor position
+                    api.playbackRange = {
+                        startTick: barStartTick,
+                        endTick: barEndTick
+                    };
+                    
+                    console.log(`🎯 Loop auto-created at cursor: ${barStartTick} - ${barEndTick}`);
+                }
+            }
+        }
+    }, [isLooping, isRendered]);
 
     // ==================== CREATE LOOP HANDLES (when isLooping = true) ====================
     useEffect(() => {
@@ -521,6 +721,48 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return mouseCleanupRef.current;
     }, [isRendered, isLooping]);
+
+    // ==================== TOUCH DRAG SELECTION (when isLooping = true) ====================
+    useEffect(() => {
+        if (touchCleanupRef.current) {
+            touchCleanupRef.current();
+            touchCleanupRef.current = null;
+        }
+
+        const api = apiRef.current;
+        const container = containerRef.current;
+        const startHandle = startHandleRef.current;
+        const endHandle = endHandleRef.current;
+
+        if (!api || !container || !isRendered || !isLooping || !isMobile) {
+            return; // Only on mobile when loop is ON
+        }
+
+        if (!startHandle || !endHandle) {
+            return;
+        }
+
+        // Delay setup to ensure handles are ready
+        const setupTimer = setTimeout(() => {
+            if (api && container && startHandle && endHandle) {
+                touchCleanupRef.current = setupTouchSelection(
+                    api,
+                    container,
+                    startHandle,
+                    endHandle
+                );
+                console.log('✅ Touch selection setup complete');
+            }
+        }, 300);
+
+        return () => {
+            clearTimeout(setupTimer);
+            if (touchCleanupRef.current) {
+                touchCleanupRef.current();
+                touchCleanupRef.current = null;
+            }
+        };
+    }, [isRendered, isLooping, isMobile]);
 
     // ==================== LOOP PLAYBACK ENFORCEMENT ====================
     useEffect(() => {
