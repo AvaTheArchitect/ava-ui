@@ -1,23 +1,25 @@
 'use client';
 
 /**
- * AlphaTab Renderer - STAGE 1.2
- * November 17th, 2025 - V83: Bottom Padding via AlphaTab API
+ * AlphaTab Renderer - Gemini Architecture (Minimal)
+ * November 20th, 2025
  * 
- * 🔧 NEW IN V83:
- * ✅ REMOVED CSS padding approach (was fading last rows with gradient mask)
- * ✅ ADDED display.lastSystemPaddingBottom: 300 (AlphaTab API setting)
- * ✅ Proper Songsterr-style bottom padding via API (not CSS hack)
- * ✅ AlphaTab now aware of padding for auto-scroll calculations
+ * 🎯 RESPONSIBILITIES (Per Gemini's Plan):
+ * 1. Initialize AlphaTab API
+ * 2. Listen to playbackRangeChanged → notify page.tsx via callback
+ * 3. Create/destroy loop handles based on isLooping prop
+ * 4. Manage mouse/touch selection handlers based on isLooping prop
+ * 5. Handle orientation changes
  * 
- * V82: Bottom Canvas Padding (CSS approach - REPLACED)
- * V81: Revert Overflow Constraints
- * V80: Canvas Overscroll + Layout Persistence Fix
- * V78: Landscape Mode Integration
+ * ❌ NOT RESPONSIBLE FOR:
+ * - Managing isLooping state (page.tsx owns this)
+ * - Deciding when to toggle loop (LoopControl.tsx handles this)
+ * - Managing hasLoopSelection state (page.tsx owns this)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { initAlphaTab, loadGuitarProFile } from '@/lib/alphaTab/initAlphaTab';
+import { createLoopHandles, updateHandlePositions, attachHandleDragHandlers } from '@/lib/alphaTab/loopHandles';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
 export interface AlphaTabRendererProps {
@@ -30,16 +32,12 @@ export interface AlphaTabRendererProps {
     minHeight?: string;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     soundFontPath?: string;
-
-    // V67: Custom scroll container for Grid layout
     scrollContainerRef?: React.RefObject<HTMLElement>;
-
-    // V78: Landscape orientation state from page.tsx
     isMobileLandscape?: boolean;
 
-    // MENU TRAY INTEGRATION (Stage 1+)
+    // Loop control (passed from page.tsx)
     isLooping?: boolean;
-    onLoopRangeChange?: (start: number, end: number) => void;
+    onLoopRangeChange?: (start: number | null, end: number | null) => void;
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -57,6 +55,45 @@ const getBeatAtPosition = (
     return api.renderer.boundsLookup.getBeatAtPos(relX, relY);
 };
 
+const getBarStartTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart || 0;
+    }
+    const bar = beat.voice.bar;
+    let firstBeatTick = beat.absolutePlaybackStart;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const firstBeat = voice.beats[0];
+                if (firstBeat.absolutePlaybackStart < firstBeatTick) {
+                    firstBeatTick = firstBeat.absolutePlaybackStart;
+                }
+            }
+        }
+    }
+    return firstBeatTick;
+};
+
+const getBarEndTick = (beat: any): number => {
+    if (!beat || !beat.voice || !beat.voice.bar) {
+        return beat?.absolutePlaybackStart + beat?.playbackDuration || 0;
+    }
+    const bar = beat.voice.bar;
+    let lastBeatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
+    if (bar.voices && bar.voices.length > 0) {
+        for (const voice of bar.voices) {
+            if (voice.beats && voice.beats.length > 0) {
+                const lastBeat = voice.beats[voice.beats.length - 1];
+                const beatEnd = lastBeat.absolutePlaybackStart + lastBeat.playbackDuration;
+                if (beatEnd > lastBeatEnd) {
+                    lastBeatEnd = beatEnd;
+                }
+            }
+        }
+    }
+    return lastBeatEnd;
+};
+
 // ==================== REACT COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
@@ -71,7 +108,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     soundFontPath = '/soundfont/sonivox.sf2',
     scrollContainerRef,
     isMobileLandscape = false,
-    isLooping,
+    isLooping = false,
     onLoopRangeChange,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -80,262 +117,95 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
     const apiRef = useRef<AlphaTabApi | null>(null);
 
+    // Loop handle refs
+    const startHandleRef = useRef<HTMLDivElement | null>(null);
+    const endHandleRef = useRef<HTMLDivElement | null>(null);
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    const mouseCleanupRef = useRef<(() => void) | null>(null);
+
     // Mobile detection
     const detectMobile = (): boolean => {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-        const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+        const mobileKeywords = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+        const isMobileUA = mobileKeywords.test(userAgent);
         const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
-        const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 1024;
-        const mobile = isMobileUA || (isTouchDevice && isSmallScreen);
-        console.log(`📱 V83: Mobile detection - ${mobile ? 'MOBILE' : 'DESKTOP'}`);
-        return mobile;
+        const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 768;
+        return isMobileUA || (isTouchDevice && isSmallScreen);
     };
 
-    const [isMobile] = useState(() => detectMobile());
+    const [isMobile] = useState(detectMobile);
 
-    // ==================== INITIALIZE ALPHATAB (ONCE) ====================
+    // ==================== ALPHATAB INITIALIZATION ====================
     useEffect(() => {
-        let isMounted = true;
-
-        const initialize = async () => {
+        const initAndLoad = async () => {
             if (!containerRef.current) return;
 
             try {
                 setIsLoading(true);
-                console.log('🎸 V83: Initializing AlphaTab');
+                console.log('🎵 Initializing AlphaTab...');
 
-                // V83: Use prop for initial layout mode
-                const layoutMode = isMobileLandscape ? 'horizontal' : 'page';
-                console.log(`📱 V83: Initial layout mode: ${layoutMode}`);
-
-                const customScrollContainer = scrollContainerRef?.current;
-
-                if (customScrollContainer) {
-                    console.log('✅ V83: Using custom scroll container (Grid <main> element)');
-                } else {
-                    console.log('⚠️ V83: No custom scroll container provided');
-                }
+                const scrollElement = scrollContainerRef?.current || document.body;
 
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
-                    enableCursor: playerMode !== 'disabled',
-                    layoutMode,
-                    soundFontPath: playerMode === 'synthesizer' ? soundFontPath : undefined,
+                    enableCursor: true,
+                    layoutMode: 'page',
+                    soundFontPath,
                     isMobile,
-                    enableUserInteraction: false,
-                    scrollContainer: customScrollContainer || undefined,
+                    enableUserInteraction: false, // We'll manage this
+                    scrollContainer: scrollElement,
                 });
 
-                if (!isMounted) return;
-
                 apiRef.current = api;
-                console.log('✅ V83: AlphaTab API ready');
+                console.log('✅ AlphaTab initialized');
 
-                // 🔧 V83: Add bottom padding to last system (Songsterr-style)
-                // Must be applied AFTER initialization via updateSettings
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
-                console.log('✅ V83: Applied lastSystemPaddingBottom: 300px');
 
-                // Load score
                 await loadGuitarProFile(api, fileUrl);
-                if (!isMounted) return;
+                console.log('📂 File loaded');
 
-                // Setup event handlers
-                if (api.scoreLoaded) {
-                    api.scoreLoaded.on((score: any) => {
-                        console.log('✅ V83: Score loaded');
-                        const trackList = Array.from({ length: score.tracks.length }, (_, i) => ({
-                            index: i,
-                            name: score.tracks[i].name,
-                            color: score.tracks[i].color,
-                            playbackInfo: {
-                                volume: score.tracks[i].playbackInfo?.volume || 1,
-                                isMuted: false,
-                                isSoloed: false,
-                            },
-                        }));
+                api.scoreLoaded.on((score: any) => {
+                    console.log('📊 Score loaded');
+                    const tracks: Track[] = score.tracks.map((t: any) => ({
+                        index: t.index,
+                        name: t.name,
+                        shortName: t.shortName,
+                    }));
 
-                        const info = {
-                            title: score.title,
-                            artist: score.artist,
-                            album: score.album,
-                            tempo: score.tempo,
-                        };
+                    const songInfo: SongInfo = {
+                        title: score.title,
+                        artist: score.artist,
+                        album: score.album,
+                        tempo: score.tempo,
+                    };
 
-                        setScoreIsLoaded(true);
-                        onScoreLoaded?.(info, trackList);
-                    });
-                }
+                    setScoreIsLoaded(true);
+                    onScoreLoaded?.(songInfo, tracks);
+                });
 
-                if (api.renderFinished) {
-                    api.renderFinished.on(() => {
-                        console.log('✅ V83: Rendering complete');
-                        setIsRendered(true);
-                        setIsLoading(false);
-                        onRenderFinished?.();
-                    });
-                }
+                api.renderFinished.on(() => {
+                    console.log('🎨 Render finished');
+                    setIsRendered(true);
+                    setIsLoading(false);
+                    onRenderFinished?.();
+                });
 
                 onApiReady?.(api);
 
-                // Start rendering
-                api.render();
-            } catch (error) {
-                console.error('❌ V83: Initialization error:', error);
-                if (isMounted) {
-                    setIsLoading(false);
-                    onError?.(error instanceof Error ? error.message : 'Unknown error');
-                }
+            } catch (err) {
+                console.error('❌ Init error:', err);
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                setIsLoading(false);
+                onError?.(errorMsg);
             }
         };
 
-        initialize();
+        initAndLoad();
+    }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError, scrollContainerRef, isMobile]);
 
-        return () => {
-            isMounted = false;
-        };
-    }, [fileUrl, playerMode, soundFontPath, isMobile, isMobileLandscape, scrollContainerRef, onApiReady, onScoreLoaded, onRenderFinished, onError]);
-
-    // ==================== UNIFIED CLICK/TAP INTERACTION ====================
-    useEffect(() => {
-        if (!apiRef.current || !containerRef.current || !isRendered) return;
-        if (playerMode === 'disabled') return;
-        if (!scoreIsLoaded) return;
-
-        const api = apiRef.current;
-        const container = containerRef.current;
-
-        // Defensive element selection
-        let surface = container.querySelector('.at-surface') as HTMLElement;
-        if (!surface) {
-            surface = container.querySelector('.at-viewport') as HTMLElement;
-        }
-        if (!surface) {
-            surface = container;
-        }
-
-        console.log(`🎯 V83: Attaching click/tap handlers`);
-
-        // Shared state for both mouse and touch
-        let tapCount = 0;
-        let tapTimer: NodeJS.Timeout | null = null;
-        const TAP_DELAY = 250; // ms to wait for double tap
-
-        // UNIFIED TAP HANDLER - works for both mouse and touch
-        const handleTap = (x: number, y: number, isDoubleTap: boolean) => {
-            const beat = getBeatAtPosition(api, container, x, y);
-
-            if (beat && beat.absolutePlaybackStart !== undefined) {
-                // Always seek to the beat position
-                if (api.tickPosition !== undefined) {
-                    api.tickPosition = beat.absolutePlaybackStart;
-                    console.log(
-                        isDoubleTap
-                            ? `🎵 V83: Double-tap at tick ${beat.absolutePlaybackStart}`
-                            : `🎯 V83: Single-tap seek to tick ${beat.absolutePlaybackStart}`
-                    );
-                }
-
-                // If double tap, also start playback
-                if (isDoubleTap) {
-                    setTimeout(() => {
-                        try {
-                            if (api.play) {
-                                api.play();
-                            } else if ((api as any).playPause) {
-                                (api as any).playPause();
-                            }
-                            console.log('✅ V83: Playback started from double-tap');
-                        } catch (err) {
-                            console.error('❌ V83: Failed to start playback:', err);
-                        }
-                    }, 50);
-                }
-            }
-        };
-
-        // MOUSE EVENTS (Desktop)
-        const handleMouseClick = (e: MouseEvent) => {
-            e.preventDefault();
-            tapCount++;
-
-            if (tapCount === 1) {
-                tapTimer = setTimeout(() => {
-                    handleTap(e.clientX, e.clientY, false);
-                    tapCount = 0;
-                }, TAP_DELAY);
-            } else if (tapCount === 2) {
-                if (tapTimer) {
-                    clearTimeout(tapTimer);
-                    tapTimer = null;
-                }
-                handleTap(e.clientX, e.clientY, true);
-                tapCount = 0;
-            }
-        };
-
-        // TOUCH EVENTS (Mobile/PWA)
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchStartTime = 0;
-        const MAX_TAP_MOVE = 10;
-        const MAX_TAP_DURATION = 300;
-
-        const handleTouchStart = (e: TouchEvent) => {
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchStartTime = Date.now();
-        };
-
-        const handleTouchEnd = (e: TouchEvent) => {
-            e.preventDefault();
-
-            const touch = e.changedTouches[0];
-            const touchEndX = touch.clientX;
-            const touchEndY = touch.clientY;
-            const duration = Date.now() - touchStartTime;
-
-            const moveX = Math.abs(touchEndX - touchStartX);
-            const moveY = Math.abs(touchEndY - touchStartY);
-            const isTap = moveX < MAX_TAP_MOVE && moveY < MAX_TAP_MOVE && duration < MAX_TAP_DURATION;
-
-            if (!isTap) return;
-
-            tapCount++;
-
-            if (tapCount === 1) {
-                tapTimer = setTimeout(() => {
-                    handleTap(touchEndX, touchEndY, false);
-                    tapCount = 0;
-                }, TAP_DELAY);
-            } else if (tapCount === 2) {
-                if (tapTimer) {
-                    clearTimeout(tapTimer);
-                    tapTimer = null;
-                }
-                handleTap(touchEndX, touchEndY, true);
-                tapCount = 0;
-            }
-        };
-
-        // Attach event listeners
-        surface.addEventListener('click', handleMouseClick as EventListener);
-        surface.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
-        surface.addEventListener('touchend', handleTouchEnd as EventListener, { passive: false });
-
-        // Cleanup
-        return () => {
-            surface.removeEventListener('click', handleMouseClick as EventListener);
-            surface.removeEventListener('touchstart', handleTouchStart as EventListener);
-            surface.removeEventListener('touchend', handleTouchEnd as EventListener);
-            if (tapTimer) clearTimeout(tapTimer);
-        };
-    }, [isRendered, playerMode, scoreIsLoaded, isMobile]);
-
-    // ==================== 🔧 V83: ORIENTATION HANDLING ====================
+    // ==================== ORIENTATION HANDLING ====================
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
 
@@ -346,67 +216,351 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const updateOrientation = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
-            console.log(`🔄 V83: Orientation change - Landscape: ${isMobileLandscape}`);
-
             if (isMobileLandscape) {
-                // 🎸 LANDSCAPE: Horizontal layout + container scroll
-                console.log('🎸 V83: Switching to LANDSCAPE mode');
+                console.log('🎸 Switching to LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
-                (api.settings.player as any).scrollOffsetY = 0;
-
-                console.log(`✅ V83: Horizontal scroll - element: container, offsetX: 15%`);
             } else {
-                // 📱 PORTRAIT/DESKTOP: Page layout + Grid container scroll
-                console.log('📱 V83: Switching to PORTRAIT/DESKTOP mode');
+                console.log('📱 Switching to PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
                 const scrollElement = scrollContainerRef?.current || document.body;
                 api.settings.player.scrollElement = scrollElement;
                 (api.settings.player as any).scrollOffsetY = -200;
-                (api.settings.player as any).scrollOffsetX = 0;
-
-                console.log(`✅ V83: Vertical scroll - element: ${scrollContainerRef?.current ? '<main>' : 'document.body'}, offsetY: -200px`);
             }
 
             await api.updateSettings();
-
-            // 🔧 V83: Force layout reset via window resize event
             window.dispatchEvent(new Event('resize'));
-            console.log('✅ V83: Dispatched resize event for layout reset');
-
             await new Promise(resolve => setTimeout(resolve, 50));
             api.render();
-            console.log('✅ V83: Re-render complete');
         };
 
         updateOrientation();
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef]);
 
-    // ==================== LOOP CONTROL ====================
+    // ==================== DYNAMIC USER INTERACTION CONTROL ====================
     useEffect(() => {
-        if (!apiRef.current) return;
+        const api = apiRef.current;
+        if (!api) return;
+
+        // Enable/disable AlphaTab's native user interaction based on loop state
+        // When OFF: Disable to prevent native highlight
+        // When ON: Enable to allow our custom drag selection
+        (api.settings.player as any).enableUserInteraction = isLooping;
+        api.updateSettings();
+
+        console.log(`🔄 api.settings.player.enableUserInteraction set to ${isLooping}`);
+    }, [isLooping]);
+
+    // ==================== CREATE LOOP HANDLES (when isLooping = true) ====================
+    useEffect(() => {
+        if (!containerRef.current || !isLooping) {
+            // Hide handles when loop is off
+            if (startHandleRef.current) startHandleRef.current.style.display = 'none';
+            if (endHandleRef.current) endHandleRef.current.style.display = 'none';
+            return;
+        }
+
+        const handles = createLoopHandles(containerRef.current);
+        startHandleRef.current = handles.startHandle;
+        endHandleRef.current = handles.endHandle;
+
+        console.log('✅ Loop handles created');
+
+        return () => {
+            if (startHandleRef.current) {
+                startHandleRef.current.remove();
+                startHandleRef.current = null;
+            }
+            if (endHandleRef.current) {
+                endHandleRef.current.remove();
+                endHandleRef.current = null;
+            }
+        };
+    }, [isLooping]);
+
+    // ==================== ATTACH DRAG HANDLERS ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        const container = containerRef.current;
+        const startHandle = startHandleRef.current;
+        const endHandle = endHandleRef.current;
+
+        if (!api || !container || !startHandle || !endHandle || !isLooping) {
+            return;
+        }
+
+        dragCleanupRef.current = attachHandleDragHandlers(
+            api,
+            container,
+            startHandle,
+            endHandle,
+            (startTick: number, endTick: number) => {
+                // Notify page.tsx of range change
+                onLoopRangeChange?.(startTick, endTick);
+            }
+        );
+
+        console.log('✅ Drag handlers attached');
+
+        return () => {
+            if (dragCleanupRef.current) {
+                dragCleanupRef.current();
+                dragCleanupRef.current = null;
+            }
+        };
+    }, [isLooping, onLoopRangeChange]);
+
+    // ==================== LISTEN TO PLAYBACK RANGE CHANGES (Gemini Plan) ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        const handleRangeChange = (e: any) => {
+            const container = containerRef.current;
+            const startHandle = startHandleRef.current;
+            const endHandle = endHandleRef.current;
+
+            if (e.playbackRange) {
+                const { startTick, endTick } = e.playbackRange;
+
+                // Notify page.tsx
+                onLoopRangeChange?.(startTick, endTick);
+
+                // Update handle positions if visible
+                if (api && container && startHandle && endHandle && isLooping) {
+                    updateHandlePositions(api, container, startHandle, endHandle, "rangeChanged");
+                }
+
+                console.log(`🔄 Loop range: ${startTick} - ${endTick}`);
+            } else {
+                // Range cleared
+                onLoopRangeChange?.(null, null);
+
+                // Hide handles
+                if (startHandle) startHandle.style.display = 'none';
+                if (endHandle) endHandle.style.display = 'none';
+
+                console.log('🔄 Loop range cleared');
+            }
+        };
+
+        // Gemini Plan: Listen to renderFinished to update handles
+        const handleRenderFinished = () => {
+            const container = containerRef.current;
+            const startHandle = startHandleRef.current;
+            const endHandle = endHandleRef.current;
+
+            if (api.playbackRange && container && startHandle && endHandle && isLooping) {
+                updateHandlePositions(api, container, startHandle, endHandle, "renderFinished");
+            }
+        };
+
+        api.playbackRangeChanged.on(handleRangeChange);
+        api.renderFinished.on(handleRenderFinished);
+
+        return () => {
+            api.playbackRangeChanged.off(handleRangeChange);
+            api.renderFinished.off(handleRenderFinished);
+        };
+    }, [onLoopRangeChange, isLooping]);
+
+    // ==================== SINGLE CLICK SEEK (when isLooping = false) ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        if (!api || !container || !isRendered || isLooping) {
+            return; // Only when loop is OFF
+        }
+
+        const handleClick = (e: MouseEvent) => {
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+            if (beat && beat.absolutePlaybackStart !== undefined) {
+                api.tickPosition = beat.absolutePlaybackStart;
+                console.log('🖱️ Single-click seek to tick', beat.absolutePlaybackStart);
+            }
+        };
+
+        container.addEventListener('click', handleClick);
+        console.log('✅ Single-click seek attached (loop OFF)');
+
+        return () => {
+            container.removeEventListener('click', handleClick);
+        };
+    }, [isRendered, isLooping]);
+
+    // ==================== DOUBLE CLICK PLAY (when isLooping = false) ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        const container = containerRef.current;
+
+        if (!api || !container || !isRendered || isLooping) {
+            return; // Only when loop is OFF
+        }
+
+        const handleDoubleClick = (e: MouseEvent) => {
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+            if (beat && beat.absolutePlaybackStart !== undefined) {
+                api.tickPosition = beat.absolutePlaybackStart;
+                if (api.play) api.play();
+                console.log('🖱️🖱️ Double-click play from tick', beat.absolutePlaybackStart);
+            }
+        };
+
+        container.addEventListener('dblclick', handleDoubleClick);
+        console.log('✅ Double-click play attached (loop OFF)');
+
+        return () => {
+            container.removeEventListener('dblclick', handleDoubleClick);
+        };
+    }, [isRendered, isLooping]);
+
+    // ==================== MOUSE DRAG SELECTION (when isLooping = true) ====================
+    useEffect(() => {
+        if (mouseCleanupRef.current) {
+            mouseCleanupRef.current();
+            mouseCleanupRef.current = null;
+        }
 
         const api = apiRef.current;
+        const container = containerRef.current;
 
-        if (api.isLooping !== undefined) {
-            api.isLooping = isLooping ?? false;
+        if (!api || !container || !isRendered || !isLooping) {
+            return;
         }
 
-        if (api.settings?.player) {
-            (api.settings.player as any).enableUserInteraction = isLooping ?? false;
-            api.updateSettings();
-        }
+        let startBeat: any = null;
+        let endBeat: any = null;
+        let isDragging = false;
 
-        if (!isLooping && api.playbackRange !== undefined) {
+        const handleMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0 ||
+                (e.target as HTMLElement).closest('.maestro-loop-bubble') ||
+                (e.target as HTMLElement).closest('.maestro-loop-handle')) {
+                return;
+            }
+
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+            if (beat) {
+                isDragging = true;
+                startBeat = beat;
+                endBeat = beat;
+
+                const rawStart = getBarStartTick(beat);
+                const rawEnd = getBarEndTick(beat);
+
+                api.playbackRange = {
+                    startTick: rawStart,
+                    endTick: rawEnd
+                };
+
+                console.log('🖱️ Mouse drag started');
+
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
+            }
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging) return;
+            e.preventDefault();
+
+            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+            if (beat && beat !== endBeat) {
+                endBeat = beat;
+
+                const rawStart = getBarStartTick(startBeat);
+                const rawEnd = getBarEndTick(endBeat);
+
+                const loopStart = Math.min(rawStart, rawEnd);
+                const loopEnd = Math.max(rawStart, rawEnd);
+
+                api.playbackRange = {
+                    startTick: loopStart,
+                    endTick: loopEnd
+                };
+            }
+        };
+
+        const handleMouseUp = () => {
+            if (!isDragging) return;
+            console.log('🖱️ Mouse drag completed');
+            isDragging = false;
+            startBeat = null;
+            endBeat = null;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        const handleDoubleClick = (e: MouseEvent) => {
+            if ((e.target as HTMLElement).closest('.maestro-loop-bubble') ||
+                (e.target as HTMLElement).closest('.maestro-loop-handle')) {
+                return;
+            }
+            if (api.playbackRange) {
+                api.playbackRange = null;
+                console.log('🖱️ Double-click cleared loop');
+            }
+        };
+
+        const surface = container.querySelector('.at-surface');
+        const target = (surface as HTMLElement) || container;
+
+        target.addEventListener('mousedown', handleMouseDown as EventListener);
+        target.addEventListener('dblclick', handleDoubleClick as EventListener);
+
+        mouseCleanupRef.current = () => {
+            target.removeEventListener('mousedown', handleMouseDown as EventListener);
+            target.removeEventListener('dblclick', handleDoubleClick as EventListener);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        return mouseCleanupRef.current;
+    }, [isRendered, isLooping]);
+
+    // ==================== LOOP PLAYBACK ENFORCEMENT ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api || !isLooping) return;
+
+        const handlePlayerPositionChanged = (e: any) => {
+            if (!api.playbackRange) return;
+
+            const { startTick, endTick } = api.playbackRange;
+
+            if (e.currentTick >= endTick) {
+                api.tickPosition = startTick;
+
+                if (api.playerState === 1) {
+                    setTimeout(() => {
+                        if (api && api.play) api.play();
+                    }, 10);
+                }
+
+                console.log(`🔁 Looped back to start (${startTick})`);
+            }
+        };
+
+        api.playerPositionChanged.on(handlePlayerPositionChanged);
+
+        return () => {
+            api.playerPositionChanged.off(handlePlayerPositionChanged);
+        };
+    }, [isLooping]);
+
+    // ==================== CLEAR LOOP WHEN DISABLED ====================
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        if (!isLooping && api.playbackRange) {
             api.playbackRange = null;
-            console.log('🔄 V83: Loop disabled');
+            console.log('🔄 Loop disabled - cleared playback range');
         }
-
-        console.log(`🔄 V83: Loop state - isLooping=${isLooping ?? false}`);
     }, [isLooping]);
 
     // ==================== RENDER ====================
@@ -425,10 +579,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 </div>
             )}
 
-            {/* 🔧 V83: Overflow behavior - auto for both axes */}
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container-stage1`}
+                className={`${className} alphatab-container`}
                 style={{
                     minHeight,
                     width: '100%',
@@ -438,40 +591,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',
-                    zIndex: 10,  // 🚨 ADD THIS LINE
+                    zIndex: 10,
                 }}
             />
-
-            {/* V83: Stage 1 CSS Fix - REMOVED bottom padding (now using API setting) */}
-            <style jsx>{`
-                .alphatab-container-stage1 {
-                    overflow-x: auto !important;
-                    /* Allow touch interactions */
-                    touch-action: manipulation;
-                    -webkit-user-select: none;
-                    user-select: none;
-                }
-                
-                /* 🔧 V83: Minimal fade at bottom (RESTORED original 30px values) */
-                .alphatab-container-stage1 :global(.at-surface) {
-                    /* Minimal fade at bottom to reduce 3rd row bleed */
-                    -webkit-mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                    mask-image: linear-gradient(to bottom, 
-                        black 0%, 
-                        black calc(100% - 30px), 
-                        rgba(0,0,0,0.3) calc(100% - 15px),
-                        transparent 100%
-                    );
-                    
-                    /* Allow touch interactions on SVG */
-                    touch-action: manipulation;
-                }
-            `}</style>
         </div>
     );
 };

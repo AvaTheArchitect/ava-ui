@@ -53,7 +53,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
     <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
       {/* 🔒 FIXED: h-[74px] = exact 74px height (was py-2 which created 90px total) */}
       <div className="max-w-screen-2xl mx-auto h-[74px] flex items-center">
-        
+
         {/* 🔒 LEFT SECTION: Track Mixer + Play - 50px left padding */}
         <div className="flex items-center gap-[50px] pl-[50px]">
           <TrackMixerPanel

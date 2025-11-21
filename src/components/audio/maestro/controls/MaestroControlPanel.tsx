@@ -21,6 +21,8 @@ import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
+// 🔒 LOCKED INTERFACE - DO NOT MODIFY WITHOUT BACKUP
+// This interface MUST remain in this file (not external types file)
 // 🔧 V79: Interface includes isMobileLandscape
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
@@ -37,7 +39,7 @@ export interface MaestroControlPanelProps {
   trackMuteState: Map<number, boolean>;
   trackSoloState: Map<number, boolean>;
   theme: 'light' | 'dark';
-  isMobileLandscape: boolean; // 🔧 V79: NEW PROP
+  isMobileLandscape: boolean; // 🔒 CRITICAL: Required for mobile landscape detection
   onPlayPause: () => void;
   onStop: () => void;
   onLoopToggle: () => void;
@@ -98,20 +100,23 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   return (
     <>
-      {/* ==================== 🔧 V79: DESKTOP LAYOUT - CONDITIONAL RENDERING ==================== */}
-      {/* Show TransportBar ONLY if NOT in mobile landscape AND screen is md or larger */}
+      {/* 🔒 LOCKED: DESKTOP LAYOUT - CONDITIONAL RENDERING ==================== */}
+      {/* 🔒 CRITICAL: Show TransportBar ONLY if NOT in mobile landscape AND screen is md or larger */}
+      {/* Do not remove !props.isMobileLandscape check - breaks mobile landscape mode */}
       {!props.isMobileLandscape && (
         <div className="hidden md:block">
           <TransportBar {...props} />
         </div>
       )}
 
-      {/* ==================== 🔧 V79: MOBILE LAYOUT - LANDSCAPE OVERRIDE ==================== */}
-      {/* Show mobile UI if screen < md OR if isMobileLandscape is true */}
+      {/* 🔒 LOCKED: MOBILE LAYOUT - LANDSCAPE OVERRIDE ==================== */}
+      {/* 🔒 CRITICAL: Show mobile UI if screen < md OR if isMobileLandscape is true */}
+      {/* Do not change conditional logic - breaks responsive behavior */}
       <div className={props.isMobileLandscape ? 'block' : 'md:hidden'}>
         {/* 🔧 V86: CRITICAL FIX - Added ! prefix to force z-index above cursor */}
         <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
-          {/* 🔧 V91: Container with explicit height for proper icon centering */}
+          {/* 🔒 LOCKED: h-[80px] - V91 Mobile Icon Centering Fix */}
+          {/* Do not change to py-4 or other padding - breaks icon vertical alignment */}
           <div className="h-[80px] px-6 flex items-center justify-between">
 
             {/* 1. Track Mixer - Icon Only */}
@@ -119,8 +124,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-400 bg-blue-500/10' : 'text-blue-400 hover:text-blue-300'
-                  }`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
+                  isTrackMixerOpen ? 'text-blue-400 bg-blue-500/10' : 'text-blue-400 hover:text-blue-300'
+                }`}
                 title="Switch tracks"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -173,8 +179,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleSpeedToggle}
                 disabled={!props.api}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400 bg-cyan-500/10' : 'text-cyan-400 hover:text-cyan-300'
-                  }`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
+                  isSpeedPanelOpen ? 'text-cyan-400 bg-cyan-500/10' : 'text-cyan-400 hover:text-cyan-300'
+                }`}
                 title="Playback speed"
               >
                 <svg width="28" height="24" viewBox="0 0 32 24">
@@ -216,8 +223,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       <button
                         key={speed}
                         onClick={() => props.onSpeedChange(speed)}
-                        className={`px-3 py-2 rounded-lg text-sm font-bold ${props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-                          }`}
+                        className={`px-3 py-2 rounded-lg text-sm font-bold ${
+                          props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+                        }`}
                       >{Math.round(speed * 100)}%</button>
                     ))}
                   </div>
@@ -233,8 +241,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400 hover:text-gray-300'
-                }`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${
+                props.isLooping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400 hover:text-gray-300'
+              }`}
               title="Toggle loop"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -246,8 +255,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
-                }`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${
+                props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
+              }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
