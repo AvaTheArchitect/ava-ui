@@ -1,0 +1,245 @@
+/**
+ * alphaTab Required Styles - V75 ORIENTATION-AWARE
+ * Date: November 15th, 2025
+ * 
+ * NEW IN V75:
+ * ✅ Orientation-aware overflow (portrait: vertical, landscape: horizontal)
+ * ✅ Media query for mobile landscape mode
+ * ✅ Maintains all existing cursor, loop, and selection styles
+ */
+
+/* Main alphaTab container - PORTRAIT MODE (default) */
+.at-surface {
+    width: 100%;
+    position: relative;
+    
+    /* Portrait: vertical scroll */
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* SVG wrapper */
+.at-viewport {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+/* HIDE the bar cursor - we only want the beat line */
+.at-cursor-bar {
+    display: none !important;
+}
+
+/* Beat line cursor - SIMPLE purple line */
+.at-cursor-beat {
+    background: rgba(168, 85, 247, 0.9) !important;
+    z-index: 999 !important; /* Above selection but below handles */
+}
+
+/* High specificity version for safety */
+#maestro-player .at-cursor-beat {
+    background: rgba(168, 85, 247, 0.9) !important;
+}
+
+/* Mobile-specific */
+@media (max-width: 768px) {
+    .at-cursor-beat {
+        background: rgba(168, 85, 247, 1) !important;
+        min-width: 2px !important;
+    }
+}
+
+/* ========================================
+   LOOP SELECTION - V6 REAL DOM HANDLES
+   - Grayed semi-transparent background ONLY
+   - NO borders, NO pseudo-elements
+   - Handles are real <div> elements (created in JS)
+   ======================================== */
+
+/* ✅ KEEP - Gray overlay for selected area */
+.at-selection div {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.15) !important; /* Light gray overlay */
+    pointer-events: none; /* Let touches pass through */
+    z-index: 997; /* Below cursor and handles */
+    
+    /* ❌ REMOVED - No borders! */
+    border: none !important;
+    border-radius: 0;
+}
+
+/* ❌ REMOVED - No more pseudo-element handles */
+/* All ::before and ::after code deleted */
+
+/* ========================================
+   REAL DOM HANDLES (Created in AlphaTabRenderer.tsx)
+   These styles apply to actual <div> elements
+   ======================================== */
+
+/* Base handle styles - applied to both start and end */
+.maestro-loop-handle {
+    position: absolute;
+    width: 24px;  /* Larger than before for better touch */
+    height: 24px;
+    background: rgba(147, 51, 234, 0.95); /* Purple bubble */
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    
+    /* White angle bracket inside */
+    font-size: 14px;
+    font-weight: bold;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    line-height: 24px; /* Match height for centering */
+    text-align: center;
+    
+    /* Interactive properties */
+    cursor: ew-resize;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    
+    z-index: 1001; /* Above everything */
+    
+    /* Smooth transitions */
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Start handle specific - contains '>' */
+.maestro-loop-handle-start {
+    /* Content set via innerHTML in JS */
+}
+
+/* End handle specific - contains '<' */
+.maestro-loop-handle-end {
+    /* Content set via innerHTML in JS */
+}
+
+/* Active/hover states */
+.maestro-loop-handle:active,
+.maestro-loop-handle:hover {
+    transform: scale(1.15);
+    box-shadow: 0 3px 10px rgba(147, 51, 234, 0.6);
+    background: rgba(124, 58, 237, 1); /* Slightly darker purple */
+}
+
+/* Larger touch target for mobile (invisible expanded area) */
+.maestro-loop-handle::after {
+    content: '';
+    position: absolute;
+    top: -15px;
+    left: -15px;
+    right: -15px;
+    bottom: -15px;
+    /* This creates a 54px x 54px touch area */
+}
+
+/* Vertical line indicators (optional - can be added in JS too) */
+.maestro-loop-line {
+    position: absolute;
+    width: 3px;
+    background: rgba(147, 51, 234, 0.8);
+    pointer-events: none;
+    z-index: 998; /* Below handles, above selection */
+}
+
+/* Highlight effect during playback */
+.at-highlight * {
+    fill: #a855f7 !important;
+    stroke: #a855f7 !important;
+}
+
+/* Music font - alphaTab uses Bravura font */
+@font-face {
+    font-family: 'alphaTab';
+    src: url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.woff2') format('woff2'),
+         url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.woff') format('woff'),
+         url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.otf') format('opentype');
+}
+
+.at {
+    font-family: 'alphaTab', sans-serif;
+    speak: none;
+    font-style: normal;
+    font-weight: normal;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tab notation elements */
+.at-tab-line {
+    stroke: #666;
+    stroke-width: 1;
+}
+
+.at-tab-number {
+    fill: #000;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+}
+
+/* Standard notation elements */
+.at-score-staff-line {
+    stroke: #000;
+    stroke-width: 1;
+}
+
+/* Bar lines */
+.at-bar-line {
+    stroke: #000;
+    stroke-width: 1.5;
+}
+
+/* Loading overlay */
+.at-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.9);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;
+}
+
+/* Scrollbar styling */
+.at-surface::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.at-surface::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.at-surface::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 6px;
+}
+
+.at-surface::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Print styles */
+@media print {
+    .at-cursor-bar,
+    .at-cursor-beat,
+    .at-selection,
+    .maestro-loop-handle,
+    .maestro-loop-line {
+        display: none !important;
+    }
+    
+    .at-surface {
+        overflow: visible !important;
+    }
+}

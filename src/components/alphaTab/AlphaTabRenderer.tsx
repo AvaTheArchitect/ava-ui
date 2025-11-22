@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * AlphaTab Renderer - Gemini Architecture (with Touch Selection)
+ * AlphaTab Renderer - Gemini Architecture (with Touch Selection & Dynamic File Loading)
  * November 21st, 2025
  * 
  * 🎯 RESPONSIBILITIES (Per Gemini's Plan):
- * 1. Initialize AlphaTab API
- * 2. Listen to playbackRangeChanged → notify page.tsx via callback
- * 3. Create/destroy loop handles based on isLooping prop
- * 4. Manage mouse/touch selection handlers based on isLooping prop
- * 5. Handle orientation changes
+ * 1. Initialize AlphaTab API (once on mount)
+ * 2. Load new files when fileUrl changes (without reinitializing)
+ * 3. Listen to playbackRangeChanged → notify page.tsx via callback
+ * 4. Create/destroy loop handles based on isLooping prop
+ * 5. Manage mouse/touch selection handlers based on isLooping prop
+ * 6. Handle orientation changes
  * 
  * ✨ NEW IN THIS VERSION:
  * - Touch selection for mobile PWA (extracted from V61)
@@ -17,6 +18,7 @@
  * - Double-tap to clear loop
  * - Prevents page scroll during touch drag
  * - Instant loop creation at cursor position when loop enabled (Songsterr behavior)
+ * - Dynamic file loading without reinitializing AlphaTab instance
  * 
  * 🎸 SONGSTERR PARITY:
  * - Loop button ON → Instant loop at cursor position
@@ -283,6 +285,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const mouseCleanupRef = useRef<(() => void) | null>(null);
 
+    // Track if initial file has been loaded
+    const initialFileLoadedRef = useRef(false);
+
     // Mobile detection
     const detectMobile = (): boolean => {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -329,6 +334,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 await loadGuitarProFile(api, fileUrl);
                 console.log('📂 File loaded');
 
+                // Mark initial file as loaded
+                initialFileLoadedRef.current = true;
+
                 api.scoreLoaded.on((score: any) => {
                     console.log('📊 Score loaded');
                     const tracks: Track[] = score.tracks.map((t: any) => ({
@@ -366,7 +374,31 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         initAndLoad();
-    }, [fileUrl, playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError, scrollContainerRef, isMobile]);
+    }, [playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError, scrollContainerRef, isMobile]);
+    // NOTE: fileUrl intentionally NOT in dependencies - handled separately below
+
+    // ==================== LOAD NEW FILE WHEN URL CHANGES ====================
+    useEffect(() => {
+        const api = apiRef.current;
+
+        // Skip if API not ready or initial file not yet loaded
+        if (!api || !fileUrl || !initialFileLoadedRef.current) return;
+
+        // Load new file into existing AlphaTab instance
+        const loadNewFile = async () => {
+            try {
+                console.log(`🔄 Loading new file: ${fileUrl}`);
+                await loadGuitarProFile(api, fileUrl);
+                console.log('✅ New file loaded successfully');
+            } catch (err) {
+                console.error('❌ Error loading new file:', err);
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                onError?.(errorMsg);
+            }
+        };
+
+        loadNewFile();
+    }, [fileUrl, onError]);
 
     // ==================== ORIENTATION HANDLING ====================
     useEffect(() => {
@@ -430,24 +462,24 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         // This matches Songsterr's behavior
         if (!api.playbackRange && api.tickPosition !== undefined) {
             const currentTick = api.tickPosition;
-            
+
             // Find the beat at current cursor position
             const trackIndices = api.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]);
             const tickCache = (api as any).tickCache;
-            
+
             if (tickCache) {
                 const beatResult = tickCache.findBeat(trackIndices, currentTick);
-                
+
                 if (beatResult?.beat) {
                     const barStartTick = getBarStartTick(beatResult.beat);
                     const barEndTick = getBarEndTick(beatResult.beat);
-                    
+
                     // Create loop at cursor position
                     api.playbackRange = {
                         startTick: barStartTick,
                         endTick: barEndTick
                     };
-                    
+
                     console.log(`🎯 Loop auto-created at cursor: ${barStartTick} - ${barEndTick}`);
                 }
             }
