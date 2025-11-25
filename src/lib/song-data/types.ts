@@ -1,7 +1,9 @@
 // src/lib/song-data/types.ts
 
 /**
- * Song Data Types - November 21st, 2025
+ * Song Data Types - November 24th, 2025 - V95
+ *
+ * 🆕 Added videoStartOffset for videos with intros (like Extreme - Rise)
  *
  * Core type definitions for song selection system.
  * AlphaTab automatically extracts metadata from Guitar Pro files,
@@ -32,6 +34,30 @@ export interface SongItem {
 
   /** User favorite status */
   isFavorite: boolean;
+
+  // 🆕 V94: YouTube Integration
+  /** Primary YouTube video ID */
+  youtubeVideoId?: string;
+
+  /** YouTube video variants (backing track, solo, playthrough, etc.) */
+  youtubeVariants?: {
+    main?: string; // Full mix
+    backing?: string; // Backing track (no lead guitar)
+    solo?: string; // Isolated guitar track
+    playthrough?: string; // Guitar playthrough video
+  };
+
+  // 🆕 V95: Video Start Offset
+  /** 
+   * Video start offset in seconds (Songsterr-style sync)
+   * 
+   * For videos with intros/delays before measure 1 starts.
+   * Example: If music starts at 4 seconds in the video, set this to 4.
+   * This tells the player: "Measure 1 = 4 seconds into the video"
+   * 
+   * Default: 0 (video starts at same time as measure 1)
+   */
+  videoStartOffset?: number;
 }
 
 export interface Playlist {

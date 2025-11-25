@@ -1,20 +1,25 @@
 'use client';
 
 /**
- * MobileDrawer.tsx - V71 GEAR MENU REDESIGN
- * Date: November 14th, 2025
+ * MobileDrawer.tsx - V94 YOUTUBE INTEGRATION
+ * Date: November 21st, 2025
  * 
- * CHANGES:
- * ✅ Synth/Original toggle moved here (from bottom tray)
- * ✅ Clean slide-up drawer design
- * ✅ Future: Light/Dark theme toggle
- * ✅ Future: Metronome, Tuner, Count-in, Print
+ * 🆕 NEW IN V94:
+ * ✅ Updated Audio Source section with radio button cards (Songsterr style)
+ * ✅ Original option now shows "YouTube Player" (instead of coming soon)
+ * ✅ Auto-triggers YouTube player when Original selected
+ * ✅ Active state with colored borders and badges
+ * 
+ * CHANGES FROM V71:
+ * ✅ Removed AudioSourceToggle component import
+ * ✅ Implemented inline radio button cards
+ * ✅ Added emoji icons (🎹 Synth, ▶️ Original)
+ * ✅ Clean active/inactive states
  * 
  * Accessed via Gear ⚙️ icon in bottom-right corner
  */
 
 import React from 'react';
-import { AudioSourceToggle } from './AudioSourceToggle';
 import type { MobileDrawerProps } from './MaestroControlTypes';
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
@@ -58,21 +63,101 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
           {/* Content */}
           <div className="px-6 py-6 space-y-6">
-            
-            {/* ==================== AUDIO SOURCE TOGGLE ==================== */}
-            {/* Moved from bottom tray to gear menu (Songsterr pattern) */}
+
+            {/* ==================== AUDIO SOURCE (V94: RADIO CARDS) ==================== */}
             <div>
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                 Audio Source
               </h3>
-              <AudioSourceToggle
-                audioSource={audioSource}
-                onChange={onAudioSourceChange}
-              />
+
+              {/* Synth Option */}
+              <button
+                onClick={() => onAudioSourceChange('synth')}
+                className={`
+                  w-full p-4 rounded-lg mb-2 text-left
+                  border transition-all
+                  ${audioSource === 'synth'
+                    ? 'bg-cyan-500/20 border-cyan-500 ring-2 ring-cyan-500/50'
+                    : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
+                  }
+                `}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Radio Circle */}
+                    <div className={`
+                      w-5 h-5 rounded-full border-2 flex items-center justify-center
+                      ${audioSource === 'synth' ? 'border-cyan-500' : 'border-gray-500'}
+                    `}>
+                      {audioSource === 'synth' && (
+                        <div className="w-3 h-3 rounded-full bg-cyan-500" />
+                      )}
+                    </div>
+
+                    {/* Icon */}
+                    <div className="text-2xl">🎹</div>
+
+                    {/* Text */}
+                    <div>
+                      <div className="font-semibold text-white">Synth</div>
+                      <div className="text-xs text-gray-400">MIDI Synthesizer</div>
+                    </div>
+                  </div>
+
+                  {/* Active Badge */}
+                  {audioSource === 'synth' && (
+                    <div className="text-xs font-semibold text-cyan-500 bg-cyan-500/20 px-2 py-1 rounded">
+                      ACTIVE
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              {/* Original Option (V94: YouTube Player) */}
+              <button
+                onClick={() => onAudioSourceChange('original')}
+                className={`
+                  w-full p-4 rounded-lg text-left
+                  border transition-all
+                  ${audioSource === 'original'
+                    ? 'bg-orange-500/20 border-orange-500 ring-2 ring-orange-500/50'
+                    : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
+                  }
+                `}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Radio Circle */}
+                    <div className={`
+                      w-5 h-5 rounded-full border-2 flex items-center justify-center
+                      ${audioSource === 'original' ? 'border-orange-500' : 'border-gray-500'}
+                    `}>
+                      {audioSource === 'original' && (
+                        <div className="w-3 h-3 rounded-full bg-orange-500" />
+                      )}
+                    </div>
+
+                    {/* Icon */}
+                    <div className="text-2xl">▶️</div>
+
+                    {/* Text */}
+                    <div>
+                      <div className="font-semibold text-white">Original</div>
+                      <div className="text-xs text-gray-400">YouTube Player</div>
+                    </div>
+                  </div>
+
+                  {/* Active Badge */}
+                  {audioSource === 'original' && (
+                    <div className="text-xs font-semibold text-orange-500 bg-orange-500/20 px-2 py-1 rounded">
+                      ACTIVE
+                    </div>
+                  )}
+                </div>
+              </button>
             </div>
 
             {/* ==================== THEME TOGGLE ==================== */}
-            {/* Future implementation */}
             {onThemeToggle && (
               <div>
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
@@ -108,7 +193,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 Playback Tools
               </h3>
               <div className="space-y-2">
-                
+
                 {/* Metronome - Stub */}
                 <button
                   disabled
@@ -156,7 +241,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 Utilities
               </h3>
               <div className="space-y-2">
-                
+
                 {/* Print - Stub */}
                 <button
                   disabled

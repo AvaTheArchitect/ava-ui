@@ -1,24 +1,21 @@
 'use client';
 
 /**
- * STAGE 2 - Song Selection Integration
- * November 21st, 2025 - V93: SONG SELECTOR + TOP MENU TRAY
+ * STAGE 2 - Song Selection + YouTube Integration
+ * November 24th, 2025 - V94.1: CURSOR SYNC FIX
  * 
- * 🆕 NEW IN V93:
- * ✅ Integrated TopMenuTray (replaces old header)
- * ✅ Added SongSelector modal with tabs (All Songs, Favorites, Playlists)
- * ✅ Dynamic song loading via currentFileUrl
- * ✅ Playlist management (create, add/remove songs)
- * ✅ Favorite toggling with star button
- * ✅ Song state persistence (in-memory for now)
+ * 🆕 NEW IN V94.1:
+ * ✅ AlphaTab cursor clicks now seek YouTube video
+ * ✅ Added setDisplayTime() in playerPositionChanged handler
+ * ✅ Bidirectional sync now working correctly
  * 
- * 🔒 PRESERVED FROM V92:
- * ✅ Loop functionality (isLooping, hasLoopSelection)
- * ✅ Mobile landscape detection
- * ✅ Auto-hide header behavior
- * ✅ All playback controls (play/pause, stop, speed, etc.)
- * ✅ Track mixer (mute/solo)
- * ✅ Theme toggle
+ * 🔒 PRESERVED FROM V94:
+ * ✅ YouTube player for "original" audio source
+ * ✅ Video variant switching
+ * ✅ Track switching works correctly
+ * ✅ No double/triple cursors
+ * ✅ No infinite restart loops
+ * ✅ playerMode: "synthesizer" (NOT external yet - keeping it simple)
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -27,11 +24,12 @@ import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
-import {
-    loadInitialSongData,
-    getSongById,
-    SongState,
-    SongItem
+import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
+import { 
+  loadInitialSongData, 
+  getSongById, 
+  SongState,
+  SongItem 
 } from '@/lib/song-data';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
@@ -74,6 +72,26 @@ export default function SynthPlayerPage() {
 
     // Dynamic file URL for AlphaTabRenderer
     const currentFileUrl = currentSong?.fileUrl || '/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3';
+
+    // ==================== V94: YOUTUBE PLAYER STATE ====================
+    const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
+    const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+
+    // Get current YouTube video ID from song (defaults to main variant)
+    const defaultYouTubeId = useMemo(() => {
+        const videoId = currentSong?.youtubeVideoId || null;
+        console.log(`🎬 V94: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V94: Default YouTube Video ID: ${videoId}`);
+        return videoId;
+    }, [currentSong]);
+
+    // Use currentVideoId if set (variant selected), otherwise use default
+    const activeVideoId = currentVideoId || defaultYouTubeId;
+
+    // Reset video ID when song changes
+    useEffect(() => {
+        setCurrentVideoId(null); // Reset to default (main) when song changes
+    }, [defaultYouTubeId]);
 
     // ==================== AUTO-HIDE HEADER STATE ====================
     const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
@@ -154,7 +172,7 @@ export default function SynthPlayerPage() {
             // Only set landscape mode if ALL THREE conditions are met
             setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
 
-            console.log(`🔄 V93: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
+            console.log(`🔄 V94.1: Orientation check - Touch:${isTouchDevice}, Landscape:${isLandscape}, Height:${window.innerHeight}, MobileLandscape:${isTouchDevice && isLandscape && isCompactHeight}`);
         };
 
         checkOrientation();
@@ -169,12 +187,12 @@ export default function SynthPlayerPage() {
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
-        console.log('✅ V93: API Ready');
+        console.log('✅ V94.1: API Ready');
         setApi(alphaTabApi);
 
         if (alphaTabApi.playerReady) {
             alphaTabApi.playerReady.on(() => {
-                console.log('✅ V93: Player Ready');
+                console.log('✅ V94.1: Player Ready');
                 setPlayerReady(true);
             });
         }
@@ -185,16 +203,21 @@ export default function SynthPlayerPage() {
             });
         }
 
+        // 🎯 V94.1: CURSOR SYNC FIX - Updates YouTube when AlphaTab cursor moves
         if (alphaTabApi.playerPositionChanged) {
             alphaTabApi.playerPositionChanged.on((e: any) => {
                 currentTimeRef.current = e.currentTime;
                 durationRef.current = e.endTime;
+                
+                // ✨ KEY FIX: Update displayTime so YouTube sees cursor changes
+                // This makes clicking on the tab seek the YouTube video
+                setDisplayTime(e.currentTime);
             });
         }
     }, []);
 
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
-        console.log(`✅ V93: Score loaded - ${info.title}`);
+        console.log(`✅ V94.1: Score loaded - ${info.title}`);
         setSongInfo(info);
         setTracks(trackList);
         setSelectedTrack(0);
@@ -204,11 +227,11 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V93: Rendering Complete');
+        console.log('✅ V94.1: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V93 ERROR: ${errorMsg}`);
+        console.error(`❌ V94.1 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -231,15 +254,15 @@ export default function SynthPlayerPage() {
 
     const handleTrackChange = useCallback((trackIndex: number) => {
         if (api?.score?.tracks) {
-            console.log(`🔄 V93: Track ${trackIndex}`);
-
+            console.log(`🔄 V94.1: Track ${trackIndex}`);
+            
             // Clear loop when changing tracks (temporary until measure-based loop)
             if (isLooping && api.playbackRange) {
                 api.playbackRange = null;
                 setHasLoopSelection(false);
-                console.log('🔄 V93: Cleared loop on track change');
+                console.log('🔄 V94.1: Cleared loop on track change');
             }
-
+            
             api.renderTracks([api.score.tracks[trackIndex]]);
             setSelectedTrack(trackIndex);
         }
@@ -248,16 +271,16 @@ export default function SynthPlayerPage() {
     // ==================== LOOP HANDLERS ====================
     const handleLoopToggle = useCallback(() => {
         if (!api) return;
-
+        
         const newLoopState = !isLooping;
         setIsLooping(newLoopState);
 
         if (newLoopState) {
-            console.log('🔄 V93 (page.tsx): Loop enabled');
+            console.log('🔄 V94.1 (page.tsx): Loop enabled');
         } else {
-            console.log('🔄 V93 (page.tsx): Loop disabled');
+            console.log('🔄 V94.1 (page.tsx): Loop disabled');
             setHasLoopSelection(false);
-
+            
             if (api.playbackRange) {
                 api.playbackRange = null;
             }
@@ -267,10 +290,10 @@ export default function SynthPlayerPage() {
     const handleLoopRangeChange = useCallback((start: number | null, end: number | null) => {
         if (start !== null && end !== null) {
             setHasLoopSelection(true);
-            console.log(`🔁 V93 (page.tsx): Loop selection active: ${start} - ${end}`);
+            console.log(`🔁 V94.1 (page.tsx): Loop selection active: ${start} - ${end}`);
         } else {
             setHasLoopSelection(false);
-            console.log('🔁 V93 (page.tsx): Loop selection cleared');
+            console.log('🔁 V94.1 (page.tsx): Loop selection cleared');
         }
     }, []);
 
@@ -278,13 +301,44 @@ export default function SynthPlayerPage() {
         setPlaybackSpeed(speed);
         if (api) {
             api.playbackSpeed = speed;
-            console.log(`🎚️ V93: Speed: ${Math.round(speed * 100)}%`);
+            console.log(`🎚️ V94.1: Speed: ${Math.round(speed * 100)}%`);
         }
     }, [api]);
 
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
         setAudioSource(source);
-        console.log(`🎵 V93: Audio: ${source}`);
+        console.log(`🎵 V94: Audio: ${source}`);
+        
+        // V94: Mute/unmute AlphaTab synth based on audio source
+        if (api) {
+            if (source === 'original') {
+                // Mute AlphaTab synth when using YouTube
+                api.masterVolume = 0;
+                console.log('🔇 V94: AlphaTab synth muted (YouTube playing)');
+            } else {
+                // Restore AlphaTab synth volume
+                api.masterVolume = 1;
+                console.log('🔊 V94: AlphaTab synth unmuted (synth mode)');
+            }
+        }
+        
+        // Auto-show YouTube player when switching to "original"
+        if (source === 'original' && activeVideoId) {
+            setIsYouTubePlayerVisible(true);
+            console.log('🎬 V94: YouTube player shown');
+        }
+        
+        // Hide YouTube player when switching to "synth"
+        if (source === 'synth') {
+            setIsYouTubePlayerVisible(false);
+            console.log('🎬 V94: YouTube player hidden');
+        }
+    }, [api, activeVideoId]);
+
+    // 🆕 V94: Handle video variant change
+    const handleVideoVariantChange = useCallback((newVideoId: string) => {
+        console.log(`🔄 V94: Variant changed to video ID: ${newVideoId}`);
+        setCurrentVideoId(newVideoId);
     }, []);
 
     const handleTrackMuteToggle = useCallback((trackIndex: number) => {
@@ -297,7 +351,7 @@ export default function SynthPlayerPage() {
             newMap.set(trackIndex, !isMuted);
             return newMap;
         });
-        console.log(`${!isMuted ? '🔇' : '🔊'} V93: ${track.name}`);
+        console.log(`${!isMuted ? '🔇' : '🔊'} V94.1: ${track.name}`);
     }, [api, trackMuteState]);
 
     const handleTrackSoloToggle = useCallback((trackIndex: number) => {
@@ -314,30 +368,30 @@ export default function SynthPlayerPage() {
             }
             return newMap;
         });
-        console.log(`${!isSoloed ? '🎯' : '👥'} V93: Solo ${track.name}`);
+        console.log(`${!isSoloed ? '🎯' : '👥'} V94.1: Solo ${track.name}`);
     }, [api, trackSoloState]);
 
     const handleThemeToggle = useCallback(() => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
-        console.log(`🎨 V93: Theme: ${newTheme}`);
+        console.log(`🎨 V94.1: Theme: ${newTheme}`);
     }, [theme]);
 
     // ==================== V93: SONG HANDLERS ====================
     const handleSongSelect = useCallback((songId: string) => {
         setSongState(prev => ({ ...prev, currentSongId: songId }));
         setIsSongSelectorOpen(false);
-        console.log('🎵 V93: Song selected:', songId);
+        console.log('🎵 V94.1: Song selected:', songId);
     }, []);
 
     const handleToggleFavorite = useCallback((songId: string) => {
         setSongState(prev => ({
             ...prev,
-            songs: prev.songs.map(song =>
+            songs: prev.songs.map(song => 
                 song.id === songId ? { ...song, isFavorite: !song.isFavorite } : song
             )
         }));
-        console.log('⭐ V93: Favorite toggled:', songId);
+        console.log('⭐ V94.1: Favorite toggled:', songId);
     }, []);
 
     const handleCreatePlaylist = useCallback((name: string) => {
@@ -351,12 +405,12 @@ export default function SynthPlayerPage() {
             ...prev,
             playlists: [...prev.playlists, newPlaylist]
         }));
-        console.log('📁 V93: Playlist created:', name);
+        console.log('📁 V94.1: Playlist created:', name);
     }, []);
 
     const handlePlaylistAction = useCallback((
-        type: 'add' | 'remove',
-        songId: string,
+        type: 'add' | 'remove', 
+        songId: string, 
         playlistId: string
     ) => {
         setSongState(prev => ({
@@ -364,11 +418,11 @@ export default function SynthPlayerPage() {
             playlists: prev.playlists.map(playlist => {
                 if (playlist.id === playlistId) {
                     const songExists = playlist.songIds.includes(songId);
-
+                    
                     if (type === 'add' && !songExists) {
                         return { ...playlist, songIds: [...playlist.songIds, songId] };
                     }
-
+                    
                     if (type === 'remove' && songExists) {
                         return { ...playlist, songIds: playlist.songIds.filter(id => id !== songId) };
                     }
@@ -376,7 +430,7 @@ export default function SynthPlayerPage() {
                 return playlist;
             })
         }));
-        console.log(`📁 V93: ${type === 'add' ? 'Added to' : 'Removed from'} playlist:`, playlistId);
+        console.log(`📁 V94.1: ${type === 'add' ? 'Added to' : 'Removed from'} playlist:`, playlistId);
     }, []);
 
     // ==================== DYNAMIC USER INTERACTION CONTROL ====================
@@ -387,7 +441,7 @@ export default function SynthPlayerPage() {
         (api.settings.player as any).enableUserInteraction = isLooping;
         api.updateSettings();
 
-        console.log(`🔄 V93: api.settings.player.enableUserInteraction set to ${isLooping}`);
+        console.log(`🔄 V94.1: api.settings.player.enableUserInteraction set to ${isLooping}`);
 
     }, [api, isLooping]);
 
@@ -540,6 +594,25 @@ export default function SynthPlayerPage() {
                     />
                 )}
             </footer>
+
+            {/* ==================== V94: YOUTUBE PLAYER (FIXED POSITION) ==================== */}
+            {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
+                <YouTubePlayer
+                    videoId={activeVideoId}
+                    isVisible={isYouTubePlayerVisible}
+                    onClose={() => setIsYouTubePlayerVisible(false)}
+                    currentTime={displayTime}
+                    isPlaying={isPlaying}
+                    onTimeUpdate={(time) => {
+                        // YouTube seeked to new time - update AlphaTab
+                        currentTimeRef.current = time;
+                        setDisplayTime(time);
+                    }}
+                    isMobileLandscape={isMobileLandscape}
+                    videoVariants={currentSong?.youtubeVariants}
+                    onVariantChange={handleVideoVariantChange}
+                />
+            )}
         </div>
     );
 }
