@@ -516,11 +516,11 @@ export default function MaestroApp(): React.JSX.Element {
         <a
           href={module.route}
           className={`
-            relative overflow-hidden rounded-xl md:rounded-2xl cursor-pointer ${animationClass}
+            relative overflow-hidden rounded-lg md:rounded-2xl cursor-pointer ${animationClass}
             focus:outline-none focus:ring-4 focus:ring-white/50
             bg-gradient-to-br ${module.color}
             p-3 sm:p-4 md:p-6
-            min-h-[80px] sm:min-h-[100px] md:min-h-[140px]
+            min-h-[100px] sm:min-h-[120px] md:min-h-[140px]
             flex flex-col justify-between
             border border-white/10
             ${!reducedMotion ? 'hover:shadow-xl hover:-translate-y-1' : ''}
@@ -554,11 +554,11 @@ export default function MaestroApp(): React.JSX.Element {
     return (
       <div
         className={`
-          relative overflow-hidden rounded-xl md:rounded-2xl cursor-pointer ${animationClass}
+          relative overflow-hidden rounded-lg md:rounded-2xl cursor-pointer ${animationClass}
           focus:outline-none focus:ring-4 focus:ring-white/50
           bg-gradient-to-br ${module.color}
           p-3 sm:p-4 md:p-6
-          min-h-[80px] sm:min-h-[100px] md:min-h-[140px]
+          min-h-[100px] sm:min-h-[120px] md:min-h-[140px]
           flex flex-col justify-between
           border border-white/10
           ${!reducedMotion ? 'hover:shadow-xl hover:-translate-y-1' : ''}
@@ -654,7 +654,7 @@ export default function MaestroApp(): React.JSX.Element {
                 {t.title}
               </h1>
             </div>
-            <p className="text-white/80 text-sm md:text-lg lg:text-xl font-sans leading-relaxed hidden sm:block">
+            <p className="text-white/80 text-xs sm:text-sm md:text-lg lg:text-xl font-sans leading-relaxed">
               {t.subtitle}
             </p>
           </div>
@@ -663,8 +663,8 @@ export default function MaestroApp(): React.JSX.Element {
         {/* Main Content Area - SCROLLABLE ONLY IF NEEDED */}
         <div className="flex-1 overflow-y-auto px-4 pb-44 md:pb-8">
           <div className="max-w-4xl mx-auto h-full flex flex-col">
-            {/* Module Grid - 3x3 Mobile, 3x2 Desktop */}
-            <div className="grid grid-cols-3 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 mb-3 md:mb-4">
+            {/* Module Grid - 2x3 Mobile, 3x2 Desktop */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 mb-3 md:mb-4">
               {modules.map((module) => (
                 <ModuleTile
                   key={module.id}
@@ -675,7 +675,7 @@ export default function MaestroApp(): React.JSX.Element {
             </div>
 
             {/* ✅ Practice Progress Section - PLACEHOLDER - COMPACT MOBILE */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl md:rounded-2xl p-3 md:p-6 border border-white/20 mt-4 md:mt-6 mb-24 md:mb-0">
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl md:rounded-2xl p-3 md:p-6 border border-white/20 mt-8 md:mt-6 mb-24 md:mb-0">
               <div className="flex items-center mb-2 md:mb-4">
                 <div className="text-lg md:text-2xl mr-2">📊</div>
                 <h3 className="text-sm md:text-xl font-bold text-white">Your Progress</h3>
