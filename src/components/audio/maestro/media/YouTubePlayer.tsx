@@ -1,39 +1,23 @@
 'use client';
 
 /**
- * YouTube Player Component - November 24th, 2025 - V94.2.1
+ * YouTube Player Component - November 27th, 2025 - V94.7
  * 
- * 🐛 FIXED IN V94.2.1:
- * ✅ Infinite buffering wheel when seeking while paused
- * ✅ Now waits for buffering to complete before pausing
- * ✅ Recursive check prevents pausing during buffering state
- * ✅ All ESLint warnings resolved (removed unused error vars)
+ * 🆕 UPDATES IN V94.7:
+ * ✅ Fixed external media handler integration
+ * ✅ Proper updatePosition calls for cursor sync
+ * ✅ Corrected playerMode type from 'externalMedia' to 'external'
  * 
- * 🎯 CRITICAL FIX IN V94.2:
- * ✅ Tracks user's INTENDED playback state separately from YouTube's actual state
- * ✅ Prevents auto-play bug on second/subsequent seeks
- * ✅ Fixes buffering state transition issues
- * 
- * 🎯 OPTIMIZED IN V94.1.1:
- * ✅ Reduced timeout from 100ms → 50ms (faster response)
- * ✅ Uses allowSeekAhead=false when paused (less buffering)
- * ✅ Only pauses if video actually started playing
- * ✅ Minimizes loading spinner delay
- * 
- * 🐛 FIXED IN V94.1:
- * ✅ Prevents auto-play after seeking when paused
- * ✅ Checks player state before seeking
- * ✅ Ensures video stays paused after cursor click
- * 
- * 🔒 PRESERVED FROM V94:
- * ✅ Embedded YouTube player for "original" audio source
- * ✅ Positioned lower-right, above bottom transport bar
- * ✅ Syncs with AlphaTab playback position
+ * 🔒 PRESERVED FROM V94.6:
+ * ✅ forwardRef for parent access to YouTube methods
+ * ✅ YouTube time updates sent via onTimeUpdate
+ * ✅ Play/pause state changes sent via onPlayStateChange
+ * ✅ Buffering state handling
+ * ✅ Offset support (videoStartOffset)
  * ✅ Video variant switching
- * ✅ Based on Songsterr's implementation
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
 
 // YouTube IFrame API types
 declare global {
@@ -47,59 +31,71 @@ interface YouTubePlayerProps {
     videoId: string;
     isVisible: boolean;
     onClose: () => void;
-    currentTime: number;        // AlphaTab time (ms)
-    isPlaying: boolean;          // AlphaTab playing state
-    onTimeUpdate: (time: number) => void; // Callback when YouTube seeks
+    currentTime: number;
+    isPlaying: boolean;
+    onPlayStateChange?: (isPlaying: boolean) => void;
+    onTimeUpdate?: (time: number) => void;
     isMobileLandscape?: boolean;
-    videoVariants?: {            // Available video variants
+    videoVariants?: {
         main?: string;
         backing?: string;
         solo?: string;
         playthrough?: string;
     };
-    onVariantChange?: (videoId: string) => void; // Callback when variant changes
-    videoStartOffset?: number;   // 🆕 Video start offset in seconds (like ?t=4)
+    onVariantChange?: (videoId: string) => void;
+    videoStartOffset?: number;
 }
 
-export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
+export const YouTubePlayer = React.forwardRef<any, YouTubePlayerProps>(({
     videoId,
     isVisible,
     onClose,
     currentTime,
     isPlaying,
+    onPlayStateChange,
     onTimeUpdate,
     isMobileLandscape = false,
     videoVariants,
     onVariantChange,
-    videoStartOffset = 0, // 🆕 Default to 0 if not provided
-}) => {
+    videoStartOffset = 0,
+}, ref) => {
     const playerRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isAPIReady, setIsAPIReady] = useState(false);
     const [selectedVariant, setSelectedVariant] = useState<'main' | 'backing' | 'solo' | 'playthrough'>('main');
     const lastSyncTimeRef = useRef<number>(0);
     const isSyncingRef = useRef<boolean>(false);
-
-    // 🎯 V94.2: Track user's INTENDED playback state (separate from YouTube's actual state)
-    // This prevents auto-play bugs when YouTube buffers during seeking
     const userIntendedPlayingRef = useRef<boolean>(false);
 
-    // Load YouTube IFrame API
+    // 🆕 V94.7: Expose YouTube player instance to parent via ref
+    useImperativeHandle(ref, () => ({
+        playVideo: () => playerRef.current?.playVideo?.(),
+        pauseVideo: () => playerRef.current?.pauseVideo?.(),
+        seekTo: (seconds: number, allowSeekAhead: boolean) => 
+            playerRef.current?.seekTo?.(seconds, allowSeekAhead),
+        getCurrentTime: () => playerRef.current?.getCurrentTime?.() || 0,
+        getDuration: () => playerRef.current?.getDuration?.() || 0,
+        getVolume: () => playerRef.current?.getVolume?.() || 100,
+        setVolume: (volume: number) => playerRef.current?.setVolume?.(volume),
+        getPlaybackRate: () => playerRef.current?.getPlaybackRate?.() || 1,
+        setPlaybackRate: (rate: number) => playerRef.current?.setPlaybackRate?.(rate),
+        getPlayerState: () => playerRef.current?.getPlayerState?.() || -1,
+    }), []);
+
+    // ==================== YOUTUBE API LOADING ====================
     useEffect(() => {
         if (window.YT && window.YT.Player) {
             setIsAPIReady(true);
             return;
         }
 
-        // Load API script
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         const firstScriptTag = document.getElementsByTagName('script')[0];
         firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
 
-        // API ready callback
         window.onYouTubeIframeAPIReady = () => {
-            console.log('✅ V94.2: YouTube IFrame API Ready');
+            console.log('✅ V94.7: YouTube IFrame API Ready');
             setIsAPIReady(true);
         };
 
@@ -108,13 +104,13 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         };
     }, []);
 
-    // Initialize YouTube player (ONLY when video changes or visibility changes)
+    // ==================== PLAYER INITIALIZATION ====================
     useEffect(() => {
         if (!isAPIReady || !isVisible || !containerRef.current) return;
 
-        console.log(`🎬 V94.2: Initializing YouTube player: ${videoId}`);
+        console.log(`🎬 V94.7: Initializing YouTube player: ${videoId}`);
         if (videoStartOffset > 0) {
-            console.log(`⏱️ V94.2: Video start offset: ${videoStartOffset}s (measure 1 = ${videoStartOffset}s in video)`);
+            console.log(`⏱️ V94.7: Video start offset: ${videoStartOffset}s`);
         }
 
         playerRef.current = new window.YT.Player(containerRef.current, {
@@ -122,148 +118,127 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             width: '100%',
             height: '100%',
             playerVars: {
-                // 🎯 SONGSTERR CONFIGURATION (exact match)
                 autoplay: 0,
-                controls: 0,        // ← Hide YouTube controls (Songsterr uses this)
-                disablekb: 1,       // ← Disable keyboard shortcuts
+                controls: 0,
+                disablekb: 1,
                 showinfo: 0,
                 rel: 0,
                 modestbranding: 0,
-                fs: 0,              // ← Disable fullscreen button
-                cc_load_policy: 0,  // No captions
-                iv_load_policy: 3,  // No annotations
-                enablejsapi: 1,     // ← CRITICAL for API control
-                start: videoStartOffset, // 🆕 Start at offset (like ?t=4)
-
-                // 🆕 CRITICAL CORS PARAMETERS (from Songsterr)
-                widgetid: 1,        // Widget identifier (Songsterr uses 4)
+                fs: 0,
+                cc_load_policy: 0,
+                iv_load_policy: 3,
+                enablejsapi: 1,
+                start: videoStartOffset,
+                widgetid: 1,
                 origin: window.location.origin,
-                // Note: forigin requires full page URL, might need to add later
             },
             events: {
                 onReady: (event: any) => {
-                    console.log('✅ V94.2: YouTube player ready');
+                    console.log('✅ V94.7: YouTube player ready');
 
-                    // 🆕 Apply offset on initialization
                     if (videoStartOffset > 0) {
-                        console.log(`⏱️ V94.2: Seeking to offset: ${videoStartOffset}s`);
+                        console.log(`⏱️ V94.7: Seeking to offset: ${videoStartOffset}s`);
                         event.target.seekTo(videoStartOffset, true);
                     }
                 },
                 onStateChange: (event: any) => {
-                    // 🆕 BIDIRECTIONAL SYNC: YouTube state → AlphaTab
                     const state = event.data;
-                    console.log(`🎬 V94.2: YouTube state: ${state}`);
+                    console.log(`🎬 V94.7: YouTube state: ${state}`);
 
-                    // State codes: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
-
-                    // This will be handled by the play/pause sync effect
-                    // We'll add a separate effect for monitoring YouTube time
+                    if (state === window.YT.PlayerState.PLAYING && onPlayStateChange) {
+                        console.log('▶️ V94.7: YouTube playing - notifying parent');
+                        onPlayStateChange(true);
+                    } else if (state === window.YT.PlayerState.PAUSED && onPlayStateChange) {
+                        console.log('⏸️ V94.7: YouTube paused - notifying parent');
+                        onPlayStateChange(false);
+                    } else if (state === window.YT.PlayerState.ENDED && onPlayStateChange) {
+                        console.log('⏹️ V94.7: YouTube ended - notifying parent');
+                        onPlayStateChange(false);
+                    }
                 },
             },
         });
 
         return () => {
             if (playerRef.current && playerRef.current.destroy) {
-                console.log('🗑️ V94.2: Destroying YouTube player');
+                console.log('🗑️ V94.7: Destroying YouTube player');
                 playerRef.current.destroy();
                 playerRef.current = null;
             }
         };
-    }, [isAPIReady, isVisible, videoId, videoStartOffset]); // ✅ Re-init if offset changes
+    }, [isAPIReady, isVisible, videoId, videoStartOffset]);
 
-    // Sync play/pause with AlphaTab (ONLY when isPlaying changes)
+    // ==================== PLAY/PAUSE SYNC (AlphaTab → YouTube) ====================
     useEffect(() => {
         if (!playerRef.current || !playerRef.current.playVideo) return;
 
-        // 🎯 V94.2: Update user's intended state
         userIntendedPlayingRef.current = isPlaying;
 
         try {
             if (isPlaying) {
-                console.log('▶️ V94.2: YouTube play (user intended)');
+                console.log('▶️ V94.7: AlphaTab play command → YouTube');
                 playerRef.current.playVideo();
             } else {
-                console.log('⏸️ V94.2: YouTube pause (user intended)');
+                console.log('⏸️ V94.7: AlphaTab pause command → YouTube');
                 playerRef.current.pauseVideo();
             }
         } catch {
-            // YouTube player not initialized yet - ignore
+            // Player not initialized yet - ignore
         }
-    }, [isPlaying]); // ✅ Only trigger when isPlaying changes
+    }, [isPlaying]);
 
-    // 🆕 BIDIRECTIONAL SYNC: Monitor YouTube time continuously
+    // ==================== YOUTUBE TIME HEARTBEAT (YouTube → AlphaTab) ====================
     useEffect(() => {
-        if (!playerRef.current || !playerRef.current.getCurrentTime) return;
+        if (!playerRef.current || !onTimeUpdate) return;
 
-        // Poll YouTube time every 100ms to keep AlphaTab in sync
         const interval = setInterval(() => {
             try {
-                const ytTime = playerRef.current.getCurrentTime();
-
-                // 🆕 APPLY OFFSET: YouTube time (absolute) → AlphaTab time (relative to measure 1)
-                // If video has 4s intro, YouTube reports 4.0s but AlphaTab should be at 0.0s
-                const adjustedTime = Math.max(0, ytTime - videoStartOffset);
-                const ytTimeMs = adjustedTime * 1000;
-
-                // Notify parent of YouTube's time (for AlphaTab sync)
-                onTimeUpdate(ytTimeMs);
+                if (playerRef.current && playerRef.current.getCurrentTime) {
+                    const ytTime = playerRef.current.getCurrentTime();
+                    const adjustedTime = Math.max(0, ytTime - videoStartOffset);
+                    const ytTimeMs = adjustedTime * 1000;
+                    onTimeUpdate(ytTimeMs);
+                }
             } catch {
-                // Player not ready yet - ignore
+                // Player not ready - ignore
             }
-        }, 100); // Poll every 100ms for smooth sync
+        }, 50);
 
         return () => clearInterval(interval);
     }, [onTimeUpdate, videoStartOffset]);
 
-    // Sync time position with AlphaTab (throttled to avoid jitter)
-    // This syncs AlphaTab → YouTube when user seeks in tab
+    // ==================== SEEK SYNC (AlphaTab → YouTube) ====================
     useEffect(() => {
         if (!playerRef.current || !playerRef.current.getCurrentTime || isSyncingRef.current) return;
 
         try {
-            // AlphaTab time is relative to measure 1 (0 = measure 1)
-            // YouTube time needs to be absolute (add offset)
             const alphaTabTimeSeconds = currentTime / 1000;
-            const youtubeTimeSeconds = alphaTabTimeSeconds + videoStartOffset; // Add offset
-
-            // Get current YouTube time
+            const youtubeTimeSeconds = alphaTabTimeSeconds + videoStartOffset;
             const currentYTTime = playerRef.current.getCurrentTime();
             const timeDiff = Math.abs(youtubeTimeSeconds - currentYTTime);
 
-            // Only sync if time difference > 1 second (avoid constant micro-adjustments)
-            if (timeDiff > 1.0) {
+            if (timeDiff > 5.0) {
                 isSyncingRef.current = true;
-                console.log(`🔁 V94.2: Syncing YouTube time: ${youtubeTimeSeconds.toFixed(1)}s (AlphaTab: ${alphaTabTimeSeconds.toFixed(1)}s + offset: ${videoStartOffset}s)`);
+                console.log(`🔁 V94.7: Manual seek detected (drift > 5.0s: ${timeDiff.toFixed(2)}s) | Syncing YouTube to: ${youtubeTimeSeconds.toFixed(1)}s`);
 
-                // 🎯 V94.2 CRITICAL FIX: Use user's INTENDED state, not YouTube's actual state
-                // This prevents auto-play bugs when buffering completes after seeking
                 const userWantsPaused = !userIntendedPlayingRef.current;
 
-                // Seek to new position
-                // Use allowSeekAhead=false when user wants paused (less buffering)
                 playerRef.current.seekTo(youtubeTimeSeconds, !userWantsPaused);
 
-                // 🎯 CRITICAL FIX: If user intended to be paused, force pause after seek
                 if (userWantsPaused) {
-                    // Wait for buffering to complete, THEN pause
                     const checkAndPause = () => {
                         if (playerRef.current && playerRef.current.getPlayerState) {
                             const currentState = playerRef.current.getPlayerState();
 
-                            // 🐛 V94.2.1: ONLY pause if PLAYING, NOT if BUFFERING
-                            // Pausing while buffering can cause infinite spinner
                             if (currentState === window.YT.PlayerState.PLAYING) {
                                 playerRef.current.pauseVideo();
-                                console.log('⏸️ V94.2.1: Enforced user-intended pause after buffering complete');
+                                console.log('⏸️ V94.7: Enforced pause after seek');
                             } else if (currentState === window.YT.PlayerState.BUFFERING) {
-                                // Still buffering - check again later
                                 setTimeout(checkAndPause, 100);
                             }
                         }
                     };
 
-                    // Start checking after initial seek completes
                     setTimeout(checkAndPause, 100);
                 }
 
@@ -274,12 +249,11 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
                 }, 500);
             }
         } catch {
-            // Player not ready yet, skip sync
-            console.log('⏭️ V94.2: YouTube player not ready for sync');
+            console.log('⏭️ V94.7: YouTube player not ready for seek');
         }
     }, [currentTime, videoStartOffset]);
 
-    // Handle close button
+    // ==================== UI HANDLERS ====================
     const handleClose = useCallback(() => {
         if (playerRef.current) {
             playerRef.current.pauseVideo();
@@ -287,57 +261,52 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         onClose();
     }, [onClose]);
 
-    // 🆕 Handle video variant change
     const handleVariantChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
         const variant = event.target.value as 'main' | 'backing' | 'solo' | 'playthrough';
         setSelectedVariant(variant);
 
-        console.log(`🔄 V94.2: Variant selected: ${variant}`);
-        console.log(`🔄 V94.2: Available variants:`, videoVariants);
+        console.log(`🔄 V94.7: Variant selected: ${variant}`);
 
         if (videoVariants && videoVariants[variant]) {
             const newVideoId = videoVariants[variant];
-            console.log(`🔄 V94.2: Switching to ${variant} video: ${newVideoId}`);
+            console.log(`🔄 V94.7: Switching to ${variant} video: ${newVideoId}`);
 
-            // Notify parent to change video
             if (onVariantChange && newVideoId) {
                 onVariantChange(newVideoId);
             }
         } else {
-            console.warn(`⚠️ V94.2: No video ID found for variant: ${variant}`);
+            console.warn(`⚠️ V94.7: No video ID found for variant: ${variant}`);
         }
     }, [videoVariants, onVariantChange]);
 
     if (!isVisible) return null;
 
+    // ==================== RENDER ====================
     return (
         <div
             className={`
-        fixed z-40 
-        bg-black rounded-lg overflow-hidden
-        shadow-2xl border border-gray-700
-        ${isMobileLandscape
-                    ? 'bottom-2 right-2 w-48 h-28'      // Smaller in landscape
-                    : 'bottom-[74px] right-4 w-[355px] h-[200px]' // Desktop/portrait - sits ON TOP of bottom tray
+                fixed z-40 
+                bg-black rounded-lg overflow-hidden
+                shadow-2xl border border-gray-700
+                ${isMobileLandscape
+                    ? 'bottom-2 right-2 w-48 h-28'
+                    : 'bottom-[74px] right-4 w-[355px] h-[200px]'
                 }
-      `}
+            `}
         >
-            {/* Video Container */}
             <div ref={containerRef} className="w-full h-full bg-black" />
 
-            {/* Controls Overlay */}
             <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/80 to-transparent p-2 flex items-start justify-between">
-                {/* Video Variant Selector */}
                 <label className="flex items-center gap-2 text-xs text-white/90">
                     <span className="hidden sm:inline">Synced video:</span>
                     <select
                         value={selectedVariant}
                         onChange={handleVariantChange}
                         className="
-              bg-black/60 text-white text-xs rounded px-2 py-1
-              border border-white/20 
-              focus:outline-none focus:border-purple-500
-            "
+                            bg-black/60 text-white text-xs rounded px-2 py-1
+                            border border-white/20 
+                            focus:outline-none focus:border-purple-500
+                        "
                     >
                         <option value="main" disabled={!videoVariants?.main}>
                             Full mix
@@ -354,15 +323,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
                     </select>
                 </label>
 
-                {/* Close Button */}
                 <button
                     onClick={handleClose}
                     className="
-            p-1.5 rounded-md
-            bg-black/60 hover:bg-black/80
-            border border-white/20 hover:border-white/40
-            transition-colors
-          "
+                        p-1.5 rounded-md
+                        bg-black/60 hover:bg-black/80
+                        border border-white/20 hover:border-white/40
+                        transition-colors
+                    "
                     title="Close video"
                 >
                     <svg width="12" height="12" viewBox="0 0 14 14" className="text-white">
@@ -371,18 +339,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
                     </svg>
                 </button>
             </div>
-
-            {/* Future: Audio Upload Button (bottom-left) */}
-            {/* <div className="absolute bottom-2 left-2">
-        <button
-          className="p-2 rounded-md bg-black/60 hover:bg-black/80 border border-white/20"
-          title="Upload audio file to remove YouTube player"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" className="text-white">
-            <path d="M9 2L9 12M5 8L9 12L13 8" stroke="currentColor" strokeWidth="2" fill="none"/>
-          </svg>
-        </button>
-      </div> */}
         </div>
     );
-};
+});
+
+YouTubePlayer.displayName = 'YouTubePlayer';

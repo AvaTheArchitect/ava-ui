@@ -1,38 +1,18 @@
 'use client';
 
 /**
- * AlphaTab Renderer - Gemini Architecture (with Touch Selection & Dynamic File Loading)
- * November 21st, 2025
+ * AlphaTab Renderer - Fixed for Layout Issues
+ * Date for Records: November 29th, 2025
  * 
- * 🎯 RESPONSIBILITIES (Per Gemini's Plan):
- * 1. Initialize AlphaTab API (once on mount)
- * 2. Load new files when fileUrl changes (without reinitializing)
- * 3. Listen to playbackRangeChanged → notify page.tsx via callback
- * 4. Create/destroy loop handles based on isLooping prop
- * 5. Manage mouse/touch selection handlers based on isLooping prop
- * 6. Handle orientation changes
- * 
- * ✨ NEW IN THIS VERSION:
- * - Touch selection for mobile PWA (extracted from V61)
- * - Horizontal vs vertical swipe detection
- * - Double-tap to clear loop
- * - Prevents page scroll during touch drag
- * - Instant loop creation at cursor position when loop enabled (Songsterr behavior)
- * - Dynamic file loading without reinitializing AlphaTab instance
- * 
- * 🎸 SONGSTERR PARITY:
- * - Loop button ON → Instant loop at cursor position
- * - Handles control loop movement (push/pull highlight)
- * - Drag handles to reposition loop
- * - Highlight follows handles with slight lag
- * 
- * ❌ NOT RESPONSIBLE FOR:
- * - Managing isLooping state (page.tsx owns this)
- * - Deciding when to toggle loop (LoopControl.tsx handles this)
- * - Managing hasLoopSelection state (page.tsx owns this)
+ * 🎯 KEY FIXES:
+ * - Removed playerMode from init dependencies (prevents multiple canvas)
+ * - Added layout recalculation after render for files with non-standard notation
+ * - Dual-mode double-click play (synth vs original/YouTube)
+ * - Proper audioSource prop support
+ * - ✅ Layout stabilization for Extreme-Rise complex repeat jumps
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { initAlphaTab, loadGuitarProFile } from '@/lib/alphaTab/initAlphaTab';
 import { createLoopHandles, updateHandlePositions, attachHandleDragHandlers } from '@/lib/alphaTab/loopHandles';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
@@ -49,8 +29,7 @@ export interface AlphaTabRendererProps {
     soundFontPath?: string;
     scrollContainerRef?: React.RefObject<HTMLElement>;
     isMobileLandscape?: boolean;
-
-    // Loop control (passed from page.tsx)
+    audioSource?: 'synth' | 'original';
     isLooping?: boolean;
     onLoopRangeChange?: (start: number | null, end: number | null) => void;
 }
@@ -109,7 +88,7 @@ const getBarEndTick = (beat: any): number => {
     return lastBeatEnd;
 };
 
-// ==================== TOUCH SELECTION (Extracted from V61) ====================
+// ==================== TOUCH SELECTION ====================
 
 const setupTouchSelection = (
     api: AlphaTabApi,
@@ -155,7 +134,6 @@ const setupTouchSelection = (
 
         if (!startBeat) return;
 
-        // Detect vertical scroll vs horizontal selection
         if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
             startBeat = null;
             endBeat = null;
@@ -188,16 +166,14 @@ const setupTouchSelection = (
 
                     api.playbackRange = {
                         startTick: loopStart,
-                        endTick: loopEnd
+                        endTick: loopEnd,
                     };
-
-                    console.log('📱 Touch drag selection');
                 }
             }
         }
     };
 
-    const handleTouchEnd = (e: Event) => {
+    const handleTouchEnd = () => {
         const now = Date.now();
         document.body.style.overflow = '';
 
@@ -205,12 +181,10 @@ const setupTouchSelection = (
         const isDoubleTap = timeSinceLastTap < DOUBLE_TAP_DELAY && timeSinceLastTap > 50;
         lastTapTime = now;
 
-        // Double-tap to clear loop
         if (!touchMoved && Date.now() - touchStartTime < 400) {
             if (isDoubleTap) {
                 if (api.playbackRange) {
                     api.playbackRange = null;
-                    console.log('📱 Double-tap cleared loop');
                 }
             }
         }
@@ -224,10 +198,8 @@ const setupTouchSelection = (
 
             api.playbackRange = {
                 startTick: loopStart,
-                endTick: loopEnd
+                endTick: loopEnd,
             };
-
-            console.log('📱 Touch selection completed');
         }
 
         isSelecting = false;
@@ -244,19 +216,16 @@ const setupTouchSelection = (
     target.addEventListener('touchend', handleTouchEnd as EventListener);
     target.addEventListener('touchcancel', handleTouchEnd as EventListener);
 
-    console.log('✅ Touch selection attached');
-
     return () => {
         target.removeEventListener('touchstart', handleTouchStart as EventListener);
         target.removeEventListener('touchmove', handleTouchMove as EventListener);
         target.removeEventListener('touchend', handleTouchEnd as EventListener);
         target.removeEventListener('touchcancel', handleTouchEnd as EventListener);
         document.body.style.overflow = '';
-        console.log('🧹 Touch selection cleaned up');
     };
 };
 
-// ==================== REACT COMPONENT ====================
+// ==================== COMPONENT ====================
 
 export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     fileUrl,
@@ -272,23 +241,28 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     isMobileLandscape = false,
     isLooping = false,
     onLoopRangeChange,
+    audioSource = 'synth',
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const apiRef = useRef<AlphaTabApi | null>(null);
+
+    // 🎯 Debug: Log when audioSource changes
+    useEffect(() => {
+        console.log(`🔊 AlphaTabRenderer received audioSource: ${audioSource}`);
+    }, [audioSource]);
+
+    const lastLoadedFileRef = useRef<string>('');
     const [isLoading, setIsLoading] = useState(true);
     const [isRendered, setIsRendered] = useState(false);
     const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
-    const apiRef = useRef<AlphaTabApi | null>(null);
 
-    // Loop handle refs
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const mouseCleanupRef = useRef<(() => void) | null>(null);
-
-    // Track if initial file has been loaded
+    const touchCleanupRef = useRef<(() => void) | null>(null);
     const initialFileLoadedRef = useRef(false);
 
-    // Mobile detection
     const detectMobile = (): boolean => {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
         const mobileKeywords = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
@@ -298,15 +272,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return isMobileUA || (isTouchDevice && isSmallScreen);
     };
 
-    const [isMobile] = useState(detectMobile);
+    const [isMobile] = useState(detectMobile());
 
-    // Touch selection cleanup ref
-    const touchCleanupRef = useRef<(() => void) | null>(null);
+    // ========== INIT ALPHATAB (single instance - playerMode NOT in deps) ==========
 
-    // ==================== ALPHATAB INITIALIZATION ====================
     useEffect(() => {
+        let destroyed = false;
+
         const initAndLoad = async () => {
             if (!containerRef.current) return;
+            if (apiRef.current) return;
 
             try {
                 setIsLoading(true);
@@ -321,9 +296,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     layoutMode: 'page',
                     soundFontPath,
                     isMobile,
-                    enableUserInteraction: false, // We'll manage this
+                    enableUserInteraction: false,
                     scrollContainer: scrollElement,
                 });
+
+                if (destroyed) {
+                    api.destroy();
+                    return;
+                }
 
                 apiRef.current = api;
                 console.log('✅ AlphaTab initialized');
@@ -333,28 +313,35 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 await loadGuitarProFile(api, fileUrl);
                 console.log('📂 File loaded');
-
-                // Mark initial file as loaded
                 initialFileLoadedRef.current = true;
+                lastLoadedFileRef.current = fileUrl;
 
-                api.scoreLoaded.on((score: any) => {
-                    console.log('📊 Score loaded');
-                    const tracks: Track[] = score.tracks.map((t: any) => ({
-                        index: t.index,
-                        name: t.name,
-                        shortName: t.shortName,
-                    }));
+               api.scoreLoaded.on((score: any) => {
+    console.log('📊 Score loaded');
+    const tracks: Track[] = score.tracks.map((t: any) => ({
+        index: t.index,
+        name: t.name,
+        shortName: t.shortName,
+    }));
 
-                    const songInfo: SongInfo = {
-                        title: score.title,
-                        artist: score.artist,
-                        album: score.album,
-                        tempo: score.tempo,
-                    };
+    const songInfo: SongInfo = {
+        title: score.title,
+        artist: score.artist,
+        album: score.album,
+        tempo: score.tempo,
+    };
 
-                    setScoreIsLoaded(true);
-                    onScoreLoaded?.(songInfo, tracks);
-                });
+    setScoreIsLoaded(true);
+    onScoreLoaded?.(songInfo, tracks);
+
+    // 🎯 CRITICAL FIX: SYNCHRONOUS LAYOUT STABILIZATION
+    // Fixes Extreme-Rise repeat seek failures & click offsets
+    if (api && !destroyed) {
+        api.updateSettings();
+        api.render();
+        console.log('✅ Layout recalculated SYNCHRONOUSLY for complex files');
+    }
+});
 
                 api.renderFinished.on(() => {
                     console.log('🎨 Render finished');
@@ -364,7 +351,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 });
 
                 onApiReady?.(api);
-
             } catch (err) {
                 console.error('❌ Init error:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
@@ -374,22 +360,51 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         initAndLoad();
-    }, [playerMode, soundFontPath, onApiReady, onScoreLoaded, onRenderFinished, onError, scrollContainerRef, isMobile]);
-    // NOTE: fileUrl intentionally NOT in dependencies - handled separately below
 
-    // ==================== LOAD NEW FILE WHEN URL CHANGES ====================
+        return () => {
+            destroyed = true;
+            if (apiRef.current) {
+                try {
+                    apiRef.current.destroy();
+                } catch (e) {
+                    console.error('Error destroying AlphaTab', e);
+                }
+                apiRef.current = null;
+            }
+        };
+        // 🎯 playerMode intentionally NOT in dependencies
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fileUrl, soundFontPath, scrollContainerRef, isMobile]);
+
+    // ========== PLAYER MODE CHANGES (no re-init) ==========
+
     useEffect(() => {
         const api = apiRef.current;
+        if (!api) return;
 
-        // Skip if API not ready or initial file not yet loaded
-        if (!api || !fileUrl || !initialFileLoadedRef.current) return;
+        console.log(`🔄 Updating player mode to: ${playerMode}`);
+        (api.settings.player as any).playerMode = playerMode;
+        api.updateSettings();
+        console.log('✅ Player mode updated on existing AlphaTab instance');
+    }, [playerMode]);
 
-        // Load new file into existing AlphaTab instance
+    // ========== LOAD NEW FILE INTO SAME INSTANCE ==========
+
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api || !initialFileLoadedRef.current) return;
+
+        if (lastLoadedFileRef.current === fileUrl) {
+            console.log('⏭️ Same file, skipping reload');
+            return;
+        }
+
         const loadNewFile = async () => {
             try {
                 console.log(`🔄 Loading new file: ${fileUrl}`);
                 await loadGuitarProFile(api, fileUrl);
-                console.log('✅ New file loaded successfully');
+                lastLoadedFileRef.current = fileUrl;
+                console.log('✅ New file loaded');
             } catch (err) {
                 console.error('❌ Error loading new file:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
@@ -400,7 +415,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ==================== ORIENTATION HANDLING ====================
+    // ========== ORIENTATION HANDLING ==========
+
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
 
@@ -412,13 +428,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const alphaTab = await import('@coderline/alphatab');
 
             if (isMobileLandscape) {
-                console.log('🎸 Switching to LANDSCAPE mode');
+                console.log('🎸 LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 api.settings.player.scrollElement = container;
                 (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
             } else {
-                console.log('📱 Switching to PORTRAIT/DESKTOP mode');
+                console.log('📱 PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 const scrollElement = scrollContainerRef?.current || document.body;
@@ -428,42 +444,33 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             await api.updateSettings();
             window.dispatchEvent(new Event('resize'));
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise((r) => setTimeout(r, 50));
             api.render();
         };
 
         updateOrientation();
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef]);
 
-    // ==================== DYNAMIC USER INTERACTION CONTROL ====================
+    // ========== DYNAMIC USER INTERACTION (loop on/off) ==========
+
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
-        // Enable/disable AlphaTab's native user interaction based on loop state
-        // When OFF: Disable to prevent native highlight
-        // When ON: Enable to allow our custom drag selection
         (api.settings.player as any).enableUserInteraction = isLooping;
         api.updateSettings();
-
-        console.log(`🔄 api.settings.player.enableUserInteraction set to ${isLooping}`);
     }, [isLooping]);
 
-    // ==================== INSTANT LOOP AT CURSOR (Songsterr behavior) ====================
+    // ========== INSTANT LOOP AT CURSOR ==========
+
     useEffect(() => {
         const api = apiRef.current;
         const container = containerRef.current;
 
-        if (!api || !container || !isRendered || !isLooping) {
-            return;
-        }
+        if (!api || !container || !isRendered || !isLooping) return;
 
-        // When loop is turned ON, create a loop at current cursor position
-        // This matches Songsterr's behavior
         if (!api.playbackRange && api.tickPosition !== undefined) {
             const currentTick = api.tickPosition;
-
-            // Find the beat at current cursor position
             const trackIndices = api.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]);
             const tickCache = (api as any).tickCache;
 
@@ -474,22 +481,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     const barStartTick = getBarStartTick(beatResult.beat);
                     const barEndTick = getBarEndTick(beatResult.beat);
 
-                    // Create loop at cursor position
                     api.playbackRange = {
                         startTick: barStartTick,
-                        endTick: barEndTick
+                        endTick: barEndTick,
                     };
-
-                    console.log(`🎯 Loop auto-created at cursor: ${barStartTick} - ${barEndTick}`);
                 }
             }
         }
     }, [isLooping, isRendered]);
 
-    // ==================== CREATE LOOP HANDLES (when isLooping = true) ====================
+    // ========== LOOP HANDLES CREATION ==========
+
     useEffect(() => {
         if (!containerRef.current || !isLooping) {
-            // Hide handles when loop is off
             if (startHandleRef.current) startHandleRef.current.style.display = 'none';
             if (endHandleRef.current) endHandleRef.current.style.display = 'none';
             return;
@@ -498,8 +502,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const handles = createLoopHandles(containerRef.current);
         startHandleRef.current = handles.startHandle;
         endHandleRef.current = handles.endHandle;
-
-        console.log('✅ Loop handles created');
 
         return () => {
             if (startHandleRef.current) {
@@ -513,16 +515,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isLooping]);
 
-    // ==================== ATTACH DRAG HANDLERS ====================
+    // ========== DRAG HANDLERS FOR HANDLES ==========
+
     useEffect(() => {
         const api = apiRef.current;
         const container = containerRef.current;
         const startHandle = startHandleRef.current;
         const endHandle = endHandleRef.current;
 
-        if (!api || !container || !startHandle || !endHandle || !isLooping) {
-            return;
-        }
+        if (!api || !container || !startHandle || !endHandle || !isLooping) return;
 
         dragCleanupRef.current = attachHandleDragHandlers(
             api,
@@ -530,12 +531,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             startHandle,
             endHandle,
             (startTick: number, endTick: number) => {
-                // Notify page.tsx of range change
                 onLoopRangeChange?.(startTick, endTick);
             }
         );
-
-        console.log('✅ Drag handlers attached');
 
         return () => {
             if (dragCleanupRef.current) {
@@ -545,7 +543,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isLooping, onLoopRangeChange]);
 
-    // ==================== LISTEN TO PLAYBACK RANGE CHANGES (Gemini Plan) ====================
+    // ========== LISTEN TO PLAYBACK RANGE CHANGES ==========
+
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
@@ -557,36 +556,26 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             if (e.playbackRange) {
                 const { startTick, endTick } = e.playbackRange;
-
-                // Notify page.tsx
                 onLoopRangeChange?.(startTick, endTick);
 
-                // Update handle positions if visible
                 if (api && container && startHandle && endHandle && isLooping) {
-                    updateHandlePositions(api, container, startHandle, endHandle, "rangeChanged");
+                    updateHandlePositions(api, container, startHandle, endHandle, 'rangeChanged');
                 }
-
-                console.log(`🔄 Loop range: ${startTick} - ${endTick}`);
             } else {
-                // Range cleared
                 onLoopRangeChange?.(null, null);
 
-                // Hide handles
                 if (startHandle) startHandle.style.display = 'none';
                 if (endHandle) endHandle.style.display = 'none';
-
-                console.log('🔄 Loop range cleared');
             }
         };
 
-        // Gemini Plan: Listen to renderFinished to update handles
         const handleRenderFinished = () => {
             const container = containerRef.current;
             const startHandle = startHandleRef.current;
             const endHandle = endHandleRef.current;
 
             if (api.playbackRange && container && startHandle && endHandle && isLooping) {
-                updateHandlePositions(api, container, startHandle, endHandle, "renderFinished");
+                updateHandlePositions(api, container, startHandle, endHandle, 'renderFinished');
             }
         };
 
@@ -599,58 +588,74 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [onLoopRangeChange, isLooping]);
 
-    // ==================== SINGLE CLICK SEEK (when isLooping = false) ====================
+    // ========== SINGLE CLICK SEEK (loop off) ==========
+
     useEffect(() => {
         const api = apiRef.current;
         const container = containerRef.current;
 
-        if (!api || !container || !isRendered || isLooping) {
-            return; // Only when loop is OFF
-        }
+        if (!api || !container || !isRendered || isLooping) return;
 
         const handleClick = (e: MouseEvent) => {
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
             if (beat && beat.absolutePlaybackStart !== undefined) {
                 api.tickPosition = beat.absolutePlaybackStart;
-                console.log('🖱️ Single-click seek to tick', beat.absolutePlaybackStart);
+                console.log('🖱️ Single-click seek to', beat.absolutePlaybackStart);
             }
         };
 
         container.addEventListener('click', handleClick);
-        console.log('✅ Single-click seek attached (loop OFF)');
 
         return () => {
             container.removeEventListener('click', handleClick);
         };
     }, [isRendered, isLooping]);
 
-    // ==================== DOUBLE CLICK PLAY (when isLooping = false) ====================
+    // ========== DOUBLE CLICK PLAY (loop off) - Dual Mode Support ==========
+
     useEffect(() => {
         const api = apiRef.current;
         const container = containerRef.current;
 
-        if (!api || !container || !isRendered || isLooping) {
-            return; // Only when loop is OFF
-        }
+        if (!api || !container || !isRendered || isLooping) return;
 
         const handleDoubleClick = (e: MouseEvent) => {
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
             if (beat && beat.absolutePlaybackStart !== undefined) {
-                api.tickPosition = beat.absolutePlaybackStart;
-                if (api.play) api.play();
-                console.log('🖱️🖱️ Double-click play from tick', beat.absolutePlaybackStart);
+                const tickPosition = beat.absolutePlaybackStart;
+
+                // ALWAYS seek cursor first (works for BOTH modes)
+                api.tickPosition = tickPosition;
+
+                // Branch playback by mode - audioSource captured from dependencies
+                console.log(`🖱️🖱️ Double-click in ${audioSource} mode`);
+
+                if (audioSource === 'synth') {
+                    // Synth mode: use AlphaTab's built-in player
+                    if (api.play) api.play();
+                    console.log('🖱️🖱️ Synth: Double-click play from', tickPosition);
+                } else {
+                    // Original mode: use external handler (YouTube)
+                    const output = api.player?.output as any;
+                    if (output?.handler?.play) {
+                        output.handler.play();
+                        console.log('🎬 Original: Double-click play via handler from', tickPosition);
+                    } else {
+                        console.warn('⚠️ Original mode: No external handler available');
+                    }
+                }
             }
         };
 
         container.addEventListener('dblclick', handleDoubleClick);
-        console.log('✅ Double-click play attached (loop OFF)');
 
         return () => {
             container.removeEventListener('dblclick', handleDoubleClick);
         };
-    }, [isRendered, isLooping]);
+    }, [isRendered, isLooping, audioSource]); // 🎯 audioSource in dependencies fixes stale closure
 
-    // ==================== MOUSE DRAG SELECTION (when isLooping = true) ====================
+    // ========== MOUSE DRAG SELECTION (loop on) ==========
+
     useEffect(() => {
         if (mouseCleanupRef.current) {
             mouseCleanupRef.current();
@@ -660,18 +665,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const api = apiRef.current;
         const container = containerRef.current;
 
-        if (!api || !container || !isRendered || !isLooping) {
-            return;
-        }
+        if (!api || !container || !isRendered || !isLooping) return;
 
         let startBeat: any = null;
         let endBeat: any = null;
         let isDragging = false;
 
         const handleMouseDown = (e: MouseEvent) => {
-            if (e.button !== 0 ||
+            if (
+                e.button !== 0 ||
                 (e.target as HTMLElement).closest('.maestro-loop-bubble') ||
-                (e.target as HTMLElement).closest('.maestro-loop-handle')) {
+                (e.target as HTMLElement).closest('.maestro-loop-handle')
+            ) {
                 return;
             }
 
@@ -686,10 +691,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 api.playbackRange = {
                     startTick: rawStart,
-                    endTick: rawEnd
+                    endTick: rawEnd,
                 };
-
-                console.log('🖱️ Mouse drag started');
 
                 document.addEventListener('mousemove', handleMouseMove);
                 document.addEventListener('mouseup', handleMouseUp);
@@ -712,14 +715,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 api.playbackRange = {
                     startTick: loopStart,
-                    endTick: loopEnd
+                    endTick: loopEnd,
                 };
             }
         };
 
         const handleMouseUp = () => {
             if (!isDragging) return;
-            console.log('🖱️ Mouse drag completed');
             isDragging = false;
             startBeat = null;
             endBeat = null;
@@ -728,13 +730,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         const handleDoubleClick = (e: MouseEvent) => {
-            if ((e.target as HTMLElement).closest('.maestro-loop-bubble') ||
-                (e.target as HTMLElement).closest('.maestro-loop-handle')) {
+            if (
+                (e.target as HTMLElement).closest('.maestro-loop-bubble') ||
+                (e.target as HTMLElement).closest('.maestro-loop-handle')
+            ) {
                 return;
             }
             if (api.playbackRange) {
                 api.playbackRange = null;
-                console.log('🖱️ Double-click cleared loop');
             }
         };
 
@@ -754,7 +757,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return mouseCleanupRef.current;
     }, [isRendered, isLooping]);
 
-    // ==================== TOUCH DRAG SELECTION (when isLooping = true) ====================
+    // ========== TOUCH DRAG SELECTION (loop on, mobile) ==========
+
     useEffect(() => {
         if (touchCleanupRef.current) {
             touchCleanupRef.current();
@@ -766,15 +770,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const startHandle = startHandleRef.current;
         const endHandle = endHandleRef.current;
 
-        if (!api || !container || !isRendered || !isLooping || !isMobile) {
-            return; // Only on mobile when loop is ON
-        }
+        if (!api || !container || !isRendered || !isLooping || !isMobile) return;
+        if (!startHandle || !endHandle) return;
 
-        if (!startHandle || !endHandle) {
-            return;
-        }
-
-        // Delay setup to ensure handles are ready
         const setupTimer = setTimeout(() => {
             if (api && container && startHandle && endHandle) {
                 touchCleanupRef.current = setupTouchSelection(
@@ -783,7 +781,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     startHandle,
                     endHandle
                 );
-                console.log('✅ Touch selection setup complete');
             }
         }, 300);
 
@@ -796,7 +793,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, isLooping, isMobile]);
 
-    // ==================== LOOP PLAYBACK ENFORCEMENT ====================
+    // ========== LOOP PLAYBACK ENFORCEMENT ==========
+
     useEffect(() => {
         const api = apiRef.current;
         if (!api || !isLooping) return;
@@ -814,8 +812,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         if (api && api.play) api.play();
                     }, 10);
                 }
-
-                console.log(`🔁 Looped back to start (${startTick})`);
             }
         };
 
@@ -826,18 +822,19 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isLooping]);
 
-    // ==================== CLEAR LOOP WHEN DISABLED ====================
+    // ========== CLEAR LOOP WHEN DISABLED ==========
+
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
         if (!isLooping && api.playbackRange) {
             api.playbackRange = null;
-            console.log('🔄 Loop disabled - cleared playback range');
         }
     }, [isLooping]);
 
-    // ==================== RENDER ====================
+    // ========== RENDER ==========
+
     return (
         <div className={`relative ${className}`}>
             {isLoading && (
@@ -860,8 +857,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     minHeight,
                     width: '100%',
                     overflow: 'auto',
-                    overflowX: 'auto',
-                    overflowY: 'auto',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor: '#ffffff',
                     position: 'relative',

@@ -1,15 +1,7 @@
-// Date: December 1, 2025
-// File: src/app/page.tsx - LANDING PAGE REDESIGN
-// ✅ NO SCROLL DESIGN - Everything fits in one view
-// ✅ Mobile: 3x3 Grid with icon-only buttons
-// ✅ Desktop: 3x2 Grid with full descriptions
-// ✅ Fixed password screen for mobile
-// ✅ Practice progress placeholder
-
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause, Speaker } from "lucide-react"
+import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause } from "lucide-react"
 
 // ✅ Fixed Import Path (case sensitive)
 import TunerDial from '@/components/tuner/TunerDial'
@@ -134,6 +126,8 @@ const Metronome = ({ onClose }: { onClose?: () => void }) => {
   )
 }
 
+
+
 // ✅ Print Component
 const PrintComponent = ({ onClose }: { onClose: () => void }) => {
   const [printOptions, setPrintOptions] = useState({
@@ -226,7 +220,7 @@ export default function MaestroApp(): React.JSX.Element {
   const [toolDrawerOpen, setToolDrawerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // ✅ NEW: Tool Toggle System
+  // ✅ NEW: Tool Toggle System (as requested)
   const [activeTool, setActiveTool] = useState<'none' | 'metronome' | 'tuner' | 'print' | 'settings'>('none')
 
   // ✅ AutoClose on Escape Key
@@ -249,7 +243,7 @@ export default function MaestroApp(): React.JSX.Element {
   const [language, setLanguage] = useState<string>('en')
   const [buttonColorMode, setButtonColorMode] = useState<boolean>(true)
 
-  // Load settings from sessionStorage
+  // Load settings from sessionStorage (avoiding localStorage in artifacts)
   useEffect(() => {
     const savedTheme = sessionStorage.getItem('maestro-theme') || 'light'
     const savedMotion = sessionStorage.getItem('maestro-reduced-motion') === 'true'
@@ -292,7 +286,7 @@ export default function MaestroApp(): React.JSX.Element {
         practice: { title: 'Practice Generator', desc: 'AI-powered practice sessions' },
         singers: { title: "Singer's Corner", desc: 'Vocal training & exercises' },
         jam: { title: 'Jam Zone', desc: 'Interactive jam sessions' },
-        lessons: { title: 'ProSound Mode', desc: 'Performance & playback' },
+        lessons: { title: "Teachers' Lessons", desc: 'Connect with instructors' },
         build: { title: "Songwriter's Studio", desc: 'Composition tools' },
         'ai-tab': { title: 'AI Stem & Tab', desc: 'AI-powered transcription' }
       },
@@ -311,7 +305,7 @@ export default function MaestroApp(): React.JSX.Element {
         practice: { title: 'Generador de Práctica', desc: 'Sesiones de práctica con IA' },
         singers: { title: 'Rincón del Cantante', desc: 'Entrenamiento vocal y ejercicios' },
         jam: { title: 'Zona de Jam', desc: 'Sesiones de jam interactivas' },
-        lessons: { title: 'Modo ProSound', desc: 'Rendimiento y reproducción' },
+        lessons: { title: 'Lecciones de Maestros', desc: 'Conecta con instructores' },
         build: { title: 'Estudio de Compositores', desc: 'Herramientas de composición' },
         'ai-tab': { title: 'IA Stem y Tab', desc: 'Transcripción con IA' }
       },
@@ -384,7 +378,7 @@ export default function MaestroApp(): React.JSX.Element {
         case 'pro-studio':
           return 'from-blue-800 to-blue-900 shadow-lg shadow-blue-800/25 text-blue-100'
         default:
-          return 'bg-blue-500/5 backdrop-blur-lg border border-blue-300/20 shadow-lg shadow-purple-900/20 text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/30 transition-all duration-300'
+          return 'bg-blue-500/5 backdrop-blur-lg border border-blue-300/20 shadow-lg shadow-purple-900/20 text-blue-200 hover:bg-blue-500/10 hover:border-blue-400/30 transition-all duration-300'
       }
     }
   }
@@ -452,10 +446,10 @@ export default function MaestroApp(): React.JSX.Element {
     {
       id: 'lessons' as ModuleId,
       title: t.modules.lessons.title,
-      icon: Speaker,
+      icon: GraduationCap,
       color: getModuleColor('lessons'),
       description: t.modules.lessons.desc,
-      route: '/playground'
+      route: null
     },
     {
       id: 'build' as ModuleId,
@@ -475,10 +469,9 @@ export default function MaestroApp(): React.JSX.Element {
     }
   ]
 
-  // ✅ PASSWORD SCREEN - FIXED FOR MOBILE (NO SCROLL)
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center p-4 overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full text-center">
           <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent mb-2">🎸 Maestro.AI</h2>
           <p className="text-gray-600 text-lg mb-2">Guitar Practice Suite</p>
@@ -505,7 +498,6 @@ export default function MaestroApp(): React.JSX.Element {
     )
   }
 
-  // ✅ MODULE TILE COMPONENT - RESPONSIVE
   const ModuleTile = ({ module, onClick }: { module: typeof modules[0]; onClick: () => void }) => {
     const animationClass = reducedMotion
       ? 'transform transition-colors duration-200'
@@ -516,37 +508,31 @@ export default function MaestroApp(): React.JSX.Element {
         <a
           href={module.route}
           className={`
-            relative overflow-hidden rounded-xl md:rounded-2xl cursor-pointer ${animationClass}
-            focus:outline-none focus:ring-4 focus:ring-white/50
+            relative overflow-hidden rounded-2xl cursor-pointer ${animationClass}
+            focus:outline-none focus:ring-4 focus:ring-white/50 focus:ring-opacity-75
             bg-gradient-to-br ${module.color}
-            p-3 sm:p-4 md:p-6
-            min-h-[80px] sm:min-h-[100px] md:min-h-[140px]
+            p-6 sm:p-8 md:p-6 lg:p-8
+            min-h-[120px] sm:min-h-[140px] md:min-h-[160px]
             flex flex-col justify-between
             border border-white/10
             ${!reducedMotion ? 'hover:shadow-xl hover:-translate-y-1' : ''}
             block no-underline
           `}
-          aria-label={`Open ${module.title}`}
+          aria-label={`Open ${module.title} - ${module.description}`}
         >
-          {/* Mobile Layout: Icon + Title only */}
-          <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
-            <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
-            
-            {/* Desktop: Icon in corner */}
-            <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-            
-            <div className="text-center md:text-left md:mt-4">
-              <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
-                {module.title}
-              </h3>
-              {/* Hide description on mobile */}
-              <p className="hidden md:block text-sm font-sans leading-relaxed drop-shadow-sm mt-2">
-                {module.description}
-              </p>
-            </div>
+          <div className="flex items-start justify-between mb-4">
+            <module.icon className="w-8 h-8 sm:w-10 sm:h-10 text-white/90 drop-shadow-lg" aria-hidden="true" />
+            <div className="w-2 h-2 bg-white/30 rounded-full shadow-inner" aria-hidden="true"></div>
           </div>
-          
-          <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
+          <div>
+            <h3 className="text-lg sm:text-xl md:text-2xl font-bold mb-2 font-sans drop-shadow-md">
+              {module.title}
+            </h3>
+            <p className="text-sm sm:text-base font-sans leading-relaxed drop-shadow-sm">
+              {module.description}
+            </p>
+          </div>
+          <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-2xl pointer-events-none" aria-hidden="true"></div>
         </a>
       )
     }
@@ -554,11 +540,11 @@ export default function MaestroApp(): React.JSX.Element {
     return (
       <div
         className={`
-          relative overflow-hidden rounded-xl md:rounded-2xl cursor-pointer ${animationClass}
-          focus:outline-none focus:ring-4 focus:ring-white/50
+          relative overflow-hidden rounded-2xl cursor-pointer ${animationClass}
+          focus:outline-none focus:ring-4 focus:ring-white/50 focus:ring-opacity-75
           bg-gradient-to-br ${module.color}
-          p-3 sm:p-4 md:p-6
-          min-h-[80px] sm:min-h-[100px] md:min-h-[140px]
+          p-6 sm:p-8 md:p-6 lg:p-8
+          min-h-[120px] sm:min-h-[140px] md:min-h-[160px]
           flex flex-col justify-between
           border border-white/10
           ${!reducedMotion ? 'hover:shadow-xl hover:-translate-y-1' : ''}
@@ -572,27 +558,21 @@ export default function MaestroApp(): React.JSX.Element {
         }}
         tabIndex={0}
         role="button"
-        aria-label={`Open ${module.title}`}
+        aria-label={`Open ${module.title} - ${module.description}`}
       >
-        {/* Mobile Layout: Icon + Title only */}
-        <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
-          <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
-          
-          {/* Desktop: Icon in corner */}
-          <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-          
-          <div className="text-center md:text-left md:mt-4">
-            <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
-              {module.title}
-            </h3>
-            {/* Hide description on mobile */}
-            <p className="hidden md:block text-sm font-sans leading-relaxed drop-shadow-sm mt-2">
-              {module.description}
-            </p>
-          </div>
+        <div className="flex items-start justify-between mb-4">
+          <module.icon className="w-8 h-8 sm:w-10 sm:h-10 text-white/90 drop-shadow-lg" aria-hidden="true" />
+          <div className="w-2 h-2 bg-white/30 rounded-full shadow-inner" aria-hidden="true"></div>
         </div>
-        
-        <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
+        <div>
+          <h3 className="text-lg sm:text-xl md:text-2xl font-bold mb-2 font-sans drop-shadow-md">
+            {module.title}
+          </h3>
+          <p className="text-sm sm:text-base font-sans leading-relaxed drop-shadow-sm">
+            {module.description}
+          </p>
+        </div>
+        <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-2xl pointer-events-none" aria-hidden="true"></div>
       </div>
     )
   }
@@ -609,7 +589,7 @@ export default function MaestroApp(): React.JSX.Element {
       }
 
       return (
-        <div className="flex-1 p-6 pb-24 overflow-y-auto">
+        <div className="flex-1 p-6 pb-24">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center mb-6">
               <button
@@ -635,6 +615,17 @@ export default function MaestroApp(): React.JSX.Element {
                 <p className="text-white/70 mb-6">
                   This module is under development. Coming soon with full functionality!
                 </p>
+
+                {currentModule === 'lessons' && (
+                  <div className="bg-green-500/20 border border-green-500/30 rounded-xl p-4 mt-6">
+                    <h4 className="text-green-300 font-bold mb-2">🎓 Teachers&apos; Connection Hub</h4>
+                    <p className="text-green-200 text-sm">
+                      Connect with local instructors, upload practice videos, get feedback,
+                      and maintain your lesson schedule. Perfect companion for Guitar Center
+                      lessons and independent teachers.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -642,68 +633,26 @@ export default function MaestroApp(): React.JSX.Element {
       )
     }
 
-    // ✅ MAIN HOME SCREEN - NO SCROLL DESIGN
     return (
-      <div className="fixed inset-0 flex flex-col">
-        {/* Header Section - FIXED HEIGHT */}
-        <div className="flex-shrink-0 px-4 pt-4 md:pt-8 pb-2 md:pb-4">
-          <div className="text-center max-w-4xl mx-auto">
-            <div className="flex items-center justify-center mb-2 md:mb-4">
-              <Guitar className="w-8 h-8 md:w-12 md:h-12 text-orange-500 mr-3 md:mr-4" />
-              <h1 className={`text-3xl md:text-5xl lg:text-6xl ${getTitleColor()}`}>
-                {t.title}
-              </h1>
-            </div>
-            <p className="text-white/80 text-sm md:text-lg lg:text-xl font-sans leading-relaxed hidden sm:block">
+      <div className="flex-1 p-6 pb-24">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className={`text-4xl sm:text-5xl md:text-6xl ${getTitleColor()} mb-4`}>
+              {t.title}
+            </h1>
+            <p className="text-white/80 text-lg sm:text-xl font-sans leading-relaxed">
               {t.subtitle}
             </p>
           </div>
-        </div>
 
-        {/* Main Content Area - SCROLLABLE ONLY IF NEEDED */}
-        <div className="flex-1 overflow-y-auto px-4 pb-44 md:pb-8">
-          <div className="max-w-4xl mx-auto h-full flex flex-col">
-            {/* Module Grid - 3x3 Mobile, 3x2 Desktop */}
-            <div className="grid grid-cols-3 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 mb-3 md:mb-4">
-              {modules.map((module) => (
-                <ModuleTile
-                  key={module.id}
-                  module={module}
-                  onClick={() => setCurrentModule(module.id as ModuleId)}
-                />
-              ))}
-            </div>
-
-            {/* ✅ Practice Progress Section - PLACEHOLDER - COMPACT MOBILE */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl md:rounded-2xl p-3 md:p-6 border border-white/20 mt-4 md:mt-6 mb-24 md:mb-0">
-              <div className="flex items-center mb-2 md:mb-4">
-                <div className="text-lg md:text-2xl mr-2">📊</div>
-                <h3 className="text-sm md:text-xl font-bold text-white">Your Progress</h3>
-              </div>
-              
-              {/* Practice Stats */}
-              <div className="space-y-2 md:space-y-3">
-                <div>
-                  <div className="flex justify-between text-xs md:text-sm text-white/80 mb-1">
-                    <span className="truncate mr-2">Practice Time Today</span>
-                    <span className="whitespace-nowrap">42 / 60 min</span>
-                  </div>
-                  <div className="w-full bg-white/10 rounded-full h-2 md:h-3">
-                    <div className="bg-gradient-to-r from-orange-400 to-orange-600 h-full rounded-full" style={{ width: '70%' }}></div>
-                  </div>
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-xs md:text-sm text-white/80 mb-1">
-                    <span className="truncate mr-2">Weekly Goal</span>
-                    <span className="whitespace-nowrap">3 / 7 days</span>
-                  </div>
-                  <div className="w-full bg-white/10 rounded-full h-2 md:h-3">
-                    <div className="bg-gradient-to-r from-green-400 to-green-600 h-full rounded-full" style={{ width: '43%' }}></div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {modules.map((module) => (
+              <ModuleTile
+                key={module.id}
+                module={module}
+                onClick={() => setCurrentModule(module.id as ModuleId)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -715,10 +664,10 @@ export default function MaestroApp(): React.JSX.Element {
       <div className="fixed inset-0 bg-gradient-to-br from-black/30 via-transparent to-transparent pointer-events-none" />
       <div className="fixed inset-0 bg-gradient-to-tl from-black/30 via-transparent to-transparent pointer-events-none" />
 
-      <div className="relative z-10 h-screen overflow-hidden">
+      <div className="flex flex-col min-h-screen relative z-10">
         {renderMainContent()}
 
-        {/* ✅ TOOL RENDERING */}
+        {/* ✅ TOOL RENDERING (as requested) */}
         {activeTool === 'metronome' && (
           <div
             className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50"
@@ -752,8 +701,8 @@ export default function MaestroApp(): React.JSX.Element {
           </div>
         )}
 
-        {/* Bottom Navigation - FIXED */}
-        <div className="fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800 z-30">
+        {/* Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800">
           <div className="flex justify-around items-center py-2 px-4 max-w-md mx-auto">
             {[
               { id: 'songs', icon: Music, label: t.nav.songs },
@@ -778,7 +727,7 @@ export default function MaestroApp(): React.JSX.Element {
                 className={`
                   flex flex-col items-center p-3 rounded-xl transition-all duration-200
                   focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50
-                  ${activeTab === item.id
+                  ${(activeTab === item.id) || (item.id === 'home' && !currentModule && activeTool === 'none')
                     ? 'text-blue-400 bg-blue-400/20'
                     : 'text-white hover:text-white/80'
                   }
@@ -807,6 +756,7 @@ export default function MaestroApp(): React.JSX.Element {
               </button>
             </div>
 
+            {/* ✅ TOOL BUTTONS (as requested) */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
               <button
                 onClick={() => {

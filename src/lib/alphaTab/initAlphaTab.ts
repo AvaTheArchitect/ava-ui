@@ -1,7 +1,8 @@
 /**
- * AlphaTab Initialization Utility - V92
- * Date: November 19th, 2025
+ * AlphaTab Initialization Utility - V99.1
+ * Date: November 26th, 2025
  *
+ * 🆕 V99.1: Added AlphaTab environment info logging for support tickets
  * 🆕 V92: Added enableLoopSelection flag for custom loop handle architecture
  * ✅ V70: Version number update (no code changes)
  * ✅ V69: Fixed loop highlight (enableUserInteraction defaults to false)
@@ -26,7 +27,7 @@ export interface AlphaTabConfig {
   isMobile?: boolean;
   enableUserInteraction?: boolean;
   scrollContainer?: HTMLElement;
-  enableLoopSelection?: boolean; // 🆕 V92: NEW - Controls AlphaTab's native loop UI
+  enableLoopSelection?: boolean;
 }
 
 export async function initAlphaTab(
@@ -39,9 +40,9 @@ export async function initAlphaTab(
     layoutMode = "page",
     soundFontPath = "/soundfont/sonivox.sf2",
     isMobile = false,
-    enableUserInteraction = false, // 🔒 V69: Default FALSE - prevents unwanted loop highlight
+    enableUserInteraction = false,
     scrollContainer,
-    enableLoopSelection = false, // 🆕 V92: Default FALSE - custom handles only
+    enableLoopSelection = false,
   } = config;
 
   const alphaTab = await import("@coderline/alphatab");
@@ -55,7 +56,7 @@ export async function initAlphaTab(
   settings.core.enableLazyLoading = false;
   settings.core.useWorkers = false;
 
-  console.log("🔧 V92: Core workers disabled for Next.js compatibility");
+  console.log("🔧 V99.1: Core workers disabled for Next.js compatibility");
 
   // ==================== DISPLAY SETTINGS ====================
   settings.display.scale = 1.0;
@@ -67,10 +68,10 @@ export async function initAlphaTab(
       layoutMode === "page"
         ? alphaTab.LayoutMode.Page
         : alphaTab.LayoutMode.Horizontal;
-    console.log(`📱 V92: Mobile layout = ${layoutMode}`);
+    console.log(`📱 V99.1: Mobile layout = ${layoutMode}`);
   } else {
     settings.display.layoutMode = alphaTab.LayoutMode.Page;
-    console.log("🖥️ V92: Desktop layout = Page");
+    console.log("🖥️ V99.1: Desktop layout = Page");
   }
 
   settings.display.staveProfile = alphaTab.StaveProfile.TabMixed;
@@ -86,37 +87,33 @@ export async function initAlphaTab(
     settings.player.soundFont = soundFontPath;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
-
-    // 🔒 V92: LOCKED - Never allow AlphaTab's native user interaction
     settings.player.enableUserInteraction = false;
-
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // Scroll element configuration based on layout
     if (settings.display.layoutMode === alphaTab.LayoutMode.Page) {
-      // 🆕 V67: Use custom scroll container if provided
       if (scrollContainer) {
         (settings.player as any).scrollElement = scrollContainer;
         (settings.player as any).scrollOffsetY = -200;
         (settings.player as any).scrollOffsetX = 0;
         console.log(
-          "✅ V92: SYNTH: scrollElement = custom container (Grid layout)"
+          "✅ V99.1: SYNTH: scrollElement = custom container (Grid layout)"
         );
       } else {
         (settings.player as any).scrollElement = document.documentElement;
         (settings.player as any).scrollOffsetY = 100;
         (settings.player as any).scrollOffsetX = 0;
-        console.log("✅ V92: SYNTH: scrollElement = document.documentElement");
+        console.log(
+          "✅ V99.1: SYNTH: scrollElement = document.documentElement"
+        );
       }
     } else {
-      // Horizontal layout
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log("✅ V92: SYNTH: scrollElement = container (Horizontal)");
+      console.log("✅ V99.1: SYNTH: scrollElement = container (Horizontal)");
     }
 
-    // ⚡ CRITICAL FOR NEXT.JS:
     settings.player.outputMode =
       alphaTab.PlayerOutputMode.WebAudioScriptProcessor;
     settings.core.useWorkers = true;
@@ -129,10 +126,7 @@ export async function initAlphaTab(
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
     settings.player.enableCursor = enableCursor;
-
-    // 🔒 V92: LOCKED - Never allow AlphaTab's native user interaction
     settings.player.enableUserInteraction = false;
-
     settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
     // Scroll element configuration
@@ -141,20 +135,20 @@ export async function initAlphaTab(
         (settings.player as any).scrollElement = scrollContainer;
         (settings.player as any).scrollOffsetY = -200;
         (settings.player as any).scrollOffsetX = 0;
-        console.log("✅ V92: EXTERNAL: scrollElement = custom container");
+        console.log("✅ V99.1: EXTERNAL: scrollElement = custom container");
       } else {
         (settings.player as any).scrollElement = document.documentElement;
         (settings.player as any).scrollOffsetY = 100;
         (settings.player as any).scrollOffsetX = 0;
         console.log(
-          "✅ V92: EXTERNAL: scrollElement = document.documentElement"
+          "✅ V99.1: EXTERNAL: scrollElement = document.documentElement"
         );
       }
     } else {
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log("✅ V92: EXTERNAL: scrollElement = container");
+      console.log("✅ V99.1: EXTERNAL: scrollElement = container");
     }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
@@ -165,29 +159,72 @@ export async function initAlphaTab(
     console.log("🚫 PLAYER DISABLED");
   }
 
-  // 🆕 V92: CRITICAL - Disable AlphaTab's native loop selection UI
-  // This prevents the "Mystery Loop" gray highlight on drag
   if (!enableLoopSelection) {
-    // AlphaTab doesn't have a direct enableLoopSelection setting,
-    // but disabling enableUserInteraction already prevents it.
-    // This flag is for future extensibility and documentation.
     console.log(
-      "🔒 V92: Native loop selection DISABLED (custom DOM handles only)"
+      "🔒 V99.1: Native loop selection DISABLED (custom DOM handles only)"
     );
   }
 
-  console.log("🎸 AlphaTab V92 initialized:", {
+  console.log("🎸 AlphaTab V99.1 initialized:", {
     engine: settings.core.engine,
     layoutMode: settings.display.layoutMode,
     playerMode: settings.player.playerMode,
     enableCursor: settings.player.enableCursor,
-    enableUserInteraction: false, // Always false in V92
+    enableUserInteraction: false,
     enableLoopSelection: enableLoopSelection,
     scrollContainer: scrollContainer ? "custom" : "default",
     isMobile,
   });
 
-  return new alphaTab.AlphaTabApi(container, settings);
+  // Create the API
+  const api = new alphaTab.AlphaTabApi(container, settings);
+
+  // 🎯 V99.1: Print AlphaTab environment info for support ticket
+  if (typeof window !== "undefined" && alphaTab.Environment) {
+    console.log("╔═══════════════════════════════════════════════════════╗");
+    console.log("║     AlphaTab Environment Info (For Support Ticket)    ║");
+    console.log("╚═══════════════════════════════════════════════════════╝");
+
+    // 🔍 DIAGNOSTIC: What's actually in the Environment object?
+    console.log("🔍 Environment object type:", typeof alphaTab.Environment);
+    console.log("🔍 Environment keys:", Object.keys(alphaTab.Environment));
+    console.log("🔍 Environment values:", alphaTab.Environment);
+
+    // User environment
+    console.log(`User Agent: ${navigator.userAgent}`);
+    console.log(`Screen: ${window.innerWidth}x${window.innerHeight}`);
+    console.log(`Device Pixel Ratio: ${window.devicePixelRatio}`);
+
+    // Try the official method
+    if (typeof alphaTab.Environment.printEnvironmentInfo === "function") {
+      console.log(
+        "--- Calling alphaTab.Environment.printEnvironmentInfo() ---"
+      );
+      try {
+        alphaTab.Environment.printEnvironmentInfo();
+      } catch (e) {
+        console.warn("printEnvironmentInfo() failed:", e);
+      }
+    } else {
+      console.log("⚠️ printEnvironmentInfo() not a function");
+      console.log(
+        "⚠️ printEnvironmentInfo type:",
+        typeof alphaTab.Environment.printEnvironmentInfo
+      );
+    }
+
+    console.log("═══════════════════════════════════════════════════════");
+  } else {
+    console.warn("⚠️ V99.1: AlphaTab.Environment not available");
+    console.warn("⚠️ V99.1: window exists?", typeof window !== "undefined");
+    console.warn("⚠️ V99.1: alphaTab exists?", !!alphaTab);
+    console.warn(
+      "⚠️ V99.1: alphaTab.Environment exists?",
+      !!(alphaTab as any).Environment
+    );
+  }
+
+  return api;
 }
 
 /**
@@ -197,7 +234,7 @@ export async function loadGuitarProFile(
   api: AlphaTabApi,
   fileUrl: string
 ): Promise<void> {
-  console.log(`📂 V92: Loading Guitar Pro file: ${fileUrl}`);
+  console.log(`📂 V99.1: Loading Guitar Pro file: ${fileUrl}`);
 
   const response = await fetch(fileUrl);
   if (!response.ok) {
