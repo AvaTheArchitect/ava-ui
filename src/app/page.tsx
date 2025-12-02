@@ -531,10 +531,10 @@ export default function MaestroApp(): React.JSX.Element {
           {/* Mobile Layout: Icon + Title only */}
           <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
             <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
-            
+
             {/* Desktop: Icon in corner */}
             <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-            
+
             <div className="text-center md:text-left md:mt-4">
               <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
                 {module.title}
@@ -545,7 +545,7 @@ export default function MaestroApp(): React.JSX.Element {
               </p>
             </div>
           </div>
-          
+
           <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
         </a>
       )
@@ -577,10 +577,10 @@ export default function MaestroApp(): React.JSX.Element {
         {/* Mobile Layout: Icon + Title only */}
         <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
           <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
-          
+
           {/* Desktop: Icon in corner */}
           <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-          
+
           <div className="text-center md:text-left md:mt-4">
             <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
               {module.title}
@@ -591,7 +591,7 @@ export default function MaestroApp(): React.JSX.Element {
             </p>
           </div>
         </div>
-        
+
         <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
       </div>
     )
@@ -648,13 +648,22 @@ export default function MaestroApp(): React.JSX.Element {
         {/* Header Section - FIXED HEIGHT */}
         <div className="flex-shrink-0 px-4 pt-4 md:pt-8 pb-2 md:pb-4">
           <div className="text-center max-w-4xl mx-auto">
-            <div className="flex items-center justify-center mb-2 md:mb-4">
+            <div className="flex items-center justify-center mb-3 md:mb-4">
               <Guitar className="w-8 h-8 md:w-12 md:h-12 text-orange-500 mr-3 md:mr-4" />
               <h1 className={`text-3xl md:text-5xl lg:text-6xl ${getTitleColor()}`}>
                 {t.title}
               </h1>
             </div>
-            <p className="text-white/80 text-xs sm:text-sm md:text-lg lg:text-xl font-sans leading-relaxed">
+            {/* Mobile: Two lines, Desktop: One line */}
+            <div className="md:hidden">
+              <p className="text-white/80 text-sm font-sans leading-relaxed">
+                Your Complete AI-Powered Music
+              </p>
+              <p className="text-white/80 text-sm font-sans leading-relaxed mb-4">
+                Practice Suite
+              </p>
+            </div>
+            <p className="hidden md:block text-white/80 text-lg lg:text-xl font-sans leading-relaxed">
               {t.subtitle}
             </p>
           </div>
@@ -675,12 +684,12 @@ export default function MaestroApp(): React.JSX.Element {
             </div>
 
             {/* ✅ Practice Progress Section - PLACEHOLDER - COMPACT MOBILE */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl md:rounded-2xl p-3 md:p-6 border border-white/20 mt-8 md:mt-6 mb-24 md:mb-0">
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl md:rounded-2xl p-3 md:p-6 border border-white/20 mt-16 md:mt-6 mb-24 md:mb-0">
               <div className="flex items-center mb-2 md:mb-4">
                 <div className="text-lg md:text-2xl mr-2">📊</div>
                 <h3 className="text-sm md:text-xl font-bold text-white">Your Progress</h3>
               </div>
-              
+
               {/* Practice Stats */}
               <div className="space-y-2 md:space-y-3">
                 <div>
@@ -692,7 +701,7 @@ export default function MaestroApp(): React.JSX.Element {
                     <div className="bg-gradient-to-r from-orange-400 to-orange-600 h-full rounded-full" style={{ width: '70%' }}></div>
                   </div>
                 </div>
-                
+
                 <div>
                   <div className="flex justify-between text-xs md:text-sm text-white/80 mb-1">
                     <span className="truncate mr-2">Weekly Goal</span>
