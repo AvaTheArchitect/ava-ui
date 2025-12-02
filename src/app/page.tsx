@@ -656,10 +656,10 @@ export default function MaestroApp(): React.JSX.Element {
             </div>
             {/* Mobile: Two lines, Desktop: One line */}
             <div className="md:hidden">
-              <p className="text-white/80 text-sm font-sans leading-relaxed">
+              <p className="text-white/80 text-base font-sans leading-relaxed">
                 Your Complete AI-Powered Music
               </p>
-              <p className="text-white/80 text-sm font-sans leading-relaxed mb-4">
+              <p className="text-white/80 text-base font-sans leading-relaxed mb-4">
                 Practice Suite
               </p>
             </div>
