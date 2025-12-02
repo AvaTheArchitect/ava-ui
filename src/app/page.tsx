@@ -648,12 +648,10 @@ export default function MaestroApp(): React.JSX.Element {
         {/* Header Section - FIXED HEIGHT */}
         <div className="flex-shrink-0 px-4 pt-6 md:pt-10 pb-2 md:pb-4">
           <div className="text-center max-w-4xl mx-auto">
-            <div className="flex items-center justify-center mb-3 md:mb-4">
-              <Guitar className="w-10 h-10 md:w-12 md:h-12 text-orange-500 mr-3 md:mr-4" />
-              <h1 className={`text-4xl sm:text-5xl md:text-6xl ${getTitleColor()}`}>
-                {t.title}
-              </h1>
-            </div>
+            <h1 className={`flex items-center justify-center mb-3 md:mb-4 text-4xl sm:text-5xl md:text-6xl font-bold tracking-wide bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent`}>
+              <span className="mr-3 md:mr-4">🎸</span>
+              {t.title}
+            </h1>
             {/* Mobile: Two lines, Desktop: One line */}
             <div className="md:hidden">
               <p className="text-white/80 text-lg font-sans leading-relaxed">
