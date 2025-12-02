@@ -9,13 +9,25 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause, Speaker } from "lucide-react"
+import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause, Speaker, Feather, Piano } from "lucide-react"
 
 // ✅ Fixed Import Path (case sensitive)
 import TunerDial from '@/components/tuner/TunerDial'
 
 export type TabId = "home" | "songs" | "setlist" | "tools" | "profile"
 export type ModuleId = "practice" | "singers" | "jam" | "lessons" | "build" | "ai-tab"
+
+// ✅ Module type definition
+type ModuleConfig = {
+  id: ModuleId
+  title: string
+  icon: React.ComponentType<{ className?: string }>
+  color: string
+  description: string
+  route: string | null
+  emoji?: string
+  customIcon?: string
+}
 
 // ✅ Fixed Metronome Component Structure
 const Metronome = ({ onClose }: { onClose?: () => void }) => {
@@ -424,7 +436,7 @@ export default function MaestroApp(): React.JSX.Element {
   }
 
   // Main modules configuration
-  const modules = [
+  const modules: ModuleConfig[] = [
     {
       id: 'practice' as ModuleId,
       title: t.modules.practice.title,
@@ -460,7 +472,7 @@ export default function MaestroApp(): React.JSX.Element {
     {
       id: 'build' as ModuleId,
       title: t.modules.build.title,
-      icon: Wrench,
+      icon: Piano,
       color: getModuleColor('build'),
       description: t.modules.build.desc,
       route: null
@@ -530,7 +542,17 @@ export default function MaestroApp(): React.JSX.Element {
         >
           {/* Mobile Layout: Icon + Title only */}
           <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
-            <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
+            {module.customIcon ? (
+              <img 
+                src={module.customIcon} 
+                alt="" 
+                className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert" 
+              />
+            ) : module.emoji ? (
+              <span className="text-4xl mb-2 md:mb-0 drop-shadow-lg">{module.emoji}</span>
+            ) : (
+              <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
+            )}
             
             {/* Desktop: Icon in corner */}
             <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
@@ -576,7 +598,17 @@ export default function MaestroApp(): React.JSX.Element {
       >
         {/* Mobile Layout: Icon + Title only */}
         <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
-          <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
+          {module.customIcon ? (
+            <img 
+              src={module.customIcon} 
+              alt="" 
+              className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert" 
+            />
+          ) : module.emoji ? (
+            <span className="text-4xl mb-2 md:mb-0 drop-shadow-lg">{module.emoji}</span>
+          ) : (
+            <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
+          )}
           
           {/* Desktop: Icon in corner */}
           <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
