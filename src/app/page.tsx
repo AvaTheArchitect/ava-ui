@@ -253,6 +253,33 @@ export default function MaestroApp(): React.JSX.Element {
     return () => document.removeEventListener('keydown', handleEscape)
   }, [])
 
+  // ✅ Lock orientation to portrait on home page (PWA)
+  useEffect(() => {
+    const lockOrientation = async () => {
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          await screen.orientation.lock('portrait');
+        }
+      } catch (err) {
+        // Orientation lock not supported or failed - no problem
+        console.log('Orientation lock not available');
+      }
+    };
+
+    lockOrientation();
+
+    // Unlock when leaving page
+    return () => {
+      try {
+        if (screen.orientation && screen.orientation.unlock) {
+          screen.orientation.unlock();
+        }
+      } catch (err) {
+        // Silent fail
+      }
+    };
+  }, []);
+
   // Theme and settings state
   const [theme, setTheme] = useState<string>('light')
   const [reducedMotion, setReducedMotion] = useState<boolean>(false)
