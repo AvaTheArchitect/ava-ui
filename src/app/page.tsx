@@ -257,8 +257,9 @@ export default function MaestroApp(): React.JSX.Element {
   useEffect(() => {
     const lockOrientation = async () => {
       try {
-        if (screen.orientation && screen.orientation.lock) {
-          await screen.orientation.lock('portrait');
+        const orientation = screen.orientation as any;
+        if (orientation && typeof orientation.lock === 'function') {
+          await orientation.lock('portrait');
         }
       } catch (err) {
         // Orientation lock not supported or failed - no problem
@@ -271,8 +272,9 @@ export default function MaestroApp(): React.JSX.Element {
     // Unlock when leaving page
     return () => {
       try {
-        if (screen.orientation && screen.orientation.unlock) {
-          screen.orientation.unlock();
+        const orientation = screen.orientation as any;
+        if (orientation && typeof orientation.unlock === 'function') {
+          orientation.unlock();
         }
       } catch (err) {
         // Silent fail
@@ -570,20 +572,20 @@ export default function MaestroApp(): React.JSX.Element {
           {/* Mobile Layout: Icon + Title only */}
           <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
             {module.customIcon ? (
-              <img
-                src={module.customIcon}
-                alt=""
-                className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert"
+              <img 
+                src={module.customIcon} 
+                alt="" 
+                className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert" 
               />
             ) : module.emoji ? (
               <span className="text-4xl mb-2 md:mb-0 drop-shadow-lg">{module.emoji}</span>
             ) : (
               <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
             )}
-
+            
             {/* Desktop: Icon in corner */}
             <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-
+            
             <div className="text-center md:text-left md:mt-4">
               <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
                 {module.title}
@@ -594,7 +596,7 @@ export default function MaestroApp(): React.JSX.Element {
               </p>
             </div>
           </div>
-
+          
           <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
         </a>
       )
@@ -626,20 +628,20 @@ export default function MaestroApp(): React.JSX.Element {
         {/* Mobile Layout: Icon + Title only */}
         <div className="flex flex-col items-center justify-center h-full md:block md:h-auto">
           {module.customIcon ? (
-            <img
-              src={module.customIcon}
-              alt=""
-              className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert"
+            <img 
+              src={module.customIcon} 
+              alt="" 
+              className="w-8 h-8 md:w-10 md:h-10 mb-2 md:mb-0 drop-shadow-lg brightness-0 invert" 
             />
           ) : module.emoji ? (
             <span className="text-4xl mb-2 md:mb-0 drop-shadow-lg">{module.emoji}</span>
           ) : (
             <module.icon className="w-8 h-8 md:w-10 md:h-10 text-white/90 drop-shadow-lg mb-2 md:mb-0" />
           )}
-
+          
           {/* Desktop: Icon in corner */}
           <div className="hidden md:block w-2 h-2 bg-white/30 rounded-full shadow-inner absolute top-6 right-6"></div>
-
+          
           <div className="text-center md:text-left md:mt-4">
             <h3 className="text-sm sm:text-base md:text-xl font-bold font-sans drop-shadow-md">
               {module.title}
@@ -650,7 +652,7 @@ export default function MaestroApp(): React.JSX.Element {
             </p>
           </div>
         </div>
-
+        
         <div className="absolute inset-0 bg-white/5 opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-xl pointer-events-none"></div>
       </div>
     )
@@ -746,7 +748,7 @@ export default function MaestroApp(): React.JSX.Element {
                 <div className="text-lg md:text-2xl mr-2">📊</div>
                 <h3 className="text-sm md:text-xl font-bold text-white">Your Progress</h3>
               </div>
-
+              
               {/* Practice Stats */}
               <div className="space-y-2 md:space-y-3">
                 <div>
@@ -758,7 +760,7 @@ export default function MaestroApp(): React.JSX.Element {
                     <div className="bg-gradient-to-r from-orange-400 to-orange-600 h-full rounded-full" style={{ width: '70%' }}></div>
                   </div>
                 </div>
-
+                
                 <div>
                   <div className="flex justify-between text-xs md:text-sm text-white/80 mb-1">
                     <span className="truncate mr-2">Weekly Goal</span>

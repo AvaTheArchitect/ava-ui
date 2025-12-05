@@ -32,6 +32,7 @@ export interface AlphaTabRendererProps {
     audioSource?: 'synth' | 'original';
     isLooping?: boolean;
     onLoopRangeChange?: (start: number | null, end: number | null) => void;
+    externalMediaHandler?: any; // Add this line
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -237,6 +238,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     minHeight = '600px',
     playerMode = 'external',
     soundFontPath = '/soundfont/sonivox.sf2',
+    externalMediaHandler, // Add this
     scrollContainerRef,
     isMobileLandscape = false,
     isLooping = false,
@@ -316,32 +318,32 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 initialFileLoadedRef.current = true;
                 lastLoadedFileRef.current = fileUrl;
 
-               api.scoreLoaded.on((score: any) => {
-    console.log('📊 Score loaded');
-    const tracks: Track[] = score.tracks.map((t: any) => ({
-        index: t.index,
-        name: t.name,
-        shortName: t.shortName,
-    }));
+                api.scoreLoaded.on((score: any) => {
+                    console.log('📊 Score loaded');
+                    const tracks: Track[] = score.tracks.map((t: any) => ({
+                        index: t.index,
+                        name: t.name,
+                        shortName: t.shortName,
+                    }));
 
-    const songInfo: SongInfo = {
-        title: score.title,
-        artist: score.artist,
-        album: score.album,
-        tempo: score.tempo,
-    };
+                    const songInfo: SongInfo = {
+                        title: score.title,
+                        artist: score.artist,
+                        album: score.album,
+                        tempo: score.tempo,
+                    };
 
-    setScoreIsLoaded(true);
-    onScoreLoaded?.(songInfo, tracks);
+                    setScoreIsLoaded(true);
+                    onScoreLoaded?.(songInfo, tracks);
 
-    // 🎯 CRITICAL FIX: SYNCHRONOUS LAYOUT STABILIZATION
-    // Fixes Extreme-Rise repeat seek failures & click offsets
-    if (api && !destroyed) {
-        api.updateSettings();
-        api.render();
-        console.log('✅ Layout recalculated SYNCHRONOUSLY for complex files');
-    }
-});
+                    // 🎯 CRITICAL FIX: SYNCHRONOUS LAYOUT STABILIZATION
+                    // Fixes Extreme-Rise repeat seek failures & click offsets
+                    if (api && !destroyed) {
+                        api.updateSettings();
+                        api.render();
+                        console.log('✅ Layout recalculated SYNCHRONOUSLY for complex files');
+                    }
+                });
 
                 api.renderFinished.on(() => {
                     console.log('🎨 Render finished');
@@ -387,7 +389,37 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         api.updateSettings();
         console.log('✅ Player mode updated on existing AlphaTab instance');
     }, [playerMode]);
+    // ========== ATTACH EXTERNAL HANDLER TO API OUTPUT ==========
 
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api || !api.player?.output) return;
+
+        // Only attach handler when we have one
+        if (externalMediaHandler) {
+            const output = api.player.output as any;
+            output.handler = externalMediaHandler;
+            console.log('🔗 V94.5: External handler attached to API output');
+
+            return () => {
+                // Clean up handler on unmount or when handler changes
+                if (api.player?.output) {
+                    const output = api.player.output as any;
+                    if (output.handler) {
+                        output.handler = null;
+                        console.log('🔌 V94.5: Handler detached');
+                    }
+                }
+            };
+        } else {
+            // No handler provided, make sure none is attached
+            const output = api.player.output as any;
+            if (output.handler) {
+                output.handler = null;
+                console.log('🔌 V94.5: Handler cleared (none provided)');
+            }
+        }
+    }, [externalMediaHandler]);
     // ========== LOAD NEW FILE INTO SAME INSTANCE ==========
 
     useEffect(() => {
@@ -611,48 +643,60 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, isLooping]);
 
-    // ========== DOUBLE CLICK PLAY (loop off) - Dual Mode Support ==========
 
-    useEffect(() => {
-        const api = apiRef.current;
-        const container = containerRef.current;
+// ========== DOUBLE CLICK PLAY (loop off) - Dual Mode Support ==========
 
-        if (!api || !container || !isRendered || isLooping) return;
+useEffect(() => {
+    const api = apiRef.current;
+    const container = containerRef.current;
 
-        const handleDoubleClick = (e: MouseEvent) => {
-            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-            if (beat && beat.absolutePlaybackStart !== undefined) {
-                const tickPosition = beat.absolutePlaybackStart;
+    if (!api || !container || !isRendered || isLooping) return;
 
-                // ALWAYS seek cursor first (works for BOTH modes)
-                api.tickPosition = tickPosition;
+    const handleDoubleClick = (e: MouseEvent) => {
+        const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+        if (beat && beat.absolutePlaybackStart !== undefined) {
+            const tickPosition = beat.absolutePlaybackStart;
 
-                // Branch playback by mode - audioSource captured from dependencies
-                console.log(`🖱️🖱️ Double-click in ${audioSource} mode`);
+            // ALWAYS seek cursor first (works for BOTH modes)
+            api.tickPosition = tickPosition;
 
-                if (audioSource === 'synth') {
-                    // Synth mode: use AlphaTab's built-in player
-                    if (api.play) api.play();
-                    console.log('🖱️🖱️ Synth: Double-click play from', tickPosition);
+            // Branch playback by mode - audioSource captured from dependencies
+            console.log(`🖱️🖱️ Double-click in ${audioSource} mode`);
+
+            if (audioSource === 'synth') {
+                // Synth mode: use AlphaTab's built-in player
+                if (api.play) api.play();
+                console.log('🖱️🖱️ Synth: Double-click play from', tickPosition);
+            } else {
+                // Original mode: use external handler (YouTube)
+                const output = api.player?.output as any;
+                
+                console.log('🔍 V94.5: Checking handler...', {
+                    hasOutput: !!output,
+                    hasHandler: !!output?.handler,
+                    hasPlay: !!output?.handler?.play,
+                    handler: output?.handler
+                });
+                
+                if (output?.handler?.play) {
+                    console.log('🎬 V94.5: Calling handler.play()');
+                    output.handler.play();
+                    console.log('🎬 Original: Double-click play via handler from', tickPosition);
                 } else {
-                    // Original mode: use external handler (YouTube)
-                    const output = api.player?.output as any;
-                    if (output?.handler?.play) {
-                        output.handler.play();
-                        console.log('🎬 Original: Double-click play via handler from', tickPosition);
-                    } else {
-                        console.warn('⚠️ Original mode: No external handler available');
-                    }
+                    console.warn('⚠️ Original mode: No external handler available');
+                    console.warn('⚠️ Output:', output);
+                    console.warn('⚠️ Handler:', output?.handler);
                 }
             }
-        };
+        }
+    };
 
-        container.addEventListener('dblclick', handleDoubleClick);
+    container.addEventListener('dblclick', handleDoubleClick);
 
-        return () => {
-            container.removeEventListener('dblclick', handleDoubleClick);
-        };
-    }, [isRendered, isLooping, audioSource]); // 🎯 audioSource in dependencies fixes stale closure
+    return () => {
+        container.removeEventListener('dblclick', handleDoubleClick);
+    };
+}, [isRendered, isLooping, audioSource]); // 🎯 audioSource in dependencies fixes stale closure
 
     // ========== MOUSE DRAG SELECTION (loop on) ==========
 
