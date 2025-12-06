@@ -39,7 +39,7 @@
     "guitar-tab-song-parser": "^0.1.6",
     "jszip": "^3.10.1",
     "lucide-react": "^0.514.0",
-    "next": "^16.0.7",
+    "next": "^15.4.3",
     "node-cron": "^4.1.1",
     "ora": "^8.2.0",
     "react": "^18.3.1",
