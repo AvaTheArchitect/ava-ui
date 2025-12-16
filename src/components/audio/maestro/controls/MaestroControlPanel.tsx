@@ -1,21 +1,19 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V92: Mobile Icon Color Standardization
- * Date: November 21st, 2025
+ * MaestroControlPanel.tsx - V93: YouTube Play Button for Original Mode
+ * Date: December 15th, 2025
  * 
- * 🎨 NEW IN V92:
- * ✅ All mobile icons use standard cyan-400 blue (matching Speed/Play)
- * ✅ Loop OFF: text-cyan-400 (no background box)
- * ✅ Loop ON: text-green-400 (no background box)
- * ✅ TrackMixer: text-cyan-400 (standardized)
- * ✅ Gear: text-cyan-400 (standardized)
+ * 🎨 NEW IN V93:
+ * ✅ YouTube red play button when audioSource='original' (mobile only)
+ * ✅ Synth mode keeps cyan/blue play triangle
+ * ✅ Matches Songsterr's mobile UI pattern
+ * 
+ * 🔒 PRESERVED FROM V92:
+ * ✅ All mobile icons use standard cyan-400 blue
+ * ✅ Loop ON: text-green-400, Loop OFF: text-cyan-400
+ * ✅ TrackMixer panel auto-closes when track selected
  * ✅ Play keeps orange when playing (text-orange-400)
- * ✅ TrackMixer panel auto-closes when track selected (mobile fix)
- * 
- * V91: Mobile Icon Alignment Fix
- * V86: Z-INDEX !IMPORTANT FIX
- * V79: Landscape UI fix
  */
 
 import React, { useState, useEffect } from 'react';
@@ -102,6 +100,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
   const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
+
+  // 🆕 V93: Determine if we should show YouTube button (original mode, mobile only)
+  const showYouTubeButton = props.audioSource === 'original';
 
   return (
     <>
@@ -238,7 +239,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               )}
             </div>
 
-            {/* 3. Loop Control - Icon Only (V92: Green when ON, Cyan when OFF, NO background box) */}
+            {/* 3. Loop Control - Icon Only */}
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
@@ -251,27 +252,54 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 4. Play/Pause - Icon Only (V92: Keep Cyan/Orange) */}
+            {/* 4. Play/Pause - V93: YouTube button when in original mode */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${showYouTubeButton
+                  ? '' /* YouTube button has its own colors */
+                  : props.isPlaying
+                    ? 'text-orange-400 hover:text-orange-300'
+                    : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                {props.isPlaying ? (
-                  <>
+              {showYouTubeButton ? (
+                /* 🆕 V93: YouTube-style play button for original mode */
+                props.isPlaying ? (
+                  /* Pause icon - keep orange when playing */
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" className="text-orange-400">
                     <rect x="7" y="5" width="3" height="14" rx="1" />
                     <rect x="14" y="5" width="3" height="14" rx="1" />
-                  </>
+                  </svg>
                 ) : (
-                  <path d="M8 5v14l11-7z" />
-                )}
-              </svg>
+                  /* YouTube red play button */
+                  <svg width="32" height="32" viewBox="0 0 68 48">
+                    {/* Red rounded rectangle background */}
+                    <path
+                      d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,0,34,0,34,0S12.21,0,6.9,1.55 c-2.93,0.78-4.63,3.26-5.42,6.19C0,13.05,0,24,0,24s0,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,48,34,48,34,48s21.79,0,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C68,34.95,68,24,68,24S68,13.05,66.52,7.74z"
+                      fill="#FF0000"
+                    />
+                    {/* White play triangle */}
+                    <path d="M 45,24 27,14 27,34" fill="white" />
+                  </svg>
+                )
+              ) : (
+                /* Standard synth mode play/pause icons */
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  {props.isPlaying ? (
+                    <>
+                      <rect x="7" y="5" width="3" height="14" rx="1" />
+                      <rect x="14" y="5" width="3" height="14" rx="1" />
+                    </>
+                  ) : (
+                    <path d="M8 5v14l11-7z" />
+                  )}
+                </svg>
+              )}
             </button>
 
-            {/* 5. Gear (Settings) - Icon Only (V92: Standardized to Cyan) */}
+            {/* 5. Gear (Settings) - Icon Only */}
             <button
               onClick={handleGearToggle}
               className="w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 text-cyan-400 hover:text-cyan-300"

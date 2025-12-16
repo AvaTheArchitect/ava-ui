@@ -2,19 +2,18 @@
 
 /**
  * STAGE 4 - Synth + YouTube Deferred Seek Architecture
- * December 13th, 2025 - V98.4: Cursor-Safe Deferred YouTube Seek
+ * December 15th, 2025 - V98.6: FIX PAUSED SEEK NOT APPLYING
  *
- * 🏆 V98.4 ARCHITECTURE (PORTED FROM V97.18 / V9.6):
- * - AlphaTabRenderer:
- *   ✅ Single-click / double-click only set api.tickPosition in ORIGINAL mode
- *   ✅ No manual output.handler.seekTo() calls (no duplicate seeks)
+ * 🔧 V98.6 CRITICAL FIX:
+ * ✅ When paused, ALWAYS store position as deferred seek
+ * ✅ allowSeekAhead=false when paused means unbuffered seeks fail silently!
+ * ✅ Now: Immediate seek (visual) + deferred seek (guaranteed on play)
+ * ✅ This fixes: "Cursor moves but YouTube stays at old position after play"
  *
- * - page.tsx (this file):
- *   ✅ youTubeMediaHandlerInstance.seekTo is the ONLY seek entrypoint
- *   ✅ Synchronous isSeekingRef.current = true before async setState
- *   ✅ Safe guard around YT.PlayerState (API may not be loaded)
- *   ✅ Deferred seek stored in initialSeekRef and applied on play()
- *   ✅ 50ms cursor sync loop respects a short post-seek lock window
+ * 🏆 V98.5 ARCHITECTURE (PRESERVED):
+ * - pauseTransitionRef to ignore seeks during pause transitions
+ * - Synchronous isSeekingRef.current = true before async setState
+ * - 50ms cursor sync loop with post-seek lock window
  */
 
 import React, {
@@ -57,6 +56,9 @@ export default function SynthPlayerPage() {
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
     const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
+    // Pause transition flag - ignore seeks during pause
+    const pauseTransitionRef = useRef<boolean>(false);
+
     // ==================== LOOP STATE ====================
     const [isLooping, setIsLooping] = useState<boolean>(false);
     const [hasLoopSelection, setHasLoopSelection] = useState<boolean>(false);
@@ -87,14 +89,14 @@ export default function SynthPlayerPage() {
     const [isYouTubeReady, setIsYouTubeReady] = useState(false);
     const youtubePlayerRef = useRef<any>(null);
 
-    // V9.6 / V97.18 deferred seek and post-seek lock
+    // Deferred seek and post-seek lock
     const initialSeekRef = useRef<number>(-1);
     const postSeekLockUntilRef = useRef<number>(0);
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.4: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.4: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.6: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.6: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -131,46 +133,49 @@ export default function SynthPlayerPage() {
         isSeekingRef.current = isSeeking;
     }, [isSeeking]);
 
-    // ==================== V98.4: EXTERNAL MEDIA HANDLER ====================
+    // ==================== V98.6: EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.4: Creating YouTube handler instance');
+        console.log('🎬 V98.6: Creating YouTube handler instance');
 
         return {
-            // PLAY: apply deferred seek first, then play
             play: () => {
-                console.log('▶️ V98.4: Handler.play() called');
+                console.log('▶️ V98.6: Handler.play() called');
 
+                // 🆕 V98.6: Always apply deferred seek on play with allowSeekAhead=true
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
                     console.log(
-                        `⏱️ V98.4: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`,
+                        `⏱️ V98.6: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`,
                     );
-                    youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
+                    youtubePlayerRef.current.seekTo(initialSeekRef.current, true); // allowSeekAhead=true!
                     initialSeekRef.current = -1;
-
-                    // Lock cursor sync briefly after applying deferred seek
                     postSeekLockUntilRef.current = performance.now() + 200;
                 }
 
                 if (youtubePlayerRef.current?.playVideo) {
                     youtubePlayerRef.current.playVideo();
-                    console.log('✅ V98.4: YouTube playVideo() executed');
+                    console.log('✅ V98.6: YouTube playVideo() executed');
                 } else {
-                    console.warn('⚠️ V98.4: YouTube player ref not ready in play()');
+                    console.warn('⚠️ V98.6: YouTube player ref not ready in play()');
                 }
             },
 
             pause: () => {
-                console.log('⏸️ V98.4: Handler.pause() called');
+                console.log('⏸️ V98.6: Handler.pause() called');
                 if (youtubePlayerRef.current?.pauseVideo) {
                     youtubePlayerRef.current.pauseVideo();
-                    console.log('✅ V98.4: YouTube pauseVideo() executed');
+                    console.log('✅ V98.6: YouTube pauseVideo() executed');
                 } else {
-                    console.warn('⚠️ V98.4: YouTube player ref not ready in pause()');
+                    console.warn('⚠️ V98.6: YouTube player ref not ready in pause()');
                 }
             },
 
-            // SOLE seek entrypoint: called from AlphaTab (via api.tickPosition) or manually
             seekTo: (milliseconds: number) => {
+                // Ignore seeks during pause transition (api.pause() triggers handler.seekTo internally)
+                if (pauseTransitionRef.current) {
+                    console.log('⏭️ V98.6: Ignoring seek during pause transition');
+                    return;
+                }
+
                 // Synchronous seeking guard
                 isSeekingRef.current = true;
                 setIsSeeking(true);
@@ -178,19 +183,18 @@ export default function SynthPlayerPage() {
                 const offset = currentSong?.videoStartOffset || 0;
                 const seconds = milliseconds / 1000 + offset;
                 console.log(
-                    `🎯 V98.4: Handler.seekTo(${milliseconds}ms) -> ${seconds.toFixed(2)}s`,
+                    `🎯 V98.6: Handler.seekTo(${milliseconds}ms) -> ${seconds.toFixed(2)}s`,
                 );
 
                 const player = youtubePlayerRef.current;
                 if (!player) {
-                    console.warn('⚠️ V98.4: YouTube player not ready in seekTo');
-                    // Visual is already moved by api.tickPosition; we just cannot sync audio yet.
+                    console.warn('⚠️ V98.6: YouTube player not ready in seekTo');
                     return;
                 }
 
                 const YT = (typeof window !== 'undefined' && (window as any).YT) || null;
                 if (!YT || !YT.PlayerState) {
-                    console.warn('⚠️ V98.4: YouTube API not loaded - deferring seek');
+                    console.warn('⚠️ V98.6: YouTube API not loaded - deferring seek');
                     initialSeekRef.current = seconds;
                     return;
                 }
@@ -201,12 +205,9 @@ export default function SynthPlayerPage() {
 
                 if (!isSeekableState || !isYouTubeReady) {
                     console.log(
-                        `⏱️ V98.4: Deferring seek to ${seconds.toFixed(
-                            2,
-                        )}s (state=${state}, ready=${isYouTubeReady})`,
+                        `⏱️ V98.6: Deferring seek to ${seconds.toFixed(2)}s (state=${state}, ready=${isYouTubeReady})`,
                     );
                     initialSeekRef.current = seconds;
-                    // Visual cursor is already moved by AlphaTab (api.tickPosition)
                     setTimeout(() => {
                         setIsSeeking(false);
                         isSeekingRef.current = false;
@@ -214,14 +215,33 @@ export default function SynthPlayerPage() {
                     return;
                 }
 
-                const allowSeekAhead = isPlayingRef.current;
-                player.seekTo(seconds, allowSeekAhead);
-                console.log(
-                    `✅ V98.4: YouTube seekTo() executed (allowSeekAhead=${allowSeekAhead})`,
-                );
+                // 🆕 V98.6 FIX: When PAUSED, allowSeekAhead=false means unbuffered seeks fail!
+                // Solution: Do immediate seek for visual feedback, but ALSO store as deferred
+                // to guarantee it applies on play with allowSeekAhead=true
 
-                // Lock cursor sync briefly so AlphaTab can settle its internal tickPosition
+                if (state === YT.PlayerState.PAUSED) {
+                    // Paused: Try immediate seek but ALSO store as deferred
+                    player.seekTo(seconds, false); // Try with allowSeekAhead=false first
+                    initialSeekRef.current = seconds; // Store for guaranteed re-apply on play
+                    console.log(
+                        `⏸️ V98.6: Paused seek - immediate + stored deferred at ${seconds.toFixed(2)}s`,
+                    );
+                } else {
+                    // Playing: Immediate seek with allowSeekAhead=true
+                    player.seekTo(seconds, true);
+                    initialSeekRef.current = -1; // Clear - immediate should work when playing
+                    console.log(
+                        `▶️ V98.6: Playing seek - immediate at ${seconds.toFixed(2)}s (allowSeekAhead=true)`,
+                    );
+                }
+
                 postSeekLockUntilRef.current = performance.now() + 200;
+
+                // Clear seeking state after stabilization
+                setTimeout(() => {
+                    setIsSeeking(false);
+                    isSeekingRef.current = false;
+                }, 300);
             },
 
             get currentTime() {
@@ -242,7 +262,7 @@ export default function SynthPlayerPage() {
         };
     }, [currentSong?.videoStartOffset, isYouTubeReady]);
 
-    // Update display every 500ms (throttled view from refs)
+    // Update display every 500ms
     useEffect(() => {
         if (!isPlaying) return;
         const interval = setInterval(() => {
@@ -317,18 +337,18 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.4: API Ready');
+            console.log('✅ V98.6: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.4: Player Ready');
+                    console.log('✅ V98.6: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
                         const output = alphaTabApi.player.output as any;
                         output.handler = youTubeMediaHandlerInstance;
-                        console.log('🔗 V98.4: Handler attached on player ready');
+                        console.log('🔗 V98.6: Handler attached on player ready');
                     }
                 });
             }
@@ -342,7 +362,6 @@ export default function SynthPlayerPage() {
             }
 
             if (alphaTabApi.playerPositionChanged) {
-                // Only write to refs; no React state here (prevents feedback loops)
                 alphaTabApi.playerPositionChanged.on((e: any) => {
                     currentTimeRef.current = e.currentTime;
                     durationRef.current = e.endTime;
@@ -354,7 +373,7 @@ export default function SynthPlayerPage() {
 
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.4: Score loaded - ${info.title}`);
+            console.log(`✅ V98.6: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -366,35 +385,46 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.4: Rendering Complete');
+        console.log('✅ V98.6: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.4 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.6 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
+    // handlePlayPause with pause transition protection
     const handlePlayPause = useCallback(() => {
         if (!api) return;
 
         console.log(
-            `🎮 V98.4: handlePlayPause - mode: ${audioSource}, isPlaying: ${isPlaying}`,
+            `🎮 V98.6: handlePlayPause - mode: ${audioSource}, isPlaying: ${isPlaying}`,
         );
 
         if (audioSource === 'original') {
             const output = api.player?.output as any;
             if (output?.handler) {
                 if (isPlaying) {
-                    console.log('⏸️ V98.4: Pausing via handler + api.pause()');
+                    // Set pause transition flag BEFORE calling pause
+                    pauseTransitionRef.current = true;
+                    console.log('🔒 V98.6: Pause transition started');
+
+                    console.log('⏸️ V98.6: Pausing via handler + api.pause()');
                     output.handler.pause();
                     api.pause();
+
+                    // Clear pause transition flag after a delay
+                    setTimeout(() => {
+                        pauseTransitionRef.current = false;
+                        console.log('🔓 V98.6: Pause transition ended');
+                    }, 300);
                 } else {
-                    console.log('▶️ V98.4: Playing via handler + api.play()');
+                    console.log('▶️ V98.6: Playing via handler + api.play()');
                     output.handler.play();
                     api.play();
                 }
             } else {
-                console.warn('⚠️ V98.4: No handler available for original mode');
+                console.warn('⚠️ V98.6: No handler available for original mode');
             }
         } else {
             if (isPlaying) {
@@ -416,7 +446,7 @@ export default function SynthPlayerPage() {
     const handleTrackChange = useCallback(
         (trackIndex: number) => {
             if (api?.score?.tracks) {
-                console.log(`🔄 V98.4: Track ${trackIndex}`);
+                console.log(`🔄 V98.6: Track ${trackIndex}`);
 
                 if (isLooping && api.playbackRange) {
                     api.playbackRange = null;
@@ -453,7 +483,7 @@ export default function SynthPlayerPage() {
             setPlaybackSpeed(speed);
             if (api) {
                 api.playbackSpeed = speed;
-                console.log(`🎚️ V98.4: Speed: ${Math.round(speed * 100)}%`);
+                console.log(`🎚️ V98.6: Speed: ${Math.round(speed * 100)}%`);
             }
         },
         [api],
@@ -462,15 +492,15 @@ export default function SynthPlayerPage() {
     const handleAudioSourceChange = useCallback(
         (source: 'synth' | 'original') => {
             setAudioSource(source);
-            console.log(`🎵 V98.4: Audio: ${source}`);
+            console.log(`🎵 V98.6: Audio: ${source}`);
 
             if (api) {
                 if (source === 'original') {
                     api.masterVolume = 0;
-                    console.log('🔇 V98.4: AlphaTab synth muted');
+                    console.log('🔇 V98.6: AlphaTab synth muted');
                 } else {
                     api.masterVolume = 1;
-                    console.log('🔊 V98.4: AlphaTab synth unmuted');
+                    console.log('🔊 V98.6: AlphaTab synth unmuted');
                 }
             }
 
@@ -487,7 +517,7 @@ export default function SynthPlayerPage() {
     );
 
     const handleVideoVariantChange = useCallback((newVideoId: string) => {
-        console.log(`🔄 V98.4: Variant changed: ${newVideoId}`);
+        console.log(`🔄 V98.6: Variant changed: ${newVideoId}`);
         setCurrentVideoId(newVideoId);
         initialSeekRef.current = -1;
     }, []);
@@ -495,7 +525,7 @@ export default function SynthPlayerPage() {
     const handleYouTubeClose = useCallback(() => {
         setIsYouTubePlayerVisible(false);
         setIsYouTubeReady(false);
-        console.log('🎬 V98.4: YouTube player closed');
+        console.log('🎬 V98.6: YouTube player closed');
     }, []);
 
     const handleYouTubeTimeUpdate = useCallback((time: number) => {
@@ -504,31 +534,32 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.4: YouTube player is ready!');
+        console.log('✅ V98.6: YouTube player is ready!');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
     }, []);
 
+    // YouTube state change handler with pause protection
     const handleYouTubeStateChange = useCallback(
         (event: any) => {
             console.log(
-                `🎬 V98.4: YouTube state change: ${event.data} (Seeking: ${isSeekingRef.current})`,
+                `🎬 V98.6: YouTube state change: ${event.data} (Seeking: ${isSeekingRef.current}, PauseTransition: ${pauseTransitionRef.current})`,
             );
 
             if (event.data === 1) {
                 setIsPlaying(true);
-                console.log('▶️ V98.4: isPlaying = true');
+                console.log('▶️ V98.6: isPlaying = true');
             } else if (event.data === 2 || event.data === 0) {
                 setIsPlaying(false);
-                console.log('⏸️ V98.4: isPlaying = false');
+                console.log('⏸️ V98.6: isPlaying = false');
             }
 
             if (isSeekingRef.current) {
                 if (!seekStabilizeTimeoutRef.current && (event.data === 1 || event.data === 2)) {
-                    console.log('⏱️ V98.4: Starting 500ms seek stabilization timer');
+                    console.log('⏱️ V98.6: Starting 500ms seek stabilization timer');
                     seekStabilizeTimeoutRef.current = setTimeout(() => {
-                        console.log('✅ V98.4: Seek stabilized');
+                        console.log('✅ V98.6: Seek stabilized');
                         setIsSeeking(false);
                         isSeekingRef.current = false;
                         seekStabilizeTimeoutRef.current = null;
@@ -537,44 +568,59 @@ export default function SynthPlayerPage() {
                 return;
             }
 
+            // Don't sync AlphaTab during pause transition
+            if (pauseTransitionRef.current) {
+                console.log('⏭️ V98.6: Skipping AlphaTab sync during pause transition');
+                return;
+            }
+
             if (api) {
                 if (event.data === 1) {
                     api.play();
-                    console.log('▶️ V98.4: AlphaTab PLAY sync');
+                    console.log('▶️ V98.6: AlphaTab PLAY sync');
                 } else if (event.data === 2) {
+                    // Set pause transition before calling api.pause()
+                    pauseTransitionRef.current = true;
                     api.pause();
-                    console.log('⏸️ V98.4: AlphaTab PAUSE sync');
+                    setTimeout(() => {
+                        pauseTransitionRef.current = false;
+                    }, 200);
+                    console.log('⏸️ V98.6: AlphaTab PAUSE sync');
                 } else if (event.data === 0) {
                     api.stop();
-                    console.log('⏹️ V98.4: AlphaTab STOP sync');
+                    console.log('⏹️ V98.6: AlphaTab STOP sync');
                 }
             }
         },
         [api],
     );
 
-    // 50ms CURSOR SYNC LOOP (YouTube -> AlphaTab), now with post-seek lock
+    // 50ms CURSOR SYNC LOOP
     useEffect(() => {
         if (!api || audioSource !== 'original' || !isYouTubeReady) return;
         if (!api.player?.output) return;
 
         const output = api.player.output as any;
         if (typeof output.updatePosition !== 'function') {
-            console.error('❌ V98.4: output.updatePosition is not a function!');
+            console.error('❌ V98.6: output.updatePosition is not a function!');
             return;
         }
 
-        console.log('🔄 V98.4: Starting 50ms cursor sync loop');
+        console.log('🔄 V98.6: Starting 50ms cursor sync loop');
 
         const syncInterval = setInterval(() => {
             const now = performance.now();
 
-            // Respect post-seek lock window so AlphaTab's own tickPosition settle isn't overwritten
             if (now < postSeekLockUntilRef.current) {
                 return;
             }
 
             if (isSeekingRef.current || !isPlayingRef.current) {
+                return;
+            }
+
+            // Also skip during pause transition
+            if (pauseTransitionRef.current) {
                 return;
             }
 
@@ -588,7 +634,7 @@ export default function SynthPlayerPage() {
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.4: updatePosition error:', err);
+                console.error('❌ V98.6: updatePosition error:', err);
             }
 
             currentTimeRef.current = timeMs;
@@ -596,7 +642,7 @@ export default function SynthPlayerPage() {
 
         return () => {
             clearInterval(syncInterval);
-            console.log('⏹️ V98.4: Stopped cursor sync loop');
+            console.log('⏹️ V98.6: Stopped cursor sync loop');
         };
     }, [api, audioSource, isYouTubeReady, currentSong?.videoStartOffset]);
 
@@ -608,7 +654,7 @@ export default function SynthPlayerPage() {
 
         if (youTubeMediaHandlerInstance) {
             output.handler = youTubeMediaHandlerInstance;
-            console.log('🔗 V98.4: Handler attached/verified in page.tsx');
+            console.log('🔗 V98.6: Handler attached/verified in page.tsx');
         }
 
         return () => {
@@ -616,7 +662,7 @@ export default function SynthPlayerPage() {
                 const out = api.player.output as any;
                 if (out.handler) {
                     out.handler = null;
-                    console.log('🔌 V98.4: Handler detached on cleanup');
+                    console.log('🔌 V98.6: Handler detached on cleanup');
                 }
             }
         };

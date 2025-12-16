@@ -1,18 +1,19 @@
 'use client';
 
 /**
- * YouTube Player Component - December 13th, 2025 - V97.16: SAFE YT.PlayerState GUARD
+ * YouTube Player Component - December 15th, 2025 - V98: SONGSTERR-STYLE UI
  * 
- * 🔧 V97.16: CRITICAL FIX - Guard YT.PlayerState usage
- * ✅ Checks YouTube API is loaded before accessing YT.PlayerState
- * ✅ Defers seek if API or player state are not ready
- * ✅ Keeps AlphaTab official auto-play workaround behavior
+ * 🎨 V98 UI UPDATES (Songsterr-style):
+ * ✅ Square corners (removed rounded-lg)
+ * ✅ Smaller mobile portrait size to fit corner
+ * ✅ Fixed landscape positioning - sits on top of bottom tray
+ * ✅ Dropdown menu moved ABOVE video in white tray
+ * ✅ Clean separation between menu bar and video
  * 
- * 🔒 PRESERVED FROM V97.15:
- * ✅ Tracks initialSeek to prevent auto-play after first seek
- * ✅ Only applies seekTo when player is PAUSED or PLAYING (not UNSTARTED)
- * ✅ Defers initial seek until first play() call
+ * 🔒 PRESERVED FROM V97.16:
+ * ✅ Deferred seek pattern for auto-play prevention
  * ✅ React.memo, onStateChange, onPlayerReady, heartbeat
+ * ✅ Safe YT.PlayerState guard
  */
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
@@ -78,37 +79,34 @@ export const YouTubePlayer = React.memo(
             playVideo: () => {
                 // Apply deferred initial seek on first play
                 if (initialSeekRef.current >= 0) {
-                    console.log(`⏱️ V97.16: Applying deferred seek to ${initialSeekRef.current}s on play`);
+                    console.log(`⏱️ V98: Applying deferred seek to ${initialSeekRef.current}s on play`);
                     playerRef.current?.seekTo?.(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                 }
                 playerRef.current?.playVideo?.();
             },
             pauseVideo: () => playerRef.current?.pauseVideo?.(),
-            // 🔧 V97.16: SAFE YT.PlayerState CHECK + DEFERRED SEEK
             seekTo: (seconds: number, allowSeekAhead: boolean) => {
                 if (!playerRef.current) {
-                    console.warn('⚠️ V97.16: Player ref not ready');
+                    console.warn('⚠️ V98: Player ref not ready');
                     return;
                 }
 
-                // 🎯 V97.16: Check if YouTube API is loaded
                 const YT = (window as any).YT;
                 if (!YT || !YT.PlayerState) {
-                    console.warn('⚠️ V97.16: YouTube API not loaded - deferring seek');
+                    console.warn('⚠️ V98: YouTube API not loaded - deferring seek');
                     initialSeekRef.current = seconds;
                     return;
                 }
 
                 const state = playerRef.current.getPlayerState?.();
 
-                // Defer if player not ready
                 if (state !== YT.PlayerState.PAUSED && state !== YT.PlayerState.PLAYING) {
                     initialSeekRef.current = seconds;
-                    console.log(`⏱️ V97.16: Deferring seek to ${seconds}s (state=${state})`);
+                    console.log(`⏱️ V98: Deferring seek to ${seconds}s (state=${state})`);
                 } else {
                     playerRef.current.seekTo(seconds, allowSeekAhead);
-                    console.log(`⏱️ V97.16: Immediate seek to ${seconds}s (state=${state})`);
+                    console.log(`⏱️ V98: Immediate seek to ${seconds}s (state=${state})`);
                 }
             },
             getCurrentTime: () => playerRef.current?.getCurrentTime?.() || 0,
@@ -133,12 +131,12 @@ export const YouTubePlayer = React.memo(
             firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
 
             window.onYouTubeIframeAPIReady = () => {
-                console.log('✅ V97.16: YouTube IFrame API Ready');
+                console.log('✅ V98: YouTube IFrame API Ready');
                 setIsAPIReady(true);
             };
 
             return () => {
-                window.onYouTubeIframeAPIReady = () => {};
+                window.onYouTubeIframeAPIReady = () => { };
             };
         }, []);
 
@@ -146,10 +144,9 @@ export const YouTubePlayer = React.memo(
         useEffect(() => {
             if (!isAPIReady || !isVisible || !containerRef.current) return;
 
-            console.log(`🎬 V97.16: Initializing YouTube player: ${videoId}`);
+            console.log(`🎬 V98: Initializing YouTube player: ${videoId}`);
             if (videoStartOffset > 0) {
-                console.log(`⏱️ V97.16: Video start offset: ${videoStartOffset}s`);
-                // Store initial seek instead of applying it (prevents auto-play)
+                console.log(`⏱️ V98: Video start offset: ${videoStartOffset}s`);
                 initialSeekRef.current = videoStartOffset;
             }
 
@@ -168,26 +165,21 @@ export const YouTubePlayer = React.memo(
                     cc_load_policy: 0,
                     iv_load_policy: 3,
                     enablejsapi: 1,
-                    // Do not use 'start' param - causes auto-play
-                    // start: videoStartOffset,
                     widgetid: 1,
                     origin: window.location.origin,
                 },
                 events: {
                     onReady: (event: any) => {
-                        console.log('✅ V97.16: YouTube player ready (no auto-seek)');
-
-                        // Do not seek here - let it happen on first play
-                        // This prevents the auto-play bug
+                        console.log('✅ V98: YouTube player ready (no auto-seek)');
 
                         if (onPlayerReady) {
-                            console.log('📢 V97.16: Notifying parent - YouTube player is ready');
+                            console.log('📢 V98: Notifying parent - YouTube player is ready');
                             onPlayerReady();
                         }
                     },
                     onStateChange: (event: any) => {
                         const state = event.data;
-                        console.log(`🎬 V97.16: YouTube state: ${state}`);
+                        console.log(`🎬 V98: YouTube state: ${state}`);
 
                         if (onStateChange) {
                             onStateChange(event);
@@ -206,11 +198,10 @@ export const YouTubePlayer = React.memo(
 
             return () => {
                 if (playerRef.current && playerRef.current.destroy) {
-                    console.log('🗑️ V97.16: Destroying YouTube player');
+                    console.log('🗑️ V98: Destroying YouTube player');
                     playerRef.current.destroy();
                     playerRef.current = null;
                 }
-                // Reset initial seek tracker
                 initialSeekRef.current = -1;
             };
         }, [isAPIReady, isVisible, videoId, videoStartOffset, onStateChange, onPlayStateChange, onPlayerReady]);
@@ -247,60 +238,62 @@ export const YouTubePlayer = React.memo(
             const variant = event.target.value as 'main' | 'backing' | 'solo' | 'playthrough';
             setSelectedVariant(variant);
 
-            console.log(`🔄 V97.16: Variant selected: ${variant}`);
+            console.log(`🔄 V98: Variant selected: ${variant}`);
 
             if (videoVariants && videoVariants[variant]) {
                 const newVideoId = videoVariants[variant];
-                console.log(`🔄 V97.16: Switching to ${variant} video: ${newVideoId}`);
+                console.log(`🔄 V98: Switching to ${variant} video: ${newVideoId}`);
 
                 if (onVariantChange && newVideoId) {
                     onVariantChange(newVideoId);
                 }
             } else {
-                console.warn(`⚠️ V97.16: No video ID found for variant: ${variant}`);
+                console.warn(`⚠️ V98: No video ID found for variant: ${variant}`);
             }
         }, [videoVariants, onVariantChange]);
 
         if (!isVisible) return null;
 
-        // ==================== RENDER ====================
+        // ==================== RENDER - SONGSTERR STYLE ====================
         return (
             <div
                 className={`
                     fixed z-40 
-                    bg-black rounded-lg overflow-hidden
-                    shadow-2xl border border-gray-700
+                    bg-black overflow-hidden
+                    shadow-2xl border border-gray-300
+                    flex flex-col
                     ${isMobileLandscape
-                        ? 'bottom-2 right-2 w-48 h-28'
-                        : 'bottom-[74px] right-4 w-[355px] h-[200px]'
+                        ? 'bottom-[80px] right-2 w-[180px]'  /* Landscape: above 80px bottom tray */
+                        : 'bottom-[80px] right-2 w-[160px] md:bottom-[74px] md:right-4 md:w-[320px]'
                     }
                 `}
+            /* V98: Square corners (no rounded-lg), smaller mobile size */
             >
-                <div ref={containerRef} className="w-full h-full bg-black" />
-
-                <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/80 to-transparent p-2 flex items-start justify-between">
-                    <label className="flex items-center gap-2 text-xs text-white/90">
-                        <span className="hidden sm:inline">Synced video:</span>
+                {/* 🆕 V98: Menu bar ABOVE video - Songsterr style */}
+                <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                        <span className="text-gray-500 text-[10px] md:text-xs">Synced video:</span>
                         <select
                             value={selectedVariant}
                             onChange={handleVariantChange}
                             className="
-                                bg-black/60 text-white text-xs rounded px-2 py-1
-                                border border-white/20 
-                                focus:outline-none focus:border-purple-500
+                                bg-white text-gray-800 text-[10px] md:text-xs
+                                border border-gray-300 rounded px-1 py-0.5
+                                focus:outline-none focus:border-blue-500
+                                cursor-pointer
                             "
                         >
                             <option value="main" disabled={!videoVariants?.main}>
                                 Full mix
                             </option>
                             <option value="backing" disabled={!videoVariants?.backing}>
-                                Backing track {!videoVariants?.backing && '(unavailable)'}
+                                Backing track
                             </option>
                             <option value="solo" disabled={!videoVariants?.solo}>
-                                Solo {!videoVariants?.solo && '(unavailable)'}
+                                Solo
                             </option>
                             <option value="playthrough" disabled={!videoVariants?.playthrough}>
-                                Playthrough {!videoVariants?.playthrough && '(unavailable)'}
+                                Playthrough
                             </option>
                         </select>
                     </label>
@@ -308,19 +301,25 @@ export const YouTubePlayer = React.memo(
                     <button
                         onClick={handleClose}
                         className="
-                            p-1.5 rounded-md
-                            bg-black/60 hover:bg-black/80
-                            border border-white/20 hover:border-white/40
+                            p-1 text-gray-500 hover:text-gray-800
                             transition-colors
                         "
                         title="Close video"
                     >
-                        <svg width="12" height="12" viewBox="0 0 14 14" className="text-white">
-                            <rect width="1.3" height="18" y="1" rx="0.75" transform="rotate(-45 0 1)" fill="currentColor" />
-                            <rect width="1.3" height="18" x="12.7" rx="0.75" transform="rotate(45 12.7 0)" fill="currentColor" />
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                         </svg>
                     </button>
                 </div>
+
+                {/* Video container - square corners, responsive height */}
+                <div
+                    ref={containerRef}
+                    className={`
+                        w-full bg-black
+                        ${isMobileLandscape ? 'h-[100px]' : 'h-[90px] md:h-[180px]'}
+                    `}
+                />
             </div>
         );
     })
