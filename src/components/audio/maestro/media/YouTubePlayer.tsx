@@ -1,11 +1,15 @@
 'use client';
 
 /**
- * YouTube Player Component - December 15th, 2025 - V98: SONGSTERR-STYLE UI
+ * YouTube Player Component - December 15th, 2025 - V98.1: MOBILE SIZE FIX
+ * 
+ * 🎨 V98.1 MOBILE SIZE UPDATES:
+ * ✅ Mobile portrait: 52vw width (half screen), 29vw height (~16:9 ratio)
+ * ✅ Flush with screen edge (right-0, no gap)
+ * ✅ Matches Songsterr's mobile player sizing
  * 
  * 🎨 V98 UI UPDATES (Songsterr-style):
  * ✅ Square corners (removed rounded-lg)
- * ✅ Smaller mobile portrait size to fit corner
  * ✅ Fixed landscape positioning - sits on top of bottom tray
  * ✅ Dropdown menu moved ABOVE video in white tray
  * ✅ Clean separation between menu bar and video
@@ -263,11 +267,11 @@ export const YouTubePlayer = React.memo(
                     shadow-2xl border border-gray-300
                     flex flex-col
                     ${isMobileLandscape
-                        ? 'bottom-[80px] right-2 w-[180px]'  /* Landscape: above 80px bottom tray */
-                        : 'bottom-[80px] right-2 w-[160px] md:bottom-[74px] md:right-4 md:w-[320px]'
+                        ? 'bottom-[80px] right-0 w-[180px]'  /* Landscape: above 80px bottom tray, flush right */
+                        : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[320px]'
                     }
                 `}
-            /* V98: Square corners (no rounded-lg), smaller mobile size */
+            /* V98.1: Larger mobile portrait (52vw = ~half screen), flush with edge */
             >
                 {/* 🆕 V98: Menu bar ABOVE video - Songsterr style */}
                 <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between">
@@ -317,8 +321,9 @@ export const YouTubePlayer = React.memo(
                     ref={containerRef}
                     className={`
                         w-full bg-black
-                        ${isMobileLandscape ? 'h-[100px]' : 'h-[90px] md:h-[180px]'}
+                        ${isMobileLandscape ? 'h-[100px]' : 'h-[29vw] md:h-[180px]'}
                     `}
+                /* V98.1: Mobile portrait uses 29vw height (matches 52vw width for ~16:9 ratio) */
                 />
             </div>
         );
