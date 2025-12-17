@@ -1,23 +1,25 @@
 'use client';
 
 /**
- * YouTube Player Component - December 15th, 2025 - V98.1: MOBILE SIZE FIX
+ * YouTube Player Component - December 15th, 2025 - V98.2: CORRECT ASPECT RATIO
+ * 
+ * 🎨 V98.2 ASPECT RATIO FIX:
+ * ✅ Mobile portrait: 52vw width × 58vw height (~9:11 ratio like Songsterr)
+ * ✅ Songsterr's player is TALLER than wide, not 16:9
+ * ✅ Landscape stays fixed at 180×100px (already correct)
  * 
  * 🎨 V98.1 MOBILE SIZE UPDATES:
- * ✅ Mobile portrait: 52vw width (half screen), 29vw height (~16:9 ratio)
+ * ✅ Mobile portrait: 52vw width (half screen)
  * ✅ Flush with screen edge (right-0, no gap)
- * ✅ Matches Songsterr's mobile player sizing
  * 
  * 🎨 V98 UI UPDATES (Songsterr-style):
  * ✅ Square corners (removed rounded-lg)
  * ✅ Fixed landscape positioning - sits on top of bottom tray
  * ✅ Dropdown menu moved ABOVE video in white tray
- * ✅ Clean separation between menu bar and video
  * 
  * 🔒 PRESERVED FROM V97.16:
  * ✅ Deferred seek pattern for auto-play prevention
  * ✅ React.memo, onStateChange, onPlayerReady, heartbeat
- * ✅ Safe YT.PlayerState guard
  */
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
@@ -140,7 +142,7 @@ export const YouTubePlayer = React.memo(
             };
 
             return () => {
-                window.onYouTubeIframeAPIReady = () => { };
+                window.onYouTubeIframeAPIReady = () => {};
             };
         }, []);
 
@@ -271,7 +273,7 @@ export const YouTubePlayer = React.memo(
                         : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[320px]'
                     }
                 `}
-            /* V98.1: Larger mobile portrait (52vw = ~half screen), flush with edge */
+                /* V98.1: Larger mobile portrait (52vw = ~half screen), flush with edge */
             >
                 {/* 🆕 V98: Menu bar ABOVE video - Songsterr style */}
                 <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between">
@@ -316,14 +318,14 @@ export const YouTubePlayer = React.memo(
                     </button>
                 </div>
 
-                {/* Video container - square corners, responsive height */}
-                <div
-                    ref={containerRef}
+                {/* Video container - square corners, taller aspect ratio like Songsterr */}
+                <div 
+                    ref={containerRef} 
                     className={`
                         w-full bg-black
-                        ${isMobileLandscape ? 'h-[100px]' : 'h-[29vw] md:h-[180px]'}
+                        ${isMobileLandscape ? 'h-[100px]' : 'h-[58vw] md:h-[180px]'}
                     `}
-                /* V98.1: Mobile portrait uses 29vw height (matches 52vw width for ~16:9 ratio) */
+                    /* V98.2: Mobile portrait uses 58vw height (~9:11 ratio with 52vw width, matches Songsterr) */
                 />
             </div>
         );
