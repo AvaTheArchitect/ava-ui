@@ -2,7 +2,7 @@
 
 /**
  * STAGE 4 - Synth + YouTube Deferred Seek Architecture
- * December 16th, 2025 - V98.7: LANDSCAPE MODE FIXES
+ * December 15th, 2025 - V98.7: LANDSCAPE MODE FIXES
  *
  * 🔧 V98.7 LANDSCAPE FIXES:
  * ✅ Staff vertically centered with flex items-center
@@ -802,7 +802,7 @@ export default function SynthPlayerPage() {
                 className={`
                     w-full overscroll-y-contain
                     ${isMobileLandscape
-                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden flex items-center'
+                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden'
                         : 'pb-32 overflow-y-auto overflow-x-hidden'
                     }
                     ${!isMobileLandscape && isHeaderVisible ? 'pt-16' : 'pt-0'}
@@ -832,10 +832,11 @@ export default function SynthPlayerPage() {
                     className={`
                         bg-white
                         ${isMobileLandscape
-                            ? 'min-w-[200vw] inline-block flex-shrink-0'
+                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[calc(50vh-100px)]'
                             : 'w-full'
                         }
                     `}
+                /* V98.7: pt-[calc(50vh-100px)] centers staff vertically in landscape */
                 >
                     <AlphaTabRenderer
                         fileUrl={currentFileUrl}
