@@ -2,18 +2,18 @@
 
 /**
  * STAGE 4 - Synth + YouTube Deferred Seek Architecture
- * December 15th, 2025 - V98.6: FIX PAUSED SEEK NOT APPLYING
+ * December 16th, 2025 - V98.7: LANDSCAPE MODE FIXES
+ *
+ * 🔧 V98.7 LANDSCAPE FIXES:
+ * ✅ Staff vertically centered with flex items-center
+ * ✅ Fixed height container (100vh - 80px bottom bar)
+ * ✅ No vertical scroll/movement in landscape
+ * ✅ Song title overlay in landscape mode
  *
  * 🔧 V98.6 CRITICAL FIX:
  * ✅ When paused, ALWAYS store position as deferred seek
  * ✅ allowSeekAhead=false when paused means unbuffered seeks fail silently!
  * ✅ Now: Immediate seek (visual) + deferred seek (guaranteed on play)
- * ✅ This fixes: "Cursor moves but YouTube stays at old position after play"
- *
- * 🏆 V98.5 ARCHITECTURE (PRESERVED):
- * - pauseTransitionRef to ignore seeks during pause transitions
- * - Synchronous isSeekingRef.current = true before async setState
- * - 50ms cursor sync loop with post-seek lock window
  */
 
 import React, {
@@ -800,12 +800,12 @@ export default function SynthPlayerPage() {
             <main
                 ref={mainScrollContainerRef}
                 className={`
-                    w-full pb-32 overscroll-y-contain
-                    ${isHeaderVisible ? 'pt-16' : 'pt-0'}
+                    w-full overscroll-y-contain
                     ${isMobileLandscape
-                        ? 'overflow-x-auto overflow-y-hidden'
-                        : 'overflow-y-auto overflow-x-hidden'
+                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden flex items-center'
+                        : 'pb-32 overflow-y-auto overflow-x-hidden'
                     }
+                    ${!isMobileLandscape && isHeaderVisible ? 'pt-16' : 'pt-0'}
                     transition-[padding] duration-300 ease-in-out
                 `}
             >
@@ -818,11 +818,23 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
+                {/* 🆕 V98.7: Landscape song title overlay */}
+                {isMobileLandscape && currentSong && (
+                    <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4">
+                        <div className="text-white text-sm font-semibold truncate">
+                            {currentSong.artist} - {currentSong.title}
+                        </div>
+                    </div>
+                )}
+
                 <div
                     id="maestro-player"
                     className={`
                         bg-white
-                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
+                        ${isMobileLandscape
+                            ? 'min-w-[200vw] inline-block flex-shrink-0'
+                            : 'w-full'
+                        }
                     `}
                 >
                     <AlphaTabRenderer

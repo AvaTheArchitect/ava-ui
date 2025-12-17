@@ -476,18 +476,26 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const alphaTab = await import('@coderline/alphatab');
 
             if (isMobileLandscape) {
-                console.log('🎸 V97.18: LANDSCAPE mode');
+                console.log('🎸 V97.19: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container;
-                (api.settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
+
+                // 🆕 V97.19: Use the scrollContainerRef for horizontal scrolling
+                const scrollElement = scrollContainerRef?.current || container;
+                api.settings.player.scrollElement = scrollElement;
+
+                // 🆕 V97.19: Increased from 0.15 to 0.30 for better cursor visibility
+                // This positions the cursor 30% from the left edge, keeping it visible
+                (api.settings.player as any).scrollOffsetX = scrollElement.clientWidth * 0.30;
+                (api.settings.player as any).scrollOffsetY = 0; // No vertical offset in landscape
             } else {
-                console.log('📱 V97.18: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.19: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 const scrollElement = scrollContainerRef?.current || document.body;
                 api.settings.player.scrollElement = scrollElement;
                 (api.settings.player as any).scrollOffsetY = -200;
+                (api.settings.player as any).scrollOffsetX = 0; // No horizontal offset in portrait
             }
 
             await api.updateSettings();
@@ -667,7 +675,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     console.log(`🖱️ V97.18: Single-click at ${tickPosition}ms (ORIGINAL mode)`);
                     api.tickPosition = tickPosition;
                     console.log(`📍 V97.18: api.tickPosition set (AlphaTab calls handler.seekTo internally)`);
-                    
+
                     // 🔍 DEBUG: Check cursor position after a delay
                     setTimeout(() => {
                         console.log(`🔍 V97.18 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}, isPlaying=${isPlaying}`);
@@ -735,7 +743,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         // Also call api.play() to activate purple notation + auto-scroll
                         api.play();
                         console.log('🎵 V97.18: ORIGINAL - api.play() for purple notation');
-                        
+
                         // 🔍 DEBUG: Check cursor position after a delay
                         setTimeout(() => {
                             console.log(`🔍 V97.18 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}`);
