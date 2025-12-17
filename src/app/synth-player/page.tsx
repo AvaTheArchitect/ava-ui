@@ -2,18 +2,17 @@
 
 /**
  * STAGE 4 - Synth + YouTube Deferred Seek Architecture
- * December 15th, 2025 - V98.7: LANDSCAPE MODE FIXES
+ * December 15th, 2025 - V98.8: LANDSCAPE SCROLL RESET
+ *
+ * 🔧 V98.8 LANDSCAPE FIXES:
+ * ✅ Reduced padding to pt-[12vh] - staff higher, room for notation
+ * ✅ Reset scrollLeft to 0 when entering landscape - keeps M1 visible
+ * ✅ Cursor should now be visible at start position
  *
  * 🔧 V98.7 LANDSCAPE FIXES:
- * ✅ Staff vertically centered with flex items-center
  * ✅ Fixed height container (100vh - 80px bottom bar)
  * ✅ No vertical scroll/movement in landscape
  * ✅ Song title overlay in landscape mode
- *
- * 🔧 V98.6 CRITICAL FIX:
- * ✅ When paused, ALWAYS store position as deferred seek
- * ✅ allowSeekAhead=false when paused means unbuffered seeks fail silently!
- * ✅ Now: Immediate seek (visual) + deferred seek (guaranteed on play)
  */
 
 import React, {
@@ -218,7 +217,7 @@ export default function SynthPlayerPage() {
                 // 🆕 V98.6 FIX: When PAUSED, allowSeekAhead=false means unbuffered seeks fail!
                 // Solution: Do immediate seek for visual feedback, but ALSO store as deferred
                 // to guarantee it applies on play with allowSeekAhead=true
-
+                
                 if (state === YT.PlayerState.PAUSED) {
                     // Paused: Try immediate seek but ALSO store as deferred
                     player.seekTo(seconds, false); // Try with allowSeekAhead=false first
@@ -333,6 +332,15 @@ export default function SynthPlayerPage() {
             }
         };
     }, []);
+
+    // 🆕 V98.8: Reset scroll position when entering landscape mode
+    useEffect(() => {
+        if (isMobileLandscape && mainScrollContainerRef.current) {
+            // Reset to start (M1) when rotating to landscape
+            mainScrollContainerRef.current.scrollLeft = 0;
+            console.log('🔄 V98.8: Reset scroll to M1 for landscape mode');
+        }
+    }, [isMobileLandscape]);
 
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
@@ -831,12 +839,12 @@ export default function SynthPlayerPage() {
                     id="maestro-player"
                     className={`
                         bg-white
-                        ${isMobileLandscape
-                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[calc(50vh-100px)]'
+                        ${isMobileLandscape 
+                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[12vh]' 
                             : 'w-full'
                         }
                     `}
-                /* V98.7: pt-[calc(50vh-100px)] centers staff vertically in landscape */
+                    /* V98.8: pt-[12vh] positions staff higher, leaving room for notation below */
                 >
                     <AlphaTabRenderer
                         fileUrl={currentFileUrl}
