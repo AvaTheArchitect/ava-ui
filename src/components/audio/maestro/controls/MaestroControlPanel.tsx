@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V93: YouTube Play Button for Original Mode
+ * MaestroControlPanel.tsx - V93: YouTube Play Button + Landscape Drawer Fix
  * Date: December 15th, 2025
  * 
  * 🎨 NEW IN V93:
  * ✅ YouTube red play button when audioSource='original' (mobile only)
  * ✅ Synth mode keeps cyan/blue play triangle
  * ✅ Matches Songsterr's mobile UI pattern
+ * ✅ Pass isMobileLandscape to MobileDrawer for landscape mode support
  * 
  * 🔒 PRESERVED FROM V92:
  * ✅ All mobile icons use standard cyan-400 blue
@@ -257,10 +258,10 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               onClick={props.onPlayPause}
               disabled={!props.api}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${showYouTubeButton
-                  ? '' /* YouTube button has its own colors */
-                  : props.isPlaying
-                    ? 'text-orange-400 hover:text-orange-300'
-                    : 'text-cyan-400 hover:text-cyan-300'
+                ? '' /* YouTube button has its own colors */
+                : props.isPlaying
+                  ? 'text-orange-400 hover:text-orange-300'
+                  : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
@@ -313,7 +314,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           </div>
         </div>
 
-        {/* Mobile Drawer */}
+        {/* Mobile Drawer - V93: Pass isMobileLandscape for landscape support */}
         <MobileDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
@@ -321,6 +322,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
+          isMobileLandscape={props.isMobileLandscape}
         />
       </div>
     </>

@@ -1,26 +1,37 @@
 'use client';
 
 /**
- * MobileDrawer.tsx - V94 YOUTUBE INTEGRATION
- * Date: November 21st, 2025
+ * MobileDrawer.tsx - V95: LANDSCAPE MODE FIX
+ * Date: December 15th, 2025
  * 
- * 🆕 NEW IN V94:
- * ✅ Updated Audio Source section with radio button cards (Songsterr style)
- * ✅ Original option now shows "YouTube Player" (instead of coming soon)
- * ✅ Auto-triggers YouTube player when Original selected
+ * 🔧 NEW IN V95:
+ * ✅ Added isMobileLandscape prop
+ * ✅ Drawer now shows in landscape mode (was hidden due to md:hidden)
+ * ✅ Conditional classes: show if mobile OR if isMobileLandscape
+ * 
+ * 🔒 PRESERVED FROM V94:
+ * ✅ Audio Source radio button cards (Songsterr style)
+ * ✅ Original option shows "YouTube Player"
  * ✅ Active state with colored borders and badges
- * 
- * CHANGES FROM V71:
- * ✅ Removed AudioSourceToggle component import
- * ✅ Implemented inline radio button cards
- * ✅ Added emoji icons (🎹 Synth, ▶️ Original)
- * ✅ Clean active/inactive states
  * 
  * Accessed via Gear ⚙️ icon in bottom-right corner
  */
 
 import React from 'react';
-import type { MobileDrawerProps } from './MaestroControlTypes';
+
+export interface MobileDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  audioSource: 'synth' | 'original';
+  theme?: 'light' | 'dark';
+  onAudioSourceChange: (source: 'synth' | 'original') => void;
+  onThemeToggle?: () => void;
+  onMetronomeToggle?: () => void;
+  onCountInToggle?: () => void;
+  onTunerOpen?: () => void;
+  onPrintOpen?: () => void;
+  isMobileLandscape?: boolean; // 🆕 V95: Added prop
+}
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   isOpen,
@@ -33,19 +44,23 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onCountInToggle,
   onTunerOpen,
   onPrintOpen,
+  isMobileLandscape = false, // 🆕 V95
 }) => {
   if (!isOpen) return null;
+
+  // 🆕 V95: Show drawer if on mobile (md:hidden) OR in landscape mode
+  const visibilityClass = isMobileLandscape ? 'block' : 'md:hidden';
 
   return (
     <>
       {/* Backdrop Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
+        className={`fixed inset-0 bg-black/50 z-[9998] ${visibilityClass}`}
         onClick={onClose}
       />
 
       {/* Drawer Panel - Slides up from bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-[9999] md:hidden">
+      <div className={`fixed bottom-0 left-0 right-0 z-[9999] ${visibilityClass}`}>
         <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-t-2xl shadow-2xl border-t-2 border-purple-500/50 max-h-[80vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-6 py-4 border-b border-gray-700 flex items-center justify-between">
