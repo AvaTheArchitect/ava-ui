@@ -476,20 +476,23 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const alphaTab = await import('@coderline/alphatab');
 
             if (isMobileLandscape) {
-                console.log('🎸 V97.20: LANDSCAPE mode');
+                console.log('🎸 V97.22: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // Use the scrollContainerRef for horizontal scrolling
+                // Set scroll element to the main scroll container
                 const scrollElement = scrollContainerRef?.current || container;
                 api.settings.player.scrollElement = scrollElement;
 
-                // 🆕 V97.20: Set scrollOffsetX to a small value (just enough to show cursor)
-                // This prevents the view from jumping to M4/M5 on rotation
-                (api.settings.player as any).scrollOffsetX = 50; // Small fixed offset in pixels
+                // 🆕 V97.22: Fixed 120px offset (per AlphaTab docs)
+                // This keeps cursor ~15% from left edge on ~800px wide landscape screens
+                // Adjust this value if cursor is still too close to edge
+                (api.settings.player as any).scrollOffsetX = 120;
                 (api.settings.player as any).scrollOffsetY = 0;
+
+                console.log('📐 V97.22: scrollOffsetX = 120px (fixed)');
             } else {
-                console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.22: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 const scrollElement = scrollContainerRef?.current || document.body;
@@ -506,6 +509,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         updateOrientation();
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef]);
+
+    // NOTE: Remove the dynamic playback scrollOffsetX useEffect from V97.21
+    // The fixed 120px value should work for both stopped and playing states
 
     // ========== DYNAMIC USER INTERACTION ==========
 
