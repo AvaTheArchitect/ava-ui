@@ -217,7 +217,7 @@ export default function SynthPlayerPage() {
                 // 🆕 V98.6 FIX: When PAUSED, allowSeekAhead=false means unbuffered seeks fail!
                 // Solution: Do immediate seek for visual feedback, but ALSO store as deferred
                 // to guarantee it applies on play with allowSeekAhead=true
-                
+
                 if (state === YT.PlayerState.PAUSED) {
                     // Paused: Try immediate seek but ALSO store as deferred
                     player.seekTo(seconds, false); // Try with allowSeekAhead=false first
@@ -337,8 +337,32 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         if (isMobileLandscape && mainScrollContainerRef.current) {
             // Reset to start (M1) when rotating to landscape
+            // Use multiple delays to catch after AlphaTab re-renders
             mainScrollContainerRef.current.scrollLeft = 0;
-            console.log('🔄 V98.8: Reset scroll to M1 for landscape mode');
+
+            // Also reset after short delay (after initial render)
+            setTimeout(() => {
+                if (mainScrollContainerRef.current) {
+                    mainScrollContainerRef.current.scrollLeft = 0;
+                    console.log('🔄 V98.8: Reset scroll to M1 (100ms)');
+                }
+            }, 100);
+
+            // And again after AlphaTab finishes re-rendering
+            setTimeout(() => {
+                if (mainScrollContainerRef.current) {
+                    mainScrollContainerRef.current.scrollLeft = 0;
+                    console.log('🔄 V98.8: Reset scroll to M1 (300ms)');
+                }
+            }, 300);
+
+            // Final reset after full re-render
+            setTimeout(() => {
+                if (mainScrollContainerRef.current) {
+                    mainScrollContainerRef.current.scrollLeft = 0;
+                    console.log('🔄 V98.8: Reset scroll to M1 (500ms)');
+                }
+            }, 500);
         }
     }, [isMobileLandscape]);
 
@@ -839,12 +863,12 @@ export default function SynthPlayerPage() {
                     id="maestro-player"
                     className={`
                         bg-white
-                        ${isMobileLandscape 
-                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[12vh]' 
+                        ${isMobileLandscape
+                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[12vh]'
                             : 'w-full'
                         }
                     `}
-                    /* V98.8: pt-[12vh] positions staff higher, leaving room for notation below */
+                /* V98.8: pt-[12vh] positions staff higher, leaving room for notation below */
                 >
                     <AlphaTabRenderer
                         fileUrl={currentFileUrl}

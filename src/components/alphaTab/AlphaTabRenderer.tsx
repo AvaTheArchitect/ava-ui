@@ -476,26 +476,26 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const alphaTab = await import('@coderline/alphatab');
 
             if (isMobileLandscape) {
-                console.log('🎸 V97.19: LANDSCAPE mode');
+                console.log('🎸 V97.20: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // 🆕 V97.19: Use the scrollContainerRef for horizontal scrolling
+                // Use the scrollContainerRef for horizontal scrolling
                 const scrollElement = scrollContainerRef?.current || container;
                 api.settings.player.scrollElement = scrollElement;
 
-                // 🆕 V97.19: Increased from 0.15 to 0.30 for better cursor visibility
-                // This positions the cursor 30% from the left edge, keeping it visible
-                (api.settings.player as any).scrollOffsetX = scrollElement.clientWidth * 0.30;
-                (api.settings.player as any).scrollOffsetY = 0; // No vertical offset in landscape
+                // 🆕 V97.20: Set scrollOffsetX to a small value (just enough to show cursor)
+                // This prevents the view from jumping to M4/M5 on rotation
+                (api.settings.player as any).scrollOffsetX = 50; // Small fixed offset in pixels
+                (api.settings.player as any).scrollOffsetY = 0;
             } else {
-                console.log('📱 V97.19: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 const scrollElement = scrollContainerRef?.current || document.body;
                 api.settings.player.scrollElement = scrollElement;
                 (api.settings.player as any).scrollOffsetY = -200;
-                (api.settings.player as any).scrollOffsetX = 0; // No horizontal offset in portrait
+                (api.settings.player as any).scrollOffsetX = 0;
             }
 
             await api.updateSettings();
