@@ -1,15 +1,20 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.19: FIX MOBILE LANDSCAPE CURSOR SCROLL
+ * AlphaTab Renderer - V97.20: FIX MOBILE LANDSCAPE CURSOR SCROLL
  * Date for Records: December 17th, 2025
  * 
- * 🔧 V97.19 CRITICAL FIX - MOBILE LANDSCAPE CURSOR OFF-SCREEN:
- * ✅ Reverted to working V61 scroll offset approach
- * ✅ Uses single `scrollOffset` property (not scrollOffsetX/Y)
- * ✅ Dynamic 15% offset for landscape (anchors cursor properly)
+ * 🔧 V97.20 CRITICAL FIX - MOBILE LANDSCAPE CURSOR OFF-SCREEN:
+ * ✅ Uses `scrollOffset` (NOT scrollOffsetX/scrollOffsetY!)
+ * ✅ Dynamic 15% offset for landscape: container.clientWidth * 0.15
  * ✅ Uses container directly as scrollElement in landscape
+ * ✅ ScrollMode.Continuous (numeric 1) for proper auto-scroll
  * ✅ Added orientation change listener for live rotation handling
+ * 
+ * 📖 Key Insight:
+ * - V97.18 used scrollOffsetX/scrollOffsetY (WRONG)
+ * - V61 (working) used scrollOffset (CORRECT)
+ * - AlphaTab uses single scrollOffset property for both horizontal/vertical
  * 
  * 🔒 PRESERVED FROM V97.18:
  * ✅ Block clicks when (seeking=true AND playing=true)
@@ -266,7 +271,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     useEffect(() => {
         if (isSeeking || isPlaying) {
-            console.log(`🔒 V97.19: State - seeking:${isSeeking}, playing:${isPlaying}`);
+            console.log(`🔒 V97.20: State - seeking:${isSeeking}, playing:${isPlaying}`);
         }
     }, [isSeeking, isPlaying]);
 
@@ -460,7 +465,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ========== V97.19 FIX: ORIENTATION HANDLING (from V61) ==========
+    // ========== V97.20 FIX: ORIENTATION HANDLING (exact V61 approach) ==========
 
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
@@ -471,44 +476,44 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const handleOrientationChange = async () => {
             const alphaTab = await import('@coderline/alphatab');
-            
+
             // Check actual orientation (more reliable than prop)
             const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
-            
-            console.log(`🔄 V97.19: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}`);
+
+            console.log(`🔄 V97.20: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}, containerWidth:${container.clientWidth}`);
 
             if (isLandscape) {
                 // 🎸 LANDSCAPE: Horizontal layout + Container Scroll
-                console.log('🎸 V97.19: LANDSCAPE mode');
+                console.log('🎸 V97.20: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
+
+                // ✅ V97.20: Use numeric value 1 for Continuous (per AlphaTab docs)
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // ✅ V97.19 FIX: Use container directly as scrollElement
+                // ✅ V97.20 FIX: Use container directly as scrollElement
                 api.settings.player.scrollElement = container;
 
-                // ✅ V97.19 FIX: Use single scrollOffset with dynamic 15% calculation
-                // This anchors the cursor at 15% from the left edge
+                // ✅ V97.20 CRITICAL FIX: Use `scrollOffset` (NOT scrollOffsetX!)
+                // This is the exact property name from working V61
                 const horizontalOffset = container.clientWidth * 0.15;
-                (api.settings.player as any).scrollOffsetX = horizontalOffset;
-                (api.settings.player as any).scrollOffsetY = 0;
+                (api.settings.player as any).scrollOffset = horizontalOffset;
 
-                console.log(`📐 V97.19: Horizontal layout, scrollElement=container, offsetX=${horizontalOffset.toFixed(0)}px (15%)`);
+                console.log(`📐 V97.20: Horizontal layout, scrollElement=container, scrollOffset=${horizontalOffset.toFixed(0)}px (15% of ${container.clientWidth}px)`);
 
             } else {
                 // 📱 PORTRAIT/DESKTOP: Page layout
-                console.log('📱 V97.19: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                
+
                 // ✅ Use scrollContainerRef or document.documentElement for portrait
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-                
-                // Vertical offset for portrait mode
-                (api.settings.player as any).scrollOffsetY = -200;
-                (api.settings.player as any).scrollOffsetX = 0;
 
-                console.log('📐 V97.19: Page layout, scrollOffsetY=-200px');
+                // ✅ V97.20: Use scrollOffset for vertical too (100px from V61)
+                (api.settings.player as any).scrollOffset = 100;
+
+                console.log('📐 V97.20: Page layout, scrollOffset=100px');
             }
 
             // Apply settings and re-render
@@ -524,10 +529,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         // Listen for orientation changes (live rotation)
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleMediaChange = () => {
-            console.log('📱 V97.19: Orientation change detected');
+            console.log('📱 V97.20: Orientation change detected');
             handleOrientationChange();
         };
-        
+
         mediaQuery.addEventListener('change', handleMediaChange);
 
         return () => {
