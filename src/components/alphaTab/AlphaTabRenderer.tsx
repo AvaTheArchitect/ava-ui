@@ -1,20 +1,19 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.20: FIX MOBILE LANDSCAPE CURSOR SCROLL
+ * AlphaTab Renderer - V97.21: DYNAMIC ISLAND OFFSET FIX
  * Date for Records: December 17th, 2025
  * 
- * 🔧 V97.20 CRITICAL FIX - MOBILE LANDSCAPE CURSOR OFF-SCREEN:
+ * 🔧 V97.21 TWEAK - CLEAR iPHONE DYNAMIC ISLAND:
+ * ✅ Increased scrollOffset from 15% to 25% for Dynamic Island clearance
+ * ✅ On iPhone 16 Pro Max landscape (~932px), this gives ~233px offset
+ * 
+ * 🔧 V97.21 CRITICAL FIX - MOBILE LANDSCAPE CURSOR OFF-SCREEN:
  * ✅ Uses `scrollOffset` (NOT scrollOffsetX/scrollOffsetY!)
- * ✅ Dynamic 15% offset for landscape: container.clientWidth * 0.15
+ * ✅ Dynamic % offset for landscape: container.clientWidth * 0.25
  * ✅ Uses container directly as scrollElement in landscape
  * ✅ ScrollMode.Continuous (numeric 1) for proper auto-scroll
  * ✅ Added orientation change listener for live rotation handling
- * 
- * 📖 Key Insight:
- * - V97.18 used scrollOffsetX/scrollOffsetY (WRONG)
- * - V61 (working) used scrollOffset (CORRECT)
- * - AlphaTab uses single scrollOffset property for both horizontal/vertical
  * 
  * 🔒 PRESERVED FROM V97.18:
  * ✅ Block clicks when (seeking=true AND playing=true)
@@ -476,26 +475,26 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const handleOrientationChange = async () => {
             const alphaTab = await import('@coderline/alphatab');
-
+            
             // Check actual orientation (more reliable than prop)
             const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
-
+            
             console.log(`🔄 V97.20: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}, containerWidth:${container.clientWidth}`);
 
             if (isLandscape) {
                 // 🎸 LANDSCAPE: Horizontal layout + Container Scroll
                 console.log('🎸 V97.20: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
+                
                 // ✅ V97.20: Use numeric value 1 for Continuous (per AlphaTab docs)
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
                 // ✅ V97.20 FIX: Use container directly as scrollElement
                 api.settings.player.scrollElement = container;
 
-                // ✅ V97.20 CRITICAL FIX: Use `scrollOffset` (NOT scrollOffsetX!)
-                // This is the exact property name from working V61
-                const horizontalOffset = container.clientWidth * 0.15;
+                // ✅ V97.21 FIX: Use `scrollOffset` (NOT scrollOffsetX!)
+                // Increased from 0.15 to 0.25 to clear iPhone Dynamic Island
+                const horizontalOffset = container.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
                 console.log(`📐 V97.20: Horizontal layout, scrollElement=container, scrollOffset=${horizontalOffset.toFixed(0)}px (15% of ${container.clientWidth}px)`);
@@ -505,11 +504,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
+                
                 // ✅ Use scrollContainerRef or document.documentElement for portrait
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-
+                
                 // ✅ V97.20: Use scrollOffset for vertical too (100px from V61)
                 (api.settings.player as any).scrollOffset = 100;
 
@@ -532,7 +531,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             console.log('📱 V97.20: Orientation change detected');
             handleOrientationChange();
         };
-
+        
         mediaQuery.addEventListener('change', handleMediaChange);
 
         return () => {
