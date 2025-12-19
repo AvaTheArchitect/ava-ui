@@ -1,28 +1,22 @@
 'use client';
 
 /**
- * TransportBar.tsx - V88: FIXED HEIGHT (74px flat)
- * Date: November 19th, 2025
+ * TransportBar.tsx - V89: ENABLED MORE MENU WITH THEME TOGGLE
+ * Date: December 18th, 2025
  * 
- * 🔧 NEW IN V88:
- * ✅ FIXED: Changed py-2 to h-[74px] - exact 74px height (was showing 90px)
- * ✅ Uses items-center to vertically align all buttons
+ * 🆕 NEW IN V89:
+ * ✅ MORE button now enabled with dropdown panel
+ * ✅ Theme toggle (Dark/Light mode) in MORE menu
+ * ✅ Click outside to close dropdown
+ * ✅ Panel closes when theme is toggled
  * 
- * 🔒 LOCKED VALUES:
- * - Total Height: 74px (h-[74px] on container)
- * - Left padding: 50px (pl-[50px])
- * - Right padding: 50px (pr-[50px])
- * - All buttons: h-[74px]
- * 
- * KEPT FROM V87.3:
- * ✅ Three-section layout: [Left 50px] [Middle flex-1] [Right 50px]
- * ✅ Print + More grouped with 0px gap
- * ✅ Editor button (pencil icon)
- * ✅ Darker blue: text-blue-400
- * ✅ Adaptive middle spacing (justify-evenly)
+ * 🔒 PRESERVED FROM V88:
+ * ✅ FIXED HEIGHT (74px flat)
+ * ✅ Three-section layout
+ * ✅ All other buttons remain as-is
  */
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { PlaybackControls } from './PlaybackControls';
 import { SpeedControl } from './SpeedControl';
 import { LoopControl } from './LoopControl';
@@ -41,6 +35,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   songInfo,
   trackMuteState,
   trackSoloState,
+  theme,
   onPlayPause,
   onLoopToggle,
   onSpeedChange,
@@ -48,10 +43,47 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   onTrackChange,
   onTrackMuteToggle,
   onTrackSoloToggle,
+  onThemeToggle,
 }) => {
+  // 🆕 V89: State for MORE menu
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // 🆕 V89: Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreMenuOpen(false);
+      }
+    };
+
+    if (isMoreMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMoreMenuOpen]);
+
+  // 🆕 V89: Close menu when playback starts
+  useEffect(() => {
+    if (isPlaying) {
+      setIsMoreMenuOpen(false);
+    }
+  }, [isPlaying]);
+
+  // 🆕 V89: Handle theme toggle from MORE menu
+  const handleThemeToggleClick = () => {
+    if (onThemeToggle) {
+      onThemeToggle();
+    }
+    setIsMoreMenuOpen(false);
+  };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
-      {/* 🔒 FIXED: h-[74px] = exact 74px height (was py-2 which created 90px total) */}
+      {/* 🔒 FIXED: h-[74px] = exact 74px height */}
       <div className="max-w-screen-2xl mx-auto h-[74px] flex items-center">
 
         {/* 🔒 LEFT SECTION: Track Mixer + Play - 50px left padding */}
@@ -149,7 +181,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           </button>
         </div>
 
-        {/* 🔒 RIGHT SECTION: Print + More (0px gap) + Editor - 50px right padding */}
+        {/* 🔒 RIGHT SECTION: Print + More + Editor - 50px right padding */}
         <div className="flex items-center pr-[50px]">
           {/* Print + More grouped together (NO gap) */}
           <div className="flex items-center">
@@ -164,19 +196,61 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               </div>
             </button>
 
-            {/* More - 0px gap with Print */}
-            <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed">
-              <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
-                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-              </svg>
-              <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">MORE</span>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-[7px] pb-[10px] bg-black/95 text-white text-[13px] leading-[18px] tracking-[0.4px] rounded-lg opacity-0 group-hover:opacity-100 transition-[opacity,transform] duration-150 ease-out whitespace-nowrap pointer-events-none z-[11000]">
-                More options (Coming soon)
-              </div>
-            </button>
+            {/* 🆕 V89: MORE - Now enabled with dropdown */}
+            <div className="relative" ref={moreMenuRef}>
+              <button
+                onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                className={`group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] transition-colors ${isMoreMenuOpen ? 'text-purple-400' : 'text-blue-400 hover:text-blue-300'
+                  }`}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" className="currentColor" fill="currentColor">
+                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                </svg>
+                <span className={`text-[12px] uppercase tracking-wide ${isMoreMenuOpen ? 'text-purple-400' : 'text-blue-400/70'
+                  }`}>MORE</span>
+
+                {/* Tooltip - only show when menu is closed */}
+                {!isMoreMenuOpen && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-[7px] pb-[10px] bg-black/95 text-white text-[13px] leading-[18px] tracking-[0.4px] rounded-lg opacity-0 group-hover:opacity-100 transition-[opacity,transform] duration-150 ease-out whitespace-nowrap pointer-events-none z-[11000]">
+                    More options
+                  </div>
+                )}
+              </button>
+
+              {/* 🆕 V89: MORE Dropdown Menu */}
+              {isMoreMenuOpen && (
+                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-2 min-w-[200px] z-[11000]">
+                  {/* Theme Toggle */}
+                  <button
+                    onClick={handleThemeToggleClick}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700/50 transition-colors text-left"
+                  >
+                    <span className="text-xl">
+                      {theme === 'dark' ? '☀️' : '🌙'}
+                    </span>
+                    <div>
+                      <div className="text-sm font-medium text-gray-200">
+                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Switch to {theme === 'dark' ? 'light' : 'dark'} theme
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Divider */}
+                  <div className="my-2 border-t border-gray-700" />
+
+                  {/* Future options placeholder */}
+                  <div className="px-3 py-2 text-xs text-gray-500 italic">
+                    More options coming soon...
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 🆕 V87.3: Editor button (pencil icon) - separate from Print/More group */}
+          {/* Editor button - separate from Print/More group */}
           <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed ml-4">
             <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
               <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />

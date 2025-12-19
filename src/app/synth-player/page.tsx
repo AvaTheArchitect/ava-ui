@@ -887,6 +887,7 @@ export default function SynthPlayerPage() {
                         isLooping={isLooping}
                         onLoopRangeChange={handleLoopRangeChange}
                         audioSource={audioSource}
+                        theme={theme}  // 🆕 V98.6: Pass theme to AlphaTab for dark mode
                     />
                 </div>
 

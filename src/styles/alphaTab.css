@@ -1,19 +1,16 @@
 /**
- * alphaTab Required Styles - V92 MINIMAL
- * Date: November 19th, 2025
+ * alphaTab Required Styles - V93 DARK MODE SUPPORT
+ * Date: December 18th, 2025
  * 
- * NEW IN V92:
- * ✅ Minimal z-index overrides for loop handles (Gemini's architecture)
- * ✅ Removed empty rulesets (.maestro-loop-handle-start/end)
- * ✅ Removed old loop handle styles (now in loopHandles.ts inline)
- * ✅ Kept essential alphaTab core styles only
+ * 🆕 NEW IN V93:
+ * ✅ Dark mode selection overlay (lighter for dark backgrounds)
+ * ✅ Dark mode cursor colors (brighter purple for visibility)
+ * ✅ Dark mode highlight colors
+ * ✅ Container background inherits from parent (theme-aware)
  * 
- * ARCHITECTURE:
- * - Menu Tray: z-index: 9999
- * - AlphaTab Container: z-index: 10
- * - Loop Handles: z-index: 1001 (defined here)
- * - Loop Bubbles: z-index: 1002 (defined here)
- * - AlphaTab Cursor: z-index: 1000 (internal)
+ * PRESERVED FROM V92:
+ * ✅ Minimal z-index overrides for loop handles
+ * ✅ Essential alphaTab core styles
  */
 
 /* Main alphaTab container - PORTRAIT MODE (default) */
@@ -38,10 +35,10 @@
     display: none !important;
 }
 
-/* Beat line cursor - SIMPLE purple line */
+/* Beat line cursor - Purple line (works on both light and dark) */
 .at-cursor-beat {
     background: rgba(168, 85, 247, 0.9) !important;
-    z-index: 999 !important; /* Above selection but below handles */
+    z-index: 999 !important;
 }
 
 /* High specificity version for safety */
@@ -49,7 +46,7 @@
     background: rgba(168, 85, 247, 0.9) !important;
 }
 
-/* Mobile-specific */
+/* Mobile-specific cursor */
 @media (max-width: 768px) {
     .at-cursor-beat {
         background: rgba(168, 85, 247, 1) !important;
@@ -59,46 +56,51 @@
 
 /* ========================================
    LOOP SELECTION OVERLAY
-   - Gray semi-transparent background only
-   - NO borders, NO pseudo-elements
+   - Light mode: dark overlay
+   - Dark mode: lighter overlay for contrast
    ======================================== */
 
-/* Gray overlay for selected loop area */
+/* Default (light mode) - Gray overlay */
 .at-selection div {
     position: absolute;
-    background: rgba(0, 0, 0, 0.15) !important; /* Light gray overlay */
-    pointer-events: none; /* Let touches pass through */
-    z-index: 997; /* Below cursor and handles */
+    background: rgba(0, 0, 0, 0.15) !important;
+    pointer-events: none;
+    z-index: 997;
     border: none !important;
     border-radius: 0;
 }
 
+/* 🆕 V93: Dark mode selection overlay - lighter for visibility */
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-selection div,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-selection div {
+    background: rgba(255, 255, 255, 0.15) !important;
+}
+
 /* ========================================
-   V92 LOOP HANDLE Z-INDEX SAFETY
-   - Ensures custom loop handles render above cursor
-   - Handles created in loopHandles.ts with inline styles
-   - Only z-index overrides needed here
+   V93 LOOP HANDLE Z-INDEX SAFETY
    ======================================== */
 
-/* Loop handle z-index (above cursor at z-index: 1000) */
 .maestro-loop-handle {
     z-index: 1001 !important;
 }
 
-/* Loop bubble z-index (above handle line) */
 .maestro-loop-bubble {
     z-index: 1002 !important;
 }
 
 /* ========================================
-   ALPHATAB CORE STYLES
+   ALPHATAB HIGHLIGHT EFFECT
+   - Purple for active notes (same on both themes)
    ======================================== */
 
-/* Highlight effect during playback */
 .at-highlight * {
     fill: #a855f7 !important;
     stroke: #a855f7 !important;
 }
+
+/* ========================================
+   ALPHATAB CORE STYLES
+   ======================================== */
 
 /* Music font - alphaTab uses Bravura font */
 @font-face {
@@ -120,28 +122,25 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tab notation elements */
+/* Tab notation elements - inherit colors from AlphaTab settings */
 .at-tab-line {
-    stroke: #666;
-    stroke-width: 1;
+    /* Color controlled by AlphaTab resources.staffLineColor */
 }
 
 .at-tab-number {
-    fill: #000;
+    /* Color controlled by AlphaTab resources.mainGlyphColor */
     font-family: Arial, sans-serif;
     font-weight: bold;
 }
 
 /* Standard notation elements */
 .at-score-staff-line {
-    stroke: #000;
-    stroke-width: 1;
+    /* Color controlled by AlphaTab resources.staffLineColor */
 }
 
 /* Bar lines */
 .at-bar-line {
-    stroke: #000;
-    stroke-width: 1.5;
+    /* Color controlled by AlphaTab resources.barSeparatorColor */
 }
 
 /* Loading overlay */
@@ -158,7 +157,13 @@
     z-index: 10000;
 }
 
-/* Scrollbar styling */
+/* 🆕 V93: Dark mode loading overlay */
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-loading,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-loading {
+    background: rgba(26, 26, 26, 0.9);
+}
+
+/* Scrollbar styling - Light mode */
 .at-surface::-webkit-scrollbar {
     width: 12px;
     height: 12px;
@@ -175,6 +180,22 @@
 
 .at-surface::-webkit-scrollbar-thumb:hover {
     background: #555;
+}
+
+/* 🆕 V93: Dark mode scrollbar styling */
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-track,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-track {
+    background: #2a2a2a;
+}
+
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb {
+    background: #555;
+}
+
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb:hover,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb:hover {
+    background: #777;
 }
 
 /* Print styles */

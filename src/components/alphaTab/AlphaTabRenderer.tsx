@@ -1,25 +1,22 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.26: DYNAMIC ISLAND OFFSET FIX
- * Date for Records: December 17th, 2025
+ * AlphaTab Renderer - V97.27: DARK MODE SUPPORT
+ * Date for Records: December 18th, 2025
  * 
- * 🔧 V97.21 TWEAK - CLEAR iPHONE DYNAMIC ISLAND:
- * ✅ Increased scrollOffset from 15% to 25% for Dynamic Island clearance
- * ✅ On iPhone 16 Pro Max landscape (~932px), this gives ~233px offset
+ * 🆕 V97.27 NEW FEATURE - DARK MODE:
+ * ✅ Added `theme` prop ('light' | 'dark')
+ * ✅ Dark mode: Black canvas (#1a1a1a) with white notation
+ * ✅ Light mode: White canvas with black notation (default)
+ * ✅ Theme changes trigger re-render with updated colors
+ * ✅ Uses AlphaTab's display.resources for color customization
  * 
- * 🔧 V97.21 CRITICAL FIX - MOBILE LANDSCAPE CURSOR OFF-SCREEN:
- * ✅ Uses `scrollOffset` (NOT scrollOffsetX/scrollOffsetY!)
- * ✅ Dynamic % offset for landscape: container.clientWidth * 0.25
- * ✅ Uses container directly as scrollElement in landscape
- * ✅ ScrollMode.Continuous (numeric 1) for proper auto-scroll
- * ✅ Added orientation change listener for live rotation handling
- * 
- * 🔒 PRESERVED FROM V97.18:
+ * 🔒 PRESERVED FROM V97.26:
+ * ✅ Dynamic Island offset fix (scrollOffset 25%)
+ * ✅ CSS safe-area padding for notch/island
  * ✅ Block clicks when (seeking=true AND playing=true)
  * ✅ External media handler integration
  * ✅ Purple notation + auto-scroll
- * ✅ Just set api.tickPosition - AlphaTab handles seekTo automatically
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -45,6 +42,7 @@ export interface AlphaTabRendererProps {
     externalMediaHandler?: any;
     isSeeking?: boolean;
     isPlaying?: boolean;
+    theme?: 'light' | 'dark'; // 🆕 V97.27: Theme support
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -258,6 +256,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     audioSource = 'synth',
     isSeeking = false,
     isPlaying = false,
+    theme = 'light', // 🆕 V97.27: Default to light mode
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<AlphaTabApi | null>(null);
@@ -270,12 +269,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     useEffect(() => {
         if (isSeeking || isPlaying) {
-            console.log(`🔒 V97.20: State - seeking:${isSeeking}, playing:${isPlaying}`);
+            console.log(`🔒 V97.27: State - seeking:${isSeeking}, playing:${isPlaying}`);
         }
     }, [isSeeking, isPlaying]);
 
     useEffect(() => {
-        console.log(`🔄 V97.19: Render cycle: ${renderCycle} (debug only)`);
+        console.log(`🔄 V97.27: Render cycle: ${renderCycle} (debug only)`);
     }, [renderCycle]);
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
@@ -296,6 +295,48 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     const [isMobile] = useState(detectMobile());
 
+    // ========== 🆕 V97.27: THEME CHANGE HANDLER ==========
+
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api || !isRendered) return;
+
+        const applyTheme = async () => {
+            const alphaTab = await import('@coderline/alphatab');
+
+            console.log(`🎨 V97.27: Applying ${theme} theme`);
+
+            // Get the resources object for color customization
+            const resources = api.settings.display.resources as any;
+
+            if (theme === 'dark') {
+                // 🌙 DARK MODE COLORS
+                resources.staffLineColor = new alphaTab.model.Color(85, 85, 85, 255);      // #555555
+                resources.barSeparatorColor = new alphaTab.model.Color(136, 136, 136, 255); // #888888
+                resources.mainGlyphColor = new alphaTab.model.Color(255, 255, 255, 255);    // #ffffff
+                resources.secondaryGlyphColor = new alphaTab.model.Color(224, 224, 224, 255); // #e0e0e0
+                resources.scoreInfoColor = new alphaTab.model.Color(255, 255, 255, 255);    // #ffffff
+                resources.barNumberColor = new alphaTab.model.Color(153, 153, 153, 255);    // #999999
+                console.log('🌙 V97.27: Dark mode colors applied');
+            } else {
+                // ☀️ LIGHT MODE COLORS (defaults)
+                resources.staffLineColor = new alphaTab.model.Color(153, 153, 153, 255);    // #999999
+                resources.barSeparatorColor = new alphaTab.model.Color(102, 102, 102, 255); // #666666
+                resources.mainGlyphColor = new alphaTab.model.Color(0, 0, 0, 255);          // #000000
+                resources.secondaryGlyphColor = new alphaTab.model.Color(0, 0, 0, 255);     // #000000
+                resources.scoreInfoColor = new alphaTab.model.Color(0, 0, 0, 255);          // #000000
+                resources.barNumberColor = new alphaTab.model.Color(102, 102, 102, 255);    // #666666
+                console.log('☀️ V97.27: Light mode colors applied');
+            }
+
+            // Apply and re-render
+            await api.updateSettings();
+            api.render();
+        };
+
+        applyTheme();
+    }, [theme, isRendered]);
+
     // ========== INIT ALPHATAB ==========
 
     useEffect(() => {
@@ -308,7 +349,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V97.19: Initializing AlphaTab...');
+                console.log('🎵 V97.27: Initializing AlphaTab...');
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
@@ -329,18 +370,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V97.19: AlphaTab initialized');
+                console.log('✅ V97.27: AlphaTab initialized');
 
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
 
                 await loadGuitarProFile(api, fileUrl);
-                console.log('📂 V97.19: File loaded');
+                console.log('📂 V97.27: File loaded');
                 initialFileLoadedRef.current = true;
                 lastLoadedFileRef.current = fileUrl;
 
                 api.scoreLoaded.on((score: any) => {
-                    console.log('📊 V97.19: Score loaded');
+                    console.log('📊 V97.27: Score loaded');
                     const tracks: Track[] = score.tracks.map((t: any) => ({
                         index: t.index,
                         name: t.name,
@@ -360,12 +401,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     if (api && !destroyed) {
                         api.updateSettings();
                         api.render();
-                        console.log('✅ V97.19: Layout recalculated');
+                        console.log('✅ V97.27: Layout recalculated');
                     }
                 });
 
                 api.renderFinished.on(() => {
-                    console.log('🎨 V97.19: Render finished');
+                    console.log('🎨 V97.27: Render finished');
                     setIsRendered(true);
                     setIsLoading(false);
                     setRenderCycle(rc => rc + 1);
@@ -374,7 +415,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 onApiReady?.(api);
             } catch (err) {
-                console.error('❌ V97.19: Init error:', err);
+                console.error('❌ V97.27: Init error:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 setIsLoading(false);
                 onError?.(errorMsg);
@@ -403,7 +444,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const api = apiRef.current;
         if (!api) return;
 
-        console.log(`🔄 V97.19: Updating player mode to: ${playerMode}`);
+        console.log(`🔄 V97.27: Updating player mode to: ${playerMode}`);
         (api.settings.player as any).playerMode = playerMode;
         api.updateSettings();
     }, [playerMode]);
@@ -417,14 +458,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (externalMediaHandler) {
             const output = api.player.output as any;
             output.handler = externalMediaHandler;
-            console.log('🔗 V97.19: External handler attached');
+            console.log('🔗 V97.27: External handler attached');
 
             return () => {
                 if (api.player?.output) {
                     const output = api.player.output as any;
                     if (output.handler) {
                         output.handler = null;
-                        console.log('🔌 V97.19: Handler detached');
+                        console.log('🔌 V97.27: Handler detached');
                     }
                 }
             };
@@ -432,7 +473,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const output = api.player.output as any;
             if (output.handler) {
                 output.handler = null;
-                console.log('🔌 V97.19: Handler cleared');
+                console.log('🔌 V97.27: Handler cleared');
             }
         }
     }, [externalMediaHandler]);
@@ -444,18 +485,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (!api || !initialFileLoadedRef.current) return;
 
         if (lastLoadedFileRef.current === fileUrl) {
-            console.log('⏭️ V97.19: Same file, skipping reload');
+            console.log('⏭️ V97.27: Same file, skipping reload');
             return;
         }
 
         const loadNewFile = async () => {
             try {
-                console.log(`🔄 V97.19: Loading new file: ${fileUrl}`);
+                console.log(`🔄 V97.27: Loading new file: ${fileUrl}`);
                 await loadGuitarProFile(api, fileUrl);
                 lastLoadedFileRef.current = fileUrl;
-                console.log('✅ V97.19: New file loaded');
+                console.log('✅ V97.27: New file loaded');
             } catch (err) {
-                console.error('❌ V97.19: Error loading new file:', err);
+                console.error('❌ V97.27: Error loading new file:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 onError?.(errorMsg);
             }
@@ -464,7 +505,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ========== V97.20 FIX: ORIENTATION HANDLING (exact V61 approach) ==========
+    // ========== V97.26 FIX: ORIENTATION HANDLING ==========
 
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
@@ -476,59 +517,45 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const handleOrientationChange = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
-            // Check actual orientation (more reliable than prop)
             const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
 
-            console.log(`🔄 V97.20: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}, containerWidth:${container.clientWidth}`);
+            console.log(`🔄 V97.27: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}, containerWidth:${container.clientWidth}`);
 
             if (isLandscape) {
-                // 🎸 LANDSCAPE: Horizontal layout + Container Scroll
-                console.log('🎸 V97.20: LANDSCAPE mode');
+                console.log('🎸 V97.27: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
-                // ✅ V97.20: Use numeric value 1 for Continuous (per AlphaTab docs)
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
-                // ✅ V97.20 FIX: Use container directly as scrollElement
                 api.settings.player.scrollElement = container;
 
-                // ✅ V97.21 FIX: Use `scrollOffset` (NOT scrollOffsetX!)
-                // Increased from 0.15 to 0.25 to clear iPhone Dynamic Island
                 const horizontalOffset = container.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
-                console.log(`📐 V97.20: Horizontal layout, scrollElement=container, scrollOffset=${horizontalOffset.toFixed(0)}px (15% of ${container.clientWidth}px)`);
+                console.log(`📐 V97.27: Horizontal layout, scrollOffset=${horizontalOffset.toFixed(0)}px`);
 
             } else {
-                // 📱 PORTRAIT/DESKTOP: Page layout
-                console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.27: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
-                // ✅ Use scrollContainerRef or document.documentElement for portrait
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
 
-                // ✅ V97.20: Use scrollOffset for vertical too (100px from V61)
                 (api.settings.player as any).scrollOffset = 100;
 
-                console.log('📐 V97.20: Page layout, scrollOffset=100px');
+                console.log('📐 V97.27: Page layout, scrollOffset=100px');
             }
 
-            // Apply settings and re-render
             await api.updateSettings();
             window.dispatchEvent(new Event('resize'));
             await new Promise((r) => setTimeout(r, 50));
             api.render();
         };
 
-        // Apply initial orientation
         handleOrientationChange();
 
-        // Listen for orientation changes (live rotation)
         const mediaQuery = window.matchMedia('(orientation: landscape)');
         const handleMediaChange = () => {
-            console.log('📱 V97.20: Orientation change detected');
+            console.log('📱 V97.27: Orientation change detected');
             handleOrientationChange();
         };
 
@@ -683,15 +710,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         if (!api || !container || !isRendered || isLooping) {
-            console.log(`🔍 V97.19: Click handler NOT attached - api:${!!api}, container:${!!container}, isRendered:${isRendered}, isLooping:${isLooping}`);
+            console.log(`🔍 V97.27: Click handler NOT attached - api:${!!api}, container:${!!container}, isRendered:${isRendered}, isLooping:${isLooping}`);
             return;
         }
 
-        console.log(`🖱️ V97.19: Single-click handler ATTACHED (audioSource=${audioSource})`);
+        console.log(`🖱️ V97.27: Single-click handler ATTACHED (audioSource=${audioSource})`);
 
         const handleClick = (e: MouseEvent) => {
             if (isSeeking && isPlaying) {
-                console.log(`🔒 V97.19: Click BLOCKED (seeking=true, playing=true)`);
+                console.log(`🔒 V97.27: Click BLOCKED (seeking=true, playing=true)`);
                 return;
             }
 
@@ -700,16 +727,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 const tickPosition = beat.absolutePlaybackStart;
 
                 if (audioSource === 'original') {
-                    console.log(`🖱️ V97.19: Single-click at ${tickPosition}ms (ORIGINAL mode)`);
+                    console.log(`🖱️ V97.27: Single-click at ${tickPosition}ms (ORIGINAL mode)`);
                     api.tickPosition = tickPosition;
-                    console.log(`📍 V97.19: api.tickPosition set (AlphaTab calls handler.seekTo internally)`);
+                    console.log(`📍 V97.27: api.tickPosition set (AlphaTab calls handler.seekTo internally)`);
 
                     setTimeout(() => {
-                        console.log(`🔍 V97.19 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}, isPlaying=${isPlaying}`);
+                        console.log(`🔍 V97.27 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}, isPlaying=${isPlaying}`);
                     }, 200);
                 } else {
                     api.tickPosition = tickPosition;
-                    console.log(`🖱️ V97.19: Single-click seek to ${tickPosition}ms (SYNTH mode)`);
+                    console.log(`🖱️ V97.27: Single-click seek to ${tickPosition}ms (SYNTH mode)`);
                 }
             }
         };
@@ -730,11 +757,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         if (!api || !container || !isRendered || isLooping) return;
 
-        console.log(`🖱️🖱️ V97.19: Double-click handler ATTACHED (audioSource=${audioSource})`);
+        console.log(`🖱️🖱️ V97.27: Double-click handler ATTACHED (audioSource=${audioSource})`);
 
         const handleDoubleClick = (e: MouseEvent) => {
             if (isSeeking && isPlaying) {
-                console.log(`🔒 V97.19: Double-click BLOCKED (seeking=true, playing=true)`);
+                console.log(`🔒 V97.27: Double-click BLOCKED (seeking=true, playing=true)`);
                 return;
             }
 
@@ -742,32 +769,32 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (beat && beat.absolutePlaybackStart !== undefined) {
                 const tickPosition = beat.absolutePlaybackStart;
 
-                console.log(`🖱️🖱️ V97.19: Double-click at ${tickPosition}ms (mode=${audioSource})`);
+                console.log(`🖱️🖱️ V97.27: Double-click at ${tickPosition}ms (mode=${audioSource})`);
 
                 if (audioSource === 'synth') {
                     api.tickPosition = tickPosition;
                     if (api.play) api.play();
-                    console.log('🎵 V97.19: SYNTH - cursor set + api.play()');
+                    console.log('🎵 V97.27: SYNTH - cursor set + api.play()');
                 } else {
                     const output = api.player?.output as any;
 
                     if (output?.handler) {
                         api.tickPosition = tickPosition;
-                        console.log(`📍 V97.19: api.tickPosition set (AlphaTab calls handler.seekTo internally)`);
+                        console.log(`📍 V97.27: api.tickPosition set (AlphaTab calls handler.seekTo internally)`);
 
                         if (output.handler.play) {
-                            console.log('🎬 V97.19: ORIGINAL - handler.play()');
+                            console.log('🎬 V97.27: ORIGINAL - handler.play()');
                             output.handler.play();
                         }
 
                         api.play();
-                        console.log('🎵 V97.19: ORIGINAL - api.play() for purple notation');
+                        console.log('🎵 V97.27: ORIGINAL - api.play() for purple notation');
 
                         setTimeout(() => {
-                            console.log(`🔍 V97.19 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}`);
+                            console.log(`🔍 V97.27 DEBUG: After 200ms - api.tickPosition = ${api.tickPosition}`);
                         }, 200);
                     } else {
-                        console.warn('⚠️ V97.19: No handler available for original mode');
+                        console.warn('⚠️ V97.27: No handler available for original mode');
                     }
                 }
             }
@@ -959,15 +986,20 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
     }, [isLooping]);
 
+    // ========== 🆕 V97.27: THEME-AWARE BACKGROUND COLOR ==========
+    const backgroundColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
+    const loadingBgColor = theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100';
+    const loadingTextColor = theme === 'dark' ? 'text-gray-200' : 'text-gray-700';
+
     // ========== RENDER ==========
 
     return (
         <div className={`relative ${className}`}>
             {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-xl z-10">
+                <div className={`absolute inset-0 flex items-center justify-center ${loadingBgColor} rounded-xl z-10`}>
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4" />
-                        <p className="text-gray-700 font-medium">
+                        <p className={`${loadingTextColor} font-medium`}>
                             {playerMode === 'synthesizer'
                                 ? 'Loading tab & initializing synthesizer...'
                                 : 'Loading tab...'}
@@ -984,11 +1016,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     width: '100%',
                     overflow: 'auto',
                     WebkitOverflowScrolling: 'touch',
-                    backgroundColor: '#ffffff',
+                    backgroundColor, // 🆕 V97.27: Theme-aware background
                     position: 'relative',
                     zIndex: 10,
-                    // ✅ V97.23: CSS safe-area padding for Dynamic Island
-                    // This shifts entire AlphaTab viewport away from notch/island
                     paddingLeft: 'env(safe-area-inset-left, 0px)',
                     paddingRight: 'env(safe-area-inset-right, 0px)',
                 }}

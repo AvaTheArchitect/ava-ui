@@ -1,20 +1,18 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V93: YouTube Play Button + Landscape Drawer Fix
- * Date: December 15th, 2025
+ * MaestroControlPanel.tsx - V93: Pass Theme to TransportBar
+ * Date: December 18th, 2025
  * 
- * 🎨 NEW IN V93:
- * ✅ YouTube red play button when audioSource='original' (mobile only)
- * ✅ Synth mode keeps cyan/blue play triangle
- * ✅ Matches Songsterr's mobile UI pattern
- * ✅ Pass isMobileLandscape to MobileDrawer for landscape mode support
+ * 🆕 NEW IN V93:
+ * ✅ Pass theme and onThemeToggle to TransportBar for desktop
+ * ✅ Desktop now has theme toggle via MORE menu
  * 
  * 🔒 PRESERVED FROM V92:
  * ✅ All mobile icons use standard cyan-400 blue
- * ✅ Loop ON: text-green-400, Loop OFF: text-cyan-400
+ * ✅ Loop ON: text-green-400
+ * ✅ Play keeps orange when playing
  * ✅ TrackMixer panel auto-closes when track selected
- * ✅ Play keeps orange when playing (text-orange-400)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -102,15 +100,33 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
   const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
 
-  // 🆕 V93: Determine if we should show YouTube button (original mode, mobile only)
-  const showYouTubeButton = props.audioSource === 'original';
-
   return (
     <>
       {/* DESKTOP LAYOUT */}
       {!props.isMobileLandscape && (
         <div className="hidden md:block">
-          <TransportBar {...props} />
+          <TransportBar
+            api={props.api}
+            isPlaying={props.isPlaying}
+            playbackSpeed={props.playbackSpeed}
+            isLooping={props.isLooping}
+            hasLoopSelection={props.hasLoopSelection}
+            audioSource={props.audioSource}
+            tracks={props.tracks}
+            selectedTrack={props.selectedTrack}
+            songInfo={props.songInfo}
+            trackMuteState={props.trackMuteState}
+            trackSoloState={props.trackSoloState}
+            theme={props.theme}
+            onPlayPause={props.onPlayPause}
+            onLoopToggle={props.onLoopToggle}
+            onSpeedChange={props.onSpeedChange}
+            onAudioSourceChange={props.onAudioSourceChange}
+            onTrackChange={props.onTrackChange}
+            onTrackMuteToggle={props.onTrackMuteToggle}
+            onTrackSoloToggle={props.onTrackSoloToggle}
+            onThemeToggle={props.onThemeToggle}
+          />
         </div>
       )}
 
@@ -253,51 +269,24 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 4. Play/Pause - V93: YouTube button when in original mode */}
+            {/* 4. Play/Pause - Icon Only */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${showYouTubeButton
-                ? '' /* YouTube button has its own colors */
-                : props.isPlaying
-                  ? 'text-orange-400 hover:text-orange-300'
-                  : 'text-cyan-400 hover:text-cyan-300'
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              {showYouTubeButton ? (
-                /* 🆕 V93: YouTube-style play button for original mode */
-                props.isPlaying ? (
-                  /* Pause icon - keep orange when playing */
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" className="text-orange-400">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                {props.isPlaying ? (
+                  <>
                     <rect x="7" y="5" width="3" height="14" rx="1" />
                     <rect x="14" y="5" width="3" height="14" rx="1" />
-                  </svg>
+                  </>
                 ) : (
-                  /* YouTube red play button */
-                  <svg width="32" height="32" viewBox="0 0 68 48">
-                    {/* Red rounded rectangle background */}
-                    <path
-                      d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,0,34,0,34,0S12.21,0,6.9,1.55 c-2.93,0.78-4.63,3.26-5.42,6.19C0,13.05,0,24,0,24s0,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,48,34,48,34,48s21.79,0,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C68,34.95,68,24,68,24S68,13.05,66.52,7.74z"
-                      fill="#FF0000"
-                    />
-                    {/* White play triangle */}
-                    <path d="M 45,24 27,14 27,34" fill="white" />
-                  </svg>
-                )
-              ) : (
-                /* Standard synth mode play/pause icons */
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                  {props.isPlaying ? (
-                    <>
-                      <rect x="7" y="5" width="3" height="14" rx="1" />
-                      <rect x="14" y="5" width="3" height="14" rx="1" />
-                    </>
-                  ) : (
-                    <path d="M8 5v14l11-7z" />
-                  )}
-                </svg>
-              )}
+                  <path d="M8 5v14l11-7z" />
+                )}
+              </svg>
             </button>
 
             {/* 5. Gear (Settings) - Icon Only */}
@@ -314,7 +303,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           </div>
         </div>
 
-        {/* Mobile Drawer - V93: Pass isMobileLandscape for landscape support */}
+        {/* Mobile Drawer */}
         <MobileDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
@@ -322,7 +311,6 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
-          isMobileLandscape={props.isMobileLandscape}
         />
       </div>
     </>

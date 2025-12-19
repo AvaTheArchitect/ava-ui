@@ -1,8 +1,12 @@
 /**
  * Maestro Control Panel - Shared Type Definitions
  * Centralizes all interfaces for menu tray components
- */
-
+ * MaestroControlTypes.ts - Updated for Dark Mode
+ * Date: December 18th, 2025
+ * 
+ * 🆕 UPDATES:
+ * ✅ Added theme and onThemeToggle to TransportBarProps
+ * */
 import type { AlphaTabApi, Track, SongInfo } from "@/lib/alphaTab/types";
 
 // ==================== MAIN CONTROL PANEL ====================
@@ -105,6 +109,7 @@ export interface TransportBarProps {
   songInfo: SongInfo | null;
   trackMuteState: Map<number, boolean>;
   trackSoloState: Map<number, boolean>;
+  theme?: "light" | "dark";           
   onPlayPause: () => void;
   onLoopToggle: () => void;
   onSpeedChange: (speed: number) => void;
@@ -112,6 +117,7 @@ export interface TransportBarProps {
   onTrackChange: (index: number) => void;
   onTrackMuteToggle: (index: number) => void;
   onTrackSoloToggle: (index: number) => void;
+  onThemeToggle?: () => void;         
 }
 
 export interface MobileDrawerProps {
