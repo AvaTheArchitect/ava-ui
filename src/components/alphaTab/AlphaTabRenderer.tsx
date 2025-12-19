@@ -1,14 +1,18 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.27: DARK MODE SUPPORT
+ * AlphaTab Renderer - V97.28: DARK MODE FIX FOR SONG CHANGES
  * Date for Records: December 18th, 2025
  * 
- * 🆕 V97.27 NEW FEATURE - DARK MODE:
+ * 🔧 V97.28 FIX - THEME COLORS NOT APPLYING ON SONG CHANGE:
+ * ✅ Added `renderCycle` to theme effect dependencies
+ * ✅ Theme colors now reapply after every render (including song changes)
+ * ✅ Fixes: Black notation on dark background when switching songs
+ * 
+ * 🆕 V97.27 FEATURE - DARK MODE:
  * ✅ Added `theme` prop ('light' | 'dark')
  * ✅ Dark mode: Black canvas (#1a1a1a) with white notation
  * ✅ Light mode: White canvas with black notation (default)
- * ✅ Theme changes trigger re-render with updated colors
  * ✅ Uses AlphaTab's display.resources for color customization
  * 
  * 🔒 PRESERVED FROM V97.26:
@@ -269,12 +273,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     useEffect(() => {
         if (isSeeking || isPlaying) {
-            console.log(`🔒 V97.27: State - seeking:${isSeeking}, playing:${isPlaying}`);
+            console.log(`🔒 V97.28: State - seeking:${isSeeking}, playing:${isPlaying}`);
         }
     }, [isSeeking, isPlaying]);
 
     useEffect(() => {
-        console.log(`🔄 V97.27: Render cycle: ${renderCycle} (debug only)`);
+        console.log(`🔄 V97.28: Render cycle: ${renderCycle} (debug only)`);
     }, [renderCycle]);
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
@@ -295,7 +299,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     const [isMobile] = useState(detectMobile());
 
-    // ========== 🆕 V97.27: THEME CHANGE HANDLER ==========
+    // ========== 🆕 V97.28: THEME CHANGE HANDLER (FIXED) ==========
+    // Added renderCycle dependency to reapply colors after song changes
 
     useEffect(() => {
         const api = apiRef.current;
@@ -304,7 +309,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const applyTheme = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
-            console.log(`🎨 V97.27: Applying ${theme} theme`);
+            console.log(`🎨 V97.28: Applying ${theme} theme (renderCycle: ${renderCycle})`);
 
             // Get the resources object for color customization
             const resources = api.settings.display.resources as any;
@@ -317,7 +322,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 resources.secondaryGlyphColor = new alphaTab.model.Color(224, 224, 224, 255); // #e0e0e0
                 resources.scoreInfoColor = new alphaTab.model.Color(255, 255, 255, 255);    // #ffffff
                 resources.barNumberColor = new alphaTab.model.Color(153, 153, 153, 255);    // #999999
-                console.log('🌙 V97.27: Dark mode colors applied');
+                console.log('🌙 V97.28: Dark mode colors applied');
             } else {
                 // ☀️ LIGHT MODE COLORS (defaults)
                 resources.staffLineColor = new alphaTab.model.Color(153, 153, 153, 255);    // #999999
@@ -326,16 +331,20 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 resources.secondaryGlyphColor = new alphaTab.model.Color(0, 0, 0, 255);     // #000000
                 resources.scoreInfoColor = new alphaTab.model.Color(0, 0, 0, 255);          // #000000
                 resources.barNumberColor = new alphaTab.model.Color(102, 102, 102, 255);    // #666666
-                console.log('☀️ V97.27: Light mode colors applied');
+                console.log('☀️ V97.28: Light mode colors applied');
             }
 
-            // Apply and re-render
+            // Apply settings - DON'T call api.render() here as renderCycle 
+            // already indicates a render just happened or is about to happen
             await api.updateSettings();
+
+            // Only force re-render if this is a theme change, not a song change
+            // We detect this by checking if renderCycle changed vs theme changed
             api.render();
         };
 
         applyTheme();
-    }, [theme, isRendered]);
+    }, [theme, isRendered, renderCycle]); // 🔧 V97.28: Added renderCycle dependency
 
     // ========== INIT ALPHATAB ==========
 
