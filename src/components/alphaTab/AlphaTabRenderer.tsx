@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.22: DYNAMIC ISLAND OFFSET FIX
+ * AlphaTab Renderer - V97.23: DYNAMIC ISLAND OFFSET FIX
  * Date for Records: December 17th, 2025
  * 
  * 🔧 V97.21 TWEAK - CLEAR iPHONE DYNAMIC ISLAND:
@@ -987,6 +987,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     backgroundColor: '#ffffff',
                     position: 'relative',
                     zIndex: 10,
+                    // ✅ V97.23: CSS safe-area padding for Dynamic Island
+                    // This shifts entire AlphaTab viewport away from notch/island
+                    paddingLeft: 'env(safe-area-inset-left, 0px)',
+                    paddingRight: 'env(safe-area-inset-right, 0px)',
                 }}
             />
         </div>
