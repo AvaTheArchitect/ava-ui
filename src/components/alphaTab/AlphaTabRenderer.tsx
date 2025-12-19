@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.23: DYNAMIC ISLAND OFFSET FIX
+ * AlphaTab Renderer - V97.24: DYNAMIC ISLAND OFFSET FIX
  * Date for Records: December 17th, 2025
  * 
  * 🔧 V97.21 TWEAK - CLEAR iPHONE DYNAMIC ISLAND:
