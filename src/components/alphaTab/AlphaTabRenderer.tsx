@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.24: DYNAMIC ISLAND OFFSET FIX
+ * AlphaTab Renderer - V97.25: DYNAMIC ISLAND OFFSET FIX
  * Date for Records: December 17th, 2025
  * 
  * 🔧 V97.21 TWEAK - CLEAR iPHONE DYNAMIC ISLAND:
@@ -475,17 +475,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const handleOrientationChange = async () => {
             const alphaTab = await import('@coderline/alphatab');
-
+            
             // Check actual orientation (more reliable than prop)
             const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
-
+            
             console.log(`🔄 V97.20: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}, containerWidth:${container.clientWidth}`);
 
             if (isLandscape) {
                 // 🎸 LANDSCAPE: Horizontal layout + Container Scroll
                 console.log('🎸 V97.20: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-
+                
                 // ✅ V97.20: Use numeric value 1 for Continuous (per AlphaTab docs)
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -504,11 +504,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 console.log('📱 V97.20: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-
+                
                 // ✅ Use scrollContainerRef or document.documentElement for portrait
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-
+                
                 // ✅ V97.20: Use scrollOffset for vertical too (100px from V61)
                 (api.settings.player as any).scrollOffset = 100;
 
@@ -531,7 +531,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             console.log('📱 V97.20: Orientation change detected');
             handleOrientationChange();
         };
-
+        
         mediaQuery.addEventListener('change', handleMediaChange);
 
         return () => {
