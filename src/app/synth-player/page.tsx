@@ -1,18 +1,19 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube Deferred Seek Architecture
- * December 15th, 2025 - V98.8: LANDSCAPE SCROLL RESET
+ * STAGE 4 - Synth + YouTube + Pitch Shift Integration
+ * December 20th, 2025 - V98.14: FIX AUDIO TRANSPOSITION + UNICODE TUNING
  *
- * 🔧 V98.8 LANDSCAPE FIXES:
- * ✅ Reduced padding to pt-[12vh] - staff higher, room for notation
- * ✅ Reset scrollLeft to 0 when entering landscape - keeps M1 visible
- * ✅ Cursor should now be visible at start position
- *
- * 🔧 V98.7 LANDSCAPE FIXES:
- * ✅ Fixed height container (100vh - 80px bottom bar)
- * ✅ No vertical scroll/movement in landscape
- * ✅ Song title overlay in landscape mode
+ * 🔧 V98.14 FIXES:
+ * ✅ Added detailed logging for pitch shift debugging
+ * ✅ TuningOverlay uses Unicode ♯/♭ symbols (prevents char-by-char split)
+ * ✅ Better error handling for changeTrackTranspositionPitch
+ * 
+ * 🔒 PRESERVED FROM V98.13:
+ * ✅ isPitchPopoverOpen state
+ * ✅ pitchPopoverAnchor state  
+ * ✅ Pass pitch props to MaestroControlPanel
+ * ✅ Pass popover props to TuningOverlay
  */
 
 import React, {
@@ -23,6 +24,7 @@ import React, {
     useMemo,
 } from 'react';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
+import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray } from '@/components/audio/maestro/layout';
@@ -55,8 +57,15 @@ export default function SynthPlayerPage() {
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
     const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
-    // Pause transition flag - ignore seeks during pause
+    // Pause transition flag
     const pauseTransitionRef = useRef<boolean>(false);
+
+    // ==================== PITCH SHIFT STATE ====================
+    const [pitchShift, setPitchShift] = useState<number>(0);
+    const [tuningData, setTuningData] = useState<number[]>([64, 59, 55, 50, 45, 40]);
+    // 🆕 V98.13: Pitch popover state
+    const [isPitchPopoverOpen, setIsPitchPopoverOpen] = useState<boolean>(false);
+    const [pitchPopoverAnchor, setPitchPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
 
     // ==================== LOOP STATE ====================
     const [isLooping, setIsLooping] = useState<boolean>(false);
@@ -67,7 +76,7 @@ export default function SynthPlayerPage() {
     const [trackSoloState, setTrackSoloState] = useState<Map<number, boolean>>(new Map());
 
     // ==================== THEME STATE ====================
-    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    const [theme, setTheme] = useState<'light' | 'dark'>('light'); // ✅ Default to light
 
     // ==================== SONG STATE MANAGEMENT ====================
     const [songState, setSongState] = useState<SongState>(() => loadInitialSongData());
@@ -94,8 +103,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.6: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.6: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.14: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.14: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -132,80 +141,108 @@ export default function SynthPlayerPage() {
         isSeekingRef.current = isSeeking;
     }, [isSeeking]);
 
-    // ==================== V98.6: EXTERNAL MEDIA HANDLER ====================
+    // ==================== PITCH SHIFT HANDLER ====================
+    const handlePitchShiftChange = useCallback((semitones: number) => {
+        console.log(`🎵 V98.13: handlePitchShiftChange called with ${semitones} semitones`);
+        setPitchShift(semitones);
+
+        // Apply audio transposition immediately
+        if (api) {
+            console.log(`🎵 V98.13: API exists, checking score...`);
+            if (api.score?.tracks) {
+                try {
+                    const allTracks = api.score.tracks;
+                    console.log(`🎵 V98.13: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
+                    api.changeTrackTranspositionPitch(allTracks, semitones);
+                    console.log(`✅ V98.13: Audio pitch shifted by ${semitones} semitones`);
+                } catch (err) {
+                    console.error('❌ V98.13: changeTrackTranspositionPitch error:', err);
+                }
+            } else {
+                console.warn('⚠️ V98.13: No score or tracks available');
+            }
+        } else {
+            console.warn('⚠️ V98.13: API not available');
+        }
+    }, [api]);
+
+    // 🆕 V98.13: Toggle pitch popover (called from TransportBar)
+    const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
+        if (audioSource !== 'synth') {
+            console.log('⚠️ V98.13: Pitch shift only available in Synth mode');
+            return;
+        }
+
+        setIsPitchPopoverOpen(prev => {
+            if (!prev && anchorRect) {
+                setPitchPopoverAnchor(anchorRect);
+            }
+            return !prev;
+        });
+    }, [audioSource]);
+
+    // ==================== RESET PITCH ON SONG CHANGE ====================
+    useEffect(() => {
+        if (pitchShift !== 0) {
+            setPitchShift(0);
+            if (api?.score?.tracks) {
+                try {
+                    api.changeTrackTranspositionPitch(api.score.tracks, 0);
+                } catch (err) {
+                    // API may not be ready
+                }
+            }
+            console.log('🔄 V98.14: Pitch reset on song change');
+        }
+    }, [currentFileUrl]);
+
+    // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.6: Creating YouTube handler instance');
+        console.log('🎬 V98.13: Creating YouTube handler instance');
 
         return {
             play: () => {
-                console.log('▶️ V98.6: Handler.play() called');
+                console.log('▶️ V98.13: Handler.play() called');
 
-                // 🆕 V98.6: Always apply deferred seek on play with allowSeekAhead=true
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(
-                        `⏱️ V98.6: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`,
-                    );
-                    youtubePlayerRef.current.seekTo(initialSeekRef.current, true); // allowSeekAhead=true!
+                    console.log(`⏱️ V98.13: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
+                    youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                     postSeekLockUntilRef.current = performance.now() + 200;
                 }
 
                 if (youtubePlayerRef.current?.playVideo) {
                     youtubePlayerRef.current.playVideo();
-                    console.log('✅ V98.6: YouTube playVideo() executed');
-                } else {
-                    console.warn('⚠️ V98.6: YouTube player ref not ready in play()');
                 }
             },
 
             pause: () => {
-                console.log('⏸️ V98.6: Handler.pause() called');
-                if (youtubePlayerRef.current?.pauseVideo) {
-                    youtubePlayerRef.current.pauseVideo();
-                    console.log('✅ V98.6: YouTube pauseVideo() executed');
-                } else {
-                    console.warn('⚠️ V98.6: YouTube player ref not ready in pause()');
-                }
+                console.log('⏸️ V98.13: Handler.pause() called');
+                youtubePlayerRef.current?.pauseVideo?.();
             },
 
             seekTo: (milliseconds: number) => {
-                // Ignore seeks during pause transition (api.pause() triggers handler.seekTo internally)
-                if (pauseTransitionRef.current) {
-                    console.log('⏭️ V98.6: Ignoring seek during pause transition');
-                    return;
-                }
+                if (pauseTransitionRef.current) return;
 
-                // Synchronous seeking guard
                 isSeekingRef.current = true;
                 setIsSeeking(true);
 
                 const offset = currentSong?.videoStartOffset || 0;
                 const seconds = milliseconds / 1000 + offset;
-                console.log(
-                    `🎯 V98.6: Handler.seekTo(${milliseconds}ms) -> ${seconds.toFixed(2)}s`,
-                );
 
                 const player = youtubePlayerRef.current;
-                if (!player) {
-                    console.warn('⚠️ V98.6: YouTube player not ready in seekTo');
-                    return;
-                }
+                if (!player) return;
 
                 const YT = (typeof window !== 'undefined' && (window as any).YT) || null;
                 if (!YT || !YT.PlayerState) {
-                    console.warn('⚠️ V98.6: YouTube API not loaded - deferring seek');
                     initialSeekRef.current = seconds;
                     return;
                 }
 
                 const state = player.getPlayerState?.();
-                const isSeekableState =
-                    state === YT.PlayerState.PAUSED || state === YT.PlayerState.PLAYING;
+                const isSeekableState = state === YT.PlayerState.PAUSED || state === YT.PlayerState.PLAYING;
 
                 if (!isSeekableState || !isYouTubeReady) {
-                    console.log(
-                        `⏱️ V98.6: Deferring seek to ${seconds.toFixed(2)}s (state=${state}, ready=${isYouTubeReady})`,
-                    );
                     initialSeekRef.current = seconds;
                     setTimeout(() => {
                         setIsSeeking(false);
@@ -214,29 +251,15 @@ export default function SynthPlayerPage() {
                     return;
                 }
 
-                // 🆕 V98.6 FIX: When PAUSED, allowSeekAhead=false means unbuffered seeks fail!
-                // Solution: Do immediate seek for visual feedback, but ALSO store as deferred
-                // to guarantee it applies on play with allowSeekAhead=true
-
                 if (state === YT.PlayerState.PAUSED) {
-                    // Paused: Try immediate seek but ALSO store as deferred
-                    player.seekTo(seconds, false); // Try with allowSeekAhead=false first
-                    initialSeekRef.current = seconds; // Store for guaranteed re-apply on play
-                    console.log(
-                        `⏸️ V98.6: Paused seek - immediate + stored deferred at ${seconds.toFixed(2)}s`,
-                    );
+                    player.seekTo(seconds, false);
+                    initialSeekRef.current = seconds;
                 } else {
-                    // Playing: Immediate seek with allowSeekAhead=true
                     player.seekTo(seconds, true);
-                    initialSeekRef.current = -1; // Clear - immediate should work when playing
-                    console.log(
-                        `▶️ V98.6: Playing seek - immediate at ${seconds.toFixed(2)}s (allowSeekAhead=true)`,
-                    );
+                    initialSeekRef.current = -1;
                 }
 
                 postSeekLockUntilRef.current = performance.now() + 200;
-
-                // Clear seeking state after stabilization
                 setTimeout(() => {
                     setIsSeeking(false);
                     isSeekingRef.current = false;
@@ -248,15 +271,13 @@ export default function SynthPlayerPage() {
                 if (player?.getCurrentTime) {
                     const ytTime = player.getCurrentTime();
                     const offset = currentSong?.videoStartOffset || 0;
-                    const adjustedTime = Math.max(0, ytTime - offset);
-                    return adjustedTime * 1000;
+                    return Math.max(0, ytTime - offset) * 1000;
                 }
                 return 0;
             },
 
             get duration() {
-                const player = youtubePlayerRef.current;
-                return player?.getDuration ? player.getDuration() * 1000 : 0;
+                return youtubePlayerRef.current?.getDuration ? youtubePlayerRef.current.getDuration() * 1000 : 0;
             },
         };
     }, [currentSong?.videoStartOffset, isYouTubeReady]);
@@ -308,14 +329,9 @@ export default function SynthPlayerPage() {
     // ==================== ORIENTATION DETECTION ====================
     useEffect(() => {
         const checkOrientation = () => {
-            const isTouchDevice =
-                typeof window !== 'undefined' &&
-                ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            const isLandscape =
-                typeof window !== 'undefined' &&
-                window.matchMedia('(orientation: landscape)').matches;
-            const isCompactHeight =
-                typeof window !== 'undefined' && window.innerHeight < 600;
+            const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+            const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
+            const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
             setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
         };
 
@@ -333,34 +349,27 @@ export default function SynthPlayerPage() {
         };
     }, []);
 
-    // 🆕 V98.8: Reset scroll position when entering landscape mode
+    // Reset scroll position in landscape
+    // ✅ Fixed version:
     useEffect(() => {
         if (isMobileLandscape && mainScrollContainerRef.current) {
-            // Reset to start (M1) when rotating to landscape
-            // Use multiple delays to catch after AlphaTab re-renders
             mainScrollContainerRef.current.scrollLeft = 0;
 
-            // Also reset after short delay (after initial render)
             setTimeout(() => {
                 if (mainScrollContainerRef.current) {
                     mainScrollContainerRef.current.scrollLeft = 0;
-                    console.log('🔄 V98.8: Reset scroll to M1 (100ms)');
                 }
             }, 100);
 
-            // And again after AlphaTab finishes re-rendering
             setTimeout(() => {
                 if (mainScrollContainerRef.current) {
                     mainScrollContainerRef.current.scrollLeft = 0;
-                    console.log('🔄 V98.8: Reset scroll to M1 (300ms)');
                 }
             }, 300);
 
-            // Final reset after full re-render
             setTimeout(() => {
                 if (mainScrollContainerRef.current) {
                     mainScrollContainerRef.current.scrollLeft = 0;
-                    console.log('🔄 V98.8: Reset scroll to M1 (500ms)');
                 }
             }, 500);
         }
@@ -369,18 +378,17 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.6: API Ready');
+            console.log('✅ V98.13: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.6: Player Ready');
+                    console.log('✅ V98.13: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
                         const output = alphaTabApi.player.output as any;
                         output.handler = youTubeMediaHandlerInstance;
-                        console.log('🔗 V98.6: Handler attached on player ready');
                     }
                 });
             }
@@ -403,60 +411,55 @@ export default function SynthPlayerPage() {
         [youTubeMediaHandlerInstance, audioSource],
     );
 
+    // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.6: Score loaded - ${info.title}`);
+            console.log(`✅ V98.13: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
             setError(null);
             setTrackMuteState(new Map(trackList.map((_, index) => [index, false])));
             setTrackSoloState(new Map(trackList.map((_, index) => [index, false])));
+
+            // Extract tuning data
+            if (api?.score?.tracks?.[0]?.staves?.[0]) {
+                const staff = api.score.tracks[0].staves[0];
+                if (staff.stringTuning && staff.stringTuning.tunings) {
+                    setTuningData(staff.stringTuning.tunings);
+                    console.log('🎸 V98.13: Tuning extracted:', staff.stringTuning.tunings);
+                }
+            }
+
+            setPitchShift(0);
         },
-        [],
+        [api],
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.6: Rendering Complete');
+        console.log('✅ V98.13: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.6 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.13 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
-    // handlePlayPause with pause transition protection
     const handlePlayPause = useCallback(() => {
         if (!api) return;
-
-        console.log(
-            `🎮 V98.6: handlePlayPause - mode: ${audioSource}, isPlaying: ${isPlaying}`,
-        );
 
         if (audioSource === 'original') {
             const output = api.player?.output as any;
             if (output?.handler) {
                 if (isPlaying) {
-                    // Set pause transition flag BEFORE calling pause
                     pauseTransitionRef.current = true;
-                    console.log('🔒 V98.6: Pause transition started');
-
-                    console.log('⏸️ V98.6: Pausing via handler + api.pause()');
                     output.handler.pause();
                     api.pause();
-
-                    // Clear pause transition flag after a delay
-                    setTimeout(() => {
-                        pauseTransitionRef.current = false;
-                        console.log('🔓 V98.6: Pause transition ended');
-                    }, 300);
+                    setTimeout(() => { pauseTransitionRef.current = false; }, 300);
                 } else {
-                    console.log('▶️ V98.6: Playing via handler + api.play()');
                     output.handler.play();
                     api.play();
                 }
-            } else {
-                console.warn('⚠️ V98.6: No handler available for original mode');
             }
         } else {
             if (isPlaying) {
@@ -478,13 +481,10 @@ export default function SynthPlayerPage() {
     const handleTrackChange = useCallback(
         (trackIndex: number) => {
             if (api?.score?.tracks) {
-                console.log(`🔄 V98.6: Track ${trackIndex}`);
-
                 if (isLooping && api.playbackRange) {
                     api.playbackRange = null;
                     setHasLoopSelection(false);
                 }
-
                 api.renderTracks([api.score.tracks[trackIndex]]);
                 setSelectedTrack(trackIndex);
             }
@@ -494,15 +494,11 @@ export default function SynthPlayerPage() {
 
     const handleLoopToggle = useCallback(() => {
         if (!api) return;
-
         const newLoopState = !isLooping;
         setIsLooping(newLoopState);
-
         if (!newLoopState) {
             setHasLoopSelection(false);
-            if (api.playbackRange) {
-                api.playbackRange = null;
-            }
+            if (api.playbackRange) api.playbackRange = null;
         }
     }, [api, isLooping]);
 
@@ -513,27 +509,29 @@ export default function SynthPlayerPage() {
     const handleSpeedChange = useCallback(
         (speed: number) => {
             setPlaybackSpeed(speed);
-            if (api) {
-                api.playbackSpeed = speed;
-                console.log(`🎚️ V98.6: Speed: ${Math.round(speed * 100)}%`);
-            }
+            if (api) api.playbackSpeed = speed;
         },
         [api],
     );
 
+    // ==================== AUDIO SOURCE CHANGE WITH PITCH RESET ====================
     const handleAudioSourceChange = useCallback(
         (source: 'synth' | 'original') => {
             setAudioSource(source);
-            console.log(`🎵 V98.6: Audio: ${source}`);
+
+            if (source === 'original' && pitchShift !== 0) {
+                setPitchShift(0);
+                if (api?.score?.tracks) {
+                    try {
+                        api.changeTrackTranspositionPitch(api.score.tracks, 0);
+                    } catch (err) {
+                        console.error('❌ V98.13: Reset pitch error:', err);
+                    }
+                }
+            }
 
             if (api) {
-                if (source === 'original') {
-                    api.masterVolume = 0;
-                    console.log('🔇 V98.6: AlphaTab synth muted');
-                } else {
-                    api.masterVolume = 1;
-                    console.log('🔊 V98.6: AlphaTab synth unmuted');
-                }
+                api.masterVolume = source === 'original' ? 0 : 1;
             }
 
             if (source === 'original' && activeVideoId) {
@@ -545,11 +543,10 @@ export default function SynthPlayerPage() {
                 setIsYouTubeReady(false);
             }
         },
-        [api, activeVideoId],
+        [api, activeVideoId, pitchShift],
     );
 
     const handleVideoVariantChange = useCallback((newVideoId: string) => {
-        console.log(`🔄 V98.6: Variant changed: ${newVideoId}`);
         setCurrentVideoId(newVideoId);
         initialSeekRef.current = -1;
     }, []);
@@ -557,7 +554,6 @@ export default function SynthPlayerPage() {
     const handleYouTubeClose = useCallback(() => {
         setIsYouTubePlayerVisible(false);
         setIsYouTubeReady(false);
-        console.log('🎬 V98.6: YouTube player closed');
     }, []);
 
     const handleYouTubeTimeUpdate = useCallback((time: number) => {
@@ -566,32 +562,23 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.6: YouTube player is ready!');
+        console.log('✅ V98.13: YouTube player ready');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
     }, []);
 
-    // YouTube state change handler with pause protection
     const handleYouTubeStateChange = useCallback(
         (event: any) => {
-            console.log(
-                `🎬 V98.6: YouTube state change: ${event.data} (Seeking: ${isSeekingRef.current}, PauseTransition: ${pauseTransitionRef.current})`,
-            );
-
             if (event.data === 1) {
                 setIsPlaying(true);
-                console.log('▶️ V98.6: isPlaying = true');
             } else if (event.data === 2 || event.data === 0) {
                 setIsPlaying(false);
-                console.log('⏸️ V98.6: isPlaying = false');
             }
 
             if (isSeekingRef.current) {
                 if (!seekStabilizeTimeoutRef.current && (event.data === 1 || event.data === 2)) {
-                    console.log('⏱️ V98.6: Starting 500ms seek stabilization timer');
                     seekStabilizeTimeoutRef.current = setTimeout(() => {
-                        console.log('✅ V98.6: Seek stabilized');
                         setIsSeeking(false);
                         isSeekingRef.current = false;
                         seekStabilizeTimeoutRef.current = null;
@@ -600,27 +587,17 @@ export default function SynthPlayerPage() {
                 return;
             }
 
-            // Don't sync AlphaTab during pause transition
-            if (pauseTransitionRef.current) {
-                console.log('⏭️ V98.6: Skipping AlphaTab sync during pause transition');
-                return;
-            }
+            if (pauseTransitionRef.current) return;
 
             if (api) {
                 if (event.data === 1) {
                     api.play();
-                    console.log('▶️ V98.6: AlphaTab PLAY sync');
                 } else if (event.data === 2) {
-                    // Set pause transition before calling api.pause()
                     pauseTransitionRef.current = true;
                     api.pause();
-                    setTimeout(() => {
-                        pauseTransitionRef.current = false;
-                    }, 200);
-                    console.log('⏸️ V98.6: AlphaTab PAUSE sync');
+                    setTimeout(() => { pauseTransitionRef.current = false; }, 200);
                 } else if (event.data === 0) {
                     api.stop();
-                    console.log('⏹️ V98.6: AlphaTab STOP sync');
                 }
             }
         },
@@ -633,69 +610,41 @@ export default function SynthPlayerPage() {
         if (!api.player?.output) return;
 
         const output = api.player.output as any;
-        if (typeof output.updatePosition !== 'function') {
-            console.error('❌ V98.6: output.updatePosition is not a function!');
-            return;
-        }
-
-        console.log('🔄 V98.6: Starting 50ms cursor sync loop');
+        if (typeof output.updatePosition !== 'function') return;
 
         const syncInterval = setInterval(() => {
             const now = performance.now();
-
-            if (now < postSeekLockUntilRef.current) {
-                return;
-            }
-
-            if (isSeekingRef.current || !isPlayingRef.current) {
-                return;
-            }
-
-            // Also skip during pause transition
-            if (pauseTransitionRef.current) {
-                return;
-            }
-
+            if (now < postSeekLockUntilRef.current) return;
+            if (isSeekingRef.current || !isPlayingRef.current) return;
+            if (pauseTransitionRef.current) return;
             if (!youtubePlayerRef.current?.getCurrentTime) return;
 
             const ytTime = youtubePlayerRef.current.getCurrentTime();
             const offset = currentSong?.videoStartOffset || 0;
-            const adjustedTime = Math.max(0, ytTime - offset);
-            const timeMs = adjustedTime * 1000;
+            const timeMs = Math.max(0, ytTime - offset) * 1000;
 
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.6: updatePosition error:', err);
+                console.error('❌ V98.13: updatePosition error:', err);
             }
-
             currentTimeRef.current = timeMs;
         }, 50);
 
-        return () => {
-            clearInterval(syncInterval);
-            console.log('⏹️ V98.6: Stopped cursor sync loop');
-        };
+        return () => clearInterval(syncInterval);
     }, [api, audioSource, isYouTubeReady, currentSong?.videoStartOffset]);
 
     // ENSURE HANDLER IS ATTACHED
     useEffect(() => {
         if (!api || !playerReady || !api.player?.output) return;
-
         const output = api.player.output as any;
-
         if (youTubeMediaHandlerInstance) {
             output.handler = youTubeMediaHandlerInstance;
-            console.log('🔗 V98.6: Handler attached/verified in page.tsx');
         }
-
         return () => {
             if (api.player?.output) {
                 const out = api.player.output as any;
-                if (out.handler) {
-                    out.handler = null;
-                    console.log('🔌 V98.6: Handler detached on cleanup');
-                }
+                if (out.handler) out.handler = null;
             }
         };
     }, [api, playerReady, youTubeMediaHandlerInstance]);
@@ -709,9 +658,15 @@ export default function SynthPlayerPage() {
 
     // ==================== SONG LIBRARY ====================
     const handleSongSelect = useCallback((songId: string) => {
+        // 🆕 ADD LOOP RESET HERE (at the very beginning)
+        setIsLooping(false);
+        setHasLoopSelection(false);
+        if (api?.playbackRange) {
+            api.playbackRange = null;
+        }
         setSongState(prev => ({ ...prev, currentSongId: songId }));
         setIsSongSelectorOpen(false);
-    }, []);
+    }, [api]);
 
     const handleToggleFavorite = useCallback((songId: string) => {
         setSongState(prev => ({
@@ -742,16 +697,11 @@ export default function SynthPlayerPage() {
                 playlists: prev.playlists.map(playlist => {
                     if (playlist.id === playlistId) {
                         const songExists = playlist.songIds.includes(songId);
-
                         if (type === 'add' && !songExists) {
                             return { ...playlist, songIds: [...playlist.songIds, songId] };
                         }
-
                         if (type === 'remove' && songExists) {
-                            return {
-                                ...playlist,
-                                songIds: playlist.songIds.filter(id => id !== songId),
-                            };
+                            return { ...playlist, songIds: playlist.songIds.filter(id => id !== songId) };
                         }
                     }
                     return playlist;
@@ -762,9 +712,8 @@ export default function SynthPlayerPage() {
     );
 
     const handleThemeToggle = useCallback(() => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-    }, [theme]);
+        setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    }, []);
 
     // TRACK MIXER
     const handleTrackMuteToggle = useCallback(
@@ -850,7 +799,6 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* 🆕 V98.7: Landscape song title overlay */}
                 {isMobileLandscape && currentSong && (
                     <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4">
                         <div className="text-white text-sm font-semibold truncate">
@@ -859,17 +807,32 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
+                {/* Wrapper with TuningOverlay */}
                 <div
                     id="maestro-player"
                     className={`
-                        bg-white
+                        relative bg-white
                         ${isMobileLandscape
                             ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[12vh]'
                             : 'w-full'
                         }
                     `}
-                /* V98.8: pt-[12vh] positions staff higher, leaving room for notation below */
                 >
+                    {/* 🔧 V98.13: TuningOverlay with popover control from TransportBar */}
+                    <TuningOverlay
+                        api={api}
+                        tuning={tuningData}
+                        pitchShift={pitchShift}
+                        onPitchShiftChange={handlePitchShiftChange}
+                        isSynthMode={audioSource === 'synth'}
+                        theme={theme}
+                        isReady={playerReady && !!songInfo}
+                        isPlaying={isPlaying}
+                        isPopoverOpen={isPitchPopoverOpen}
+                        onPopoverToggle={setIsPitchPopoverOpen}
+                        popoverAnchor={pitchPopoverAnchor}
+                    />
+
                     <AlphaTabRenderer
                         fileUrl={currentFileUrl}
                         playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
@@ -887,33 +850,19 @@ export default function SynthPlayerPage() {
                         isLooping={isLooping}
                         onLoopRangeChange={handleLoopRangeChange}
                         audioSource={audioSource}
-                        theme={theme}  // 🆕 V98.6: Pass theme to AlphaTab for dark mode
+                        theme={theme}
                     />
                 </div>
 
                 {!isMobileLandscape && (
                     <div className="px-4 mt-8">
                         <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
-                            <h3 className="text-lg font-bold text-purple-300 mb-4">
-                                📝 Practice Notes
-                            </h3>
+                            <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
                             <div className="space-y-3 text-gray-300">
-                                <p className="text-sm">
-                                    <strong className="text-white">Strumming Pattern:</strong> Down, Down-Up,
-                                    Up-Down-Up
-                                </p>
-                                <p className="text-sm">
-                                    <strong className="text-white">Key Points:</strong> Focus on clean
-                                    transitions between chords. Watch finger placement on the bends in measure
-                                    157.
-                                </p>
-                                <p className="text-sm">
-                                    <strong className="text-white">Practice Tip:</strong> Start at 75% speed and
-                                    gradually increase tempo as you gain confidence.
-                                </p>
-                                <p className="text-sm text-gray-400 italic">
-                                    💡 Use the Loop button to repeat difficult sections
-                                </p>
+                                <p className="text-sm"><strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up</p>
+                                <p className="text-sm"><strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.</p>
+                                <p className="text-sm"><strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase tempo.</p>
+                                <p className="text-sm text-gray-400 italic">💡 Use the Loop button to repeat difficult sections</p>
                             </div>
                         </div>
                     </div>
@@ -954,6 +903,8 @@ export default function SynthPlayerPage() {
                         onTrackMuteToggle={handleTrackMuteToggle}
                         onTrackSoloToggle={handleTrackSoloToggle}
                         onThemeToggle={handleThemeToggle}
+                        pitchShift={pitchShift}
+                        onPitchShiftToggle={handlePitchShiftToggle}
                     />
                 )}
             </footer>

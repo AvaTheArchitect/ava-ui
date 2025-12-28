@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 import path from "path";
 import { fileURLToPath } from "url";
-import { AlphaTabWebPackPlugin } from "@coderline/alphatab/webpack";
+import { AlphaTabWebPackPlugin } from "@coderline/alphatab-webpack";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

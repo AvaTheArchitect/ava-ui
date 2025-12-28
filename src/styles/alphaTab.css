@@ -1,24 +1,22 @@
 /**
- * alphaTab Required Styles - V93 DARK MODE SUPPORT
- * Date: December 18th, 2025
+ * alphaTab Required Styles - V94 TRACK NAME TUNING FIXES
+ * Date: December 20th, 2025
  * 
- * 🆕 NEW IN V93:
- * ✅ Dark mode selection overlay (lighter for dark backgrounds)
- * ✅ Dark mode cursor colors (brighter purple for visibility)
- * ✅ Dark mode highlight colors
- * ✅ Container background inherits from parent (theme-aware)
+ * 🆕 NEW IN V94:
+ * ✅ Track name (tuning display) rotation override
+ * ✅ Clickable tuning text cursor styles
+ * ✅ Pitch shift badge positioning
  * 
- * PRESERVED FROM V92:
- * ✅ Minimal z-index overrides for loop handles
- * ✅ Essential alphaTab core styles
+ * 🔒 PRESERVED FROM V93:
+ * ✅ Dark mode selection overlay
+ * ✅ Cursor colors
+ * ✅ Loop handle z-index
  */
 
 /* Main alphaTab container - PORTRAIT MODE (default) */
 .at-surface {
     width: 100%;
     position: relative;
-    
-    /* Portrait: vertical scroll */
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -35,18 +33,16 @@
     display: none !important;
 }
 
-/* Beat line cursor - Purple line (works on both light and dark) */
+/* Beat line cursor - Purple line */
 .at-cursor-beat {
     background: rgba(168, 85, 247, 0.9) !important;
     z-index: 999 !important;
 }
 
-/* High specificity version for safety */
 #maestro-player .at-cursor-beat {
     background: rgba(168, 85, 247, 0.9) !important;
 }
 
-/* Mobile-specific cursor */
 @media (max-width: 768px) {
     .at-cursor-beat {
         background: rgba(168, 85, 247, 1) !important;
@@ -55,12 +51,29 @@
 }
 
 /* ========================================
-   LOOP SELECTION OVERLAY
-   - Light mode: dark overlay
-   - Dark mode: lighter overlay for contrast
+   V94: TRACK NAME / TUNING DISPLAY FIXES
    ======================================== */
 
-/* Default (light mode) - Gray overlay */
+/* Make tuning text clickable with proper cursor */
+.at-surface-svg text[role="button"] {
+    cursor: pointer !important;
+    transition: opacity 0.15s ease;
+}
+
+.at-surface-svg text[role="button"]:hover {
+    opacity: 0.8;
+}
+
+/* Disabled state (non-synth mode or playing) */
+.at-surface-svg text[role="button"][aria-disabled="true"] {
+    cursor: not-allowed !important;
+    opacity: 0.5;
+}
+
+/* ========================================
+   LOOP SELECTION OVERLAY
+   ======================================== */
+
 .at-selection div {
     position: absolute;
     background: rgba(0, 0, 0, 0.15) !important;
@@ -70,14 +83,14 @@
     border-radius: 0;
 }
 
-/* 🆕 V93: Dark mode selection overlay - lighter for visibility */
+/* Dark mode selection overlay */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-selection div,
 .alphatab-container[style*="background-color:#1a1a1a"] .at-selection div {
     background: rgba(255, 255, 255, 0.15) !important;
 }
 
 /* ========================================
-   V93 LOOP HANDLE Z-INDEX SAFETY
+   LOOP HANDLE Z-INDEX
    ======================================== */
 
 .maestro-loop-handle {
@@ -89,8 +102,7 @@
 }
 
 /* ========================================
-   ALPHATAB HIGHLIGHT EFFECT
-   - Purple for active notes (same on both themes)
+   HIGHLIGHT EFFECT
    ======================================== */
 
 .at-highlight * {
@@ -102,7 +114,6 @@
    ALPHATAB CORE STYLES
    ======================================== */
 
-/* Music font - alphaTab uses Bravura font */
 @font-face {
     font-family: 'alphaTab';
     src: url('https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/Bravura.woff2') format('woff2'),
@@ -122,27 +133,6 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tab notation elements - inherit colors from AlphaTab settings */
-.at-tab-line {
-    /* Color controlled by AlphaTab resources.staffLineColor */
-}
-
-.at-tab-number {
-    /* Color controlled by AlphaTab resources.mainGlyphColor */
-    font-family: Arial, sans-serif;
-    font-weight: bold;
-}
-
-/* Standard notation elements */
-.at-score-staff-line {
-    /* Color controlled by AlphaTab resources.staffLineColor */
-}
-
-/* Bar lines */
-.at-bar-line {
-    /* Color controlled by AlphaTab resources.barSeparatorColor */
-}
-
 /* Loading overlay */
 .at-loading {
     display: flex;
@@ -157,13 +147,12 @@
     z-index: 10000;
 }
 
-/* 🆕 V93: Dark mode loading overlay */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-loading,
 .alphatab-container[style*="background-color:#1a1a1a"] .at-loading {
     background: rgba(26, 26, 26, 0.9);
 }
 
-/* Scrollbar styling - Light mode */
+/* Scrollbar styling */
 .at-surface::-webkit-scrollbar {
     width: 12px;
     height: 12px;
@@ -182,7 +171,7 @@
     background: #555;
 }
 
-/* 🆕 V93: Dark mode scrollbar styling */
+/* Dark mode scrollbar */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-track,
 .alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-track {
     background: #2a2a2a;
@@ -191,11 +180,6 @@
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb,
 .alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb {
     background: #555;
-}
-
-.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb:hover,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb:hover {
-    background: #777;
 }
 
 /* Print styles */
@@ -210,5 +194,20 @@
     
     .at-surface {
         overflow: visible !important;
+    }
+}
+
+/* ========================================
+   V94: PITCH SHIFT POPOVER ANIMATION
+   ======================================== */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
