@@ -1,12 +1,20 @@
 'use client';
 
 /**
- * TuningOverlay.tsx - V8.5: STABLE SHORTNAME TUNING
+ * TuningOverlay.tsx - V9: SONGSTERR-STYLE TEXT CONTRAST
+ * Date: December 28th, 2025
  *
- * ✅ Applies tuning to track.shortName (Unicode line separator) once per score load
- * ✅ Re-applies only when pitchShift changes
- * ✅ Does NOT listen to renderFinished or playbackRange
- * ✅ Does NOT continuously re-render the score
+ * 🔧 NEW IN V9:
+ * ✅ Brightened "SHIFT PITCH" title (text-gray-400 → text-gray-100)
+ * ✅ Improved "Use ↑↓ keys" instructions readability (text-gray-500 → text-gray-300)
+ * ✅ Enhanced "SEMITONES" label visibility (text-gray-500 → text-gray-400)
+ * ✅ ONLY TEXT COLOR CHANGES - all logic preserved from V8.5
+ *
+ * 🔒 PRESERVED FROM V8.5:
+ * ✅ Stable shortname tuning updates
+ * ✅ Only updates on pitchShift change
+ * ✅ Keyboard shortcuts (R, arrows, 0, Escape)
+ * ✅ Click-outside to close
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -244,8 +252,8 @@ export const TuningOverlay: React.FC<TuningOverlayProps> = ({
                         animation: 'fadeIn 0.15s ease-out',
                     }}
                 >
-                    {/* Header */}
-                    <p className={`text-xs font-semibold uppercase tracking-wide mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {/* Header - 🔧 V9: Brightened from text-gray-400 → text-gray-100 */}
+                    <p className={`text-xs font-semibold uppercase tracking-wide mb-3 ${isDark ? 'text-gray-100' : 'text-gray-700'}`}>
                         Shift Pitch
                     </p>
 
@@ -269,7 +277,8 @@ export const TuningOverlay: React.FC<TuningOverlayProps> = ({
                                     : pitchShift > 0 ? 'text-green-500' : 'text-orange-500'}`}>
                                 {pitchShift > 0 ? `+${pitchShift}` : pitchShift}
                             </span>
-                            <span className={`text-[10px] uppercase ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {/* 🔧 V9: Brightened SEMITONES label from text-gray-500 → text-gray-400 */}
+                            <span className={`text-[10px] uppercase ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                                 {semitoneText}
                             </span>
                         </div>
@@ -300,8 +309,8 @@ export const TuningOverlay: React.FC<TuningOverlayProps> = ({
                         Restore original tuning
                     </button>
 
-                    {/* Keyboard Hint */}
-                    <p className={`text-[10px] text-center mt-2 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {/* Keyboard Hint - 🔧 V9: Brightened from text-gray-500 → text-gray-300 */}
+                    <p className={`text-[10px] text-center mt-2 ${isDark ? 'text-gray-300' : 'text-gray-500'}`}>
                         Use ↑↓ keys • Press 0 to reset
                     </p>
                 </div>

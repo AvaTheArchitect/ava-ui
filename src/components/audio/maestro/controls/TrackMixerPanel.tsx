@@ -1,24 +1,32 @@
 'use client';
 
 /**
- * TrackMixerPanel.tsx - V90: 44px Button Height
- * Date: November 19th, 2025
+ * TrackMixerPanel.tsx - V91: CONTROLLED STATE PATTERN
+ * Date: December 28th, 2025
  * 
- * 🔧 NEW IN V90:
- * ✅ Button outline height reduced from 74px to 44px (matches other buttons)
- * ✅ Container maintains 74px height for vertical alignment
- * ✅ Button centered vertically with items-center
+ * 🔧 NEW IN V91:
+ * ✅ Panel state controlled by parent (TransportBar)
+ * ✅ Accepts isPanelOpen and onTogglePanel props
+ * ✅ No internal state management for panel visibility
+ * ✅ Panel closes properly when clicking outside or switching panels
  * 
- * KEPT FROM V87.2:
+ * 🔒 PRESERVED FROM V90:
+ * ✅ Button outline height 44px
  * ✅ Panel size ~630px width (Songsterr size)
  * ✅ WIDE tooltip format
  * ✅ Label "TRACK" in 12px uppercase
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import type { TrackMixerPanelProps } from './MaestroControlTypes';
 
-export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
+// 🔧 V91: Extended props for controlled state
+interface ExtendedTrackMixerPanelProps extends TrackMixerPanelProps {
+  isPanelOpen?: boolean;
+  onTogglePanel?: () => void;
+}
+
+export const TrackMixerPanel: React.FC<ExtendedTrackMixerPanelProps> = ({
   api,
   tracks,
   selectedTrack,
@@ -27,18 +35,30 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
   onTrackChange,
   onMuteToggle,
   onSoloToggle,
+  isPanelOpen = false,
+  onTogglePanel,
 }) => {
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
-
   const currentTrack = tracks[selectedTrack];
   const instrumentIcon = '🎸';
 
+  // 🔧 V91: Use controlled state from parent
+  const handleToggle = () => {
+    if (onTogglePanel) {
+      onTogglePanel();
+    }
+  };
+
+  const handleClose = () => {
+    if (onTogglePanel && isPanelOpen) {
+      onTogglePanel();
+    }
+  };
+
   return (
     <div id="mixer-button" className="relative z-[50] h-[74px] flex items-center">
-      {/* 🔧 V90: Button reduced to 44px height, container stays 74px for alignment */}
       <button
         id="control-mixer"
-        onClick={() => setIsPanelOpen(!isPanelOpen)}
+        onClick={handleToggle}
         disabled={!api || tracks.length === 0}
         aria-haspopup="true"
         aria-pressed={isPanelOpen}
@@ -69,21 +89,20 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
           width="13"
           height="8"
           viewBox="0 0 13 8"
-          className={`text-blue-200/70 transition-transform flex-shrink-0 ${isPanelOpen ? 'rotate-180' : ''
-            }`}
+          className={`text-blue-200/70 transition-transform flex-shrink-0 ${isPanelOpen ? 'rotate-180' : ''}`}
           fill="currentColor"
         >
           <path d="M6.5 8L0 0h13L6.5 8z" />
         </svg>
 
-        {/* 🎯 SONGSTERR TOOLTIP - WIDE FORMAT */}
+        {/* SONGSTERR TOOLTIP - WIDE FORMAT */}
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-[7px] pb-[10px] bg-black/95 text-white text-[13px] leading-[18px] tracking-[0.4px] rounded-lg opacity-0 group-hover:opacity-100 transition-[opacity,transform] duration-150 ease-out pointer-events-none z-[11000] whitespace-nowrap">
           <div>Show tracks <kbd className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-[11px]">T</kbd></div>
           <div className="text-gray-400 text-[11px] mt-1">Switch tracks <kbd className="px-1 py-0.5 bg-white/20 rounded text-[10px]">Ctrl</kbd> <kbd className="px-1 py-0.5 bg-white/20 rounded text-[10px]">Shift</kbd> <kbd className="px-1 py-0.5 bg-white/20 rounded text-[10px]">↓↑</kbd></div>
         </div>
       </button>
 
-      {/* Track Dropdown Panel - 🔧 V87.2: Increased to ~630px width */}
+      {/* Track Dropdown Panel - ~630px width */}
       {isPanelOpen && (
         <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-4 w-[630px] max-h-[692px] overflow-y-auto z-[100]">
           <div className="flex items-center justify-between mb-3 sticky top-0 bg-gray-900/95 pb-2 border-b border-gray-700">
@@ -91,7 +110,7 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
               Tracks ({tracks.length})
             </span>
             <button
-              onClick={() => setIsPanelOpen(false)}
+              onClick={handleClose}
               className="text-gray-500 hover:text-white transition-colors"
               aria-label="Close track selector"
             >
@@ -119,16 +138,13 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
                 >
                   {/* Track Name */}
                   <button
-                    onClick={() => {
-                      onTrackChange(idx);
-                      setIsPanelOpen(false);
-                    }}
+                    onClick={() => onTrackChange(idx)}
                     className="flex-1 flex items-center gap-2 text-left"
                   >
                     <span className="text-lg">🎸</span>
                     <div className="flex flex-col min-w-0">
                       <span
-                        className={`text-sm font-medium truncate ${isSelected ? 'text-blue-200' : 'text-gray-300'
+                        className={`text-sm font-medium truncate ${isSelected ? 'text-blue-200' : 'text-gray-200'
                           }`}
                       >
                         {track.name}
@@ -139,34 +155,26 @@ export const TrackMixerPanel: React.FC<TrackMixerPanelProps> = ({
                     </div>
                   </button>
 
-                  {/* Solo Button */}
-                  <button
-                    onClick={() => onSoloToggle(idx)}
-                    className={`
-                      px-3 py-1.5 rounded text-xs font-bold transition-colors
-                      ${isSoloed
-                        ? 'bg-yellow-500 text-black'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                      }
-                    `}
-                    title="Solo this track"
-                  >
-                    S
-                  </button>
-
                   {/* Mute Button */}
                   <button
                     onClick={() => onMuteToggle(idx)}
-                    className={`
-                      px-3 py-1.5 rounded text-xs font-bold transition-colors
-                      ${isMuted
+                    className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${isMuted
                         ? 'bg-red-500 text-white'
                         : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                      }
-                    `}
-                    title="Mute this track"
+                      }`}
                   >
                     M
+                  </button>
+
+                  {/* Solo Button */}
+                  <button
+                    onClick={() => onSoloToggle(idx)}
+                    className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${isSoloed
+                        ? 'bg-yellow-500 text-black'
+                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                  >
+                    S
                   </button>
                 </div>
               );

@@ -1,19 +1,16 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube + Pitch Shift Integration
- * December 20th, 2025 - V98.14: FIX AUDIO TRANSPOSITION + UNICODE TUNING
+ * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Menu
+ * December 30th, 2025 - V98.15: COUNT-IN WITH SOUND & MOBILE TOOLS MENU
  *
- * 🔧 V98.14 FIXES:
- * ✅ Added detailed logging for pitch shift debugging
- * ✅ TuningOverlay uses Unicode ♯/♭ symbols (prevents char-by-char split)
- * ✅ Better error handling for changeTrackTranspositionPitch
- * 
- * 🔒 PRESERVED FROM V98.13:
- * ✅ isPitchPopoverOpen state
- * ✅ pitchPopoverAnchor state  
- * ✅ Pass pitch props to MaestroControlPanel
- * ✅ Pass popover props to TuningOverlay
+ * 🆕 V98.15 CHANGES:
+ * ✅ Added count-in with tick sound on each beat
+ * ✅ Auto-disable Count In after countdown (one-shot behavior)
+ * ✅ Added CountInOverlay component
+ * ✅ Added MobileToolsMenu slide-out panel
+ * ✅ Added state for mobile tools menu and metronome
+ * ✅ Pass count-in and mobile tools props to MaestroControlPanel
  */
 
 import React, {
@@ -27,9 +24,10 @@ import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
 import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
-import { TopMenuTray } from '@/components/audio/maestro/layout';
+import { TopMenuTray, MobileToolsMenu } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
+import { CountInOverlay } from '@/components/audio/maestro/controls/CountInOverlay';
 import {
     loadInitialSongData,
     getSongById,
@@ -38,6 +36,32 @@ import {
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
 const SCROLL_THRESHOLD = 50;
+
+// ==================== COUNT IN SOUND ====================
+// Simple Web Audio API click/tick sound
+const playCountInTick = () => {
+    try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // High-pitched click (like drum sticks)
+        oscillator.frequency.value = 1200;
+        oscillator.type = 'sine';
+
+        // Quick attack and decay for "tick" sound
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+    } catch (error) {
+        console.warn('Count-in sound failed:', error);
+    }
+};
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -60,10 +84,18 @@ export default function SynthPlayerPage() {
     // Pause transition flag
     const pauseTransitionRef = useRef<boolean>(false);
 
+    // ==================== COUNT IN STATE ====================
+    const [isCountInEnabled, setIsCountInEnabled] = useState<boolean>(false);
+    const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
+    const [countdownValue, setCountdownValue] = useState<number>(0);
+
+    // ==================== MOBILE TOOLS MENU STATE ====================
+    const [isMobileToolsOpen, setIsMobileToolsOpen] = useState<boolean>(false);
+    const [isMetronomeEnabled, setIsMetronomeEnabled] = useState<boolean>(false);
+
     // ==================== PITCH SHIFT STATE ====================
     const [pitchShift, setPitchShift] = useState<number>(0);
     const [tuningData, setTuningData] = useState<number[]>([64, 59, 55, 50, 45, 40]);
-    // 🆕 V98.13: Pitch popover state
     const [isPitchPopoverOpen, setIsPitchPopoverOpen] = useState<boolean>(false);
     const [pitchPopoverAnchor, setPitchPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
 
@@ -76,7 +108,7 @@ export default function SynthPlayerPage() {
     const [trackSoloState, setTrackSoloState] = useState<Map<number, boolean>>(new Map());
 
     // ==================== THEME STATE ====================
-    const [theme, setTheme] = useState<'light' | 'dark'>('light'); // ✅ Default to light
+    const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
     // ==================== SONG STATE MANAGEMENT ====================
     const [songState, setSongState] = useState<SongState>(() => loadInitialSongData());
@@ -103,8 +135,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.14: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.14: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.15: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.15: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -143,33 +175,31 @@ export default function SynthPlayerPage() {
 
     // ==================== PITCH SHIFT HANDLER ====================
     const handlePitchShiftChange = useCallback((semitones: number) => {
-        console.log(`🎵 V98.13: handlePitchShiftChange called with ${semitones} semitones`);
+        console.log(`🎵 V98.15: handlePitchShiftChange called with ${semitones} semitones`);
         setPitchShift(semitones);
 
-        // Apply audio transposition immediately
         if (api) {
-            console.log(`🎵 V98.13: API exists, checking score...`);
+            console.log(`🎵 V98.15: API exists, checking score...`);
             if (api.score?.tracks) {
                 try {
                     const allTracks = api.score.tracks;
-                    console.log(`🎵 V98.13: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
+                    console.log(`🎵 V98.15: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
                     api.changeTrackTranspositionPitch(allTracks, semitones);
-                    console.log(`✅ V98.13: Audio pitch shifted by ${semitones} semitones`);
+                    console.log(`✅ V98.15: Audio pitch shifted by ${semitones} semitones`);
                 } catch (err) {
-                    console.error('❌ V98.13: changeTrackTranspositionPitch error:', err);
+                    console.error('❌ V98.15: changeTrackTranspositionPitch error:', err);
                 }
             } else {
-                console.warn('⚠️ V98.13: No score or tracks available');
+                console.warn('⚠️ V98.15: No score or tracks available');
             }
         } else {
-            console.warn('⚠️ V98.13: API not available');
+            console.warn('⚠️ V98.15: API not available');
         }
     }, [api]);
 
-    // 🆕 V98.13: Toggle pitch popover (called from TransportBar)
     const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
         if (audioSource !== 'synth') {
-            console.log('⚠️ V98.13: Pitch shift only available in Synth mode');
+            console.log('⚠️ V98.15: Pitch shift only available in Synth mode');
             return;
         }
 
@@ -180,6 +210,23 @@ export default function SynthPlayerPage() {
             return !prev;
         });
     }, [audioSource]);
+
+    // ==================== COUNT IN TOGGLE ====================
+    const handleCountInToggle = useCallback(() => {
+        setIsCountInEnabled(prev => !prev);
+        console.log('🔔 Count In toggled:', !isCountInEnabled);
+    }, [isCountInEnabled]);
+
+    // ==================== MOBILE TOOLS MENU HANDLERS ====================
+    const handleMobileToolsToggle = useCallback(() => {
+        setIsMobileToolsOpen(prev => !prev);
+    }, []);
+
+    const handleMetronomeToggle = useCallback(() => {
+        setIsMetronomeEnabled(prev => !prev);
+        console.log('🥁 Metronome toggled:', !isMetronomeEnabled);
+        // TODO: Implement metronome sound logic
+    }, [isMetronomeEnabled]);
 
     // ==================== RESET PITCH ON SONG CHANGE ====================
     useEffect(() => {
@@ -192,20 +239,20 @@ export default function SynthPlayerPage() {
                     // API may not be ready
                 }
             }
-            console.log('🔄 V98.14: Pitch reset on song change');
+            console.log('🔄 V98.15: Pitch reset on song change');
         }
     }, [currentFileUrl]);
 
     // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.13: Creating YouTube handler instance');
+        console.log('🎬 V98.15: Creating YouTube handler instance');
 
         return {
             play: () => {
-                console.log('▶️ V98.13: Handler.play() called');
+                console.log('▶️ V98.15: Handler.play() called');
 
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(`⏱️ V98.13: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
+                    console.log(`⏱️ V98.15: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
                     youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                     postSeekLockUntilRef.current = performance.now() + 200;
@@ -217,7 +264,7 @@ export default function SynthPlayerPage() {
             },
 
             pause: () => {
-                console.log('⏸️ V98.13: Handler.pause() called');
+                console.log('⏸️ V98.15: Handler.pause() called');
                 youtubePlayerRef.current?.pauseVideo?.();
             },
 
@@ -350,7 +397,6 @@ export default function SynthPlayerPage() {
     }, []);
 
     // Reset scroll position in landscape
-    // ✅ Fixed version:
     useEffect(() => {
         if (isMobileLandscape && mainScrollContainerRef.current) {
             mainScrollContainerRef.current.scrollLeft = 0;
@@ -378,12 +424,12 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.13: API Ready');
+            console.log('✅ V98.15: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.13: Player Ready');
+                    console.log('✅ V98.15: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
@@ -414,7 +460,7 @@ export default function SynthPlayerPage() {
     // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.13: Score loaded - ${info.title}`);
+            console.log(`✅ V98.15: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -427,7 +473,7 @@ export default function SynthPlayerPage() {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.13: Tuning extracted:', staff.stringTuning.tunings);
+                    console.log('🎸 V98.15: Tuning extracted:', staff.stringTuning.tunings);
                 }
             }
 
@@ -437,17 +483,39 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.13: Rendering Complete');
+        console.log('✅ V98.15: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.13 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.15 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
-    const handlePlayPause = useCallback(() => {
+    // ==================== PLAY/PAUSE WITH COUNT-IN ====================
+    const handlePlayPause = useCallback(async () => {
         if (!api) return;
 
+        // ========== COUNT IN LOGIC ==========
+        if (!isPlaying && isCountInEnabled) {
+            console.log('🔔 Starting countdown...');
+            setIsCountingDown(true);
+
+            // Countdown: 3 → 2 → 1 with tick sound
+            for (let i = 3; i > 0; i--) {
+                setCountdownValue(i);
+                playCountInTick(); // 🔊 Play tick sound
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            setCountdownValue(0);
+            setIsCountingDown(false);
+
+            // 🆕 AUTO-DISABLE: Turn off Count In after countdown completes
+            setIsCountInEnabled(false);
+            console.log('✅ Countdown complete, Count In auto-disabled');
+        }
+
+        // ========== EXISTING PLAYBACK LOGIC ==========
         if (audioSource === 'original') {
             const output = api.player?.output as any;
             if (output?.handler) {
@@ -459,6 +527,7 @@ export default function SynthPlayerPage() {
                 } else {
                     output.handler.play();
                     api.play();
+                    initialSeekRef.current = -1;
                 }
             }
         } else {
@@ -468,7 +537,7 @@ export default function SynthPlayerPage() {
                 api.play();
             }
         }
-    }, [api, isPlaying, audioSource]);
+    }, [api, audioSource, isPlaying, isCountInEnabled]);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -525,7 +594,7 @@ export default function SynthPlayerPage() {
                     try {
                         api.changeTrackTranspositionPitch(api.score.tracks, 0);
                     } catch (err) {
-                        console.error('❌ V98.13: Reset pitch error:', err);
+                        console.error('❌ V98.15: Reset pitch error:', err);
                     }
                 }
             }
@@ -562,7 +631,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.13: YouTube player ready');
+        console.log('✅ V98.15: YouTube player ready');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
@@ -626,7 +695,7 @@ export default function SynthPlayerPage() {
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.13: updatePosition error:', err);
+                console.error('❌ V98.15: updatePosition error:', err);
             }
             currentTimeRef.current = timeMs;
         }, 50);
@@ -658,7 +727,6 @@ export default function SynthPlayerPage() {
 
     // ==================== SONG LIBRARY ====================
     const handleSongSelect = useCallback((songId: string) => {
-        // 🆕 ADD LOOP RESET HERE (at the very beginning)
         setIsLooping(false);
         setHasLoopSelection(false);
         if (api?.playbackRange) {
@@ -807,7 +875,6 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
-                {/* Wrapper with TuningOverlay */}
                 <div
                     id="maestro-player"
                     className={`
@@ -818,7 +885,6 @@ export default function SynthPlayerPage() {
                         }
                     `}
                 >
-                    {/* 🔧 V98.13: TuningOverlay with popover control from TransportBar */}
                     <TuningOverlay
                         api={api}
                         tuning={tuningData}
@@ -905,9 +971,30 @@ export default function SynthPlayerPage() {
                         onThemeToggle={handleThemeToggle}
                         pitchShift={pitchShift}
                         onPitchShiftToggle={handlePitchShiftToggle}
+                        isCountInEnabled={isCountInEnabled}
+                        onCountInToggle={handleCountInToggle}
+                        isMobileToolsOpen={isMobileToolsOpen}
+                        onMobileToolsToggle={handleMobileToolsToggle}
                     />
                 )}
             </footer>
+
+            {/* COUNT IN OVERLAY */}
+            <CountInOverlay
+                count={countdownValue}
+                isVisible={isCountingDown}
+                onComplete={() => console.log('🎵 Countdown complete')}
+            />
+
+            {/* 🆕 MOBILE TOOLS MENU */}
+            <MobileToolsMenu
+                isOpen={isMobileToolsOpen}
+                onClose={() => setIsMobileToolsOpen(false)}
+                isCountInEnabled={isCountInEnabled}
+                onCountInToggle={handleCountInToggle}
+                isMetronomeEnabled={isMetronomeEnabled}
+                onMetronomeToggle={handleMetronomeToggle}
+            />
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
                 <YouTubePlayer

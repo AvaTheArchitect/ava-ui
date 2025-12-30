@@ -1,32 +1,37 @@
 'use client';
 
 /**
- * TransportBar.tsx - V90: ADD TUNING FORK TO MORE MENU
- * Date: December 20th, 2025
+ * TransportBar.tsx - V92.1: FIXED MORE BUTTON & COUNT IN COLORS
+ * Date: December 29th, 2025
  * 
- * 🆕 NEW IN V90:
- * ✅ Tuning Fork / Pitch Shift button in MORE menu
- * ✅ Shows current pitch shift badge when shifted
- * ✅ Only enabled in Synth mode
- * ✅ Opens pitch shift popover via callback
+ * 🔧 NEW IN V92.1:
+ * ✅ MORE button now matches Loop/Speed pattern (soft white → green when open)
+ * ✅ Count In button uses proper blue-200/green-400 colors (not blue-400)
+ * ✅ Both buttons use hover:brightness-125 for consistency
  * 
- * 🔒 PRESERVED FROM V89:
- * ✅ Theme toggle in MORE menu
- * ✅ Fixed height 74px
- * ✅ All other buttons
+ * 🔧 V92 FEATURES:
+ * ✅ Count In button enabled with green indicator when ON
+ * ✅ Speed button shows green when panel OPEN (consistent with other buttons)
+ * ✅ Preserved orange speedometer when speed > 100%
+ * ✅ Count In state management added
+ * 
+ * 🔒 PRESERVED FROM V91.4:
+ * ✅ All previous fixes
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { PlaybackControls } from './PlaybackControls';
 import { SpeedControl } from './SpeedControl';
 import { LoopControl } from './LoopControl';
 import { TrackMixerPanel } from './TrackMixerPanel';
 import type { TransportBarProps } from './MaestroControlTypes';
 
-// 🆕 V90: Extended props for pitch shift
 interface ExtendedTransportBarProps extends TransportBarProps {
   pitchShift?: number;
   onPitchShiftToggle?: (anchorRect: DOMRect) => void;
+  // 🆕 V92: Count In props
+  isCountInEnabled?: boolean;
+  onCountInToggle?: () => void;
 }
 
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
@@ -50,54 +55,109 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   onTrackMuteToggle,
   onTrackSoloToggle,
   onThemeToggle,
-  // 🆕 V90: Pitch shift props
   pitchShift = 0,
   onPitchShiftToggle,
+  // 🆕 V92: Count In props with defaults
+  isCountInEnabled = false,
+  onCountInToggle,
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
+  const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const trackMixerRef = useRef<HTMLDivElement>(null);
+  const speedPanelRef = useRef<HTMLDivElement>(null);
   const tuningButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Close menu when clicking outside
+  const closeAllPanels = useCallback(() => {
+    setIsMoreMenuOpen(false);
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+  }, []);
+
+  // 🔧 V91.3: Improved click-outside detection with .contains() check
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+
+      // 🔧 V91.3: Check if click is INSIDE any panel container (more resilient)
+      const clickedInsideSpeed = speedPanelRef.current?.contains(target);
+      const clickedInsideTrack = trackMixerRef.current?.contains(target);
+      const clickedInsideMore = moreMenuRef.current?.contains(target);
+
+      // Close panels only if clicking OUTSIDE
+      if (isSpeedPanelOpen && !clickedInsideSpeed) {
+        setIsSpeedPanelOpen(false);
+      }
+      if (isTrackMixerOpen && !clickedInsideTrack) {
+        setIsTrackMixerOpen(false);
+      }
+      if (isMoreMenuOpen && !clickedInsideMore) {
         setIsMoreMenuOpen(false);
+      }
+
+      // Also close if clicking on the canvas
+      const isCanvasClick = (target as Element).closest?.('.at-surface') ||
+        (target as Element).closest?.('.at-viewport') ||
+        (target as Element).closest?.('#alphatab-container');
+
+      if (isCanvasClick) {
+        closeAllPanels();
       }
     };
 
-    if (isMoreMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMoreMenuOpen, isTrackMixerOpen, isSpeedPanelOpen, closeAllPanels]);
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isMoreMenuOpen]);
-
-  // Close menu when playback starts
   useEffect(() => {
     if (isPlaying) {
-      setIsMoreMenuOpen(false);
+      closeAllPanels();
     }
-  }, [isPlaying]);
+  }, [isPlaying, closeAllPanels]);
 
-  // Theme toggle handler
-  const handleThemeToggleClick = () => {
+  const handleTrackMixerToggle = useCallback(() => {
+    setIsTrackMixerOpen(prev => !prev);
+    setIsSpeedPanelOpen(false);
+    setIsMoreMenuOpen(false);
+  }, []);
+
+  const handleSpeedToggle = useCallback(() => {
+    setIsSpeedPanelOpen(prev => !prev);
+    setIsTrackMixerOpen(false);
+    setIsMoreMenuOpen(false);
+  }, []);
+
+  const handleMoreToggle = useCallback(() => {
+    setIsMoreMenuOpen(prev => !prev);
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+  }, []);
+
+  const handleThemeToggleClick = useCallback(() => {
     if (onThemeToggle) {
       onThemeToggle();
     }
     setIsMoreMenuOpen(false);
-  };
+  }, [onThemeToggle]);
 
-  // 🆕 V90: Pitch shift handler
-  const handlePitchShiftClick = () => {
+  const handlePitchShiftClick = useCallback(() => {
     if (onPitchShiftToggle && tuningButtonRef.current) {
       const rect = tuningButtonRef.current.getBoundingClientRect();
       onPitchShiftToggle(rect);
     }
     setIsMoreMenuOpen(false);
-  };
+  }, [onPitchShiftToggle]);
+
+  const handleTrackChange = useCallback((trackIndex: number) => {
+    onTrackChange(trackIndex);
+    setIsTrackMixerOpen(false);
+  }, [onTrackChange]);
+
+  const handleSpeedChange = useCallback((speed: number) => {
+    onSpeedChange(speed);
+  }, [onSpeedChange]);
 
   const isSynthMode = audioSource === 'synth';
 
@@ -107,16 +167,20 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 
         {/* LEFT SECTION */}
         <div className="flex items-center gap-[50px] pl-[50px]">
-          <TrackMixerPanel
-            api={api}
-            tracks={tracks}
-            selectedTrack={selectedTrack}
-            trackMuteState={trackMuteState}
-            trackSoloState={trackSoloState}
-            onTrackChange={onTrackChange}
-            onMuteToggle={onTrackMuteToggle}
-            onSoloToggle={onTrackSoloToggle}
-          />
+          <div ref={trackMixerRef}>
+            <TrackMixerPanel
+              api={api}
+              tracks={tracks}
+              selectedTrack={selectedTrack}
+              trackMuteState={trackMuteState}
+              trackSoloState={trackSoloState}
+              onTrackChange={handleTrackChange}
+              onMuteToggle={onTrackMuteToggle}
+              onSoloToggle={onTrackSoloToggle}
+              isPanelOpen={isTrackMixerOpen}
+              onTogglePanel={handleTrackMixerToggle}
+            />
+          </div>
 
           <PlaybackControls
             api={api}
@@ -130,12 +194,16 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 
         {/* MIDDLE SECTION */}
         <div className="flex-1 flex items-center justify-evenly">
-          <SpeedControl
-            api={api}
-            playbackSpeed={playbackSpeed}
-            songInfo={songInfo}
-            onSpeedChange={onSpeedChange}
-          />
+          <div ref={speedPanelRef}>
+            <SpeedControl
+              api={api}
+              playbackSpeed={playbackSpeed}
+              songInfo={songInfo}
+              onSpeedChange={handleSpeedChange}
+              isPanelOpen={isSpeedPanelOpen}
+              onTogglePanel={handleSpeedToggle}
+            />
+          </div>
 
           <LoopControl
             api={api}
@@ -160,12 +228,19 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">MUTE</span>
           </button>
 
-          {/* Count In - Stub */}
-          <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-6 h-[74px] opacity-50 cursor-not-allowed">
-            <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
+          {/* Count In - 🆕 V92: Enabled with green indicator */}
+          <button
+            onClick={onCountInToggle}
+            disabled={!api}
+            className={`group relative flex flex-col items-center justify-center gap-0.5 px-6 h-[74px] transition-all duration-200 ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'
+              }`}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className={`transition-colors ${isCountInEnabled ? 'text-green-400' : 'text-blue-200'}`}>
               <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
             </svg>
-            <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">COUNT IN</span>
+            <span className={`text-[12px] uppercase tracking-wide transition-colors ${isCountInEnabled ? 'text-green-400/70' : 'text-blue-200/70'}`}>
+              COUNT IN
+            </span>
           </button>
 
           {/* Metronome - Stub */}
@@ -196,35 +271,41 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">PRINT</span>
             </button>
 
-            {/* MORE Menu */}
+            {/* MORE Menu - 🔧 V92.1: EXACT MATCH to Loop/Speed pattern */}
             <div className="relative" ref={moreMenuRef}>
               <button
-                onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-                className={`group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] transition-colors ${isMoreMenuOpen ? 'text-purple-400' : 'text-blue-400 hover:text-blue-300'}`}
+                onClick={handleMoreToggle}
+                className={`
+                  group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px]
+                  transition-all duration-200 hover:brightness-125
+                `}
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className={`transition-colors ${isMoreMenuOpen ? 'text-green-400' : 'text-blue-200'}`}
+                >
                   <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                 </svg>
-                <span className={`text-[12px] uppercase tracking-wide ${isMoreMenuOpen ? 'text-purple-400' : 'text-blue-400/70'}`}>MORE</span>
+                <span className="text-[12px] uppercase text-blue-200/70 tracking-wide">
+                  MORE
+                </span>
               </button>
 
-              {/* MORE Dropdown Menu */}
               {isMoreMenuOpen && (
                 <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-2 min-w-[220px] z-[11000]">
 
-                  {/* 🆕 V90: Pitch Shift / Tuning */}
+                  {/* Pitch Shift Button - 🔧 V91.3: BRIGHTENED text colors */}
                   <button
                     ref={tuningButtonRef}
                     onClick={handlePitchShiftClick}
                     disabled={!isSynthMode}
                     data-tuning-button
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left
-                                            ${isSynthMode
-                        ? 'hover:bg-gray-700/50'
-                        : 'opacity-50 cursor-not-allowed'
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${isSynthMode ? 'hover:bg-gray-700/50' : 'opacity-50 cursor-not-allowed'
                       }`}
                   >
-                    {/* Tuning Fork Icon */}
                     <div className="relative">
                       <svg width="20" height="20" viewBox="0 0 20 24" fill="none">
                         <path
@@ -234,25 +315,26 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                         <rect x="4" y="17" width="12" height="2" rx="1" fill={isSynthMode ? '#60a5fa' : '#6b7280'} />
                       </svg>
 
-                      {/* Pitch Shift Badge */}
                       {pitchShift !== 0 && (
                         <span className={`
-                                                    absolute -top-1 -right-2
-                                                    min-w-[16px] h-[14px] px-1
-                                                    text-[9px] font-bold text-white
-                                                    rounded-full flex items-center justify-center
-                                                    ${pitchShift > 0 ? 'bg-green-500' : 'bg-orange-500'}
-                                                `}>
+                          absolute -top-1 -right-2
+                          min-w-[16px] h-[14px] px-1
+                          text-[9px] font-bold text-white
+                          rounded-full flex items-center justify-center
+                          ${pitchShift > 0 ? 'bg-green-500' : 'bg-orange-500'}
+                        `}>
                           {pitchShift > 0 ? `+${pitchShift}` : pitchShift}
                         </span>
                       )}
                     </div>
 
                     <div>
-                      <div className="text-sm font-medium text-gray-200">
+                      {/* 🔧 V91.3: Changed text-gray-200 → text-white for better visibility */}
+                      <div className="text-sm font-medium text-white">
                         Pitch Shift
                       </div>
-                      <div className="text-xs text-gray-500">
+                      {/* 🔧 V91.3: Changed text-gray-500 → text-gray-300 for better readability */}
+                      <div className="text-xs text-gray-300">
                         {isSynthMode
                           ? (pitchShift === 0 ? 'Original tuning' : `${pitchShift > 0 ? '+' : ''}${pitchShift} semitones`)
                           : 'Synth mode only'
@@ -260,13 +342,11 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                       </div>
                     </div>
 
-                    {/* Keyboard shortcut hint */}
                     {isSynthMode && (
                       <kbd className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-400">R</kbd>
                     )}
                   </button>
 
-                  {/* Divider */}
                   <div className="my-2 border-t border-gray-700" />
 
                   {/* Theme Toggle */}
@@ -278,34 +358,32 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                       {theme === 'dark' ? '☀️' : '🌙'}
                     </span>
                     <div>
-                      <div className="text-sm font-medium text-gray-200">
+                      <div className="text-sm font-medium text-white">
                         {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-300">
                         Switch to {theme === 'dark' ? 'light' : 'dark'} theme
                       </div>
                     </div>
                   </button>
 
-                  {/* Divider */}
                   <div className="my-2 border-t border-gray-700" />
 
-                  {/* Future options */}
                   <div className="px-3 py-2 text-xs text-gray-500 italic">
                     More options coming soon...
                   </div>
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Editor - Stub */}
-          <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed ml-4">
-            <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
-              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-            </svg>
-            <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">EDITOR</span>
-          </button>
+            {/* EDITOR button */}
+            <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed ml-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
+                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+              </svg>
+              <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">EDITOR</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
