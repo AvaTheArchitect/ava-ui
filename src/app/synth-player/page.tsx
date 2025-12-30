@@ -24,7 +24,7 @@ import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
 import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
-import { TopMenuTray, MobileToolsMenu } from '@/components/audio/maestro/layout';
+import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import { CountInOverlay } from '@/components/audio/maestro/controls/CountInOverlay';
