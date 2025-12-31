@@ -1,5 +1,7 @@
 /**
  * Maestro Controls - Export Barrel
+ * Date: December 30th, 2025
+ *
  * Centralizes exports for clean imports
  *
  * Usage:
@@ -21,6 +23,14 @@ export { SpeedControl } from "./SpeedControl";
 export { LoopControl } from "./LoopControl";
 export { TrackMixerPanel } from "./TrackMixerPanel";
 export { AudioSourceToggle } from "./AudioSourceToggle";
+
+// 🆕 Count-In & Metronome Features
+export { CountInOverlay } from "./CountInOverlay";
+export { useSmartMetronome } from "./useSmartMetronome";
+export { MetronomeSettings } from "./MetronomeSettings";
+
+// Metronome types
+export type { MetronomeSoundType, SubdivisionMode } from "./useSmartMetronome";
 
 // Types
 export * from "./MaestroControlTypes";

@@ -1,130 +1,76 @@
 'use client';
 
 /**
- * MetronomeSettings.tsx  V2 - Universal Settings Panel for Tools
- * Date: December 30th, 2025
+ * MetronomeSettings.tsx V3 -  Collapsible Metronome Controls in Settings
+ * Date: December 31st, 2025
  * 
  * 🎚️ Features:
- * ✅ Metronome sound selection (tap to activate)
- * ✅ Count-in options (3-2-1 vs 4-beat)
- * ✅ Future: Fretboard settings, Notation display
+ * ✅ Collapsible drawer format (TE Tuner style)
+ * ✅ Simple sound selector popup
+ * ✅ Accent toggle (on/off)
+ * ✅ Volume, Balance, Subdivision controls
+ * ✅ Kick drum + Snare drum sounds
  * 
  * Integration Path:
  * maestro-ai/src/components/audio/maestro/controls/MetronomeSettings.tsx
  */
 
 import React, { useState } from 'react';
-
-// Import MetronomeSoundType from SmartMetronome to avoid duplication
-import type { MetronomeSoundType } from './SmartMetronome';
+import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
 
 export interface MetronomeSettingsProps {
     isOpen: boolean;
     onClose: () => void;
 
     // Metronome settings
-    selectedSound?: MetronomeSoundType;
-    onSoundChange?: (sound: MetronomeSoundType) => void;
+    volume: number;
+    onVolumeChange: (volume: number) => void;
+
+    balance: number;
+    onBalanceChange: (balance: number) => void;
+
+    subdivision: SubdivisionMode;
+    onSubdivisionChange: (subdivision: SubdivisionMode) => void;
+
+    soundType: MetronomeSoundType;
+    onSoundTypeChange: (sound: MetronomeSoundType) => void;
+
+    accentEnabled: boolean;
+    onAccentToggle: () => void;
 
     // Count-in settings
     countInMode?: 'three-beat' | 'four-beat';
     onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
-
-    // Future settings
-    fretboardMode?: 'left-hand' | 'right-hand';
-    fretboardFrets?: 22 | 24;
-    notationDisplay?: 'standard' | 'tab' | 'both';
 }
 
-interface SoundOption {
-    id: MetronomeSoundType;
-    name: string;
-    icon: string;
-    frequency: number; // Hz for oscillator
-    description: string;
-}
-
-const SOUND_OPTIONS: SoundOption[] = [
-    {
-        id: 'woodblock',
-        name: 'Woodblock',
-        icon: '🪵',
-        frequency: 800,
-        description: 'Classic warm sound',
-    },
-    {
-        id: 'click',
-        name: 'Click',
-        icon: '🔊',
-        frequency: 1200,
-        description: 'Sharp click sound',
-    },
-    {
-        id: 'beep',
-        name: 'Beep',
-        icon: '📢',
-        frequency: 1000,
-        description: 'Electronic beep',
-    },
-    {
-        id: 'drum-stick',
-        name: 'Drum Stick',
-        icon: '🥁',
-        frequency: 2000,
-        description: 'High-pitched tap',
-    },
-    {
-        id: 'electronic',
-        name: 'Electronic',
-        icon: '⚡',
-        frequency: 440,
-        description: 'Synth tone',
-    },
+const SOUND_OPTIONS: { id: MetronomeSoundType; name: string }[] = [
+    { id: 'woodblock', name: 'Woodblock' },
+    { id: 'click', name: 'Click' },
+    { id: 'beep', name: 'Beep' },
+    { id: 'drum-stick', name: 'Drum Stick' },
+    { id: 'kick-drum', name: 'Kick Drum' },
+    { id: 'snare-drum', name: 'Snare Drum' },
+    { id: 'electronic', name: 'Electronic' },
 ];
 
 export const MetronomeSettings: React.FC<MetronomeSettingsProps> = ({
     isOpen,
     onClose,
-    selectedSound = 'woodblock',
-    onSoundChange,
+    volume,
+    onVolumeChange,
+    balance,
+    onBalanceChange,
+    subdivision,
+    onSubdivisionChange,
+    soundType,
+    onSoundTypeChange,
+    accentEnabled,
+    onAccentToggle,
     countInMode = 'three-beat',
     onCountInModeChange,
 }) => {
-    const [previewingSound, setPreviewingSound] = useState<MetronomeSoundType | null>(null);
-
-    // Play preview sound
-    const playPreviewSound = (soundOption: SoundOption) => {
-        try {
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-
-            oscillator.frequency.value = soundOption.frequency;
-            oscillator.type = soundOption.id === 'electronic' ? 'sine' : 'square';
-
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-
-            setPreviewingSound(soundOption.id);
-            setTimeout(() => setPreviewingSound(null), 150);
-        } catch (error) {
-            console.warn('Preview sound failed:', error);
-        }
-    };
-
-    const handleSoundSelect = (soundId: MetronomeSoundType) => {
-        const soundOption = SOUND_OPTIONS.find(s => s.id === soundId);
-        if (soundOption) {
-            playPreviewSound(soundOption);
-            onSoundChange?.(soundId);
-        }
-    };
+    const [isMetronomeDrawerOpen, setIsMetronomeDrawerOpen] = useState(true);
+    const [isSoundSelectorOpen, setIsSoundSelectorOpen] = useState(false);
 
     if (!isOpen) return null;
 
@@ -138,10 +84,10 @@ export const MetronomeSettings: React.FC<MetronomeSettingsProps> = ({
 
             {/* Settings Panel */}
             <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-[10001] max-w-md mx-auto animate-slideUp">
-                <div className="bg-gray-900/98 backdrop-blur-xl border-2 border-purple-500/40 rounded-2xl shadow-2xl max-h-[80vh] overflow-y-auto">
+                <div className="bg-gray-900/98 backdrop-blur-xl border-2 border-purple-500/40 rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
 
                     {/* Header */}
-                    <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm border-b border-gray-700/50 px-4 py-3 flex items-center justify-between">
+                    <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm border-b border-gray-700/50 px-4 py-3 flex items-center justify-between z-10">
                         <h2 className="text-white font-bold text-lg">Tool Settings</h2>
                         <button
                             onClick={onClose}
@@ -155,46 +101,140 @@ export const MetronomeSettings: React.FC<MetronomeSettingsProps> = ({
                     </div>
 
                     {/* Content */}
-                    <div className="p-4 space-y-6">
+                    <div className="p-4 space-y-3">
 
-                        {/* Metronome Sound Selection */}
-                        <div>
-                            <h3 className="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
+                        {/* Metronome Settings - Collapsible Drawer */}
+                        <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl overflow-hidden">
+                            {/* Drawer Header */}
+                            <button
+                                onClick={() => setIsMetronomeDrawerOpen(prev => !prev)}
+                                className="w-full flex items-center justify-between p-4 hover:bg-gray-700/30 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-cyan-400">
+                                        <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
+                                    </svg>
+                                    <span className="text-white font-bold text-sm">Metronome Options</span>
+                                </div>
+                                <svg
+                                    width="20"
+                                    height="20"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    className={`text-gray-400 transition-transform ${isMetronomeDrawerOpen ? 'rotate-180' : ''}`}
+                                >
+                                    <path d="M6 9l6 6 6-6" />
                                 </svg>
-                                Metronome Sound
-                            </h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                {SOUND_OPTIONS.map((sound) => (
-                                    <button
-                                        key={sound.id}
-                                        onClick={() => handleSoundSelect(sound.id)}
-                                        className={`
-                                            relative p-4 rounded-xl border-2 transition-all
-                                            ${selectedSound === sound.id
-                                                ? 'bg-orange-500/20 border-orange-500 scale-105'
-                                                : 'bg-gray-800/60 border-gray-700/50 hover:border-gray-600'
-                                            }
-                                            ${previewingSound === sound.id ? 'animate-pulse' : ''}
-                                        `}
-                                    >
-                                        <div className="text-3xl mb-2">{sound.icon}</div>
-                                        <div className="text-white font-semibold text-sm mb-1">{sound.name}</div>
-                                        <div className="text-gray-400 text-xs">{sound.description}</div>
+                            </button>
 
-                                        {/* Active Indicator */}
-                                        {selectedSound === sound.id && (
-                                            <div className="absolute top-2 right-2">
-                                                <div className="w-3 h-3 bg-orange-500 rounded-full animate-pulse" />
-                                            </div>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
+                            {/* Drawer Content */}
+                            {isMetronomeDrawerOpen && (
+                                <div className="px-4 pb-4 space-y-4 border-t border-gray-700/30">
+
+                                    {/* Sound Selection */}
+                                    <div className="pt-4">
+                                        <label className="text-xs font-semibold text-gray-300 block mb-2">Sound</label>
+                                        <button
+                                            onClick={() => setIsSoundSelectorOpen(true)}
+                                            className="w-full flex items-center justify-between px-4 py-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
+                                        >
+                                            <span className="text-white text-sm capitalize">{soundType.replace('-', ' ')}</span>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                                                <path d="M9 18l6-6-6-6" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    {/* Accent Toggle */}
+                                    <div className="flex items-center justify-between py-2">
+                                        <div>
+                                            <label className="text-xs font-semibold text-gray-300 block">Accent Beats</label>
+                                            <p className="text-xs text-gray-500 mt-0.5">Emphasize downbeats</p>
+                                        </div>
+                                        <button
+                                            onClick={onAccentToggle}
+                                            className={`
+                                                relative w-12 h-6 rounded-full transition-colors
+                                                ${accentEnabled ? 'bg-green-500' : 'bg-gray-600'}
+                                            `}
+                                        >
+                                            <div className={`
+                                                absolute top-0.5 w-5 h-5 rounded-full bg-white
+                                                transition-transform duration-200
+                                                ${accentEnabled ? 'translate-x-6' : 'translate-x-0.5'}
+                                            `} />
+                                        </button>
+                                    </div>
+
+                                    {/* Volume Control */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-xs font-semibold text-gray-300">Volume</label>
+                                            <span className="text-xs text-cyan-400">{Math.round(volume * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.01"
+                                            value={volume}
+                                            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                                            className="w-full h-2 bg-gray-700 rounded-full appearance-none cursor-pointer accent-cyan-400"
+                                        />
+                                    </div>
+
+                                    {/* Subdivision */}
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-300 block mb-2">Subdivision</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {([0.5, 1, 2] as SubdivisionMode[]).map((value) => (
+                                                <button
+                                                    key={value}
+                                                    onClick={() => onSubdivisionChange(value)}
+                                                    className={`
+                                                        py-2 px-4 rounded-lg font-bold text-sm transition-colors
+                                                        ${subdivision === value
+                                                            ? 'bg-white text-gray-900'
+                                                            : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                                                        }
+                                                    `}
+                                                >
+                                                    {value}x
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* L & R Balance */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-xs font-semibold text-gray-300">L & R Balance</label>
+                                            <span className="text-xs text-cyan-400">
+                                                {balance < -0.1 ? 'Left' : balance > 0.1 ? 'Right' : 'Center'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500">L</span>
+                                            <input
+                                                type="range"
+                                                min="-1"
+                                                max="1"
+                                                step="0.01"
+                                                value={balance}
+                                                onChange={(e) => onBalanceChange(parseFloat(e.target.value))}
+                                                className="flex-1 h-2 bg-gray-700 rounded-full appearance-none cursor-pointer accent-cyan-400"
+                                            />
+                                            <span className="text-xs text-gray-500">R</span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">For stage performers</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Count-In Options */}
+                        {/* Count-In Mode */}
                         <div>
                             <h3 className="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -232,36 +272,39 @@ export const MetronomeSettings: React.FC<MetronomeSettingsProps> = ({
                             </div>
                         </div>
 
-                        {/* Future: Fretboard Settings (Placeholder) */}
-                        <div className="opacity-50">
-                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <rect x="2" y="6" width="20" height="12" rx="2" />
-                                    <path d="M7 6v12M12 6v12M17 6v12" />
-                                </svg>
-                                Fretboard Options
-                            </h3>
-                            <div className="bg-gray-800/30 border border-gray-700/30 rounded-xl p-4 text-center">
-                                <p className="text-gray-500 text-sm">Coming soon</p>
-                            </div>
-                        </div>
-
-                        {/* Future: Notation Display (Placeholder) */}
-                        <div className="opacity-50">
-                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                                </svg>
-                                Notation Display
-                            </h3>
-                            <div className="bg-gray-800/30 border border-gray-700/30 rounded-xl p-4 text-center">
-                                <p className="text-gray-500 text-sm">Coming soon</p>
-                            </div>
-                        </div>
-
                     </div>
                 </div>
             </div>
+
+            {/* Sound Selector Popup */}
+            {isSoundSelectorOpen && (
+                <div className="fixed inset-0 z-[10002] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/70" onClick={() => setIsSoundSelectorOpen(false)} />
+                    <div className="relative bg-gray-800 border-2 border-purple-500/40 rounded-2xl p-4 max-w-xs w-full shadow-2xl">
+                        <h3 className="text-white font-bold mb-3 text-center">Select Sound</h3>
+                        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                            {SOUND_OPTIONS.map((sound) => (
+                                <button
+                                    key={sound.id}
+                                    onClick={() => {
+                                        onSoundTypeChange(sound.id);
+                                        setIsSoundSelectorOpen(false);
+                                    }}
+                                    className={`
+                                        w-full px-4 py-3 rounded-lg text-left transition-colors
+                                        ${soundType === sound.id
+                                            ? 'bg-orange-500 text-white font-bold'
+                                            : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                                        }
+                                    `}
+                                >
+                                    {sound.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style jsx>{`
                 @keyframes fadeIn {
