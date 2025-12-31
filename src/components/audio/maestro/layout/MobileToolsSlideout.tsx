@@ -2,21 +2,17 @@
 
 /**
  * MobileToolsSlideout.tsx - Swipe-to-Open Tools Panel (Mobile PWA)
- * Date: December 30th, 2025 - V2
+ * Date: December 30th, 2025 - FINAL VERSION
  * 
- * 🎵 Features:
- * ✅ Swipe from right edge to open (always works)
- * ✅ Optional edge tab (cleaner without wrench icon)
- * ✅ Slides above transport bar (bottom: 90px)
- * ✅ Blue toggles → Green when active (Songsterr-style)
- * ✅ Universal Settings button (shared by all tools)
- * ✅ Touch-friendly gesture handling
+ * 🎵 Edge Tab Options:
+ * - showEdgeTab={true}: Orange cursor indicator (Ultimate Guitar style)
+ * - showEdgeTab={false}: No tab at all (TE Tuner style)
  * 
- * Changes in V2:
- * - Better metronome icon (traditional metronome shape)
- * - Removed individual settings buttons
- * - Added universal Settings button at bottom
- * - Cleaner edge tab (no wrench icon)
+ * Features:
+ * ✅ Swipe from right edge to open
+ * ✅ Smart Metronome integration
+ * ✅ Universal Settings button
+ * ✅ Auto-disable metronome in YouTube mode
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -29,17 +25,14 @@ export interface MobileToolsSlideoutProps {
     // Metronome props
     isMetronomeEnabled?: boolean;
     onMetronomeToggle?: () => void;
+    currentBPM?: number;
+    audioSource?: 'synth' | 'original';
     
-    // Settings handler (universal for all tools)
+    // Settings handler
     onSettingsOpen?: () => void;
     
     // UI options
-    showEdgeTab?: boolean;
-    
-    // Future features
-    onFretboardToggle?: () => void;
-    onTunerOpen?: () => void;
-    onKeyChangerOpen?: () => void;
+    showEdgeTab?: boolean; // false = no tab, true = orange cursor
 }
 
 export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
@@ -47,11 +40,10 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     onCountInToggle,
     isMetronomeEnabled = false,
     onMetronomeToggle,
+    currentBPM = 120,
+    audioSource = 'synth',
     onSettingsOpen,
     showEdgeTab = true,
-    onFretboardToggle,
-    onTunerOpen,
-    onKeyChangerOpen,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const drawerRef = useRef<HTMLDivElement>(null);
@@ -112,9 +104,12 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         };
     }, [isOpen]);
 
+    // Check if metronome should be disabled
+    const isMetronomeDisabled = audioSource === 'original';
+
     return (
         <>
-            {/* Backdrop - subtle dim when open */}
+            {/* Backdrop */}
             {isOpen && (
                 <div 
                     className="fixed inset-0 bg-black/20 z-[9998] transition-opacity duration-300"
@@ -135,27 +130,20 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     ${isOpen ? 'translate-x-0' : 'translate-x-[280px]'}
                 `}
             >
-                {/* Edge Tab - Cleaner design without wrench */}
+                {/* Edge Tab - Orange Cursor Style (Ultimate Guitar inspired) */}
                 {showEdgeTab && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
                         className={`
-                            absolute -left-12 top-1/2 -translate-y-1/2
-                            w-12 h-24
-                            bg-gray-900/98 backdrop-blur-md
-                            border-l border-t border-b border-purple-500/40
-                            rounded-l-xl
+                            absolute -left-3 top-1/2 -translate-y-1/2
+                            w-3 h-20
                             flex items-center justify-center
                             transition-opacity duration-300
                             ${isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
                         `}
                     >
-                        {/* Simple 3-dot menu indicator */}
-                        <div className="flex flex-col gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                        </div>
+                        {/* Orange cursor line */}
+                        <div className="w-1 h-full bg-gradient-to-b from-orange-500/80 via-orange-400 to-orange-500/80 rounded-full shadow-lg shadow-orange-500/50" />
                     </button>
                 )}
 
@@ -196,7 +184,6 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                     </span>
                                 </div>
 
-                                {/* Toggle Switch */}
                                 <button
                                     onClick={onCountInToggle}
                                     className={`
@@ -216,62 +203,63 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             </p>
                         </div>
 
-                        {/* Metronome Toggle - Updated Icon */}
-                        <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
+                        {/* Smart Metronome Toggle */}
+                        <div className={`bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3 ${isMetronomeDisabled ? 'opacity-50' : ''}`}>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                    {/* Traditional Metronome Icon */}
                                     <svg 
                                         width="20" 
                                         height="20" 
                                         viewBox="0 0 24 24" 
                                         fill="currentColor"
-                                        className={isMetronomeEnabled ? 'text-green-400' : 'text-blue-400'}
+                                        className={isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-400' : 'text-blue-400'}
                                     >
                                         <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z"/>
                                         <path d="M10.5 12L12 8l1.5 4z"/>
                                     </svg>
-                                    <span className={`text-sm font-bold ${isMetronomeEnabled ? 'text-green-300' : 'text-white'}`}>
-                                        Metronome
-                                    </span>
+                                    <div>
+                                        <span className={`text-sm font-bold block ${isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-300' : 'text-white'}`}>
+                                            Metronome
+                                        </span>
+                                        <span className="text-xs text-gray-400">
+                                            {isMetronomeDisabled ? 'Synth mode only' : `${currentBPM} BPM`}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                {/* Toggle Switch */}
                                 {onMetronomeToggle && (
                                     <button
                                         onClick={onMetronomeToggle}
+                                        disabled={isMetronomeDisabled}
                                         className={`
                                             relative w-12 h-6 rounded-full transition-colors
-                                            ${isMetronomeEnabled ? 'bg-green-500' : 'bg-gray-600'}
+                                            ${isMetronomeEnabled && !isMetronomeDisabled ? 'bg-green-500' : 'bg-gray-600'}
+                                            ${isMetronomeDisabled ? 'cursor-not-allowed' : ''}
                                         `}
                                     >
                                         <div className={`
                                             absolute top-0.5 w-5 h-5 rounded-full bg-white
                                             transition-transform duration-200
-                                            ${isMetronomeEnabled ? 'translate-x-6' : 'translate-x-0.5'}
+                                            ${isMetronomeEnabled && !isMetronomeDisabled ? 'translate-x-6' : 'translate-x-0.5'}
                                         `} />
                                     </button>
                                 )}
                             </div>
 
-                            <p className={`text-xs ${isMetronomeEnabled ? 'text-green-400/80' : 'text-gray-400'}`}>
-                                {onMetronomeToggle 
-                                    ? (isMetronomeEnabled ? 'Click enabled' : 'Tap to enable')
-                                    : 'Coming soon'
-                                }
-                            </p>
+                            {isMetronomeDisabled && (
+                                <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                                    <p className="text-xs text-yellow-300">
+                                        ⚠️ Switch to Synth mode to use metronome
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Divider */}
                         <div className="border-t border-gray-700/50 my-2" />
 
-                        {/* Future Features - Placeholder Buttons */}
-                        
-                        {/* Interactive Fretboard */}
-                        <button
-                            disabled
-                            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50"
-                        >
+                        {/* Future Features */}
+                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
                             <div className="flex items-center gap-3">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500">
                                     <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -282,26 +270,17 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             <span className="text-xs text-gray-600">Soon</span>
                         </button>
 
-                        {/* Chromatic Tuner */}
-                        <button
-                            disabled
-                            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50"
-                        >
+                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
                             <div className="flex items-center gap-3">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-gray-500">
                                     <path d="M6 2V10C6 12 4 13 4 13V17C4 18 5 19 6 19H14C15 19 16 18 16 17V13C16 13 14 12 14 10V2H12V9C12 9.5 11.5 10 11 10H9C8.5 10 8 9.5 8 9V2H6Z" />
-                                    <rect x="4" y="17" width="12" height="2" rx="1" />
                                 </svg>
                                 <span className="text-sm font-bold text-gray-500">Tuner</span>
                             </div>
                             <span className="text-xs text-gray-600">Soon</span>
                         </button>
 
-                        {/* Key Changer */}
-                        <button
-                            disabled
-                            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50"
-                        >
+                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
                             <div className="flex items-center gap-3">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500">
                                     <circle cx="12" cy="12" r="10" />
@@ -311,10 +290,9 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             </div>
                             <span className="text-xs text-gray-600">Soon</span>
                         </button>
-
                     </div>
 
-                    {/* Universal Settings Button - Bottom */}
+                    {/* Universal Settings Button */}
                     <div className="border-t border-gray-700/50 p-3">
                         <button
                             onClick={onSettingsOpen}
@@ -335,7 +313,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             <span className="text-sm font-bold text-white">Settings</span>
                         </button>
                         <p className="text-xs text-gray-400 text-center mt-2">
-                            {onSettingsOpen ? 'Configure tool options' : 'Coming soon'}
+                            Sound options & preferences
                         </p>
                     </div>
                 </div>
