@@ -1,21 +1,29 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Slideout V2
- * December 29th, 2025 - V98.15: COUNT-IN WITH SOUND & MOBILE TOOLS SLIDEOUT V2
+ * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Smart Metronome
+ * December 29th, 2025 - V98.15: COMPLETE METRONOME INTEGRATION
  *
  * 🆕 V98.15 CHANGES:
  * ✅ Added count-in with tick sound on each beat
  * ✅ Auto-disable Count In after countdown (one-shot behavior)
  * ✅ Added CountInOverlay component
- * ✅ Added MobileToolsSlideout V2 - self-contained swipe panel with:
+ * ✅ Added SmartMetronome with:
+ *    - BPM sync from AlphaTab score
+ *    - Playback speed compensation
+ *    - Volume and stereo balance controls
+ *    - Multiple sound types (woodblock, click, beep, drum-stick, electronic)
+ *    - Auto-disable in YouTube mode (synth only)
+ * ✅ Added MetronomeSettings modal for:
+ *    - Sound selection
+ *    - Count-in mode (3-beat or 4-beat)
+ * ✅ Added MobileToolsSlideout V2 with:
  *    - Professional metronome icon (triangle shape)
- *    - Universal Settings button (replaces individual tool settings)
- *    - Clean 3-dot edge tab (no wrench icon)
- * ✅ Added metronome state and handlers
- * ✅ Added universal handleSettingsOpen for all tool settings
- * ✅ Pass count-in props to MaestroControlPanel
- * ✅ MobileToolsSlideout manages its own open/close state via swipe gestures
+ *    - Universal Settings button
+ *    - Optional orange visual aid tab (can be toggled off)
+ *    - BPM display
+ * ✅ BPM tracking from AlphaTab score tempo
+ * ✅ All metronome state and handlers integrated
  */
 
 import React, {
@@ -33,6 +41,8 @@ import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/lay
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import { CountInOverlay } from '@/components/audio/maestro/controls/CountInOverlay';
+import { SmartMetronome } from '@/components/audio/maestro/controls/SmartMetronome';
+import { MetronomeSettings } from '@/components/audio/maestro/controls/MetronomeSettings';
 import {
     loadInitialSongData,
     getSongById,
@@ -96,6 +106,12 @@ export default function SynthPlayerPage() {
 
     // ==================== METRONOME STATE ====================
     const [isMetronomeEnabled, setIsMetronomeEnabled] = useState<boolean>(false);
+    const [metronomeVolume, setMetronomeVolume] = useState<number>(0.7);
+    const [metronomeBalance, setMetronomeBalance] = useState<number>(0);
+    const [metronomeSoundType, setMetronomeSoundType] = useState<'woodblock' | 'click' | 'beep' | 'drum-stick' | 'electronic'>('woodblock');
+    const [countInMode, setCountInMode] = useState<'three-beat' | 'four-beat'>('three-beat');
+    const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+    const [currentBPM, setCurrentBPM] = useState<number>(120);
 
     // ==================== PITCH SHIFT STATE ====================
     const [pitchShift, setPitchShift] = useState<number>(0);
@@ -177,6 +193,15 @@ export default function SynthPlayerPage() {
         isSeekingRef.current = isSeeking;
     }, [isSeeking]);
 
+    // ==================== BPM TRACKING ====================
+    useEffect(() => {
+        if (api?.score?.masterBars?.[0]) {
+            const tempo = api.score.masterBars[0].tempoAutomation?.value || 120;
+            setCurrentBPM(tempo);
+            console.log('🎵 Current BPM:', tempo);
+        }
+    }, [api, songInfo]);
+
     // ==================== PITCH SHIFT HANDLER ====================
     const handlePitchShiftChange = useCallback((semitones: number) => {
         console.log(`🎵 V98.15: handlePitchShiftChange called with ${semitones} semitones`);
@@ -223,18 +248,28 @@ export default function SynthPlayerPage() {
 
     // ==================== METRONOME HANDLERS ====================
     const handleMetronomeToggle = useCallback(() => {
+        // Auto-disable if in YouTube mode
+        if (audioSource === 'original') {
+            console.log('⚠️ Metronome only works in Synth mode');
+            return;
+        }
         setIsMetronomeEnabled(prev => !prev);
         console.log('🥁 Metronome toggled:', !isMetronomeEnabled);
-        // TODO: Implement metronome sound logic
-    }, [isMetronomeEnabled]);
+    }, [audioSource, isMetronomeEnabled]);
 
     const handleSettingsOpen = useCallback(() => {
+        setIsSettingsOpen(true);
         console.log('⚙️ Universal Settings opened');
-        // TODO: Open settings modal with options for:
-        // - Metronome sounds
-        // - Fretboard left/right hand mode
-        // - Fretboard 22 vs 24 frets
-        // - Notation: Standard/Tab/Both
+    }, []);
+
+    const handleMetronomeVolumeChange = useCallback((volume: number) => {
+        setMetronomeVolume(volume);
+        console.log('🔊 Metronome volume:', volume);
+    }, []);
+
+    const handleMetronomeBalanceChange = useCallback((balance: number) => {
+        setMetronomeBalance(balance);
+        console.log('⚖️ Metronome balance:', balance);
     }, []);
 
     // ==================== RESET PITCH ON SONG CHANGE ====================
@@ -508,17 +543,17 @@ export default function SynthPlayerPage() {
         if (!isPlaying && isCountInEnabled) {
             console.log('🔔 Starting countdown...');
             setIsCountingDown(true);
-            
+
             // Countdown: 3 → 2 → 1 with tick sound
             for (let i = 3; i > 0; i--) {
                 setCountdownValue(i);
                 playCountInTick(); // 🔊 Play tick sound
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-            
+
             setCountdownValue(0);
             setIsCountingDown(false);
-            
+
             // 🆕 AUTO-DISABLE: Turn off Count In after countdown completes
             setIsCountInEnabled(false);
             console.log('✅ Countdown complete, Count In auto-disabled');
@@ -993,12 +1028,39 @@ export default function SynthPlayerPage() {
                 onComplete={() => console.log('🎵 Countdown complete')}
             />
 
+            {/* 🆕 SMART METRONOME */}
+            <SmartMetronome
+                isEnabled={isMetronomeEnabled}
+                onToggle={handleMetronomeToggle}
+                currentBPM={currentBPM}
+                audioSource={audioSource}
+                isPlaying={isPlaying}
+                playbackSpeed={playbackSpeed}
+                volume={metronomeVolume}
+                balance={metronomeBalance}
+                soundType={metronomeSoundType}
+                onVolumeChange={handleMetronomeVolumeChange}
+                onBalanceChange={handleMetronomeBalanceChange}
+            />
+
+            {/* 🆕 METRONOME SETTINGS MODAL */}
+            <MetronomeSettings
+                isOpen={isSettingsOpen}
+                onClose={() => setIsSettingsOpen(false)}
+                selectedSound={metronomeSoundType}
+                onSoundChange={setMetronomeSoundType}
+                countInMode={countInMode}
+                onCountInModeChange={setCountInMode}
+            />
+
             {/* 🆕 MOBILE TOOLS SLIDEOUT - Self-contained swipe panel */}
             <MobileToolsSlideout
                 isCountInEnabled={isCountInEnabled}
                 onCountInToggle={handleCountInToggle}
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
+                currentBPM={currentBPM}
+                audioSource={audioSource}
                 onSettingsOpen={handleSettingsOpen}
                 showEdgeTab={true}
             />
