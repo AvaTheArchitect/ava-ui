@@ -2,20 +2,21 @@
 
 /**
  * MobileToolsSlideout.tsx - Swipe-to-Open Tools Panel (Mobile PWA)
- * Date: December 30th, 2025
+ * Date: December 30th, 2025 - V2
  * 
  * 🎵 Features:
  * ✅ Swipe from right edge to open (always works)
- * ✅ Optional edge tab (can be hidden for cleaner look)
+ * ✅ Optional edge tab (cleaner without wrench icon)
  * ✅ Slides above transport bar (bottom: 90px)
  * ✅ Blue toggles → Green when active (Songsterr-style)
- * ✅ Settings gear for Metronome options
+ * ✅ Universal Settings button (shared by all tools)
  * ✅ Touch-friendly gesture handling
  * 
- * Future:
- * - Interactive Fretboard (swipe from left)
- * - Chromatic Tuner (full screen)
- * - Key Changer
+ * Changes in V2:
+ * - Better metronome icon (traditional metronome shape)
+ * - Removed individual settings buttons
+ * - Added universal Settings button at bottom
+ * - Cleaner edge tab (no wrench icon)
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -28,10 +29,12 @@ export interface MobileToolsSlideoutProps {
     // Metronome props
     isMetronomeEnabled?: boolean;
     onMetronomeToggle?: () => void;
-    onMetronomeSettings?: () => void;
+    
+    // Settings handler (universal for all tools)
+    onSettingsOpen?: () => void;
     
     // UI options
-    showEdgeTab?: boolean; // Set to false to hide edge tab (swipe-only mode)
+    showEdgeTab?: boolean;
     
     // Future features
     onFretboardToggle?: () => void;
@@ -44,8 +47,8 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     onCountInToggle,
     isMetronomeEnabled = false,
     onMetronomeToggle,
-    onMetronomeSettings,
-    showEdgeTab = true, // Default: show edge tab
+    onSettingsOpen,
+    showEdgeTab = true,
     onFretboardToggle,
     onTunerOpen,
     onKeyChangerOpen,
@@ -132,7 +135,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     ${isOpen ? 'translate-x-0' : 'translate-x-[280px]'}
                 `}
             >
-                {/* Edge Tab (optional - visible when closed) */}
+                {/* Edge Tab - Cleaner design without wrench */}
                 {showEdgeTab && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
@@ -147,18 +150,12 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             ${isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
                         `}
                     >
-                        {/* Tools Icon on Edge Tab */}
-                        <svg 
-                            width="24" 
-                            height="24" 
-                            viewBox="0 0 24 24" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            strokeWidth="2"
-                            className="text-cyan-400"
-                        >
-                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                        </svg>
+                        {/* Simple 3-dot menu indicator */}
+                        <div className="flex flex-col gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                        </div>
                     </button>
                 )}
 
@@ -181,7 +178,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     {/* Scrollable Content */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-3">
 
-                        {/* Count In Toggle - Songsterr Style */}
+                        {/* Count In Toggle */}
                         <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -219,10 +216,11 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             </p>
                         </div>
 
-                        {/* Metronome Toggle with Settings - Ultimate Guitar Style */}
+                        {/* Metronome Toggle - Updated Icon */}
                         <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
+                                    {/* Traditional Metronome Icon */}
                                     <svg 
                                         width="20" 
                                         height="20" 
@@ -230,7 +228,8 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                         fill="currentColor"
                                         className={isMetronomeEnabled ? 'text-green-400' : 'text-blue-400'}
                                     >
-                                        <path d="M12 2L6 8h12l-6-6zm0 20l6-6H6l6 6zM8 12c0-2.21 1.79-4 4-4s4 1.79 4 4-1.79 4-4 4-4-1.79-4-4z" />
+                                        <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z"/>
+                                        <path d="M10.5 12L12 8l1.5 4z"/>
                                     </svg>
                                     <span className={`text-sm font-bold ${isMetronomeEnabled ? 'text-green-300' : 'text-white'}`}>
                                         Metronome
@@ -255,32 +254,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                 )}
                             </div>
 
-                            {/* Settings Button */}
-                            <button
-                                onClick={onMetronomeSettings}
-                                disabled={!onMetronomeSettings}
-                                className={`
-                                    w-full flex items-center justify-between px-3 py-2 mt-2
-                                    bg-gray-700/50 rounded-lg
-                                    transition-colors
-                                    ${onMetronomeSettings 
-                                        ? 'hover:bg-gray-700' 
-                                        : 'opacity-50 cursor-not-allowed'
-                                    }
-                                `}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400">
-                                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-                                    </svg>
-                                    <span className="text-xs text-gray-300">Sound options</span>
-                                </div>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500">
-                                    <path d="M9 18l6-6-6-6" />
-                                </svg>
-                            </button>
-
-                            <p className={`text-xs mt-2 ${isMetronomeEnabled ? 'text-green-400/80' : 'text-gray-400'}`}>
+                            <p className={`text-xs ${isMetronomeEnabled ? 'text-green-400/80' : 'text-gray-400'}`}>
                                 {onMetronomeToggle 
                                     ? (isMetronomeEnabled ? 'Click enabled' : 'Tap to enable')
                                     : 'Coming soon'
@@ -338,6 +312,31 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             <span className="text-xs text-gray-600">Soon</span>
                         </button>
 
+                    </div>
+
+                    {/* Universal Settings Button - Bottom */}
+                    <div className="border-t border-gray-700/50 p-3">
+                        <button
+                            onClick={onSettingsOpen}
+                            disabled={!onSettingsOpen}
+                            className={`
+                                w-full flex items-center justify-center gap-3 px-4 py-3
+                                bg-gray-800/60 border-2 border-gray-700/50 rounded-xl
+                                transition-all
+                                ${onSettingsOpen 
+                                    ? 'hover:bg-gray-700/60 hover:border-purple-500/40 active:scale-95' 
+                                    : 'opacity-50 cursor-not-allowed'
+                                }
+                            `}
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-cyan-400">
+                                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+                            </svg>
+                            <span className="text-sm font-bold text-white">Settings</span>
+                        </button>
+                        <p className="text-xs text-gray-400 text-center mt-2">
+                            {onSettingsOpen ? 'Configure tool options' : 'Coming soon'}
+                        </p>
                     </div>
                 </div>
             </div>

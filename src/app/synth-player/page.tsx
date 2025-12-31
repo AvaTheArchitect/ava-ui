@@ -1,15 +1,19 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Slideout
- * December 29th, 2025 - V98.15: COUNT-IN WITH SOUND & SELF-CONTAINED MOBILE TOOLS
+ * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Slideout V2
+ * December 29th, 2025 - V98.15: COUNT-IN WITH SOUND & MOBILE TOOLS SLIDEOUT V2
  *
  * 🆕 V98.15 CHANGES:
  * ✅ Added count-in with tick sound on each beat
  * ✅ Auto-disable Count In after countdown (one-shot behavior)
  * ✅ Added CountInOverlay component
- * ✅ Added MobileToolsSlideout - self-contained swipe panel (no button in transport)
- * ✅ Added metronome state and handlers (ready for implementation)
+ * ✅ Added MobileToolsSlideout V2 - self-contained swipe panel with:
+ *    - Professional metronome icon (triangle shape)
+ *    - Universal Settings button (replaces individual tool settings)
+ *    - Clean 3-dot edge tab (no wrench icon)
+ * ✅ Added metronome state and handlers
+ * ✅ Added universal handleSettingsOpen for all tool settings
  * ✅ Pass count-in props to MaestroControlPanel
  * ✅ MobileToolsSlideout manages its own open/close state via swipe gestures
  */
@@ -224,9 +228,13 @@ export default function SynthPlayerPage() {
         // TODO: Implement metronome sound logic
     }, [isMetronomeEnabled]);
 
-    const handleMetronomeSettings = useCallback(() => {
-        console.log('⚙️ Metronome settings clicked');
-        // TODO: Open metronome settings modal/menu
+    const handleSettingsOpen = useCallback(() => {
+        console.log('⚙️ Universal Settings opened');
+        // TODO: Open settings modal with options for:
+        // - Metronome sounds
+        // - Fretboard left/right hand mode
+        // - Fretboard 22 vs 24 frets
+        // - Notation: Standard/Tab/Both
     }, []);
 
     // ==================== RESET PITCH ON SONG CHANGE ====================
@@ -991,7 +999,7 @@ export default function SynthPlayerPage() {
                 onCountInToggle={handleCountInToggle}
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
-                onMetronomeSettings={handleMetronomeSettings}
+                onSettingsOpen={handleSettingsOpen}
                 showEdgeTab={true}
             />
 
