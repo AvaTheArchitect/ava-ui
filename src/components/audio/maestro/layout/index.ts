@@ -9,7 +9,5 @@
 
 export { TopMenuTray } from "./TopMenuTray";
 export type { TopMenuTrayProps } from "./TopMenuTray";
-
-// 🆕 Mobile Tools Slideout
 export { MobileToolsSlideout } from "./MobileToolsSlideout";
 export type { MobileToolsSlideoutProps } from "./MobileToolsSlideout";

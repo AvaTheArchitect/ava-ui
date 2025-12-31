@@ -1,16 +1,17 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Menu
- * December 30th, 2025 - V98.15: COUNT-IN WITH SOUND & MOBILE TOOLS MENU
+ * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Mobile Tools Slideout
+ * December 29th, 2025 - V98.15: COUNT-IN WITH SOUND & SELF-CONTAINED MOBILE TOOLS
  *
  * 🆕 V98.15 CHANGES:
  * ✅ Added count-in with tick sound on each beat
  * ✅ Auto-disable Count In after countdown (one-shot behavior)
  * ✅ Added CountInOverlay component
- * ✅ Added MobileToolsMenu slide-out panel
- * ✅ Added state for mobile tools menu and metronome
- * ✅ Pass count-in and mobile tools props to MaestroControlPanel
+ * ✅ Added MobileToolsSlideout - self-contained swipe panel (no button in transport)
+ * ✅ Added metronome state and handlers (ready for implementation)
+ * ✅ Pass count-in props to MaestroControlPanel
+ * ✅ MobileToolsSlideout manages its own open/close state via swipe gestures
  */
 
 import React, {
@@ -89,8 +90,7 @@ export default function SynthPlayerPage() {
     const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
     const [countdownValue, setCountdownValue] = useState<number>(0);
 
-    // ==================== MOBILE TOOLS MENU STATE ====================
-    const [isMobileToolsOpen, setIsMobileToolsOpen] = useState<boolean>(false);
+    // ==================== METRONOME STATE ====================
     const [isMetronomeEnabled, setIsMetronomeEnabled] = useState<boolean>(false);
 
     // ==================== PITCH SHIFT STATE ====================
@@ -217,16 +217,17 @@ export default function SynthPlayerPage() {
         console.log('🔔 Count In toggled:', !isCountInEnabled);
     }, [isCountInEnabled]);
 
-    // ==================== MOBILE TOOLS MENU HANDLERS ====================
-    const handleMobileToolsToggle = useCallback(() => {
-        setIsMobileToolsOpen(prev => !prev);
-    }, []);
-
+    // ==================== METRONOME HANDLERS ====================
     const handleMetronomeToggle = useCallback(() => {
         setIsMetronomeEnabled(prev => !prev);
         console.log('🥁 Metronome toggled:', !isMetronomeEnabled);
         // TODO: Implement metronome sound logic
     }, [isMetronomeEnabled]);
+
+    const handleMetronomeSettings = useCallback(() => {
+        console.log('⚙️ Metronome settings clicked');
+        // TODO: Open metronome settings modal/menu
+    }, []);
 
     // ==================== RESET PITCH ON SONG CHANGE ====================
     useEffect(() => {
@@ -499,17 +500,17 @@ export default function SynthPlayerPage() {
         if (!isPlaying && isCountInEnabled) {
             console.log('🔔 Starting countdown...');
             setIsCountingDown(true);
-
+            
             // Countdown: 3 → 2 → 1 with tick sound
             for (let i = 3; i > 0; i--) {
                 setCountdownValue(i);
                 playCountInTick(); // 🔊 Play tick sound
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-
+            
             setCountdownValue(0);
             setIsCountingDown(false);
-
+            
             // 🆕 AUTO-DISABLE: Turn off Count In after countdown completes
             setIsCountInEnabled(false);
             console.log('✅ Countdown complete, Count In auto-disabled');
@@ -973,8 +974,6 @@ export default function SynthPlayerPage() {
                         onPitchShiftToggle={handlePitchShiftToggle}
                         isCountInEnabled={isCountInEnabled}
                         onCountInToggle={handleCountInToggle}
-                        isMobileToolsOpen={isMobileToolsOpen}
-                        onMobileToolsToggle={handleMobileToolsToggle}
                     />
                 )}
             </footer>
@@ -986,14 +985,14 @@ export default function SynthPlayerPage() {
                 onComplete={() => console.log('🎵 Countdown complete')}
             />
 
-            {/* 🆕 MOBILE TOOLS MENU */}
-            <MobileToolsMenu
-                isOpen={isMobileToolsOpen}
-                onClose={() => setIsMobileToolsOpen(false)}
+            {/* 🆕 MOBILE TOOLS SLIDEOUT - Self-contained swipe panel */}
+            <MobileToolsSlideout
                 isCountInEnabled={isCountInEnabled}
                 onCountInToggle={handleCountInToggle}
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
+                onMetronomeSettings={handleMetronomeSettings}
+                showEdgeTab={true}
             />
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
