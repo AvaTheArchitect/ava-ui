@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * useSmartMetronome.tsx V2 - Headless Metronome Hook (Logic Only)
+ * useSmartMetronome.tsx V3 - Headless Metronome Hook (Logic Only)
  * Date: December 31st, 2025
  * 
  * 🥁 Features:
@@ -27,7 +27,7 @@ export interface UseSmartMetronomeProps {
     currentBPM: number;
     audioSource: 'synth' | 'original';
     isPlaying: boolean;
-    
+
     // Settings
     volume: number;           // 0-1
     balance: number;          // -1 to +1
@@ -53,7 +53,15 @@ export const useSmartMetronome = ({
     // Initialize AudioContext
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioContextRef.current = ctx;
+
+            // Immediately try to resume (mobile requirement)
+            if (ctx.state === 'suspended') {
+                ctx.resume().then(() => {
+                    console.log('✅ Audio context initialized and resumed');
+                });
+            }
         }
         return () => {
             if (audioContextRef.current) {
@@ -62,20 +70,38 @@ export const useSmartMetronome = ({
         };
     }, []);
 
+    // User interaction to "arm" audio context on mobile
+    useEffect(() => {
+        if (!isEnabled) return;
+
+        const ensureAudioContext = async () => {
+            if (audioContextRef.current?.state === 'suspended') {
+                await audioContextRef.current.resume();
+                console.log('🔊 Audio context armed for metronome');
+            }
+        };
+
+        ensureAudioContext();
+    }, [isEnabled]);
+
     // 🔊 Play metronome sound
-    const playMetronomeSound = useCallback((isAccent: boolean) => {
+    const playMetronomeSound = useCallback(async (isAccent: boolean) => {
         if (!audioContextRef.current) {
-            console.warn('Audio context not initialized');
+            console.warn('⚠️ Audio context not initialized');
             return;
         }
-        
+
         const audioContext = audioContextRef.current;
-        
-        // Resume audio context if suspended (iOS/mobile requirement)
+
+        // CRITICAL: Resume audio context if suspended (iOS/mobile requirement)
         if (audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-                console.log('🔊 Audio context resumed');
-            });
+            try {
+                await audioContext.resume();
+                console.log('🔊 Audio context resumed for metronome tick');
+            } catch (error) {
+                console.error('❌ Failed to resume audio context:', error);
+                return;
+            }
         }
 
         try {
@@ -99,10 +125,10 @@ export const useSmartMetronome = ({
             };
 
             const baseFrequency = frequencyMap[soundType];
-            
+
             // Apply accent (lower pitch) only if accentEnabled
-            oscillator.frequency.value = (isAccent && accentEnabled) 
-                ? baseFrequency * 0.75 
+            oscillator.frequency.value = (isAccent && accentEnabled)
+                ? baseFrequency * 0.75
                 : baseFrequency;
 
             // Wave type
@@ -125,10 +151,10 @@ export const useSmartMetronome = ({
 
             oscillator.start(now);
             oscillator.stop(now + 0.08);
-            
-            console.log(`🥁 Metronome tick: ${soundType}, accent:${isAccent && accentEnabled}, vol:${Math.round(volume * 100)}%`);
+
+            console.log(`🥁 Metronome tick: ${soundType}, accent:${isAccent && accentEnabled}, vol:${Math.round(volume * 100)}%, ctx:${audioContext.state}`);
         } catch (error) {
-            console.error('Metronome sound failed:', error);
+            console.error('❌ Metronome sound failed:', error);
         }
     }, [volume, balance, soundType, accentEnabled]);
 
