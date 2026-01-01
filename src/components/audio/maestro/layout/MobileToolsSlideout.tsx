@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MobileToolsSlideout.tsx V3 - Swipe-to-Open Tools Panel (Mobile PWA)
+ * MobileToolsSlideout.tsx - Swipe-to-Open Tools Panel (Mobile PWA)
  * Date: December 30th, 2025 - FINAL VERSION
  * 
  * 🎵 Edge Tab Options:
@@ -21,13 +21,13 @@ export interface MobileToolsSlideoutProps {
     // Count In props
     isCountInEnabled: boolean;
     onCountInToggle: () => void;
-    
+
     // Metronome props
     isMetronomeEnabled?: boolean;
     onMetronomeToggle?: () => void;
     currentBPM?: number;
     audioSource?: 'synth' | 'original';
-    
+
     // Metronome settings (inline controls)
     metronomeVolume?: number;
     onMetronomeVolumeChange?: (volume: number) => void;
@@ -39,11 +39,11 @@ export interface MobileToolsSlideoutProps {
     onMetronomeSoundTypeChange?: (sound: string) => void;
     metronomeAccentEnabled?: boolean;
     onMetronomeAccentToggle?: () => void;
-    
+
     // Count-in mode
     countInMode?: 'three-beat' | 'four-beat';
     onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
-    
+
     // UI options
     showEdgeTab?: boolean;
 }
@@ -79,14 +79,43 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
 
     // Sound options
     const SOUND_OPTIONS = [
-        { id: 'woodblock', name: 'Woodblock' },
-        { id: 'click', name: 'Click' },
-        { id: 'beep', name: 'Beep' },
-        { id: 'drum-stick', name: 'Drum Stick' },
-        { id: 'kick-drum', name: 'Kick Drum' },
-        { id: 'snare-drum', name: 'Snare Drum' },
-        { id: 'electronic', name: 'Electronic' },
+        { id: 'woodblock', name: 'Woodblock', freq: 800 },
+        { id: 'click', name: 'Click', freq: 1200 },
+        { id: 'beep', name: 'Beep', freq: 1000 },
+        { id: 'drum-stick', name: 'Drum Stick', freq: 2000 },
+        { id: 'kick-drum', name: 'Kick Drum', freq: 80 },
+        { id: 'snare-drum', name: 'Snare Drum', freq: 200 },
+        { id: 'electronic', name: 'Electronic', freq: 440 },
     ];
+
+    // Preview sound when selecting
+    const playPreviewSound = useCallback((soundId: string) => {
+        try {
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            const sound = SOUND_OPTIONS.find(s => s.id === soundId);
+            if (!sound) return;
+
+            oscillator.frequency.value = sound.freq;
+            oscillator.type = (soundId === 'kick-drum' || soundId === 'snare-drum') ? 'triangle'
+                : (soundId === 'electronic') ? 'sine' : 'square';
+
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+
+            console.log(`🔊 Preview sound: ${soundId}`);
+        } catch (error) {
+            console.warn('Preview sound failed:', error);
+        }
+    }, []);
 
     // Handle touch start
     const handleTouchStart = (e: TouchEvent) => {
@@ -105,7 +134,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         if (!isOpen && touchStartX.current > screenWidth - 50 && swipeDistance > 50 && touchDuration < 300) {
             setIsOpen(true);
         }
-        
+
         // Swipe right to close (when drawer is open)
         if (isOpen && swipeDistance < -50 && touchDuration < 300) {
             setIsOpen(false);
@@ -149,7 +178,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         <>
             {/* Backdrop */}
             {isOpen && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black/20 z-[9998] transition-opacity duration-300"
                     onClick={() => setIsOpen(false)}
                 />
@@ -208,10 +237,10 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                         <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                    <svg 
-                                        width="20" 
-                                        height="20" 
-                                        viewBox="0 0 24 24" 
+                                    <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
                                         fill="currentColor"
                                         className={isCountInEnabled ? 'text-green-400' : 'text-blue-400'}
                                     >
@@ -236,7 +265,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                     `} />
                                 </button>
                             </div>
-                            
+
                             {/* Count-In Mode Selection */}
                             <div className="mt-3 grid grid-cols-2 gap-2">
                                 <button
@@ -272,15 +301,15 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             <div className="p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                        <svg 
-                                            width="20" 
-                                            height="20" 
-                                            viewBox="0 0 24 24" 
+                                        <svg
+                                            width="20"
+                                            height="20"
+                                            viewBox="0 0 24 24"
                                             fill="currentColor"
                                             className={isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-400' : 'text-blue-400'}
                                         >
-                                            <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z"/>
-                                            <path d="M10.5 12L12 8l1.5 4z"/>
+                                            <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
+                                            <path d="M10.5 12L12 8l1.5 4z" />
                                         </svg>
                                         <div>
                                             <span className={`text-sm font-bold block ${isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-300' : 'text-white'}`}>
@@ -318,12 +347,12 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                         className="w-full flex items-center justify-center gap-2 mt-2 py-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
                                     >
                                         <span className="text-xs text-gray-300">Options</span>
-                                        <svg 
-                                            width="14" 
-                                            height="14" 
-                                            viewBox="0 0 24 24" 
-                                            fill="none" 
-                                            stroke="currentColor" 
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
                                             strokeWidth="2"
                                             className={`text-gray-400 transition-transform ${isMetronomeDrawerOpen ? 'rotate-180' : ''}`}
                                         >
@@ -344,7 +373,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             {/* Collapsible Options */}
                             {isMetronomeDrawerOpen && !isMetronomeDisabled && (
                                 <div className="px-3 pb-3 space-y-3 border-t border-gray-700/30">
-                                    
+
                                     {/* Sound Selection */}
                                     <div className="pt-3">
                                         <label className="text-xs font-semibold text-gray-300 block mb-2">Sound</label>
@@ -517,24 +546,39 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/70" onClick={() => setIsSoundSelectorOpen(false)} />
                     <div className="relative bg-gray-800 border-2 border-purple-500/40 rounded-2xl p-4 max-w-xs w-full shadow-2xl">
-                        <h3 className="text-white font-bold mb-3 text-center">Select Sound</h3>
+                        {/* Header with Done button */}
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-white font-bold">Select Sound</h3>
+                            <button
+                                onClick={() => setIsSoundSelectorOpen(false)}
+                                className="text-cyan-400 font-semibold text-sm px-3 py-1 rounded-lg hover:bg-cyan-400/10 transition-colors"
+                            >
+                                Done
+                            </button>
+                        </div>
                         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                             {SOUND_OPTIONS.map((sound) => (
                                 <button
                                     key={sound.id}
                                     onClick={() => {
                                         onMetronomeSoundTypeChange?.(sound.id);
-                                        setIsSoundSelectorOpen(false);
+                                        playPreviewSound(sound.id); // Play preview sound
+                                        // Don't close popup - let user choose "Done" or tap outside
                                     }}
                                     className={`
-                                        w-full px-4 py-3 rounded-lg text-left transition-colors
+                                        w-full px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between
                                         ${metronomeSoundType === sound.id
                                             ? 'bg-orange-500 text-white font-bold'
                                             : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
                                         }
                                     `}
                                 >
-                                    {sound.name}
+                                    <span>{sound.name}</span>
+                                    {metronomeSoundType === sound.id && (
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
+                                            <path d="M20 6L9 17l-5-5" />
+                                        </svg>
+                                    )}
                                 </button>
                             ))}
                         </div>
