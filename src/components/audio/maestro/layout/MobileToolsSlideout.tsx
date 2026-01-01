@@ -1,14 +1,15 @@
 'use client';
 
 /**
- * MobileToolsSlideout.tsx V4 - Swipe-to-Open Tools Panel (FIXED)
+ * MobileToolsSlideout.tsx V5 - Inline Sound Selector Fix
  * Date: December 31st, 2025
  * 
- * 🔧 V4 FIXES:
- * ✅ Sound selector now properly contained within drawer
- * ✅ "Done" button only closes sound selector, not entire drawer
- * ✅ armMetronome() called on toggle for mobile PWA audio fix
- * ✅ Fixed z-index layering (drawer content over sound selector backdrop)
+ * 🔧 V5 FIXES:
+ * ✅ Sound selector is now inline collapsible drawer (not popup)
+ * ✅ Expands/collapses within the metronome options section
+ * ✅ No separate backdrop or z-index issues
+ * ✅ Clicking sound options auto-collapses the drawer
+ * ✅ MobileToolsSlideout stays open when selecting sounds
  * 
  * 🎵 Features:
  * ✅ Swipe from right edge to open
@@ -50,7 +51,7 @@ export interface MobileToolsSlideoutProps {
     // UI options
     showEdgeTab?: boolean;
 
-    // 🔧 NEW: armMetronome function from hook
+    // Audio arming function from hook
     onArmMetronome?: () => Promise<void>;
 }
 
@@ -74,12 +75,12 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     countInMode = 'three-beat',
     onCountInModeChange,
     showEdgeTab = true,
-    onArmMetronome, // 🔧 NEW
+    onArmMetronome,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showVisualAid, setShowVisualAid] = useState(true);
     const [isMetronomeDrawerOpen, setIsMetronomeDrawerOpen] = useState(false);
-    const [isSoundSelectorOpen, setIsSoundSelectorOpen] = useState(false);
+    const [isSoundSelectorOpen, setIsSoundSelectorOpen] = useState(false); // Now inline, not popup
     const drawerRef = useRef<HTMLDivElement>(null);
     const touchStartX = useRef<number>(0);
     const touchStartTime = useRef<number>(0);
@@ -95,14 +96,11 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         { id: 'electronic', name: 'Electronic', freq: 440 },
     ];
 
-    // 🔧 CRITICAL: Metronome toggle with audio arming
+    // Metronome toggle with audio arming
     const handleMetronomeToggle = async () => {
-        // 1. "Wake Up" the audio hardware on the click event
         if (onArmMetronome) {
             await onArmMetronome();
         }
-
-        // 2. Then update state to enable the metronome
         if (onMetronomeToggle) {
             onMetronomeToggle();
         }
@@ -136,6 +134,13 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
             console.warn('Preview sound failed:', error);
         }
     }, []);
+
+    // Handle sound selection - now auto-collapses
+    const handleSoundSelect = (soundId: string) => {
+        onMetronomeSoundTypeChange?.(soundId);
+        playPreviewSound(soundId);
+        setIsSoundSelectorOpen(false); // Auto-collapse after selection
+    };
 
     // Handle touch start
     const handleTouchStart = (e: TouchEvent) => {
@@ -217,7 +222,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     ${isOpen ? 'translate-x-0' : 'translate-x-[280px]'}
                 `}
             >
-                {/* Edge Tab - Orange Cursor Style */}
+                {/* Edge Tab */}
                 {showEdgeTab && showVisualAid && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
@@ -340,7 +345,6 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* 🔧 FIXED: Toggle button now calls armMetronome */}
                                     <button
                                         onClick={handleMetronomeToggle}
                                         disabled={isMetronomeDisabled}
@@ -392,18 +396,54 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             {isMetronomeDrawerOpen && !isMetronomeDisabled && (
                                 <div className="px-3 pb-3 space-y-3 border-t border-gray-700/30">
 
-                                    {/* Sound Selection */}
+                                    {/* 🔧 FIXED: Sound Selection - Now Inline Collapsible */}
                                     <div className="pt-3">
                                         <label className="text-xs font-semibold text-gray-300 block mb-2">Sound</label>
+
+                                        {/* Sound Button (shows current selection) */}
                                         <button
-                                            onClick={() => setIsSoundSelectorOpen(true)}
+                                            onClick={() => setIsSoundSelectorOpen(prev => !prev)}
                                             className="w-full flex items-center justify-between px-3 py-2 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
                                         >
                                             <span className="text-white text-sm capitalize">{metronomeSoundType.replace('-', ' ')}</span>
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                                            <svg
+                                                width="14"
+                                                height="14"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                className={`text-gray-400 transition-transform ${isSoundSelectorOpen ? 'rotate-90' : ''}`}
+                                            >
                                                 <path d="M9 18l6-6-6-6" />
                                             </svg>
                                         </button>
+
+                                        {/* 🔧 INLINE Sound Options List (not a popup) */}
+                                        {isSoundSelectorOpen && (
+                                            <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto bg-gray-800/80 rounded-lg p-2">
+                                                {SOUND_OPTIONS.map((sound) => (
+                                                    <button
+                                                        key={sound.id}
+                                                        onClick={() => handleSoundSelect(sound.id)}
+                                                        className={`
+                                                            w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between text-sm
+                                                            ${metronomeSoundType === sound.id
+                                                                ? 'bg-orange-500 text-white font-bold'
+                                                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                                                            }
+                                                        `}
+                                                    >
+                                                        <span>{sound.name}</span>
+                                                        {metronomeSoundType === sound.id && (
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
+                                                                <path d="M20 6L9 17l-5-5" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Accent Toggle */}
@@ -513,61 +553,6 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     </div>
                 </div>
             </div>
-
-            {/* 🔧 FIXED: Sound Selector Popup - Now properly z-indexed ABOVE drawer backdrop but BELOW drawer content */}
-            {isSoundSelectorOpen && (
-                <>
-                    {/* Sound selector backdrop - sits above drawer backdrop (z-9998) but below drawer content (z-9999) */}
-                    <div
-                        className="fixed inset-0 bg-black/50 z-[9998.5]"
-                        onClick={(e) => {
-                            e.stopPropagation(); // Prevent drawer from closing
-                            setIsSoundSelectorOpen(false);
-                        }}
-                    />
-
-                    {/* Sound selector content - sits above everything */}
-                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 pointer-events-none">
-                        <div className="relative bg-gray-800 border-2 border-purple-500/40 rounded-2xl p-4 max-w-xs w-full shadow-2xl pointer-events-auto">
-                            {/* Header with Done button */}
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="text-white font-bold">Select Sound</h3>
-                                <button
-                                    onClick={() => setIsSoundSelectorOpen(false)}
-                                    className="text-cyan-400 font-semibold text-sm px-3 py-1 rounded-lg hover:bg-cyan-400/10 transition-colors"
-                                >
-                                    Done
-                                </button>
-                            </div>
-                            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                                {SOUND_OPTIONS.map((sound) => (
-                                    <button
-                                        key={sound.id}
-                                        onClick={() => {
-                                            onMetronomeSoundTypeChange?.(sound.id);
-                                            playPreviewSound(sound.id);
-                                        }}
-                                        className={`
-                                            w-full px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between
-                                            ${metronomeSoundType === sound.id
-                                                ? 'bg-orange-500 text-white font-bold'
-                                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
-                                            }
-                                        `}
-                                    >
-                                        <span>{sound.name}</span>
-                                        {metronomeSoundType === sound.id && (
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
-                                                <path d="M20 6L9 17l-5-5" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
         </>
     );
 };
