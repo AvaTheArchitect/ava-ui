@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * useSmartMetronome.tsx V3 - Headless Metronome Hook (Logic Only)
+ * useSmartMetronome.tsx - Headless Metronome Hook (Logic Only)
  * Date: December 31st, 2025
  * 
  * 🥁 Features:
@@ -27,7 +27,7 @@ export interface UseSmartMetronomeProps {
     currentBPM: number;
     audioSource: 'synth' | 'original';
     isPlaying: boolean;
-
+    
     // Settings
     volume: number;           // 0-1
     balance: number;          // -1 to +1
@@ -55,7 +55,7 @@ export const useSmartMetronome = ({
         if (typeof window !== 'undefined') {
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
             audioContextRef.current = ctx;
-
+            
             // Immediately try to resume (mobile requirement)
             if (ctx.state === 'suspended') {
                 ctx.resume().then(() => {
@@ -73,14 +73,14 @@ export const useSmartMetronome = ({
     // User interaction to "arm" audio context on mobile
     useEffect(() => {
         if (!isEnabled) return;
-
+        
         const ensureAudioContext = async () => {
             if (audioContextRef.current?.state === 'suspended') {
                 await audioContextRef.current.resume();
                 console.log('🔊 Audio context armed for metronome');
             }
         };
-
+        
         ensureAudioContext();
     }, [isEnabled]);
 
@@ -90,9 +90,9 @@ export const useSmartMetronome = ({
             console.warn('⚠️ Audio context not initialized');
             return;
         }
-
+        
         const audioContext = audioContextRef.current;
-
+        
         // CRITICAL: Resume audio context if suspended (iOS/mobile requirement)
         if (audioContext.state === 'suspended') {
             try {
@@ -125,10 +125,10 @@ export const useSmartMetronome = ({
             };
 
             const baseFrequency = frequencyMap[soundType];
-
+            
             // Apply accent (lower pitch) only if accentEnabled
-            oscillator.frequency.value = (isAccent && accentEnabled)
-                ? baseFrequency * 0.75
+            oscillator.frequency.value = (isAccent && accentEnabled) 
+                ? baseFrequency * 0.75 
                 : baseFrequency;
 
             // Wave type
@@ -151,7 +151,7 @@ export const useSmartMetronome = ({
 
             oscillator.start(now);
             oscillator.stop(now + 0.08);
-
+            
             console.log(`🥁 Metronome tick: ${soundType}, accent:${isAccent && accentEnabled}, vol:${Math.round(volume * 100)}%, ctx:${audioContext.state}`);
         } catch (error) {
             console.error('❌ Metronome sound failed:', error);
