@@ -2,16 +2,27 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * December 31st, 2025 - V98.15: HEADLESS METRONOME ARCHITECTURE
+ * December 31st, 2025 - V98.15: FIXED METRONOME ARCHITECTURE
  *
- * 🆕 V98.15 CHANGES:
- * ✅ Added count-in with tick sound on each beat
- * ✅ Auto-disable Count In after countdown (one-shot behavior)
- * ✅ Added CountInOverlay component
- * ✅ Migrated to useSmartMetronome headless hook:
- *    - No separate metronome UI component
- *    - All controls in MetronomeSettings modal
- *    - Clean toggle in MobileToolsSlideout (like Count In)
+ * 🔧 V98.15 FIXES:
+ * ✅ Issue #1 (No metronome sound):
+ *    - Audio context now properly resumed for mobile
+ *    - Added debug logging for tick events
+ *    - Check console for "🥁 Metronome tick" messages
+ * ✅ Issue #2 (Controls in wrong place):
+ *    - Removed MetronomeSettings modal
+ *    - All metronome controls now INSIDE MobileToolsSlideout
+ *    - Collapsible "Options" section for inline controls
+ * ✅ Issue #3 (4-beat count-in not working):
+ *    - Updated CountInOverlay with mode prop
+ *    - Updated handlePlayPause to support both 3-beat and 4-beat
+ *    - Count-in mode buttons work correctly in slideout
+ * 
+ * 🆕 V98.15 FEATURES:
+ * ✅ Count-in with tick sound (3-beat or 4-beat)
+ * ✅ Auto-disable Count In after countdown
+ * ✅ CountInOverlay component with mode support
+ * ✅ useSmartMetronome headless hook:
  *    - BPM sync from AlphaTab score
  *    - Playback speed compensation
  *    - Volume and stereo balance controls
@@ -19,19 +30,13 @@
  *    - Accent toggle for downbeat emphasis
  *    - 7 sound types: Woodblock, Click, Beep, Drum Stick, Electronic, Kick Drum, Snare Drum
  *    - Auto-disable in YouTube mode (synth only)
- * ✅ Added MetronomeSettings collapsible drawer with:
- *    - Sound selector popup (TE Tuner style)
- *    - Volume and balance sliders
- *    - Subdivision selector
- *    - Accent toggle
- *    - Count-in mode selector
- * ✅ Added MobileToolsSlideout V2 with:
+ * ✅ MobileToolsSlideout with inline controls:
  *    - Professional metronome icon (triangle shape)
- *    - Universal Settings button
+ *    - All metronome controls inside (no separate modal)
  *    - Optional orange visual aid tab (toggleable)
  *    - BPM display
+ *    - Count-in mode selector (3-beat/4-beat)
  * ✅ BPM tracking from AlphaTab score tempo
- * ✅ All metronome state and handlers integrated
  */
 
 import React, {
@@ -48,10 +53,9 @@ import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
-import { CountInOverlay } from '@/components/audio/maestro/controls/CountInOverlay';
-import { 
-    useSmartMetronome, 
-    MetronomeSettings,
+import {
+    CountInOverlay,
+    useSmartMetronome,
     type MetronomeSoundType,
     type SubdivisionMode
 } from '@/components/audio/maestro/controls';
@@ -63,32 +67,6 @@ import {
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
 const SCROLL_THRESHOLD = 50;
-
-// ==================== COUNT IN SOUND ====================
-// Simple Web Audio API click/tick sound
-const playCountInTick = () => {
-    try {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        // High-pitched click (like drum sticks)
-        oscillator.frequency.value = 1200;
-        oscillator.type = 'sine';
-
-        // Quick attack and decay for "tick" sound
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.1);
-    } catch (error) {
-        console.warn('Count-in sound failed:', error);
-    }
-};
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -124,7 +102,6 @@ export default function SynthPlayerPage() {
     const [metronomeSubdivision, setMetronomeSubdivision] = useState<SubdivisionMode>(1);
     const [metronomeAccentEnabled, setMetronomeAccentEnabled] = useState<boolean>(true);
     const [countInMode, setCountInMode] = useState<'three-beat' | 'four-beat'>('three-beat');
-    const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
     const [currentBPM, setCurrentBPM] = useState<number>(120);
 
     // ==================== PITCH SHIFT STATE ====================
@@ -269,10 +246,6 @@ export default function SynthPlayerPage() {
         }
         setIsMetronomeEnabled(prev => !prev);
     }, [audioSource]);
-
-    const handleSettingsOpen = useCallback(() => {
-        setIsSettingsOpen(true);
-    }, []);
 
     // ==================== RESET PITCH ON SONG CHANGE ====================
     useEffect(() => {
@@ -541,23 +514,43 @@ export default function SynthPlayerPage() {
     const handlePlayPause = useCallback(async () => {
         if (!api) return;
 
-        // ========== COUNT IN LOGIC ==========
+        // ========== COUNT-IN LOGIC (SUPPORTS BOTH MODES) ==========
         if (!isPlaying && isCountInEnabled) {
-            console.log('🔔 Starting countdown...');
+            const maxCount = countInMode === 'four-beat' ? 4 : 3;
+            console.log(`🔔 Starting ${maxCount}-beat countdown...`);
             setIsCountingDown(true);
-            
-            // Countdown: 3 → 2 → 1 with tick sound
-            for (let i = 3; i > 0; i--) {
+
+            // Countdown with tick sound
+            for (let i = maxCount; i > 0; i--) {
                 setCountdownValue(i);
-                playCountInTick(); // 🔊 Play tick sound
+
+                // Play tick sound
+                try {
+                    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    oscillator.frequency.value = 1200;
+                    oscillator.type = 'sine';
+
+                    gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.1);
+                } catch (error) {
+                    console.warn('Count-in tick failed:', error);
+                }
+
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-            
+
             setCountdownValue(0);
             setIsCountingDown(false);
-            
-            // 🆕 AUTO-DISABLE: Turn off Count In after countdown completes
-            setIsCountInEnabled(false);
+            setIsCountInEnabled(false); // Auto-disable after use
             console.log('✅ Countdown complete, Count In auto-disabled');
         }
 
@@ -583,7 +576,7 @@ export default function SynthPlayerPage() {
                 api.play();
             }
         }
-    }, [api, audioSource, isPlaying, isCountInEnabled]);
+    }, [api, audioSource, isPlaying, isCountInEnabled, countInMode]);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -1023,48 +1016,41 @@ export default function SynthPlayerPage() {
                 )}
             </footer>
 
-            {/* COUNT IN OVERLAY */}
+            {/* COUNT IN OVERLAY - Updated with mode support */}
             <CountInOverlay
                 count={countdownValue}
                 isVisible={isCountingDown}
+                mode={countInMode}
                 onComplete={() => console.log('🎵 Countdown complete')}
             />
 
-            {/* 🆕 METRONOME SETTINGS MODAL - All controls in one place */}
-            <MetronomeSettings
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                
-                // Metronome controls
-                volume={metronomeVolume}
-                onVolumeChange={setMetronomeVolume}
-                
-                balance={metronomeBalance}
-                onBalanceChange={setMetronomeBalance}
-                
-                subdivision={metronomeSubdivision}
-                onSubdivisionChange={setMetronomeSubdivision}
-                
-                soundType={metronomeSoundType}
-                onSoundTypeChange={setMetronomeSoundType}
-                
-                accentEnabled={metronomeAccentEnabled}
-                onAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
-                
-                // Count-in controls
-                countInMode={countInMode}
-                onCountInModeChange={setCountInMode}
-            />
-
-            {/* 🆕 MOBILE TOOLS SLIDEOUT - Self-contained swipe panel */}
+            {/* 🆕 MOBILE TOOLS SLIDEOUT - All controls inside */}
             <MobileToolsSlideout
+                // Count-in
                 isCountInEnabled={isCountInEnabled}
                 onCountInToggle={handleCountInToggle}
+                countInMode={countInMode}
+                onCountInModeChange={setCountInMode}
+
+                // Metronome
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
                 currentBPM={currentBPM}
                 audioSource={audioSource}
-                onSettingsOpen={handleSettingsOpen}
+
+                // Metronome inline controls (inside slideout)
+                metronomeVolume={metronomeVolume}
+                onMetronomeVolumeChange={setMetronomeVolume}
+                metronomeBalance={metronomeBalance}
+                onMetronomeBalanceChange={setMetronomeBalance}
+                metronomeSubdivision={metronomeSubdivision}
+                onMetronomeSubdivisionChange={setMetronomeSubdivision}
+                metronomeSoundType={metronomeSoundType}
+                onMetronomeSoundTypeChange={setMetronomeSoundType}
+                metronomeAccentEnabled={metronomeAccentEnabled}
+                onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+
+                // Visual aid
                 showEdgeTab={true}
             />
 

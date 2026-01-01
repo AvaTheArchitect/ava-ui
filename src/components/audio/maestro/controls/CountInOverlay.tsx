@@ -1,92 +1,87 @@
 'use client';
 
 /**
- * CountInOverlay.tsx - V2: VISIBLE CANVAS BACKGROUND
- * Date: December 29th, 2025
+ * CountInOverlay.tsx - Visual Countdown with Sound
+ * Date: December 31st, 2025 - Updated with 4-Beat Support
  * 
- * 🆕 NEW IN V2:
- * ✅ Canvas visible behind countdown (no blur, minimal dimming)
- * ✅ Transparent background allows tablature to show through
- * ✅ Green circle stands out but doesn't block view
- * 
- * 🎵 Features:
- * ✅ Circular green overlay (Songsterr mobile style)
- * ✅ Large white countdown numbers: 3 → 2 → 1
- * ✅ "COUNT IN ON" label below number
- * ✅ Smooth fade-in/fade-out
- * ✅ Auto-closes after countdown
- * ✅ Centered on screen
+ * Features:
+ * ✅ 3-2-1 mode (quick countdown)
+ * ✅ 4-3-2-1 mode (full measure)
+ * ✅ Tick sound on each count
+ * ✅ Visual countdown overlay
  */
 
 import React, { useEffect, useState } from 'react';
 
 interface CountInOverlayProps {
-    /** Current countdown number (3, 2, 1, or 0 when finished) */
     count: number;
-    /** Whether the overlay should be visible */
     isVisible: boolean;
-    /** Called when countdown completes */
+    mode?: 'three-beat' | 'four-beat';
     onComplete?: () => void;
 }
+
+// Play tick sound
+const playTick = () => {
+    try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 1200; // High-pitched click
+        oscillator.type = 'sine';
+
+        gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+    } catch (error) {
+        console.warn('Count-in tick sound failed:', error);
+    }
+};
 
 export const CountInOverlay: React.FC<CountInOverlayProps> = ({
     count,
     isVisible,
+    mode = 'three-beat',
     onComplete,
 }) => {
-    const [shouldRender, setShouldRender] = useState(isVisible);
+    const [lastCount, setLastCount] = useState(0);
 
-    // Handle visibility transitions
+    // Play sound on each count change
     useEffect(() => {
-        if (isVisible) {
-            setShouldRender(true);
-        } else {
-            // Delay unmount to allow fade-out animation
-            const timeout = setTimeout(() => setShouldRender(false), 300);
-            return () => clearTimeout(timeout);
+        if (isVisible && count > 0 && count !== lastCount) {
+            playTick();
+            setLastCount(count);
         }
-    }, [isVisible]);
 
-    // Call onComplete when count reaches 0
+        if (!isVisible) {
+            setLastCount(0);
+        }
+    }, [count, isVisible, lastCount]);
+
+    // Call onComplete when countdown finishes
     useEffect(() => {
-        if (count === 0 && isVisible) {
+        if (isVisible && count === 0 && lastCount > 0) {
             onComplete?.();
         }
-    }, [count, isVisible, onComplete]);
+    }, [count, isVisible, lastCount, onComplete]);
 
-    if (!shouldRender) return null;
+    if (!isVisible) return null;
 
     return (
-        <div
-            className={`
-        fixed inset-0 z-[10000] flex items-center justify-center
-        bg-black/10
-        transition-opacity duration-300
-        ${isVisible ? 'opacity-100' : 'opacity-0'}
-      `}
-            style={{ pointerEvents: isVisible ? 'auto' : 'none' }}
-        >
-            {/* Circular Countdown Container */}
-            <div
-                className={`
-          flex flex-col items-center justify-center
-          w-[200px] h-[200px]
-          bg-green-500 rounded-full
-          shadow-2xl
-          transition-transform duration-300
-          ${isVisible ? 'scale-100' : 'scale-95'}
-        `}
-            >
-                {/* Countdown Number */}
-                {count > 0 && (
-                    <div className="text-white font-bold text-[80px] leading-none tabular-nums animate-pulse">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-cyan-500 rounded-2xl p-8 shadow-2xl animate-pulse">
+                <div className="text-center">
+                    <div className="text-6xl font-bold text-cyan-400 mb-2">
                         {count}
                     </div>
-                )}
-
-                {/* Label */}
-                <div className="text-white font-semibold text-[14px] uppercase tracking-wider mt-2">
-                    COUNT IN ON
+                    <div className="text-sm text-gray-400 uppercase tracking-wider">
+                        {mode === 'four-beat' ? '4-Beat Count' : '3-Beat Count'}
+                    </div>
                 </div>
             </div>
         </div>

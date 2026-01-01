@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * useSmartMetronome.tsx V1 - Headless Metronome Hook (Logic Only)
+ * useSmartMetronome.tsx V2 - Headless Metronome Hook (Logic Only)
  * Date: December 31st, 2025
  * 
  * 🥁 Features:
@@ -64,8 +64,19 @@ export const useSmartMetronome = ({
 
     // 🔊 Play metronome sound
     const playMetronomeSound = useCallback((isAccent: boolean) => {
+        if (!audioContextRef.current) {
+            console.warn('Audio context not initialized');
+            return;
+        }
+        
         const audioContext = audioContextRef.current;
-        if (!audioContext) return;
+        
+        // Resume audio context if suspended (iOS/mobile requirement)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                console.log('🔊 Audio context resumed');
+            });
+        }
 
         try {
             const oscillator = audioContext.createOscillator();
@@ -105,16 +116,19 @@ export const useSmartMetronome = ({
 
             // Volume - accent slightly louder if enabled
             const adjustedVolume = volume * ((isAccent && accentEnabled) ? 0.6 : 0.4);
-            gainNode.gain.setValueAtTime(adjustedVolume, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.08);
+            const now = audioContext.currentTime;
+            gainNode.gain.setValueAtTime(adjustedVolume, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
 
             // Apply L/R balance
             panNode.pan.value = balance;
 
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.08);
+            oscillator.start(now);
+            oscillator.stop(now + 0.08);
+            
+            console.log(`🥁 Metronome tick: ${soundType}, accent:${isAccent && accentEnabled}, vol:${Math.round(volume * 100)}%`);
         } catch (error) {
-            console.warn('Metronome sound failed:', error);
+            console.error('Metronome sound failed:', error);
         }
     }, [volume, balance, soundType, accentEnabled]);
 
