@@ -53,7 +53,7 @@ import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
-import {
+import { 
     CountInOverlay,
     useSmartMetronome,
     type MetronomeSoundType,
@@ -519,11 +519,11 @@ export default function SynthPlayerPage() {
             const maxCount = countInMode === 'four-beat' ? 4 : 3;
             console.log(`🔔 Starting ${maxCount}-beat countdown...`);
             setIsCountingDown(true);
-
+            
             // Countdown with tick sound
             for (let i = maxCount; i > 0; i--) {
                 setCountdownValue(i);
-
+                
                 // Play tick sound
                 try {
                     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -544,10 +544,10 @@ export default function SynthPlayerPage() {
                 } catch (error) {
                     console.warn('Count-in tick failed:', error);
                 }
-
+                
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-
+            
             setCountdownValue(0);
             setIsCountingDown(false);
             setIsCountInEnabled(false); // Auto-disable after use
@@ -1031,25 +1031,25 @@ export default function SynthPlayerPage() {
                 onCountInToggle={handleCountInToggle}
                 countInMode={countInMode}
                 onCountInModeChange={setCountInMode}
-
+                
                 // Metronome
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
                 currentBPM={currentBPM}
                 audioSource={audioSource}
-
+                
                 // Metronome inline controls (inside slideout)
                 metronomeVolume={metronomeVolume}
                 onMetronomeVolumeChange={setMetronomeVolume}
                 metronomeBalance={metronomeBalance}
                 onMetronomeBalanceChange={setMetronomeBalance}
                 metronomeSubdivision={metronomeSubdivision}
-                onMetronomeSubdivisionChange={setMetronomeSubdivision}
+                onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
                 metronomeSoundType={metronomeSoundType}
-                onMetronomeSoundTypeChange={setMetronomeSoundType}
+                onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
                 metronomeAccentEnabled={metronomeAccentEnabled}
                 onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
-
+                
                 // Visual aid
                 showEdgeTab={true}
             />
