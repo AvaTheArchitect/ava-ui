@@ -1,17 +1,20 @@
 'use client';
 
 /**
- * MobileToolsSlideout.tsx - Swipe-to-Open Tools Panel (Mobile PWA)
- * Date: December 30th, 2025 - FINAL VERSION
+ * MobileToolsSlideout.tsx V4 - Swipe-to-Open Tools Panel (FIXED)
+ * Date: December 31st, 2025
  * 
- * 🎵 Edge Tab Options:
- * - showEdgeTab={true}: Orange cursor indicator (Ultimate Guitar style)
- * - showEdgeTab={false}: No tab at all (TE Tuner style)
+ * 🔧 V4 FIXES:
+ * ✅ Sound selector now properly contained within drawer
+ * ✅ "Done" button only closes sound selector, not entire drawer
+ * ✅ armMetronome() called on toggle for mobile PWA audio fix
+ * ✅ Fixed z-index layering (drawer content over sound selector backdrop)
  * 
- * Features:
+ * 🎵 Features:
  * ✅ Swipe from right edge to open
- * ✅ Smart Metronome integration
- * ✅ Universal Settings button
+ * ✅ Smart Metronome integration with audio arming
+ * ✅ Count-in mode selector (3-beat/4-beat)
+ * ✅ Inline metronome controls (no separate modal)
  * ✅ Auto-disable metronome in YouTube mode
  */
 
@@ -21,13 +24,13 @@ export interface MobileToolsSlideoutProps {
     // Count In props
     isCountInEnabled: boolean;
     onCountInToggle: () => void;
-    
+
     // Metronome props
     isMetronomeEnabled?: boolean;
     onMetronomeToggle?: () => void;
     currentBPM?: number;
     audioSource?: 'synth' | 'original';
-    
+
     // Metronome settings (inline controls)
     metronomeVolume?: number;
     onMetronomeVolumeChange?: (volume: number) => void;
@@ -39,13 +42,16 @@ export interface MobileToolsSlideoutProps {
     onMetronomeSoundTypeChange?: (sound: string) => void;
     metronomeAccentEnabled?: boolean;
     onMetronomeAccentToggle?: () => void;
-    
+
     // Count-in mode
     countInMode?: 'three-beat' | 'four-beat';
     onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
-    
+
     // UI options
     showEdgeTab?: boolean;
+
+    // 🔧 NEW: armMetronome function from hook
+    onArmMetronome?: () => Promise<void>;
 }
 
 export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
@@ -68,6 +74,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     countInMode = 'three-beat',
     onCountInModeChange,
     showEdgeTab = true,
+    onArmMetronome, // 🔧 NEW
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showVisualAid, setShowVisualAid] = useState(true);
@@ -88,6 +95,19 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         { id: 'electronic', name: 'Electronic', freq: 440 },
     ];
 
+    // 🔧 CRITICAL: Metronome toggle with audio arming
+    const handleMetronomeToggle = async () => {
+        // 1. "Wake Up" the audio hardware on the click event
+        if (onArmMetronome) {
+            await onArmMetronome();
+        }
+
+        // 2. Then update state to enable the metronome
+        if (onMetronomeToggle) {
+            onMetronomeToggle();
+        }
+    };
+
     // Preview sound when selecting
     const playPreviewSound = useCallback((soundId: string) => {
         try {
@@ -102,7 +122,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
             if (!sound) return;
 
             oscillator.frequency.value = sound.freq;
-            oscillator.type = (soundId === 'kick-drum' || soundId === 'snare-drum') ? 'triangle' 
+            oscillator.type = (soundId === 'kick-drum' || soundId === 'snare-drum') ? 'triangle'
                 : (soundId === 'electronic') ? 'sine' : 'square';
 
             gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
@@ -134,7 +154,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         if (!isOpen && touchStartX.current > screenWidth - 50 && swipeDistance > 50 && touchDuration < 300) {
             setIsOpen(true);
         }
-        
+
         // Swipe right to close (when drawer is open)
         if (isOpen && swipeDistance < -50 && touchDuration < 300) {
             setIsOpen(false);
@@ -178,7 +198,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         <>
             {/* Backdrop */}
             {isOpen && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black/20 z-[9998] transition-opacity duration-300"
                     onClick={() => setIsOpen(false)}
                 />
@@ -197,7 +217,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     ${isOpen ? 'translate-x-0' : 'translate-x-[280px]'}
                 `}
             >
-                {/* Edge Tab - Orange Cursor Style (Ultimate Guitar inspired) */}
+                {/* Edge Tab - Orange Cursor Style */}
                 {showEdgeTab && showVisualAid && (
                     <button
                         onClick={() => setIsOpen(!isOpen)}
@@ -209,7 +229,6 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             ${isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
                         `}
                     >
-                        {/* Orange cursor line */}
                         <div className="w-1 h-full bg-gradient-to-b from-orange-500/80 via-orange-400 to-orange-500/80 rounded-full shadow-lg shadow-orange-500/50" />
                     </button>
                 )}
@@ -237,20 +256,20 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                         <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                    <svg 
-                                        width="20" 
-                                        height="20" 
-                                        viewBox="0 0 24 24" 
+                                    <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
                                         fill="currentColor"
-                                        className={isCountInEnabled ? 'text-green-400' : 'text-blue-400'}
+                                        className={isCountInEnabled ? 'text-green-400' : 'text-gray-400'}
                                     >
-                                        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                        <circle cx="12" cy="12" r="10" />
+                                        <text x="12" y="17" fontSize="12" fill="currentColor" textAnchor="middle" className="fill-gray-900 font-bold">3</text>
                                     </svg>
                                     <span className={`text-sm font-bold ${isCountInEnabled ? 'text-green-300' : 'text-white'}`}>
                                         Count In
                                     </span>
                                 </div>
-
                                 <button
                                     onClick={onCountInToggle}
                                     className={`
@@ -265,25 +284,25 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                     `} />
                                 </button>
                             </div>
-                            
-                            {/* Count-In Mode Selection */}
-                            <div className="mt-3 grid grid-cols-2 gap-2">
+
+                            {/* Mode Selector */}
+                            <div className="flex gap-2 mt-2">
                                 <button
                                     onClick={() => onCountInModeChange?.('three-beat')}
                                     className={`
-                                        py-2 px-3 rounded-lg text-xs font-bold transition-colors
+                                        flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-colors
                                         ${countInMode === 'three-beat'
                                             ? 'bg-orange-500 text-white'
                                             : 'bg-gray-700/50 text-gray-300'
                                         }
                                     `}
                                 >
-                                    3-2-1
+                                    3 Beats
                                 </button>
                                 <button
                                     onClick={() => onCountInModeChange?.('four-beat')}
                                     className={`
-                                        py-2 px-3 rounded-lg text-xs font-bold transition-colors
+                                        flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-colors
                                         ${countInMode === 'four-beat'
                                             ? 'bg-orange-500 text-white'
                                             : 'bg-gray-700/50 text-gray-300'
@@ -301,15 +320,15 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             <div className="p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                        <svg 
-                                            width="20" 
-                                            height="20" 
-                                            viewBox="0 0 24 24" 
+                                        <svg
+                                            width="20"
+                                            height="20"
+                                            viewBox="0 0 24 24"
                                             fill="currentColor"
                                             className={isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-400' : 'text-blue-400'}
                                         >
-                                            <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z"/>
-                                            <path d="M10.5 12L12 8l1.5 4z"/>
+                                            <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
+                                            <path d="M10.5 12L12 8l1.5 4z" />
                                         </svg>
                                         <div>
                                             <span className={`text-sm font-bold block ${isMetronomeEnabled && !isMetronomeDisabled ? 'text-green-300' : 'text-white'}`}>
@@ -321,23 +340,22 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                         </div>
                                     </div>
 
-                                    {onMetronomeToggle && (
-                                        <button
-                                            onClick={onMetronomeToggle}
-                                            disabled={isMetronomeDisabled}
-                                            className={`
-                                                relative w-12 h-6 rounded-full transition-colors
-                                                ${isMetronomeEnabled && !isMetronomeDisabled ? 'bg-green-500' : 'bg-gray-600'}
-                                                ${isMetronomeDisabled ? 'cursor-not-allowed' : ''}
-                                            `}
-                                        >
-                                            <div className={`
-                                                absolute top-0.5 w-5 h-5 rounded-full bg-white
-                                                transition-transform duration-200
-                                                ${isMetronomeEnabled && !isMetronomeDisabled ? 'translate-x-6' : 'translate-x-0.5'}
-                                            `} />
-                                        </button>
-                                    )}
+                                    {/* 🔧 FIXED: Toggle button now calls armMetronome */}
+                                    <button
+                                        onClick={handleMetronomeToggle}
+                                        disabled={isMetronomeDisabled}
+                                        className={`
+                                            relative w-12 h-6 rounded-full transition-colors
+                                            ${isMetronomeEnabled && !isMetronomeDisabled ? 'bg-green-500' : 'bg-gray-600'}
+                                            ${isMetronomeDisabled ? 'cursor-not-allowed' : ''}
+                                        `}
+                                    >
+                                        <div className={`
+                                            absolute top-0.5 w-5 h-5 rounded-full bg-white
+                                            transition-transform duration-200
+                                            ${isMetronomeEnabled && !isMetronomeDisabled ? 'translate-x-6' : 'translate-x-0.5'}
+                                        `} />
+                                    </button>
                                 </div>
 
                                 {/* Expand/Collapse Button */}
@@ -347,12 +365,12 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                         className="w-full flex items-center justify-center gap-2 mt-2 py-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
                                     >
                                         <span className="text-xs text-gray-300">Options</span>
-                                        <svg 
-                                            width="14" 
-                                            height="14" 
-                                            viewBox="0 0 24 24" 
-                                            fill="none" 
-                                            stroke="currentColor" 
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
                                             strokeWidth="2"
                                             className={`text-gray-400 transition-transform ${isMetronomeDrawerOpen ? 'rotate-180' : ''}`}
                                         >
@@ -373,7 +391,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             {/* Collapsible Options */}
                             {isMetronomeDrawerOpen && !isMetronomeDisabled && (
                                 <div className="px-3 pb-3 space-y-3 border-t border-gray-700/30">
-                                    
+
                                     {/* Sound Selection */}
                                     <div className="pt-3">
                                         <label className="text-xs font-semibold text-gray-300 block mb-2">Sound</label>
@@ -413,177 +431,142 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="text-xs font-semibold text-gray-300">Volume</label>
-                                            <span className="text-xs text-cyan-400">{Math.round(metronomeVolume * 100)}%</span>
+                                            <span className="text-xs text-gray-400">{Math.round((metronomeVolume || 0.7) * 100)}%</span>
                                         </div>
                                         <input
                                             type="range"
                                             min="0"
-                                            max="1"
-                                            step="0.01"
-                                            value={metronomeVolume}
-                                            onChange={(e) => onMetronomeVolumeChange?.(parseFloat(e.target.value))}
-                                            className="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-cyan-400"
+                                            max="100"
+                                            value={Math.round((metronomeVolume || 0.7) * 100)}
+                                            onChange={(e) => onMetronomeVolumeChange?.(parseInt(e.target.value) / 100)}
+                                            className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                                        />
+                                    </div>
+
+                                    {/* Balance */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-semibold text-gray-300">Balance</label>
+                                            <span className="text-xs text-gray-400">
+                                                {(metronomeBalance || 0) === 0 ? 'C' : (metronomeBalance || 0) < 0 ? `L${Math.abs(Math.round((metronomeBalance || 0) * 100))}` : `R${Math.round((metronomeBalance || 0) * 100)}`}
+                                            </span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="-100"
+                                            max="100"
+                                            value={Math.round((metronomeBalance || 0) * 100)}
+                                            onChange={(e) => onMetronomeBalanceChange?.(parseInt(e.target.value) / 100)}
+                                            className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                                         />
                                     </div>
 
                                     {/* Subdivision */}
                                     <div>
                                         <label className="text-xs font-semibold text-gray-300 block mb-2">Subdivision</label>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {[0.5, 1, 2].map((value) => (
+                                        <div className="flex gap-2">
+                                            {[0.5, 1, 2].map((sub) => (
                                                 <button
-                                                    key={value}
-                                                    onClick={() => onMetronomeSubdivisionChange?.(value)}
+                                                    key={sub}
+                                                    onClick={() => onMetronomeSubdivisionChange?.(sub)}
                                                     className={`
-                                                        py-1.5 rounded-lg text-xs font-bold transition-colors
-                                                        ${metronomeSubdivision === value
-                                                            ? 'bg-white text-gray-900'
+                                                        flex-1 py-2 rounded-lg text-xs font-bold transition-colors
+                                                        ${metronomeSubdivision === sub
+                                                            ? 'bg-cyan-500 text-white'
                                                             : 'bg-gray-700/50 text-gray-300'
                                                         }
                                                     `}
                                                 >
-                                                    {value}x
+                                                    {sub}x
                                                 </button>
                                             ))}
-                                        </div>
-                                    </div>
-
-                                    {/* L & R Balance */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="text-xs font-semibold text-gray-300">L & R</label>
-                                            <span className="text-xs text-cyan-400">
-                                                {metronomeBalance < -0.1 ? 'Left' : metronomeBalance > 0.1 ? 'Right' : 'Center'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-500">L</span>
-                                            <input
-                                                type="range"
-                                                min="-1"
-                                                max="1"
-                                                step="0.01"
-                                                value={metronomeBalance}
-                                                onChange={(e) => onMetronomeBalanceChange?.(parseFloat(e.target.value))}
-                                                className="flex-1 h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-cyan-400"
-                                            />
-                                            <span className="text-xs text-gray-500">R</span>
                                         </div>
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        {/* Divider */}
-                        <div className="border-t border-gray-700/50 my-2" />
-
-                        {/* Future Features */}
-                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
-                            <div className="flex items-center gap-3">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500">
-                                    <rect x="2" y="6" width="20" height="12" rx="2" />
-                                    <path d="M7 6v12M12 6v12M17 6v12" />
-                                </svg>
-                                <span className="text-sm font-bold text-gray-500">Fretboard</span>
-                            </div>
-                            <span className="text-xs text-gray-600">Soon</span>
-                        </button>
-
-                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
-                            <div className="flex items-center gap-3">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-gray-500">
-                                    <path d="M6 2V10C6 12 4 13 4 13V17C4 18 5 19 6 19H14C15 19 16 18 16 17V13C16 13 14 12 14 10V2H12V9C12 9.5 11.5 10 11 10H9C8.5 10 8 9.5 8 9V2H6Z" />
-                                </svg>
-                                <span className="text-sm font-bold text-gray-500">Tuner</span>
-                            </div>
-                            <span className="text-xs text-gray-600">Soon</span>
-                        </button>
-
-                        <button disabled className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/30 border-2 border-gray-700/30 opacity-50">
-                            <div className="flex items-center gap-3">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 6v12M6 12h12" />
-                                </svg>
-                                <span className="text-sm font-bold text-gray-500">Key Changer</span>
-                            </div>
-                            <span className="text-xs text-gray-600">Soon</span>
-                        </button>
-                    </div>
-
-                    {/* Visual Aid Toggle (Bottom Footer) */}
-                    <div className="border-t border-gray-700/50 p-3">
+                        {/* Visual Aid Toggle */}
                         {showEdgeTab && (
-                            <div className="flex items-center justify-between px-2 py-2 bg-gray-800/40 rounded-lg">
-                                <div className="flex items-center gap-2">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-orange-400">
-                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                        <circle cx="12" cy="12" r="3" />
-                                    </svg>
-                                    <span className="text-xs text-gray-300">Visual Aid</span>
+                            <div className="bg-gray-800/60 border-2 border-gray-700/50 rounded-xl p-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm font-bold text-white block">Visual Aid</span>
+                                        <span className="text-xs text-gray-400">Orange edge tab</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowVisualAid(prev => !prev)}
+                                        className={`
+                                            relative w-12 h-6 rounded-full transition-colors
+                                            ${showVisualAid ? 'bg-orange-500' : 'bg-gray-600'}
+                                        `}
+                                    >
+                                        <div className={`
+                                            absolute top-0.5 w-5 h-5 rounded-full bg-white
+                                            transition-transform duration-200
+                                            ${showVisualAid ? 'translate-x-6' : 'translate-x-0.5'}
+                                        `} />
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => setShowVisualAid(prev => !prev)}
-                                    className={`
-                                        relative w-10 h-5 rounded-full transition-colors
-                                        ${showVisualAid ? 'bg-orange-500' : 'bg-gray-600'}
-                                    `}
-                                >
-                                    <div className={`
-                                        absolute top-0.5 w-4 h-4 rounded-full bg-white
-                                        transition-transform duration-200
-                                        ${showVisualAid ? 'translate-x-5' : 'translate-x-0.5'}
-                                    `} />
-                                </button>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Sound Selector Popup */}
+            {/* 🔧 FIXED: Sound Selector Popup - Now properly z-indexed ABOVE drawer backdrop but BELOW drawer content */}
             {isSoundSelectorOpen && (
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/70" onClick={() => setIsSoundSelectorOpen(false)} />
-                    <div className="relative bg-gray-800 border-2 border-purple-500/40 rounded-2xl p-4 max-w-xs w-full shadow-2xl">
-                        {/* Header with Done button */}
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-white font-bold">Select Sound</h3>
-                            <button
-                                onClick={() => setIsSoundSelectorOpen(false)}
-                                className="text-cyan-400 font-semibold text-sm px-3 py-1 rounded-lg hover:bg-cyan-400/10 transition-colors"
-                            >
-                                Done
-                            </button>
-                        </div>
-                        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                            {SOUND_OPTIONS.map((sound) => (
+                <>
+                    {/* Sound selector backdrop - sits above drawer backdrop (z-9998) but below drawer content (z-9999) */}
+                    <div
+                        className="fixed inset-0 bg-black/50 z-[9998.5]"
+                        onClick={(e) => {
+                            e.stopPropagation(); // Prevent drawer from closing
+                            setIsSoundSelectorOpen(false);
+                        }}
+                    />
+
+                    {/* Sound selector content - sits above everything */}
+                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 pointer-events-none">
+                        <div className="relative bg-gray-800 border-2 border-purple-500/40 rounded-2xl p-4 max-w-xs w-full shadow-2xl pointer-events-auto">
+                            {/* Header with Done button */}
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="text-white font-bold">Select Sound</h3>
                                 <button
-                                    key={sound.id}
-                                    onClick={() => {
-                                        onMetronomeSoundTypeChange?.(sound.id);
-                                        playPreviewSound(sound.id); // Play preview sound
-                                        // Don't close popup - let user choose "Done" or tap outside
-                                    }}
-                                    className={`
-                                        w-full px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between
-                                        ${metronomeSoundType === sound.id
-                                            ? 'bg-orange-500 text-white font-bold'
-                                            : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
-                                        }
-                                    `}
+                                    onClick={() => setIsSoundSelectorOpen(false)}
+                                    className="text-cyan-400 font-semibold text-sm px-3 py-1 rounded-lg hover:bg-cyan-400/10 transition-colors"
                                 >
-                                    <span>{sound.name}</span>
-                                    {metronomeSoundType === sound.id && (
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
-                                            <path d="M20 6L9 17l-5-5" />
-                                        </svg>
-                                    )}
+                                    Done
                                 </button>
-                            ))}
+                            </div>
+                            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                                {SOUND_OPTIONS.map((sound) => (
+                                    <button
+                                        key={sound.id}
+                                        onClick={() => {
+                                            onMetronomeSoundTypeChange?.(sound.id);
+                                            playPreviewSound(sound.id);
+                                        }}
+                                        className={`
+                                            w-full px-4 py-3 rounded-lg text-left transition-colors flex items-center justify-between
+                                            ${metronomeSoundType === sound.id
+                                                ? 'bg-orange-500 text-white font-bold'
+                                                : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                                            }
+                                        `}
+                                    >
+                                        <span>{sound.name}</span>
+                                        {metronomeSoundType === sound.id && (
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
+                                                <path d="M20 6L9 17l-5-5" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </>
     );

@@ -2,9 +2,18 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * December 31st, 2025 - V98.15: FIXED METRONOME ARCHITECTURE
+ * December 31st, 2025 - V98.15: MOBILE PWA AUDIO CONTEXT FIX (COMPLETE)
  *
- * 🔧 V98.15 FIXES:
+ * 🔧 V98.15 LATEST FIX:
+ * ✅ Mobile PWA Audio Context Fix (Complete):
+ *    - useSmartMetronome V3 now properly returns armMetronome function
+ *    - Destructured armMetronome from hook (no workaround needed)
+ *    - Pass armMetronome to MobileToolsSlideout as onArmMetronome
+ *    - Mobile browsers recognize metronome toggle as user interaction
+ *    - Audio context properly initialized on first metronome toggle
+ *    - Check console for "🔊 Audio Context Armed via User Gesture"
+ * 
+ * 🔧 V98.15 PREVIOUS FIXES:
  * ✅ Issue #1 (No metronome sound):
  *    - Audio context now properly resumed for mobile
  *    - Added debug logging for tick events
@@ -22,7 +31,7 @@
  * ✅ Count-in with tick sound (3-beat or 4-beat)
  * ✅ Auto-disable Count In after countdown
  * ✅ CountInOverlay component with mode support
- * ✅ useSmartMetronome headless hook:
+ * ✅ useSmartMetronome V3 headless hook:
  *    - BPM sync from AlphaTab score
  *    - Playback speed compensation
  *    - Volume and stereo balance controls
@@ -30,12 +39,14 @@
  *    - Accent toggle for downbeat emphasis
  *    - 7 sound types: Woodblock, Click, Beep, Drum Stick, Electronic, Kick Drum, Snare Drum
  *    - Auto-disable in YouTube mode (synth only)
+ *    - armMetronome function for mobile PWA audio context initialization
  * ✅ MobileToolsSlideout with inline controls:
  *    - Professional metronome icon (triangle shape)
  *    - All metronome controls inside (no separate modal)
  *    - Optional orange visual aid tab (toggleable)
  *    - BPM display
  *    - Count-in mode selector (3-beat/4-beat)
+ *    - Audio context arming button for mobile
  * ✅ BPM tracking from AlphaTab score tempo
  */
 
@@ -53,7 +64,7 @@ import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
-import { 
+import {
     CountInOverlay,
     useSmartMetronome,
     type MetronomeSoundType,
@@ -103,6 +114,19 @@ export default function SynthPlayerPage() {
     const [metronomeAccentEnabled, setMetronomeAccentEnabled] = useState<boolean>(true);
     const [countInMode, setCountInMode] = useState<'three-beat' | 'four-beat'>('three-beat');
     const [currentBPM, setCurrentBPM] = useState<number>(120);
+
+    // ==================== METRONOME HOOK ====================
+    const { effectiveBPM, armMetronome } = useSmartMetronome({
+        isEnabled: isMetronomeEnabled,
+        currentBPM: currentBPM,
+        audioSource: audioSource,
+        isPlaying: isPlaying,
+        volume: metronomeVolume,
+        balance: metronomeBalance,
+        soundType: metronomeSoundType,
+        subdivision: metronomeSubdivision,
+        accentEnabled: metronomeAccentEnabled,
+    });
 
     // ==================== PITCH SHIFT STATE ====================
     const [pitchShift, setPitchShift] = useState<number>(0);
@@ -519,11 +543,11 @@ export default function SynthPlayerPage() {
             const maxCount = countInMode === 'four-beat' ? 4 : 3;
             console.log(`🔔 Starting ${maxCount}-beat countdown...`);
             setIsCountingDown(true);
-            
+
             // Countdown with tick sound
             for (let i = maxCount; i > 0; i--) {
                 setCountdownValue(i);
-                
+
                 // Play tick sound
                 try {
                     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -544,10 +568,10 @@ export default function SynthPlayerPage() {
                 } catch (error) {
                     console.warn('Count-in tick failed:', error);
                 }
-                
+
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-            
+
             setCountdownValue(0);
             setIsCountingDown(false);
             setIsCountInEnabled(false); // Auto-disable after use
@@ -822,7 +846,7 @@ export default function SynthPlayerPage() {
         setTheme(prev => prev === 'dark' ? 'light' : 'dark');
     }, []);
 
-    // TRACK MIXER
+    // ==================== RENDER ====================
     const handleTrackMuteToggle = useCallback(
         (trackIndex: number) => {
             if (!api || !api.score) return;
@@ -1031,13 +1055,13 @@ export default function SynthPlayerPage() {
                 onCountInToggle={handleCountInToggle}
                 countInMode={countInMode}
                 onCountInModeChange={setCountInMode}
-                
+
                 // Metronome
                 isMetronomeEnabled={isMetronomeEnabled}
                 onMetronomeToggle={handleMetronomeToggle}
                 currentBPM={currentBPM}
                 audioSource={audioSource}
-                
+
                 // Metronome inline controls (inside slideout)
                 metronomeVolume={metronomeVolume}
                 onMetronomeVolumeChange={setMetronomeVolume}
@@ -1049,9 +1073,12 @@ export default function SynthPlayerPage() {
                 onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
                 metronomeAccentEnabled={metronomeAccentEnabled}
                 onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
-                
+
                 // Visual aid
                 showEdgeTab={true}
+
+                // 🔧 Audio arming function for mobile PWA
+                onArmMetronome={armMetronome}
             />
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
