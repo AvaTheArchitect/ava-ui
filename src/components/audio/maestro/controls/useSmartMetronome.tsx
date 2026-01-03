@@ -1,14 +1,18 @@
 'use client';
 
 /**
- * useSmartMetronome.tsx V3 - Headless Metronome Hook (Mobile Audio Fixed)
- * Date: December 31st, 2025
+ * useSmartMetronome.tsx V4 - Fixed Count-In Conflict
+ * Date: January 2nd, 2026
  * 
- * 🔧 V3 FIXES:
+ * 🔧 V4 FIXES:
+ * ✅ Added isCountingDown prop to prevent overlap with count-in
+ * ✅ Metronome now pauses during count-in countdown
+ * ✅ Fixed doubled sounds issue
+ * 
+ * 🔒 PRESERVED FROM V3:
  * ✅ Mobile PWA audio context "arming" strategy
- * ✅ Removed async/await from playback loop (prevents stuttering)
- * ✅ armMetronome() function for direct onClick handler
  * ✅ Synchronous tick function for precise timing
+ * ✅ armMetronome() function for direct onClick handler
  * 
  * 🥁 Features:
  * ✅ No UI - pure logic hook
@@ -30,6 +34,7 @@ export interface UseSmartMetronomeProps {
     currentBPM: number;
     audioSource: 'synth' | 'original';
     isPlaying: boolean;
+    isCountingDown?: boolean;  // 🔧 V4: NEW - Pause during count-in
 
     // Settings
     volume: number;           // 0-1
@@ -44,6 +49,7 @@ export const useSmartMetronome = ({
     currentBPM,
     audioSource,
     isPlaying,
+    isCountingDown = false,  // 🔧 V4: Default to false
     volume,
     balance,
     soundType,
@@ -53,7 +59,7 @@ export const useSmartMetronome = ({
     const audioContextRef = useRef<AudioContext | null>(null);
     const intervalRef = useRef<number | null>(null);
 
-    // 🔧 Initialize Context ONLY ONCE
+    // Initialize Context ONLY ONCE
     const getContext = useCallback(() => {
         if (!audioContextRef.current) {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -61,7 +67,7 @@ export const useSmartMetronome = ({
         return audioContextRef.current;
     }, []);
 
-    // 🔧 CRITICAL: The "Arm" function
+    // CRITICAL: The "Arm" function
     // This MUST be called from a button onClick, not a useEffect
     const armMetronome = useCallback(async () => {
         const ctx = getContext();
@@ -140,11 +146,18 @@ export const useSmartMetronome = ({
 
     // 🔁 Metronome Loop (relies on context being 'running')
     useEffect(() => {
-        // Auto-disable in YouTube/MP3 mode
-        if (!isEnabled || !isPlaying || audioSource === 'original') {
+        // 🔧 V4: Auto-disable in YouTube/MP3 mode OR during count-in
+        if (!isEnabled || !isPlaying || audioSource === 'original' || isCountingDown) {
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
                 intervalRef.current = null;
+
+                // 🔧 V4: Log why we're stopping
+                if (isCountingDown) {
+                    console.log('⏸️ Metronome paused during count-in');
+                } else if (intervalRef.current !== null) {
+                    console.log('🛑 Metronome stopped');
+                }
             }
             return;
         }
@@ -165,10 +178,9 @@ export const useSmartMetronome = ({
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
                 intervalRef.current = null;
-                console.log('🛑 Metronome stopped');
             }
         };
-    }, [isEnabled, isPlaying, audioSource, getEffectiveBPM, playMetronomeSound]);
+    }, [isEnabled, isPlaying, audioSource, isCountingDown, getEffectiveBPM, playMetronomeSound]); // 🔧 V4: Added isCountingDown
 
     // Cleanup on unmount
     useEffect(() => {
@@ -181,6 +193,6 @@ export const useSmartMetronome = ({
 
     return {
         effectiveBPM: getEffectiveBPM(),
-        armMetronome, // 🔧 Return the arming function
+        armMetronome, // Return the arming function
     };
 };

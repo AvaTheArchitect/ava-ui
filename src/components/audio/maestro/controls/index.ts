@@ -27,9 +27,11 @@ export { AudioSourceToggle } from "./AudioSourceToggle";
 // 🆕 Count-In & Metronome Features
 export { CountInOverlay } from "./CountInOverlay";
 export { useSmartMetronome } from "./useSmartMetronome";
+export { CountInPanel } from "./CountInPanel";
 
 // Metronome types
 export type { MetronomeSoundType, SubdivisionMode } from "./useSmartMetronome";
+export { MetronomePanel } from "./MetronomePanel";
 
 // Types
 export * from "./MaestroControlTypes";

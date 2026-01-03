@@ -1,31 +1,28 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V96: ADD COUNT IN SUPPORT
- * Date: December 29th, 2025
+ * MaestroControlPanel.tsx - V98: YOUTUBE RED BUTTON (MOBILE)
+ * Date: January 2nd, 2026
  * 
- * 🆕 NEW IN V96:
- * ✅ Added isCountInEnabled and onCountInToggle props
- * ✅ Pass Count In props to TransportBar
+ * 🔧 NEW IN V98:
+ * ✅ Mobile play button shows YOUTUBE RED (#FF0000) in 'original' mode
+ * ✅ Matches Songsterr exactly - red bg with white icon when paused in Original mode
+ * ✅ ONLY change: Added getPlayButtonStyle() function and applied to play button
  * 
- * 🔧 PRESERVED FROM V95:
- * ✅ Panels close when clicking on the canvas/AlphaTab surface
- * ✅ Added click-outside detection for canvas area
- * ✅ Improved panel coordination
- * 
- * 🔒 PRESERVED FROM V94:
- * ✅ Pass pitchShift and onPitchShiftToggle to TransportBar
- * ✅ Handle pitch shift popover positioning
- * ✅ Pass theme and onThemeToggle to TransportBar
- * ✅ Mobile icons cyan-400 blue
- * ✅ Loop ON: text-green-400
- * ✅ TrackMixer panel auto-closes
+ * 🔒 PRESERVED FROM V97:
+ * ✅ All count-in functionality
+ * ✅ All metronome functionality
+ * ✅ Diagnostic logging
+ * ✅ Canvas click detection
+ * ✅ Panel coordination
+ * ✅ Desktop TransportBar unchanged
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
 
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
@@ -55,9 +52,26 @@ export interface MaestroControlPanelProps {
   onThemeToggle: () => void;
   pitchShift?: number;
   onPitchShiftToggle?: (anchorRect: DOMRect) => void;
-  // 🆕 V96: Count In props
+  // Count In props
   isCountInEnabled?: boolean;
   onCountInToggle?: () => void;
+  countInMode?: 'three-beat' | 'four-beat';
+  onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
+  // Metronome props
+  isMetronomeEnabled?: boolean;
+  onMetronomeToggle?: () => void;
+  metronomeVolume?: number;
+  onMetronomeVolumeChange?: (volume: number) => void;
+  metronomeBalance?: number;
+  onMetronomeBalanceChange?: (balance: number) => void;
+  metronomeSubdivision?: SubdivisionMode;
+  onMetronomeSubdivisionChange?: (subdivision: SubdivisionMode) => void;
+  metronomeSoundType?: MetronomeSoundType;
+  onMetronomeSoundTypeChange?: (sound: MetronomeSoundType) => void;
+  metronomeAccentEnabled?: boolean;
+  onMetronomeAccentToggle?: () => void;
+  onArmMetronome?: () => Promise<void>;
+  currentBPM?: number;
 }
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
@@ -65,19 +79,18 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
 
-  // 🔧 V95: Close all panels helper
+  // Close all panels helper
   const closeAllPanels = useCallback(() => {
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
     setIsDrawerOpen(false);
   }, []);
 
-  // 🔧 V95: Canvas click detection - close panels when clicking on AlphaTab surface
+  // Canvas click detection - close panels when clicking on AlphaTab surface
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
 
-      // Check if click is on the canvas/AlphaTab surface
       const isCanvasClick = target.closest?.('.at-surface') ||
         target.closest?.('.at-viewport') ||
         target.closest?.('#alphatab-container');
@@ -134,7 +147,40 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   };
 
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
-  const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
+
+  // V97: Ensure currentBPM calculation matches what page.tsx provides
+  const currentBPM = props.currentBPM ?? (props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 120);
+
+  // 🆕 V98: Mobile play button styling - YouTube RED when in 'original' mode
+  const getPlayButtonStyle = () => {
+    if (props.isPlaying) {
+      // Playing: Orange text
+      return 'text-orange-400 hover:text-orange-300 bg-transparent';
+    } else if (props.audioSource === 'original') {
+      // Original mode (paused): YouTube RED background with WHITE icon
+      return 'bg-[#FF0000] hover:bg-[#E62117] text-white';
+    } else {
+      // Synth mode (paused): Cyan text
+      return 'text-cyan-400 hover:text-cyan-300 bg-transparent';
+    }
+  };
+
+  // V97: DIAGNOSTIC logging
+  useEffect(() => {
+    console.log('=== MAESTRO CONTROL PANEL V98 ===');
+    console.log('Passing to TransportBar - currentBPM:', currentBPM);
+    console.log('Has onMetronomeToggle:', !!props.onMetronomeToggle);
+    console.log('Has onMetronomeVolumeChange:', !!props.onMetronomeVolumeChange);
+    console.log('Has all callbacks:', !!(
+      props.onMetronomeToggle &&
+      props.onMetronomeVolumeChange &&
+      props.onMetronomeBalanceChange &&
+      props.onMetronomeSubdivisionChange &&
+      props.onMetronomeSoundTypeChange &&
+      props.onMetronomeAccentToggle
+    ));
+  }, [currentBPM, props.onMetronomeToggle, props.onMetronomeVolumeChange, props.onMetronomeBalanceChange,
+    props.onMetronomeSubdivisionChange, props.onMetronomeSoundTypeChange, props.onMetronomeAccentToggle]);
 
   return (
     <>
@@ -164,9 +210,26 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             onThemeToggle={props.onThemeToggle}
             pitchShift={props.pitchShift}
             onPitchShiftToggle={props.onPitchShiftToggle}
-            // 🆕 V96: Count In props
+            // Count In props
             isCountInEnabled={props.isCountInEnabled}
             onCountInToggle={props.onCountInToggle}
+            countInMode={props.countInMode}
+            onCountInModeChange={props.onCountInModeChange}
+            // Metronome props - V97: Pass currentBPM explicitly
+            isMetronomeEnabled={props.isMetronomeEnabled}
+            onMetronomeToggle={props.onMetronomeToggle}
+            metronomeVolume={props.metronomeVolume}
+            onMetronomeVolumeChange={props.onMetronomeVolumeChange}
+            metronomeBalance={props.metronomeBalance}
+            onMetronomeBalanceChange={props.onMetronomeBalanceChange}
+            metronomeSubdivision={props.metronomeSubdivision}
+            onMetronomeSubdivisionChange={props.onMetronomeSubdivisionChange}
+            metronomeSoundType={props.metronomeSoundType}
+            onMetronomeSoundTypeChange={props.onMetronomeSoundTypeChange}
+            metronomeAccentEnabled={props.metronomeAccentEnabled}
+            onMetronomeAccentToggle={props.onMetronomeAccentToggle}
+            onArmMetronome={props.onArmMetronome}
+            currentBPM={currentBPM}
           />
         </div>
       )}
@@ -310,11 +373,16 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 4. Play/Pause */}
+            {/* 🔧 V98: YOUTUBE RED PLAY BUTTON - 4. Play/Pause */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'}`}
+              className={`
+                w-[44px] h-[44px] flex items-center justify-center 
+                rounded-lg transition-all duration-200 flex-shrink-0 
+                disabled:opacity-50
+                ${getPlayButtonStyle()}
+              `}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -351,6 +419,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
+          isMobileLandscape={props.isMobileLandscape}
+          pitchShift={props.pitchShift}
+          onPitchShiftChange={(semitones) => {
+            console.log('Pitch shift requested:', semitones);
+          }}
         />
       </div>
     </>

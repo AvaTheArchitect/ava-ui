@@ -1,22 +1,21 @@
 'use client';
 
 /**
- * TransportBar.tsx - V92.1: FIXED MORE BUTTON & COUNT IN COLORS
- * Date: December 29th, 2025
+ * TransportBar.tsx - V97: DIAGNOSTIC VERSION + FIXES
+ * Date: January 1st, 2026
  * 
- * 🔧 NEW IN V92.1:
- * ✅ MORE button now matches Loop/Speed pattern (soft white → green when open)
- * ✅ Count In button uses proper blue-200/green-400 colors (not blue-400)
- * ✅ Both buttons use hover:brightness-125 for consistency
+ * 🔧 FIXES FROM V94:
+ * ✅ Removed currentBPM = 120 default (was masking actual BPM)
+ * ✅ Removed empty callback fallbacks (|| (() => {}))
+ * ✅ Added console.log diagnostics for button clicks
+ * ✅ Added prop validation checks
+ * ✅ Conditional MetronomePanel rendering (only if callbacks exist)
  * 
- * 🔧 V92 FEATURES:
- * ✅ Count In button enabled with green indicator when ON
- * ✅ Speed button shows green when panel OPEN (consistent with other buttons)
- * ✅ Preserved orange speedometer when speed > 100%
- * ✅ Count In state management added
- * 
- * 🔒 PRESERVED FROM V91.4:
- * ✅ All previous fixes
+ * 🐛 DIAGNOSTICS:
+ * ✅ Logs when metronome button is clicked
+ * ✅ Logs current BPM value
+ * ✅ Logs which callbacks are missing
+ * ✅ Shows panel state changes
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -24,14 +23,34 @@ import { PlaybackControls } from './PlaybackControls';
 import { SpeedControl } from './SpeedControl';
 import { LoopControl } from './LoopControl';
 import { TrackMixerPanel } from './TrackMixerPanel';
+import { MetronomePanel } from './MetronomePanel';
+import { CountInPanel } from './CountInPanel';
 import type { TransportBarProps } from './MaestroControlTypes';
+import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
 
 interface ExtendedTransportBarProps extends TransportBarProps {
   pitchShift?: number;
   onPitchShiftToggle?: (anchorRect: DOMRect) => void;
-  // 🆕 V92: Count In props
+  // Count In props
   isCountInEnabled?: boolean;
   onCountInToggle?: () => void;
+  countInMode?: 'three-beat' | 'four-beat';
+  onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
+  // Metronome props - NO DEFAULTS
+  isMetronomeEnabled?: boolean;
+  onMetronomeToggle?: () => void;
+  metronomeVolume?: number;
+  onMetronomeVolumeChange?: (volume: number) => void;
+  metronomeBalance?: number;
+  onMetronomeBalanceChange?: (balance: number) => void;
+  metronomeSubdivision?: SubdivisionMode;
+  onMetronomeSubdivisionChange?: (subdivision: SubdivisionMode) => void;
+  metronomeSoundType?: MetronomeSoundType;
+  onMetronomeSoundTypeChange?: (sound: MetronomeSoundType) => void;
+  metronomeAccentEnabled?: boolean;
+  onMetronomeAccentToggle?: () => void;
+  onArmMetronome?: () => Promise<void>;
+  currentBPM?: number;
 }
 
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
@@ -57,82 +76,149 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   onThemeToggle,
   pitchShift = 0,
   onPitchShiftToggle,
-  // 🆕 V92: Count In props with defaults
   isCountInEnabled = false,
   onCountInToggle,
+  countInMode = 'three-beat',
+  onCountInModeChange,
+  // 🔧 V97: No defaults on metronome props
+  isMetronomeEnabled = false,
+  onMetronomeToggle,
+  metronomeVolume = 0.7,
+  onMetronomeVolumeChange,
+  metronomeBalance = 0,
+  onMetronomeBalanceChange,
+  metronomeSubdivision = 1,
+  onMetronomeSubdivisionChange,
+  metronomeSoundType = 'woodblock',
+  onMetronomeSoundTypeChange,
+  metronomeAccentEnabled = true,
+  onMetronomeAccentToggle,
+  onArmMetronome,
+  currentBPM, // 🔧 NO DEFAULT - use actual value
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+  const [isMetronomePanelOpen, setIsMetronomePanelOpen] = useState(false);
+  const [isCountInPanelOpen, setIsCountInPanelOpen] = useState(false);
 
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const trackMixerRef = useRef<HTMLDivElement>(null);
   const speedPanelRef = useRef<HTMLDivElement>(null);
+  const metronomePanelRef = useRef<HTMLDivElement>(null);
+  const countInPanelRef = useRef<HTMLDivElement>(null);
   const tuningButtonRef = useRef<HTMLButtonElement>(null);
+
+  // 🐛 DIAGNOSTIC: Log prop validation on mount
+  useEffect(() => {
+    console.log('=== TRANSPORTBAR V97 DIAGNOSTIC ===');
+    console.log('currentBPM prop:', currentBPM);
+    console.log('songInfo tempo:', songInfo?.tempo);
+    console.log('Calculated BPM:', currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120));
+
+    const missingCallbacks: string[] = [];
+    if (!onMetronomeToggle) missingCallbacks.push('onMetronomeToggle');
+    if (!onMetronomeVolumeChange) missingCallbacks.push('onMetronomeVolumeChange');
+    if (!onMetronomeBalanceChange) missingCallbacks.push('onMetronomeBalanceChange');
+    if (!onMetronomeSubdivisionChange) missingCallbacks.push('onMetronomeSubdivisionChange');
+    if (!onMetronomeSoundTypeChange) missingCallbacks.push('onMetronomeSoundTypeChange');
+    if (!onMetronomeAccentToggle) missingCallbacks.push('onMetronomeAccentToggle');
+
+    if (missingCallbacks.length > 0) {
+      console.warn('⚠️ Missing metronome callbacks:', missingCallbacks);
+    } else {
+      console.log('✅ All metronome callbacks present');
+    }
+  }, [currentBPM, songInfo, playbackSpeed, onMetronomeToggle, onMetronomeVolumeChange,
+    onMetronomeBalanceChange, onMetronomeSubdivisionChange, onMetronomeSoundTypeChange,
+    onMetronomeAccentToggle]);
 
   const closeAllPanels = useCallback(() => {
     setIsMoreMenuOpen(false);
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
+    setIsMetronomePanelOpen(false);
+    setIsCountInPanelOpen(false);
   }, []);
 
-  // 🔧 V91.3: Improved click-outside detection with .contains() check
+  // Click-outside detection
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
 
-      // 🔧 V91.3: Check if click is INSIDE any panel container (more resilient)
       const clickedInsideSpeed = speedPanelRef.current?.contains(target);
       const clickedInsideTrack = trackMixerRef.current?.contains(target);
       const clickedInsideMore = moreMenuRef.current?.contains(target);
+      const clickedInsideMetronome = metronomePanelRef.current?.contains(target);
+      const clickedInsideCountIn = countInPanelRef.current?.contains(target);
 
-      // Close panels only if clicking OUTSIDE
-      if (isSpeedPanelOpen && !clickedInsideSpeed) {
-        setIsSpeedPanelOpen(false);
-      }
-      if (isTrackMixerOpen && !clickedInsideTrack) {
-        setIsTrackMixerOpen(false);
-      }
-      if (isMoreMenuOpen && !clickedInsideMore) {
-        setIsMoreMenuOpen(false);
-      }
+      if (isSpeedPanelOpen && !clickedInsideSpeed) setIsSpeedPanelOpen(false);
+      if (isTrackMixerOpen && !clickedInsideTrack) setIsTrackMixerOpen(false);
+      if (isMoreMenuOpen && !clickedInsideMore) setIsMoreMenuOpen(false);
+      if (isMetronomePanelOpen && !clickedInsideMetronome) setIsMetronomePanelOpen(false);
+      if (isCountInPanelOpen && !clickedInsideCountIn) setIsCountInPanelOpen(false);
 
-      // Also close if clicking on the canvas
       const isCanvasClick = (target as Element).closest?.('.at-surface') ||
         (target as Element).closest?.('.at-viewport') ||
         (target as Element).closest?.('#alphatab-container');
 
-      if (isCanvasClick) {
-        closeAllPanels();
-      }
+      if (isCanvasClick) closeAllPanels();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isMoreMenuOpen, isTrackMixerOpen, isSpeedPanelOpen, closeAllPanels]);
+  }, [isMoreMenuOpen, isTrackMixerOpen, isSpeedPanelOpen, isMetronomePanelOpen, isCountInPanelOpen, closeAllPanels]);
 
   useEffect(() => {
-    if (isPlaying) {
-      closeAllPanels();
-    }
+    if (isPlaying) closeAllPanels();
   }, [isPlaying, closeAllPanels]);
 
   const handleTrackMixerToggle = useCallback(() => {
     setIsTrackMixerOpen(prev => !prev);
     setIsSpeedPanelOpen(false);
     setIsMoreMenuOpen(false);
+    setIsMetronomePanelOpen(false);
+    setIsCountInPanelOpen(false);
   }, []);
 
   const handleSpeedToggle = useCallback(() => {
     setIsSpeedPanelOpen(prev => !prev);
     setIsTrackMixerOpen(false);
     setIsMoreMenuOpen(false);
+    setIsMetronomePanelOpen(false);
+    setIsCountInPanelOpen(false);
   }, []);
 
   const handleMoreToggle = useCallback(() => {
     setIsMoreMenuOpen(prev => !prev);
     setIsTrackMixerOpen(false);
     setIsSpeedPanelOpen(false);
+    setIsMetronomePanelOpen(false);
+    setIsCountInPanelOpen(false);
+  }, []);
+
+  const handleMetronomePanelToggle = useCallback(() => {
+    console.log('🎵 Metronome button clicked! Current state:', isMetronomePanelOpen);
+    console.log('audioSource:', audioSource, 'isSynthMode:', audioSource === 'synth');
+    console.log('api:', api ? 'present' : 'missing');
+
+    setIsMetronomePanelOpen(prev => {
+      const newState = !prev;
+      console.log('🎵 Panel state changing to:', newState);
+      return newState;
+    });
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+    setIsMoreMenuOpen(false);
+    setIsCountInPanelOpen(false);
+  }, [isMetronomePanelOpen, audioSource, api]);
+
+  const handleCountInPanelToggle = useCallback(() => {
+    setIsCountInPanelOpen(prev => !prev);
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+    setIsMoreMenuOpen(false);
+    setIsMetronomePanelOpen(false);
   }, []);
 
   const handleThemeToggleClick = useCallback(() => {
@@ -160,6 +246,22 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   }, [onSpeedChange]);
 
   const isSynthMode = audioSource === 'synth';
+
+  // 🔧 V97: Calculate BPM with proper fallback
+  const displayBPM = currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120);
+
+  // 🐛 Check if we have all required metronome callbacks
+  const hasAllMetronomeCallbacks = !!(
+    onMetronomeToggle &&
+    onMetronomeVolumeChange &&
+    onMetronomeBalanceChange &&
+    onMetronomeSubdivisionChange &&
+    onMetronomeSoundTypeChange &&
+    onMetronomeAccentToggle
+  );
+
+  console.log('🎵 Render check - hasAllMetronomeCallbacks:', hasAllMetronomeCallbacks);
+  console.log('🎵 isMetronomePanelOpen:', isMetronomePanelOpen);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
@@ -228,28 +330,96 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">MUTE</span>
           </button>
 
-          {/* Count In - 🆕 V92: Enabled with green indicator */}
-          <button
-            onClick={onCountInToggle}
-            disabled={!api}
-            className={`group relative flex flex-col items-center justify-center gap-0.5 px-6 h-[74px] transition-all duration-200 ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'
-              }`}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className={`transition-colors ${isCountInEnabled ? 'text-green-400' : 'text-blue-200'}`}>
-              <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-            </svg>
-            <span className={`text-[12px] uppercase tracking-wide transition-colors ${isCountInEnabled ? 'text-green-400/70' : 'text-blue-200/70'}`}>
-              COUNT IN
-            </span>
-          </button>
+          {/* Count In */}
+          <div className="relative" ref={countInPanelRef}>
+            <button
+              onClick={handleCountInPanelToggle}
+              disabled={!api}
+              className={`group relative flex flex-col items-center justify-center gap-0.5 px-6 h-[74px] transition-all duration-200 ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'
+                }`}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className={`transition-colors ${isCountInEnabled ? 'text-green-400' : 'text-blue-200'}`}>
+                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+              </svg>
+              <span className={`text-[12px] uppercase tracking-wide transition-colors ${isCountInEnabled ? 'text-green-400/70' : 'text-blue-200/70'}`}>
+                COUNT IN
+              </span>
+            </button>
 
-          {/* Metronome - Stub */}
-          <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed">
-            <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
-              <path d="M12 2L6 8h12l-6-6zm0 20l6-6H6l6 6zM8 12c0-2.21 1.79-4 4-4s4 1.79 4 4-1.79 4-4 4-4-1.79-4-4z" />
-            </svg>
-            <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">METRONOME</span>
-          </button>
+            {onCountInToggle && onCountInModeChange && (
+              <CountInPanel
+                isEnabled={isCountInEnabled}
+                onToggle={onCountInToggle}
+                mode={countInMode}
+                onModeChange={onCountInModeChange}
+                isPanelOpen={isCountInPanelOpen}
+                onTogglePanel={handleCountInPanelToggle}
+              />
+            )}
+          </div>
+
+          {/* Metronome - 🐛 DIAGNOSTIC VERSION */}
+          <div className="relative" ref={metronomePanelRef}>
+            <button
+              onClick={(e) => {
+                console.log('🎵 BUTTON CLICK EVENT FIRED!', e);
+                handleMetronomePanelToggle();
+              }}
+              disabled={!api || !isSynthMode}
+              className={`group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] transition-all duration-200 ${!api || !isSynthMode ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'
+                }`}
+              title={!isSynthMode ? 'Metronome only works in Synth mode' : isMetronomeEnabled ? 'Metronome ON' : 'Metronome OFF'}
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className={`transition-colors ${isMetronomeEnabled && isSynthMode ? 'text-green-400' : 'text-blue-200'}`}
+              >
+                <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
+                <path d="M10.5 12L12 8l1.5 4z" />
+              </svg>
+              <span className={`text-[12px] uppercase tracking-wide transition-colors ${isMetronomeEnabled && isSynthMode ? 'text-green-400/70' : 'text-blue-200/70'
+                }`}>
+                METRONOME
+              </span>
+            </button>
+
+            {/* 🔧 V97: Only render panel if all callbacks exist */}
+            {hasAllMetronomeCallbacks ? (
+              <MetronomePanel
+                isEnabled={isMetronomeEnabled}
+                onToggle={onMetronomeToggle!}
+                currentBPM={displayBPM}
+                audioSource={audioSource}
+                volume={metronomeVolume}
+                onVolumeChange={onMetronomeVolumeChange!}
+                balance={metronomeBalance}
+                onBalanceChange={onMetronomeBalanceChange!}
+                subdivision={metronomeSubdivision}
+                onSubdivisionChange={onMetronomeSubdivisionChange!}
+                soundType={metronomeSoundType}
+                onSoundTypeChange={onMetronomeSoundTypeChange!}
+                accentEnabled={metronomeAccentEnabled}
+                onAccentToggle={onMetronomeAccentToggle!}
+                isPanelOpen={isMetronomePanelOpen}
+                onTogglePanel={handleMetronomePanelToggle}
+                onArmMetronome={onArmMetronome}
+              />
+            ) : (
+              <div>
+                {isMetronomePanelOpen && (
+                  <div className="absolute bottom-full right-0 mb-2 bg-red-900/95 border border-red-600 rounded-lg shadow-2xl p-4 min-w-[320px] z-[11000]">
+                    <div className="text-white font-bold mb-2">⚠️ Metronome Error</div>
+                    <div className="text-xs text-gray-300">
+                      Missing required callbacks. Check console for details.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Export - Stub */}
           <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed">
@@ -271,14 +441,11 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               <span className="text-[12px] uppercase text-blue-400/70 tracking-wide">PRINT</span>
             </button>
 
-            {/* MORE Menu - 🔧 V92.1: EXACT MATCH to Loop/Speed pattern */}
+            {/* MORE Menu */}
             <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={handleMoreToggle}
-                className={`
-                  group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px]
-                  transition-all duration-200 hover:brightness-125
-                `}
+                className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] transition-all duration-200 hover:brightness-125"
               >
                 <svg
                   width="24"
@@ -289,15 +456,11 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                 >
                   <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                 </svg>
-                <span className="text-[12px] uppercase text-blue-200/70 tracking-wide">
-                  MORE
-                </span>
+                <span className="text-[12px] uppercase text-blue-200/70 tracking-wide">MORE</span>
               </button>
 
               {isMoreMenuOpen && (
                 <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl p-2 min-w-[220px] z-[11000]">
-
-                  {/* Pitch Shift Button - 🔧 V91.3: BRIGHTENED text colors */}
                   <button
                     ref={tuningButtonRef}
                     onClick={handlePitchShiftClick}
@@ -314,69 +477,38 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                         />
                         <rect x="4" y="17" width="12" height="2" rx="1" fill={isSynthMode ? '#60a5fa' : '#6b7280'} />
                       </svg>
-
                       {pitchShift !== 0 && (
-                        <span className={`
-                          absolute -top-1 -right-2
-                          min-w-[16px] h-[14px] px-1
-                          text-[9px] font-bold text-white
-                          rounded-full flex items-center justify-center
-                          ${pitchShift > 0 ? 'bg-green-500' : 'bg-orange-500'}
-                        `}>
+                        <span className={`absolute -top-1 -right-2 min-w-[16px] h-[14px] px-1 text-[9px] font-bold text-white rounded-full flex items-center justify-center ${pitchShift > 0 ? 'bg-green-500' : 'bg-orange-500'
+                          }`}>
                           {pitchShift > 0 ? `+${pitchShift}` : pitchShift}
                         </span>
                       )}
                     </div>
-
                     <div>
-                      {/* 🔧 V91.3: Changed text-gray-200 → text-white for better visibility */}
-                      <div className="text-sm font-medium text-white">
-                        Pitch Shift
-                      </div>
-                      {/* 🔧 V91.3: Changed text-gray-500 → text-gray-300 for better readability */}
+                      <div className="text-sm font-medium text-white">Pitch Shift</div>
                       <div className="text-xs text-gray-300">
-                        {isSynthMode
-                          ? (pitchShift === 0 ? 'Original tuning' : `${pitchShift > 0 ? '+' : ''}${pitchShift} semitones`)
-                          : 'Synth mode only'
-                        }
+                        {isSynthMode ? (pitchShift === 0 ? 'Original tuning' : `${pitchShift > 0 ? '+' : ''}${pitchShift} semitones`) : 'Synth mode only'}
                       </div>
                     </div>
-
-                    {isSynthMode && (
-                      <kbd className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-400">R</kbd>
-                    )}
+                    {isSynthMode && <kbd className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-400">R</kbd>}
                   </button>
 
                   <div className="my-2 border-t border-gray-700" />
 
-                  {/* Theme Toggle */}
-                  <button
-                    onClick={handleThemeToggleClick}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700/50 transition-colors text-left"
-                  >
-                    <span className="text-xl">
-                      {theme === 'dark' ? '☀️' : '🌙'}
-                    </span>
+                  <button onClick={handleThemeToggleClick} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700/50 transition-colors text-left">
+                    <span className="text-xl">{theme === 'dark' ? '☀️' : '🌙'}</span>
                     <div>
-                      <div className="text-sm font-medium text-white">
-                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                      </div>
-                      <div className="text-xs text-gray-300">
-                        Switch to {theme === 'dark' ? 'light' : 'dark'} theme
-                      </div>
+                      <div className="text-sm font-medium text-white">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</div>
+                      <div className="text-xs text-gray-300">Switch to {theme === 'dark' ? 'light' : 'dark'} theme</div>
                     </div>
                   </button>
 
                   <div className="my-2 border-t border-gray-700" />
-
-                  <div className="px-3 py-2 text-xs text-gray-500 italic">
-                    More options coming soon...
-                  </div>
+                  <div className="px-3 py-2 text-xs text-gray-500 italic">More options coming soon...</div>
                 </div>
               )}
             </div>
 
-            {/* EDITOR button */}
             <button disabled className="group relative flex flex-col items-center justify-center gap-0.5 px-4 h-[74px] opacity-50 cursor-not-allowed ml-4">
               <svg width="24" height="24" viewBox="0 0 24 24" className="text-blue-400" fill="currentColor">
                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
