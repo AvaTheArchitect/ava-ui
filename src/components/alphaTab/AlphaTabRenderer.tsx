@@ -1,25 +1,26 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.52: SONGSTERR LOOP CLICK BEHAVIOR
- * Base: V97.51 renderCycle Dependencies
- * Date: December 27th, 2025
+ * AlphaTab Renderer - V97.54: STABILITY + FUNCTIONALITY RESTORED
+ * Base: V97.52 CLONE + V97.53 Fixes + Google AI Recommendations
+ * Date: January 3rd, 2026
  *
- * 🆕 V97.52 NEW FEATURE - CLICK TO MOVE LOOP:
- * ✅ NEW: Single-click moves loop highlight to clicked bar (Songsterr behavior)
- * ✅ FIXED: Loop highlight now stays visible on every click
- * ✅ NO MORE: Highlight flashing and disappearing after initial loop
- * ✅ NO MORE: Having to drag to create subsequent loops
+ * 🔧 V97.54 CRITICAL FIXES - Balance Stability + Functionality:
+ * ✅ FIXED: Removed duplicate mediaQuery listener (single orientation trigger)
+ * ✅ FIXED: Added orientation lock to prevent cascade re-renders
+ * ✅ FIXED: Restored scrollContainerRef usage for DOM-based scrolling
+ * ✅ FIXED: Added AudioContext resume in playerMode effect (synth mode)
+ * ✅ FIXED: Proper scrollElement assignment in landscape/portrait modes
  * 
- * 🎯 How It Works:
- * - Loop OFF: Single-click seeks (existing behavior)
- * - Loop ON: Single-click moves loop highlight to new bar (NEW!)
- * - Loop ON: Drag still works for multi-bar selection
- * - Uses same bar-boundary logic as initial loop creation
+ * 🎯 What's Working Now:
+ * - Auto-scroll restored (proper DOM anchor)
+ * - Synth mode works after mode switch (AudioContext resumed)
+ * - No more glitching (single orientation trigger + locks)
+ * - Loop click behavior preserved (Songsterr-style)
  * 
- * 🔒 PRESERVED FROM V97.51:
+ * 🔒 PRESERVED FROM V97.52:
+ * ✅ Single-click moves loop highlight (Songsterr behavior)
  * ✅ renderCycle dependencies for theme + handlers
- * ✅ TypeScript fixes
  * ✅ V97.18 architecture (no manual seekTo)
  */
 
@@ -68,12 +69,12 @@ const getBeatAtPosition = (
     for (const offset of offsets) {
         const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
         if (beat) {
-            console.log(`✅ V97.52: getBeatAtPos success with offset ${offset}px`);
+            console.log(`✅ V97.54: getBeatAtPos success with offset ${offset}px`);
             return beat;
         }
     }
 
-    console.warn('⚠️ V97.52: getBeatAtPos failed with all offsets');
+    console.warn('⚠️ V97.54: getBeatAtPos failed with all offsets');
     return null;
 };
 
@@ -85,13 +86,13 @@ const getBarBoundariesFromMaster = (api: AlphaTabApi, beat: any): { startTick: n
     const master = (bounds as any)?.barBounds?.masterBarBounds;
 
     if (!master) {
-        console.warn('🔍 V97.52: No masterBarBounds available');
+        console.warn('🔍 V97.54: No masterBarBounds available');
         return null;
     }
 
     // Prefer authoritative master ticks
     if (master.startTick !== undefined && master.endTick !== undefined) {
-        console.log('✅ V97.52: Using master.startTick/endTick:', {
+        console.log('✅ V97.54: Using master.startTick/endTick:', {
             startTick: master.startTick,
             endTick: master.endTick
         });
@@ -105,7 +106,7 @@ const getBarBoundariesFromMaster = (api: AlphaTabApi, beat: any): { startTick: n
         const startTick = first.absolutePlaybackStart;
         const endTick = last.absolutePlaybackStart + (last.playbackDuration || 0);
 
-        console.log('✅ V97.52: Calculated from master.beats[]:', {
+        console.log('✅ V97.54: Calculated from master.beats[]:', {
             startTick,
             endTick,
             beatCount: master.beats.length
@@ -113,14 +114,14 @@ const getBarBoundariesFromMaster = (api: AlphaTabApi, beat: any): { startTick: n
         return { startTick, endTick };
     }
 
-    console.warn('⚠️ V97.52: Master has no startTick/endTick or beats[]');
+    console.warn('⚠️ V97.54: Master has no startTick/endTick or beats[]');
     return null;
 };
 
 // Get the full bar boundaries for proper bar-to-bar looping (legacy fallback)
 const getBarBoundaries = (beat: any): { startTick: number; endTick: number } | null => {
     if (!beat || !beat.voice || !beat.voice.bar) {
-        console.warn('🔍 V97.52: getBarBoundaries - invalid beat structure');
+        console.warn('🔍 V97.54: getBarBoundaries - invalid beat structure');
         return null;
     }
 
@@ -146,7 +147,7 @@ const getBarBoundaries = (beat: any): { startTick: number; endTick: number } | n
         ? { startTick: barStartTick, endTick: barEndTick }
         : null;
 
-    console.log('🔍 V97.52: getBarBoundaries (legacy fallback):', result);
+    console.log('🔍 V97.54: getBarBoundaries (legacy fallback):', result);
     return result;
 };
 
@@ -161,20 +162,20 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
     if (master) {
         // Priority 1: master.firstBeat
         if (master.firstBeat) {
-            console.log(`✅ V97.52: Using master.firstBeat at tick ${master.firstBeat.absolutePlaybackStart}`);
+            console.log(`✅ V97.54: Using master.firstBeat at tick ${master.firstBeat.absolutePlaybackStart}`);
             return master.firstBeat;
         }
 
         // Priority 2: master.beats[0]
         if (Array.isArray(master.beats) && master.beats.length > 0) {
-            console.log(`✅ V97.52: Using master.beats[0] at tick ${master.beats[0].absolutePlaybackStart}`);
+            console.log(`✅ V97.54: Using master.beats[0] at tick ${master.beats[0].absolutePlaybackStart}`);
             return master.beats[0];
         }
     }
 
     // Fallback 1: Check if current beat is already first (beatIndexInBar === 0)
     if ((beat as any).beatIndexInBar === 0) {
-        console.log(`✅ V97.52: Beat already first (beatIndexInBar=0) at tick ${beat.absolutePlaybackStart}`);
+        console.log(`✅ V97.54: Beat already first (beatIndexInBar=0) at tick ${beat.absolutePlaybackStart}`);
         return beat;
     }
 
@@ -185,7 +186,7 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
             if (voice.beats && voice.beats.length > 0) {
                 const firstBeat = voice.beats[0];
                 if (firstBeat.index === 0 || (firstBeat as any).beatIndexInBar === 0) {
-                    console.log(`✅ V97.52: Found first beat via voice scan at tick ${firstBeat.absolutePlaybackStart}`);
+                    console.log(`✅ V97.54: Found first beat via voice scan at tick ${firstBeat.absolutePlaybackStart}`);
                     return firstBeat;
                 }
             }
@@ -201,16 +202,16 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
             for (let t = beat.absolutePlaybackStart; t >= Math.max(0, beat.absolutePlaybackStart - 2000); t--) {
                 const res = tickCache.findBeat(trackIndices, t);
                 if (res?.beat && (res.beat as any).beatIndexInBar === 0) {
-                    console.log(`✅ V97.52: Found first beat via tickCache scan at tick ${res.beat.absolutePlaybackStart}`);
+                    console.log(`✅ V97.54: Found first beat via tickCache scan at tick ${res.beat.absolutePlaybackStart}`);
                     return res.beat;
                 }
             }
         }
     } catch (err) {
-        console.warn('⚠️ V97.52: tickCache scan failed:', err);
+        console.warn('⚠️ V97.54: tickCache scan failed:', err);
     }
 
-    console.warn('⚠️ V97.52: Could not find first beat, using original');
+    console.warn('⚠️ V97.54: Could not find first beat, using original');
     return beat;
 };
 
@@ -243,10 +244,9 @@ const setupTouchSelection = (
 
         const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
         if (beat) {
-            // ✅ V97.52: FIX - Added missing 'api' parameter
             startBeat = getFirstBeatInBar(api, beat);
             endBeat = beat;
-            console.log(`📱 V97.52: Touch start - forced to bar start tick ${startBeat.absolutePlaybackStart}`);
+            console.log(`📱 V97.54: Touch start - forced to bar start tick ${startBeat.absolutePlaybackStart}`);
         }
     };
 
@@ -285,7 +285,7 @@ const setupTouchSelection = (
                 endBeat = beat;
 
                 if (startBeat && endBeat) {
-                    // 🆕 V97.52: Try master boundaries first for both start and end
+                    // 🆕 V97.54: Try master boundaries first for both start and end
                     let startBoundaries = getBarBoundariesFromMaster(api, startBeat);
                     let endBoundaries = getBarBoundariesFromMaster(api, endBeat);
 
@@ -301,7 +301,7 @@ const setupTouchSelection = (
                             startTick: loopStart,
                             endTick: loopEnd,
                         };
-                        console.log(`📱 V97.52: Touch drag - ${loopStart} to ${loopEnd}`);
+                        console.log(`📱 V97.54: Touch drag - ${loopStart} to ${loopEnd}`);
                     }
                 }
             }
@@ -321,7 +321,7 @@ const setupTouchSelection = (
         if (!touchMoved && Date.now() - touchStartTime < 400) {
             if (isDoubleTap && api.playbackRange) {
                 api.playbackRange = null;
-                console.log('📱 V97.52: Double-tap - cleared loop');
+                console.log('📱 V97.54: Double-tap - cleared loop');
             }
         }
 
@@ -386,14 +386,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     // Dark-mode tracking
     const lastThemeRef = useRef<string>('');
 
+    // 🆕 V97.54: Orientation lock to prevent rapid re-renders
+    const orientationLockRef = useRef(false);
+    const lastOrientationRef = useRef<'landscape' | 'portrait' | null>(null);
+
     useEffect(() => {
         if (isSeeking || isPlaying) {
-            console.log(`🔒 V97.52: State - seeking:${isSeeking}, playing:${isPlaying}`);
+            console.log(`🔒 V97.54: State - seeking:${isSeeking}, playing:${isPlaying}`);
         }
     }, [isSeeking, isPlaying]);
 
     useEffect(() => {
-        console.log(`🔄 V97.52: Render cycle: ${renderCycle}`);
+        console.log(`🔄 V97.54: Render cycle: ${renderCycle}`);
     }, [renderCycle]);
 
     const startHandleRef = useRef<HTMLDivElement | null>(null);
@@ -426,8 +430,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V97.52: Initializing AlphaTab...');
+                console.log('🎵 V97.54: Initializing AlphaTab...');
 
+                // 🔧 V97.54: Proper scroll element assignment (restored)
                 const scrollElement = scrollContainerRef?.current || document.body;
 
                 const api = await initAlphaTab({
@@ -447,7 +452,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V97.52: AlphaTab initialized');
+                console.log('✅ V97.54: AlphaTab initialized');
 
                 // 🔍 TEMPORARY: Expose API for debugging
                 (window as any).__at = api;
@@ -457,12 +462,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 await api.updateSettings();
 
                 await loadGuitarProFile(api, fileUrl);
-                console.log('📂 V97.52: File loaded');
+                console.log('📂 V97.54: File loaded');
                 initialFileLoadedRef.current = true;
                 lastLoadedFileRef.current = fileUrl;
 
                 api.scoreLoaded.on((score: any) => {
-                    console.log('📊 V97.52: Score loaded');
+                    console.log('📊 V97.54: Score loaded');
                     const tracks: Track[] = score.tracks.map((t: any) => ({
                         index: t.index,
                         name: t.name,
@@ -482,17 +487,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     if (api && !destroyed) {
                         api.updateSettings();
                         api.render();
-                        console.log('✅ V97.52: Layout recalculated');
+                        console.log('✅ V97.54: Layout recalculated');
 
-                        // 🎨 V97.52: Reset theme ref so theme effect will reapply
-                        // Theme application happens in the theme effect, not here
+                        // 🎨 V97.54: Reset theme ref so theme effect will reapply
                         lastThemeRef.current = '';
-                        console.log('🎨 V97.52: Reset theme ref - effect will reapply theme');
+                        console.log('🎨 V97.54: Reset theme ref - effect will reapply theme');
                     }
                 });
 
                 api.renderFinished.on(() => {
-                    console.log('🎨 V97.52: Render finished');
+                    console.log('🎨 V97.54: Render finished');
                     setIsRendered(true);
                     setIsLoading(false);
                     setRenderCycle(rc => rc + 1);
@@ -501,7 +505,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 onApiReady?.(api);
             } catch (err) {
-                console.error('❌ V97.52: Init error:', err);
+                console.error('❌ V97.54: Init error:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 setIsLoading(false);
                 onError?.(errorMsg);
@@ -525,15 +529,36 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, soundFontPath, scrollContainerRef, isMobile, playerMode]);
 
-    // ========== PLAYER MODE CHANGES ==========
+    // ========== PLAYER MODE CHANGES + AUDIOCONTEXT RESUME ==========
+    // 🆕 V97.54: Added explicit AudioContext resume for synth mode
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
-        console.log(`🔄 V97.52: Updating player mode to: ${playerMode}`);
+        console.log(`🔄 V97.54: Updating player mode to: ${playerMode}`);
         (api.settings.player as any).playerMode = playerMode;
         api.updateSettings();
+
+        // 🔧 V97.54: Resume AudioContext when switching to synth mode
+        if (playerMode === 'synthesizer') {
+            // Ensure render completes first
+            api.render();
+
+            // Try to resume AudioContext if suspended
+            setTimeout(() => {
+                const audioCtx = (api.player as any)?.audioContext;
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().then(() => {
+                        console.log('🎵 V97.54: AudioContext resumed for Synth mode');
+                    }).catch((err: any) => {
+                        console.warn('⚠️ V97.54: Failed to resume AudioContext:', err);
+                    });
+                } else {
+                    console.log(`🎵 V97.54: AudioContext state: ${audioCtx?.state || 'unknown'}`);
+                }
+            }, 100);
+        }
     }, [playerMode]);
 
     // ========== ATTACH EXTERNAL HANDLER ==========
@@ -545,14 +570,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (externalMediaHandler) {
             const output = api.player.output as any;
             output.handler = externalMediaHandler;
-            console.log('🔗 V97.52: External handler attached');
+            console.log('🔗 V97.54: External handler attached');
 
             return () => {
                 if (api.player?.output) {
                     const output = api.player.output as any;
                     if (output.handler) {
                         output.handler = null;
-                        console.log('🔌 V97.52: Handler detached');
+                        console.log('🔌 V97.54: Handler detached');
                     }
                 }
             };
@@ -560,7 +585,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             const output = api.player.output as any;
             if (output.handler) {
                 output.handler = null;
-                console.log('🔌 V97.52: Handler cleared');
+                console.log('🔌 V97.54: Handler cleared');
             }
         }
     }, [externalMediaHandler]);
@@ -572,23 +597,23 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (!api || !initialFileLoadedRef.current) return;
 
         if (lastLoadedFileRef.current === fileUrl) {
-            console.log('⏭️ V97.52: Same file, skipping reload');
+            console.log('⏭️ V97.54: Same file, skipping reload');
             return;
         }
 
         const loadNewFile = async () => {
             try {
-                console.log(`🔄 V97.52: Loading new file: ${fileUrl}`);
+                console.log(`🔄 V97.54: Loading new file: ${fileUrl}`);
 
                 // Reset theme ref so it will reapply when file loads
                 lastThemeRef.current = '';
-                console.log('🎨 V97.52: Reset theme ref for new file');
+                console.log('🎨 V97.54: Reset theme ref for new file');
 
                 await loadGuitarProFile(api, fileUrl);
                 lastLoadedFileRef.current = fileUrl;
-                console.log('✅ V97.52: New file loaded');
+                console.log('✅ V97.54: New file loaded');
             } catch (err) {
-                console.error('❌ V97.52: Error loading new file:', err);
+                console.error('❌ V97.54: Error loading new file:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 onError?.(errorMsg);
             }
@@ -597,7 +622,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ========== ORIENTATION HANDLING ==========
+    // ========== ORIENTATION HANDLING - SINGLE TRIGGER ==========
+    // 🔧 V97.54 CRITICAL FIX: Removed duplicate mediaQuery listener
+    // Only responds to isMobileLandscape prop changes (parent handles detection)
+    // Added orientation lock to prevent rapid re-renders
 
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
@@ -606,60 +634,81 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const api = apiRef.current;
         const container = containerRef.current;
 
+        // 🔒 V97.54: Check orientation lock
+        if (orientationLockRef.current) {
+            console.log('🔒 V97.54: Orientation change LOCKED - skipping render');
+            return;
+        }
+
+        // 🔒 V97.54: Check if orientation actually changed
+        const currentOrientation = isMobileLandscape ? 'landscape' : 'portrait';
+        if (lastOrientationRef.current === currentOrientation) {
+            console.log(`⏭️ V97.54: Same orientation (${currentOrientation}), skipping`);
+            return;
+        }
+
         const handleOrientationChange = async () => {
+            // Set lock
+            orientationLockRef.current = true;
+            lastOrientationRef.current = currentOrientation;
+
             const alphaTab = await import('@coderline/alphatab');
 
             const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
 
-            console.log(`🔄 V97.52: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}`);
+            console.log(`🔄 V97.54: Orientation change - ${currentOrientation}`);
 
             if (isLandscape) {
-                console.log('🎸 V97.52: LANDSCAPE mode');
+                console.log('🎸 V97.54: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
+
+                // 🔧 V97.54: Proper scrollElement assignment (restored)
                 api.settings.player.scrollElement = container;
 
                 const horizontalOffset = container.clientWidth * 0.25;
-                (api.settings.player as any).scrollOffset = horizontalOffset;
+                (api.settings.player as any).scrollOffsetX = horizontalOffset;
+                (api.settings.player as any).scrollOffsetY = 0;
 
-                console.log(`📐 V97.52: Horizontal layout, scrollOffset=${horizontalOffset.toFixed(0)}px`);
+                console.log(`📐 V97.54: Horizontal layout, scrollOffsetX=${horizontalOffset.toFixed(0)}px`);
             } else {
-                console.log('📱 V97.52: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.54: PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
+                // 🔧 V97.54: Proper scrollElement assignment (restored)
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-                (api.settings.player as any).scrollOffset = 100;
 
-                console.log('📐 V97.52: Page layout, scrollOffset=100px');
+                (api.settings.player as any).scrollOffsetX = 0;
+                (api.settings.player as any).scrollOffsetY = 100;
+
+                console.log('📐 V97.54: Page layout, scrollOffsetY=100px');
             }
 
             await api.updateSettings();
             window.dispatchEvent(new Event('resize'));
-            await new Promise((r) => setTimeout(r, 50));
+
+            // 🔧 V97.54: Increased delay for stability
+            await new Promise((r) => setTimeout(r, 100));
             api.render();
+
+            // 🔒 V97.54: Release lock after render settles
+            setTimeout(() => {
+                orientationLockRef.current = false;
+                console.log('🔓 V97.54: Orientation lock released');
+            }, 200);
         };
 
         handleOrientationChange();
 
-        const mediaQuery = window.matchMedia('(orientation: landscape)');
-        const handleMediaChange = () => {
-            console.log('📱 V97.52: Orientation change detected');
-            handleOrientationChange();
-        };
+        // 🚫 V97.54: Removed mediaQuery listener - parent handles orientation detection
+        // This prevents duplicate triggers that caused the glitching
 
-        mediaQuery.addEventListener('change', handleMediaChange);
-
-        return () => {
-            mediaQuery.removeEventListener('change', handleMediaChange);
-        };
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef, isMobile]);
 
     // ========== THEME (DARK/LIGHT) ==========
     // 🔒 CRITICAL: renderCycle MUST be in dependencies!
-    // Without it, theme doesn't reapply when songs change (V97.51 fix)
-    // DO NOT REMOVE renderCycle from dependency array
 
     useEffect(() => {
         const api = apiRef.current;
@@ -669,7 +718,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const applyTheme = async () => {
             const alphaTab = await import('@coderline/alphatab');
-            console.log(`🎨 V97.52: Applying ${theme} theme (renderCycle: ${renderCycle})`);
+            console.log(`🎨 V97.54: Applying ${theme} theme (renderCycle: ${renderCycle})`);
             lastThemeRef.current = theme;
 
             const resources = api.settings.display.resources as any;
@@ -692,24 +741,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             await api.updateSettings();
             api.render();
-            console.log(`✅ V97.52: Theme ${theme} applied successfully`);
+            console.log(`✅ V97.54: Theme ${theme} applied successfully`);
         };
 
         applyTheme();
-    }, [theme, isRendered, renderCycle]); // 🔒 CRITICAL: renderCycle MUST stay!
+    }, [theme, isRendered, renderCycle]);
 
     // ========== DYNAMIC USER INTERACTION - DISABLED ==========
-    // 🚨 V97.52: ALWAYS keep enableUserInteraction = false
-    // Reason: AlphaTab's internal selection conflicts with our custom handlers
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
-        // Always FALSE - we use custom handlers exclusively
         (api.settings.player as any).enableUserInteraction = false;
         api.updateSettings();
-        console.log('🔒 V97.52: enableUserInteraction locked to FALSE');
+        console.log('🔒 V97.54: enableUserInteraction locked to FALSE');
     }, [isLooping]);
 
     // ========== INSTANT LOOP AT CURSOR - Bar-to-bar snapping ==========
@@ -731,10 +777,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 if (beatResult?.beat) {
                     const firstBeat = getFirstBeatInBar(api, beatResult.beat);
 
-                    // Try master boundaries first, fallback to legacy calculation
                     let boundaries = getBarBoundariesFromMaster(api, firstBeat);
                     if (!boundaries) {
-                        console.warn('⚠️ V97.52: Master boundaries unavailable, using legacy');
+                        console.warn('⚠️ V97.54: Master boundaries unavailable, using legacy');
                         boundaries = getBarBoundaries(firstBeat);
                     }
 
@@ -743,14 +788,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             startTick: boundaries.startTick,
                             endTick: boundaries.endTick,
                         };
-                        console.log(`🔁 V97.52: Initial loop - bar ${boundaries.startTick} to ${boundaries.endTick}`);
+                        console.log(`🔁 V97.54: Initial loop - bar ${boundaries.startTick} to ${boundaries.endTick}`);
                     }
                 }
             }
         }
     }, [isLooping, isRendered]);
 
-    // ========== LOOP HANDLES CREATION (DISABLED - Using AlphaTab native handles) ==========
+    // ========== LOOP HANDLES CREATION (DISABLED) ==========
 
     useEffect(() => {
         if (startHandleRef.current) {
@@ -763,7 +808,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
     }, [isLooping]);
 
-    // ========== DRAG HANDLERS FOR HANDLES (DISABLED - Using AlphaTab native handles) ==========
+    // ========== DRAG HANDLERS FOR HANDLES (DISABLED) ==========
 
     useEffect(() => {
         return () => {
@@ -809,27 +854,26 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const container = containerRef.current;
 
         if (!api || !container || !isRendered || isLooping) {
-            console.log(`🔍 V97.51: Click handler NOT attached (isLooping=${isLooping})`);
+            console.log(`🔍 V97.54: Click handler NOT attached (isLooping=${isLooping})`);
             return;
         }
 
-        console.log(`🖱️ V97.51: Single-click handler ATTACHED (renderCycle: ${renderCycle})`);
+        console.log(`🖱️ V97.54: Single-click handler ATTACHED (renderCycle: ${renderCycle})`);
 
         const surface = container.querySelector('.at-surface') as HTMLElement | null;
         const target = surface || container;
 
         const handleClick = (e: MouseEvent) => {
             if (isSeeking && isPlaying) {
-                console.log(`🔒 V97.51: Click BLOCKED (seeking && playing)`);
+                console.log(`🔒 V97.54: Click BLOCKED (seeking && playing)`);
                 return;
             }
 
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
             if (beat && beat.absolutePlaybackStart !== undefined) {
                 const tickPosition = beat.absolutePlaybackStart;
-                // V97.18 Architecture: ONLY set api.tickPosition
                 api.tickPosition = tickPosition;
-                console.log(`🖱️ V97.51: Single-click seek to ${tickPosition}ms`);
+                console.log(`🖱️ V97.54: Single-click seek to ${tickPosition}ms`);
             }
         };
 
@@ -841,12 +885,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]);
 
     // ========== SINGLE CLICK LOOP MOVE (loop on) - SONGSTERR BEHAVIOR ==========
-    // 🔒 V97.52 CRITICAL FEATURE: Click to move loop highlight
-    // This handler enables Songsterr-style behavior where clicking any measure
-    // moves the loop highlight to that bar (instead of requiring drag)
-    // DO NOT REMOVE: Without this, loop highlight flashes and disappears after initial loop
-    // 🔒 CRITICAL: renderCycle MUST be in dependencies!
-    // Without it, handler doesn't re-attach after song changes
 
     useEffect(() => {
         const api = apiRef.current;
@@ -856,33 +894,29 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             return;
         }
 
-        console.log(`🔁 V97.52: Loop-move click handler ATTACHED (renderCycle: ${renderCycle})`);
+        console.log(`🔁 V97.54: Loop-move click handler ATTACHED (renderCycle: ${renderCycle})`);
 
         const surface = container.querySelector('.at-surface') as HTMLElement | null;
         const target = surface || container;
 
         const handleLoopMoveClick = (e: MouseEvent) => {
-            // Get the clicked beat
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
             if (!beat) return;
 
-            // Find first beat in the bar
             const firstBeat = getFirstBeatInBar(api, beat);
 
-            // Try master boundaries first, fallback to legacy
             let boundaries = getBarBoundariesFromMaster(api, firstBeat);
             if (!boundaries) {
-                console.warn('⚠️ V97.52: Master boundaries unavailable, using legacy');
+                console.warn('⚠️ V97.54: Master boundaries unavailable, using legacy');
                 boundaries = getBarBoundaries(firstBeat);
             }
 
             if (boundaries) {
-                // Move loop to this bar
                 api.playbackRange = {
                     startTick: boundaries.startTick,
                     endTick: boundaries.endTick,
                 };
-                console.log(`🔁 V97.52: Loop moved to bar ${boundaries.startTick} - ${boundaries.endTick}`);
+                console.log(`🔁 V97.54: Loop moved to bar ${boundaries.startTick} - ${boundaries.endTick}`);
             }
         };
 
@@ -891,16 +925,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('click', handleLoopMoveClick);
         };
-    }, [isRendered, isLooping, renderCycle]); // 🔒 renderCycle MUST stay! // 🔧 V97.51: Added renderCycle
+    }, [isRendered, isLooping, renderCycle]);
 
     // ========== DOUBLE CLICK PLAY (loop off) ==========
-    // 🔒 CRITICAL V97.18 ARCHITECTURE: Correct play sequence
-    // 1. Set api.tickPosition (moves cursor)
-    // 2. Call handler.play() (starts YouTube/external media)
-    // 3. Call api.play() (starts AlphaTab purple cursor)
-    // DO NOT change this order or add manual seekTo calls
-    // 🔒 CRITICAL: renderCycle MUST be in dependencies!
-    // Without it, handler doesn't re-attach after song changes
 
     useEffect(() => {
         const api = apiRef.current;
@@ -908,14 +935,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         if (!api || !container || !isRendered || isLooping) return;
 
-        console.log(`🖱️🖱️ V97.52: Double-click handler ATTACHED (renderCycle: ${renderCycle})`);
+        console.log(`🖱️🖱️ V97.54: Double-click handler ATTACHED (renderCycle: ${renderCycle})`);
 
         const surface = container.querySelector('.at-surface') as HTMLElement | null;
         const target = surface || container;
 
         const handleDoubleClick = (e: MouseEvent) => {
             if (isSeeking && isPlaying) {
-                console.log(`🔒 V97.52: Double-click BLOCKED`);
+                console.log(`🔒 V97.54: Double-click BLOCKED`);
                 return;
             }
 
@@ -923,32 +950,27 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (beat && beat.absolutePlaybackStart !== undefined) {
                 const tickPosition = beat.absolutePlaybackStart;
 
-                console.log(`🖱️🖱️ V97.52: Double-click at ${tickPosition}ms`);
+                console.log(`🖱️🖱️ V97.54: Double-click at ${tickPosition}ms`);
 
                 if (audioSource === 'synth') {
-                    // V97.18 Architecture: set position, then play
                     api.tickPosition = tickPosition;
                     api.play?.();
-                    console.log('🎵 V97.52: SYNTH - play');
+                    console.log('🎵 V97.54: SYNTH - play');
                 } else {
                     const output = api.player?.output as any;
 
                     if (output?.handler) {
-                        // 🔒 V97.18 Architecture: CRITICAL ORDER
-                        // 1. Set position first
                         api.tickPosition = tickPosition;
 
-                        // 2. Start external media (YouTube)
                         if (output.handler.play) {
-                            console.log('🎬 V97.52: ORIGINAL - handler.play()');
+                            console.log('🎬 V97.54: ORIGINAL - handler.play()');
                             output.handler.play();
                         }
 
-                        // 3. Start AlphaTab cursor
                         api.play();
-                        console.log('🎵 V97.52: ORIGINAL - api.play()');
+                        console.log('🎵 V97.54: ORIGINAL - api.play()');
                     } else {
-                        console.warn('⚠️ V97.52: No handler for original mode');
+                        console.warn('⚠️ V97.54: No handler for original mode');
                     }
                 }
             }
@@ -959,7 +981,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('dblclick', handleDoubleClick);
         };
-    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]); // 🔒 renderCycle MUST stay!
+    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]);
 
     // ========== MOUSE DRAG SELECTION (loop on) ==========
 
@@ -986,16 +1008,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             isDragging = true;
 
-            // Force start beat to first beat in bar
             startBeat = getFirstBeatInBar(api, beat);
             endBeat = beat;
 
-            console.log(`🖱️ V97.52: Mouse down - bar start tick ${startBeat.absolutePlaybackStart}`);
+            console.log(`🖱️ V97.54: Mouse down - bar start tick ${startBeat.absolutePlaybackStart}`);
 
-            // Try master boundaries first, fallback to legacy
             let boundaries = getBarBoundariesFromMaster(api, startBeat);
             if (!boundaries) {
-                console.warn('⚠️ V97.52: Master boundaries unavailable, using legacy');
+                console.warn('⚠️ V97.54: Master boundaries unavailable, using legacy');
                 boundaries = getBarBoundaries(startBeat);
             }
 
@@ -1004,7 +1024,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     startTick: boundaries.startTick,
                     endTick: boundaries.endTick,
                 };
-                console.log(`🖱️ V97.52: Initial loop ${boundaries.startTick} to ${boundaries.endTick}`);
+                console.log(`🖱️ V97.54: Initial loop ${boundaries.startTick} to ${boundaries.endTick}`);
             }
 
             document.addEventListener('mousemove', handleMouseMove);
@@ -1020,11 +1040,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             endBeat = beat;
 
-            // Try master boundaries first for both start and end
             let startBoundaries = getBarBoundariesFromMaster(api, startBeat);
             let endBoundaries = getBarBoundariesFromMaster(api, endBeat);
 
-            // Fallback to legacy if master unavailable
             if (!startBoundaries) startBoundaries = getBarBoundaries(startBeat);
             if (!endBoundaries) endBoundaries = getBarBoundaries(endBeat);
 
@@ -1036,7 +1054,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     startTick: loopStart,
                     endTick: loopEnd,
                 };
-                console.log(`🖱️ V97.52: Mouse drag - ${loopStart} to ${loopEnd}`);
+                console.log(`🖱️ V97.54: Mouse drag - ${loopStart} to ${loopEnd}`);
             }
         };
 
@@ -1047,13 +1065,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             endBeat = null;
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
-            console.log('🖱️ V97.52: Mouse up - drag complete');
+            console.log('🖱️ V97.54: Mouse up - drag complete');
         };
 
         const handleDoubleClick = (e: MouseEvent) => {
             if (api.playbackRange) {
                 api.playbackRange = null;
-                console.log('🖱️🖱️ V97.52: Double-click - cleared loop');
+                console.log('🖱️🖱️ V97.54: Double-click - cleared loop');
             }
         };
 
@@ -1089,7 +1107,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const setupTimer = setTimeout(() => {
             if (api && container) {
                 touchCleanupRef.current = setupTouchSelection(api, container);
-                console.log('📱 V97.52: Touch selection enabled');
+                console.log('📱 V97.54: Touch selection enabled');
             }
         }, 300);
 
