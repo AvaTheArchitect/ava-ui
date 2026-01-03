@@ -1,20 +1,21 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V97: SYNC WITH TRANSPORTBAR V97
- * Date: January 1st, 2026
+ * MaestroControlPanel.tsx - V99: RESTORED YOUTUBE LOGO SVG
+ * Date: January 2nd, 2026
  * 
- * 🔧 NEW IN V97:
- * ✅ Synced with TransportBar V97
- * ✅ Properly passes currentBPM to TransportBar
- * ✅ All metronome callbacks verified and passed
- * ✅ Count In callbacks properly passed
+ * 🔧 NEW IN V99:
+ * ✅ RESTORED proper YouTube logo SVG path from V93 (rounded rectangle, not ellipse)
+ * ✅ Uses authentic YouTube logo path that matches Songsterr exactly
+ * ✅ viewBox="0 0 68 48" for correct aspect ratio
  * 
- * 🔒 PRESERVED FROM V96:
- * ✅ Count In support
- * ✅ Metronome support
- * ✅ Panel coordination
+ * 🔒 PRESERVED FROM V98:
+ * ✅ All count-in functionality
+ * ✅ All metronome functionality  
+ * ✅ Diagnostic logging
  * ✅ Canvas click detection
+ * ✅ Panel coordination
+ * ✅ Desktop TransportBar with all props
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -147,12 +148,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
 
-  // 🔧 V97: Ensure currentBPM calculation matches what page.tsx provides
+  // V97: Ensure currentBPM calculation matches what page.tsx provides
   const currentBPM = props.currentBPM ?? (props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 120);
 
-  // 🐛 DIAGNOSTIC: Log what we're passing to TransportBar
+  // V99: DIAGNOSTIC logging
   useEffect(() => {
-    console.log('=== MAESTRO CONTROL PANEL V97 ===');
+    console.log('=== MAESTRO CONTROL PANEL V99 ===');
     console.log('Passing to TransportBar - currentBPM:', currentBPM);
     console.log('Has onMetronomeToggle:', !!props.onMetronomeToggle);
     console.log('Has onMetronomeVolumeChange:', !!props.onMetronomeVolumeChange);
@@ -200,7 +201,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             onCountInToggle={props.onCountInToggle}
             countInMode={props.countInMode}
             onCountInModeChange={props.onCountInModeChange}
-            // Metronome props - 🔧 V97: Pass currentBPM explicitly
+            // Metronome props - V97: Pass currentBPM explicitly
             isMetronomeEnabled={props.isMetronomeEnabled}
             onMetronomeToggle={props.onMetronomeToggle}
             metronomeVolume={props.metronomeVolume}
@@ -358,23 +359,42 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 4. Play/Pause */}
+            {/* 🔧 V99: RESTORED YOUTUBE LOGO - 4. Play/Pause */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'}`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.audioSource === 'original' && !props.isPlaying
+                ? '' /* YouTube button has its own colors */
+                : props.isPlaying
+                  ? 'text-orange-400 hover:text-orange-300'
+                  : 'text-cyan-400 hover:text-cyan-300'
+                }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                {props.isPlaying ? (
-                  <>
-                    <rect x="7" y="5" width="3" height="14" rx="1" />
-                    <rect x="14" y="5" width="3" height="14" rx="1" />
-                  </>
-                ) : (
-                  <path d="M8 5v14l11-7z" />
-                )}
-              </svg>
+              {/* V99: YouTube Logo when in Original mode and paused - RESTORED proper SVG path */}
+              {!props.isPlaying && props.audioSource === 'original' ? (
+                <svg width="32" height="32" viewBox="0 0 68 48">
+                  {/* Red rounded rectangle background - AUTHENTIC YouTube logo path */}
+                  <path
+                    d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,0,34,0,34,0S12.21,0,6.9,1.55 c-2.93,0.78-4.63,3.26-5.42,6.19C0,13.05,0,24,0,24s0,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,48,34,48,34,48s21.79,0,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C68,34.95,68,24,68,24S68,13.05,66.52,7.74z"
+                    fill="#FF0000"
+                  />
+                  {/* White play triangle */}
+                  <path d="M 45,24 27,14 27,34" fill="white" />
+                </svg>
+              ) : (
+                /* Standard play/pause icons for synth mode OR when playing */
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  {props.isPlaying ? (
+                    <>
+                      <rect x="7" y="5" width="3" height="14" rx="1" />
+                      <rect x="14" y="5" width="3" height="14" rx="1" />
+                    </>
+                  ) : (
+                    <path d="M8 5v14l11-7z" />
+                  )}
+                </svg>
+              )}
             </button>
 
             {/* 5. Gear (Settings) */}
@@ -399,6 +419,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
+          isMobileLandscape={props.isMobileLandscape}
         />
       </div>
     </>

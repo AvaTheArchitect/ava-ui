@@ -2,9 +2,18 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * December 31st, 2025 - V98.15: MOBILE PWA AUDIO CONTEXT FIX (COMPLETE)
+ * December 31st, 2025 - V98.15: DESKTOP METRONOME BUTTON INTEGRATED
  *
- * 🔧 V98.15 LATEST FIX:
+ * 🔧 V98.15 LATEST UPDATE:
+ * ✅ Desktop Metronome Button Integration:
+ *    - Added isMetronomeEnabled and onMetronomeToggle to MaestroControlPanel
+ *    - Metronome button now appears in desktop TransportBar
+ *    - Triangle icon shows in bottom menu tray
+ *    - Auto-grays out in YouTube mode (shows "Synth mode only" tooltip)
+ *    - Button turns GREEN when enabled, BLUE when disabled
+ *    - Works alongside mobile MobileToolsSlideout
+ * 
+ * 🔧 V98.15 PREVIOUS FIXES:
  * ✅ Mobile PWA Audio Context Fix (Complete):
  *    - useSmartMetronome V3 now properly returns armMetronome function
  *    - Destructured armMetronome from hook (no workaround needed)
@@ -12,8 +21,6 @@
  *    - Mobile browsers recognize metronome toggle as user interaction
  *    - Audio context properly initialized on first metronome toggle
  *    - Check console for "🔊 Audio Context Armed via User Gesture"
- * 
- * 🔧 V98.15 PREVIOUS FIXES:
  * ✅ Issue #1 (No metronome sound):
  *    - Audio context now properly resumed for mobile
  *    - Added debug logging for tick events
@@ -40,6 +47,11 @@
  *    - 7 sound types: Woodblock, Click, Beep, Drum Stick, Electronic, Kick Drum, Snare Drum
  *    - Auto-disable in YouTube mode (synth only)
  *    - armMetronome function for mobile PWA audio context initialization
+ * ✅ Desktop TransportBar integration:
+ *    - Professional triangle metronome icon
+ *    - Active in Synth mode (blue/green)
+ *    - Grayed out in YouTube mode
+ *    - Tooltip shows mode requirements
  * ✅ MobileToolsSlideout with inline controls:
  *    - Professional metronome icon (triangle shape)
  *    - All metronome controls inside (no separate modal)
@@ -121,6 +133,7 @@ export default function SynthPlayerPage() {
         currentBPM: currentBPM,
         audioSource: audioSource,
         isPlaying: isPlaying,
+        isCountingDown: isCountingDown,
         volume: metronomeVolume,
         balance: metronomeBalance,
         soundType: metronomeSoundType,
@@ -544,31 +557,9 @@ export default function SynthPlayerPage() {
             console.log(`🔔 Starting ${maxCount}-beat countdown...`);
             setIsCountingDown(true);
 
-            // Countdown with tick sound
+            // Countdown (visual only - CountInOverlay handles sound)
             for (let i = maxCount; i > 0; i--) {
                 setCountdownValue(i);
-
-                // Play tick sound
-                try {
-                    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                    const oscillator = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-
-                    oscillator.frequency.value = 1200;
-                    oscillator.type = 'sine';
-
-                    gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-                    oscillator.start(audioContext.currentTime);
-                    oscillator.stop(audioContext.currentTime + 0.1);
-                } catch (error) {
-                    console.warn('Count-in tick failed:', error);
-                }
-
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
@@ -1036,6 +1027,22 @@ export default function SynthPlayerPage() {
                         onPitchShiftToggle={handlePitchShiftToggle}
                         isCountInEnabled={isCountInEnabled}
                         onCountInToggle={handleCountInToggle}
+                        countInMode={countInMode}
+                        onCountInModeChange={setCountInMode}
+                        isMetronomeEnabled={isMetronomeEnabled}
+                        onMetronomeToggle={handleMetronomeToggle}
+                        metronomeVolume={metronomeVolume}
+                        onMetronomeVolumeChange={setMetronomeVolume}
+                        metronomeBalance={metronomeBalance}
+                        onMetronomeBalanceChange={setMetronomeBalance}
+                        metronomeSubdivision={metronomeSubdivision}
+                        onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
+                        metronomeSoundType={metronomeSoundType}
+                        onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
+                        metronomeAccentEnabled={metronomeAccentEnabled}
+                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+                        onArmMetronome={armMetronome}
+                        currentBPM={currentBPM}
                     />
                 )}
             </footer>
@@ -1048,38 +1055,40 @@ export default function SynthPlayerPage() {
                 onComplete={() => console.log('🎵 Countdown complete')}
             />
 
-            {/* 🆕 MOBILE TOOLS SLIDEOUT - All controls inside */}
-            <MobileToolsSlideout
-                // Count-in
-                isCountInEnabled={isCountInEnabled}
-                onCountInToggle={handleCountInToggle}
-                countInMode={countInMode}
-                onCountInModeChange={setCountInMode}
+            {/* 🆕 MOBILE TOOLS SLIDEOUT - Hidden on desktop */}
+            <div className="md:hidden">
+                <MobileToolsSlideout
+                    // Count-in
+                    isCountInEnabled={isCountInEnabled}
+                    onCountInToggle={handleCountInToggle}
+                    countInMode={countInMode}
+                    onCountInModeChange={setCountInMode}
 
-                // Metronome
-                isMetronomeEnabled={isMetronomeEnabled}
-                onMetronomeToggle={handleMetronomeToggle}
-                currentBPM={currentBPM}
-                audioSource={audioSource}
+                    // Metronome
+                    isMetronomeEnabled={isMetronomeEnabled}
+                    onMetronomeToggle={handleMetronomeToggle}
+                    currentBPM={currentBPM}
+                    audioSource={audioSource}
 
-                // Metronome inline controls (inside slideout)
-                metronomeVolume={metronomeVolume}
-                onMetronomeVolumeChange={setMetronomeVolume}
-                metronomeBalance={metronomeBalance}
-                onMetronomeBalanceChange={setMetronomeBalance}
-                metronomeSubdivision={metronomeSubdivision}
-                onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
-                metronomeSoundType={metronomeSoundType}
-                onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
-                metronomeAccentEnabled={metronomeAccentEnabled}
-                onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+                    // Metronome inline controls (inside slideout)
+                    metronomeVolume={metronomeVolume}
+                    onMetronomeVolumeChange={setMetronomeVolume}
+                    metronomeBalance={metronomeBalance}
+                    onMetronomeBalanceChange={setMetronomeBalance}
+                    metronomeSubdivision={metronomeSubdivision}
+                    onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
+                    metronomeSoundType={metronomeSoundType}
+                    onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
+                    metronomeAccentEnabled={metronomeAccentEnabled}
+                    onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
 
-                // Visual aid
-                showEdgeTab={true}
+                    // Visual aid
+                    showEdgeTab={true}
 
-                // 🔧 Audio arming function for mobile PWA
-                onArmMetronome={armMetronome}
-            />
+                    // 🔧 Audio arming function for mobile PWA
+                    onArmMetronome={armMetronome}
+                />
+            </div>
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
                 <YouTubePlayer
