@@ -387,11 +387,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             >
               {/* YouTube Logo Shape when in Original mode and paused */}
               {!props.isPlaying && props.audioSource === 'original' ? (
-                <svg width="32" height="24" viewBox="0 0 90 64" fill="currentColor">
-                  {/* YouTube rounded rectangle background */}
-                  <rect width="90" height="64" rx="12" fill="#FF0000" />
-                  {/* White play triangle */}
-                  <path d="M35 20L60 32L35 44V20Z" fill="white" />
+                <svg width="34" height="24" viewBox="0 0 68 48" fill="none">
+                  {/* YouTube rounded rectangle background - heavily rounded for pill shape */}
+                  <rect width="68" height="48" rx="10" fill="#FF0000" />
+                  {/* White play triangle - properly centered */}
+                  <path d="M27 14L45 24L27 34V14Z" fill="white" />
                 </svg>
               ) : (
                 // Standard play/pause icons for other states
@@ -430,6 +430,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
+          isMobileLandscape={props.isMobileLandscape}
         />
       </div>
     </>
