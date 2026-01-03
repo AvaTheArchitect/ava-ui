@@ -151,14 +151,14 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   // V97: Ensure currentBPM calculation matches what page.tsx provides
   const currentBPM = props.currentBPM ?? (props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 120);
 
-  // 🆕 V98: Mobile play button styling - YouTube RED when in 'original' mode
+  // 🆕 V98: Mobile play button styling - YouTube LOGO when in 'original' mode
   const getPlayButtonStyle = () => {
     if (props.isPlaying) {
       // Playing: Orange text
       return 'text-orange-400 hover:text-orange-300 bg-transparent';
     } else if (props.audioSource === 'original') {
-      // Original mode (paused): YouTube RED background with WHITE icon
-      return 'bg-[#FF0000] hover:bg-[#E62117] text-white';
+      // Original mode (paused): No background (YouTube logo provides it)
+      return 'bg-transparent';
     } else {
       // Synth mode (paused): Cyan text
       return 'text-cyan-400 hover:text-cyan-300 bg-transparent';
@@ -373,7 +373,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 🔧 V98: YOUTUBE RED PLAY BUTTON - 4. Play/Pause */}
+            {/* 🔧 V98: YOUTUBE LOGO PLAY BUTTON - 4. Play/Pause */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
@@ -385,16 +385,27 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               `}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                {props.isPlaying ? (
-                  <>
-                    <rect x="7" y="5" width="3" height="14" rx="1" />
-                    <rect x="14" y="5" width="3" height="14" rx="1" />
-                  </>
-                ) : (
-                  <path d="M8 5v14l11-7z" />
-                )}
-              </svg>
+              {/* YouTube Logo Shape when in Original mode and paused */}
+              {!props.isPlaying && props.audioSource === 'original' ? (
+                <svg width="32" height="24" viewBox="0 0 90 64" fill="currentColor">
+                  {/* YouTube rounded rectangle background */}
+                  <rect width="90" height="64" rx="12" fill="#FF0000" />
+                  {/* White play triangle */}
+                  <path d="M35 20L60 32L35 44V20Z" fill="white" />
+                </svg>
+              ) : (
+                // Standard play/pause icons for other states
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  {props.isPlaying ? (
+                    <>
+                      <rect x="7" y="5" width="3" height="14" rx="1" />
+                      <rect x="14" y="5" width="3" height="14" rx="1" />
+                    </>
+                  ) : (
+                    <path d="M8 5v14l11-7z" />
+                  )}
+                </svg>
+              )}
             </button>
 
             {/* 5. Gear (Settings) */}
@@ -419,11 +430,6 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
-          isMobileLandscape={props.isMobileLandscape}
-          pitchShift={props.pitchShift}
-          onPitchShiftChange={(semitones) => {
-            console.log('Pitch shift requested:', semitones);
-          }}
         />
       </div>
     </>

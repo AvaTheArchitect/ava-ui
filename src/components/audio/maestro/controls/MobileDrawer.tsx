@@ -1,29 +1,23 @@
 'use client';
 
 /**
- * MobileDrawer.tsx - V96: PITCH SHIFT CONTROLS ADDED
- * Date: January 2nd, 2026
+ * MobileDrawer.tsx - V95: LANDSCAPE MODE FIX
+ * Date: December 15th, 2025
  * 
- * 🔧 NEW IN V96:
- * ✅ Added Pitch Shift section with +/- controls
- * ✅ Shows current semitone offset (+12 to -12 range)
- * ✅ Restore original tuning button
- * ✅ Only active in Synth mode (disabled in Original mode)
- * ✅ Matches desktop TuningOverlay functionality
+ * 🔧 NEW IN V95:
+ * ✅ Added isMobileLandscape prop
+ * ✅ Drawer now shows in landscape mode (was hidden due to md:hidden)
+ * ✅ Conditional classes: show if mobile OR if isMobileLandscape
  * 
- * 🔒 PRESERVED FROM V95:
- * ✅ Landscape mode compatibility (isMobileLandscape prop)
- * ✅ Audio Source radio button cards
- * ✅ Theme toggle
- * ✅ Stub controls for future features
+ * 🔒 PRESERVED FROM V94:
+ * ✅ Audio Source radio button cards (Songsterr style)
+ * ✅ Original option shows "YouTube Player"
+ * ✅ Active state with colored borders and badges
  * 
  * Accessed via Gear ⚙️ icon in bottom-right corner
  */
 
 import React from 'react';
-
-const MIN_PITCH = -12;
-const MAX_PITCH = 12;
 
 export interface MobileDrawerProps {
   isOpen: boolean;
@@ -36,10 +30,7 @@ export interface MobileDrawerProps {
   onCountInToggle?: () => void;
   onTunerOpen?: () => void;
   onPrintOpen?: () => void;
-  isMobileLandscape?: boolean;
-  // 🆕 V96: Pitch Shift props
-  pitchShift?: number;
-  onPitchShiftChange?: (semitones: number) => void;
+  isMobileLandscape?: boolean; // 🆕 V95: Added prop
 }
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
@@ -53,34 +44,12 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onCountInToggle,
   onTunerOpen,
   onPrintOpen,
-  isMobileLandscape = false,
-  pitchShift = 0,
-  onPitchShiftChange,
+  isMobileLandscape = false, // 🆕 V95
 }) => {
   if (!isOpen) return null;
 
+  // 🆕 V95: Show drawer if on mobile (md:hidden) OR in landscape mode
   const visibilityClass = isMobileLandscape ? 'block' : 'md:hidden';
-  const isSynthMode = audioSource === 'synth';
-  const semitoneText = Math.abs(pitchShift) === 1 ? 'semitone' : 'semitones';
-
-  // 🆕 V96: Pitch shift handlers
-  const handlePitchStepDown = () => {
-    if (isSynthMode && pitchShift > MIN_PITCH && onPitchShiftChange) {
-      onPitchShiftChange(pitchShift - 1);
-    }
-  };
-
-  const handlePitchStepUp = () => {
-    if (isSynthMode && pitchShift < MAX_PITCH && onPitchShiftChange) {
-      onPitchShiftChange(pitchShift + 1);
-    }
-  };
-
-  const handlePitchRestore = () => {
-    if (isSynthMode && onPitchShiftChange) {
-      onPitchShiftChange(0);
-    }
-  };
 
   return (
     <>
@@ -201,92 +170,6 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   )}
                 </div>
               </button>
-            </div>
-
-            {/* 🆕 V96: ==================== PITCH SHIFT ==================== */}
-            <div>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                Pitch Shift
-              </h3>
-
-              {!isSynthMode && (
-                <div className="mb-3 p-3 bg-orange-500/20 border border-orange-500/50 rounded-lg">
-                  <p className="text-sm text-orange-300">
-                    ⚠️ Pitch shift only works in Synth mode
-                  </p>
-                </div>
-              )}
-
-              <div className={`p-4 rounded-lg border ${
-                isSynthMode 
-                  ? 'bg-gray-800/50 border-gray-700' 
-                  : 'bg-gray-800/30 border-gray-700/50 opacity-50'
-              }`}>
-                {/* +/- Controls */}
-                <div className="flex items-center justify-center gap-4 mb-4">
-                  {/* Step Down Button */}
-                  <button
-                    onClick={handlePitchStepDown}
-                    disabled={!isSynthMode || pitchShift <= MIN_PITCH}
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all
-                      ${isSynthMode && pitchShift > MIN_PITCH
-                        ? 'bg-gray-700 hover:bg-gray-600 active:scale-95' 
-                        : 'bg-gray-700/30 cursor-not-allowed'
-                      }`}
-                  >
-                    <svg width="20" height="3" viewBox="0 0 20 3">
-                      <rect width="20" height="3" rx="1.5" fill={isSynthMode ? '#fff' : '#666'} />
-                    </svg>
-                  </button>
-
-                  {/* Current Value Display */}
-                  <div className="text-center min-w-[80px]">
-                    <span className={`text-3xl font-bold block leading-none
-                      ${pitchShift === 0 ? 'text-gray-400'
-                        : pitchShift > 0 ? 'text-green-500' : 'text-orange-500'
-                      }`}>
-                      {pitchShift > 0 ? `+${pitchShift}` : pitchShift}
-                    </span>
-                    <span className="text-[11px] uppercase text-gray-400 mt-1 block">
-                      {semitoneText}
-                    </span>
-                  </div>
-
-                  {/* Step Up Button */}
-                  <button
-                    onClick={handlePitchStepUp}
-                    disabled={!isSynthMode || pitchShift >= MAX_PITCH}
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all
-                      ${isSynthMode && pitchShift < MAX_PITCH
-                        ? 'bg-gray-700 hover:bg-gray-600 active:scale-95'
-                        : 'bg-gray-700/30 cursor-not-allowed'
-                      }`}
-                  >
-                    <svg width="20" height="20" viewBox="0 0 20 20">
-                      <rect x="9" y="0" width="2" height="20" rx="1" fill={isSynthMode ? '#fff' : '#666'} />
-                      <rect x="0" y="9" width="20" height="2" rx="1" fill={isSynthMode ? '#fff' : '#666'} />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Restore Button */}
-                <button
-                  onClick={handlePitchRestore}
-                  disabled={!isSynthMode || pitchShift === 0}
-                  className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all
-                    ${isSynthMode && pitchShift !== 0
-                      ? 'bg-purple-600 hover:bg-purple-700 text-white active:scale-98'
-                      : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
-                    }`}
-                >
-                  Restore original tuning
-                </button>
-
-                {/* Info Text */}
-                <p className="text-xs text-gray-400 text-center mt-3">
-                  Transpose up or down by semitones
-                </p>
-              </div>
             </div>
 
             {/* ==================== THEME TOGGLE ==================== */}
