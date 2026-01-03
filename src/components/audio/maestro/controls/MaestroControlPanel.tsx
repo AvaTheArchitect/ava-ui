@@ -1,24 +1,28 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V94: ADD PITCH SHIFT SUPPORT
- * Date: December 20th, 2025
+ * MaestroControlPanel.tsx - V99: RESTORED YOUTUBE LOGO SVG
+ * Date: January 2nd, 2026
  * 
- * 🆕 NEW IN V94:
- * ✅ Pass pitchShift and onPitchShiftToggle to TransportBar
- * ✅ Handle pitch shift popover positioning
+ * 🔧 NEW IN V99:
+ * ✅ RESTORED proper YouTube logo SVG path from V93 (rounded rectangle, not ellipse)
+ * ✅ Uses authentic YouTube logo path that matches Songsterr exactly
+ * ✅ viewBox="0 0 68 48" for correct aspect ratio
  * 
- * 🔒 PRESERVED FROM V93:
- * ✅ Pass theme and onThemeToggle to TransportBar
- * ✅ Mobile icons cyan-400 blue
- * ✅ Loop ON: text-green-400
- * ✅ TrackMixer panel auto-closes
+ * 🔒 PRESERVED FROM V98:
+ * ✅ All count-in functionality
+ * ✅ All metronome functionality  
+ * ✅ Diagnostic logging
+ * ✅ Canvas click detection
+ * ✅ Panel coordination
+ * ✅ Desktop TransportBar with all props
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
 
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
@@ -46,15 +50,59 @@ export interface MaestroControlPanelProps {
   onTrackMuteToggle: (trackIndex: number) => void;
   onTrackSoloToggle: (trackIndex: number) => void;
   onThemeToggle: () => void;
-  // 🆕 V94: Pitch shift props
   pitchShift?: number;
   onPitchShiftToggle?: (anchorRect: DOMRect) => void;
+  // Count In props
+  isCountInEnabled?: boolean;
+  onCountInToggle?: () => void;
+  countInMode?: 'three-beat' | 'four-beat';
+  onCountInModeChange?: (mode: 'three-beat' | 'four-beat') => void;
+  // Metronome props
+  isMetronomeEnabled?: boolean;
+  onMetronomeToggle?: () => void;
+  metronomeVolume?: number;
+  onMetronomeVolumeChange?: (volume: number) => void;
+  metronomeBalance?: number;
+  onMetronomeBalanceChange?: (balance: number) => void;
+  metronomeSubdivision?: SubdivisionMode;
+  onMetronomeSubdivisionChange?: (subdivision: SubdivisionMode) => void;
+  metronomeSoundType?: MetronomeSoundType;
+  onMetronomeSoundTypeChange?: (sound: MetronomeSoundType) => void;
+  metronomeAccentEnabled?: boolean;
+  onMetronomeAccentToggle?: () => void;
+  onArmMetronome?: () => Promise<void>;
+  currentBPM?: number;
 }
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
+  // Close all panels helper
+  const closeAllPanels = useCallback(() => {
+    setIsTrackMixerOpen(false);
+    setIsSpeedPanelOpen(false);
+    setIsDrawerOpen(false);
+  }, []);
+
+  // Canvas click detection - close panels when clicking on AlphaTab surface
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+
+      const isCanvasClick = target.closest?.('.at-surface') ||
+        target.closest?.('.at-viewport') ||
+        target.closest?.('#alphatab-container');
+
+      if (isCanvasClick) {
+        closeAllPanels();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [closeAllPanels]);
 
   // Close other panels when opening one
   const handleTrackMixerToggle = () => {
@@ -74,11 +122,9 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   // Close all panels when playback starts
   useEffect(() => {
     if (props.isPlaying) {
-      setIsTrackMixerOpen(false);
-      setIsSpeedPanelOpen(false);
-      setIsDrawerOpen(false);
+      closeAllPanels();
     }
-  }, [props.isPlaying]);
+  }, [props.isPlaying, closeAllPanels]);
 
   // Handle Loop toggle
   const handleLoopToggle = () => {
@@ -101,7 +147,26 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   };
 
   const speedPresets = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
-  const currentBPM = props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 0;
+
+  // V97: Ensure currentBPM calculation matches what page.tsx provides
+  const currentBPM = props.currentBPM ?? (props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 120);
+
+  // V99: DIAGNOSTIC logging
+  useEffect(() => {
+    console.log('=== MAESTRO CONTROL PANEL V99 ===');
+    console.log('Passing to TransportBar - currentBPM:', currentBPM);
+    console.log('Has onMetronomeToggle:', !!props.onMetronomeToggle);
+    console.log('Has onMetronomeVolumeChange:', !!props.onMetronomeVolumeChange);
+    console.log('Has all callbacks:', !!(
+      props.onMetronomeToggle &&
+      props.onMetronomeVolumeChange &&
+      props.onMetronomeBalanceChange &&
+      props.onMetronomeSubdivisionChange &&
+      props.onMetronomeSoundTypeChange &&
+      props.onMetronomeAccentToggle
+    ));
+  }, [currentBPM, props.onMetronomeToggle, props.onMetronomeVolumeChange, props.onMetronomeBalanceChange,
+    props.onMetronomeSubdivisionChange, props.onMetronomeSoundTypeChange, props.onMetronomeAccentToggle]);
 
   return (
     <>
@@ -129,9 +194,28 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             onTrackMuteToggle={props.onTrackMuteToggle}
             onTrackSoloToggle={props.onTrackSoloToggle}
             onThemeToggle={props.onThemeToggle}
-            // 🆕 V94: Pitch shift props
             pitchShift={props.pitchShift}
             onPitchShiftToggle={props.onPitchShiftToggle}
+            // Count In props
+            isCountInEnabled={props.isCountInEnabled}
+            onCountInToggle={props.onCountInToggle}
+            countInMode={props.countInMode}
+            onCountInModeChange={props.onCountInModeChange}
+            // Metronome props - V97: Pass currentBPM explicitly
+            isMetronomeEnabled={props.isMetronomeEnabled}
+            onMetronomeToggle={props.onMetronomeToggle}
+            metronomeVolume={props.metronomeVolume}
+            onMetronomeVolumeChange={props.onMetronomeVolumeChange}
+            metronomeBalance={props.metronomeBalance}
+            onMetronomeBalanceChange={props.onMetronomeBalanceChange}
+            metronomeSubdivision={props.metronomeSubdivision}
+            onMetronomeSubdivisionChange={props.onMetronomeSubdivisionChange}
+            metronomeSoundType={props.metronomeSoundType}
+            onMetronomeSoundTypeChange={props.onMetronomeSoundTypeChange}
+            metronomeAccentEnabled={props.metronomeAccentEnabled}
+            onMetronomeAccentToggle={props.onMetronomeAccentToggle}
+            onArmMetronome={props.onArmMetronome}
+            currentBPM={currentBPM}
           />
         </div>
       )}
@@ -242,52 +326,75 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2 mb-3">
                     {speedPresets.map((speed) => (
                       <button
                         key={speed}
                         onClick={() => props.onSpeedChange(speed)}
-                        className={`px-3 py-2 rounded-lg text-sm font-bold ${props.playbackSpeed === speed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
-                      >{Math.round(speed * 100)}%</button>
+                        className={`px-3 py-2 rounded-lg text-sm font-bold ${props.playbackSpeed === speed ? 'bg-cyan-500 text-white' : 'bg-gray-700 text-gray-300'}`}
+                      >
+                        {Math.round(speed * 100)}%
+                      </button>
                     ))}
                   </div>
                   <button
                     onClick={() => props.onSpeedChange(1.0)}
-                    className="w-full mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold"
-                  >Reset to 100%</button>
+                    className="w-full px-3 py-2 bg-gray-700 text-gray-300 rounded-lg text-sm font-bold"
+                  >
+                    Reset to 100%
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* 3. Loop Control */}
+            {/* 3. Loop */}
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
-              title="Toggle loop"
+              title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
               </svg>
             </button>
 
-            {/* 4. Play/Pause */}
+            {/* 🔧 V99: RESTORED YOUTUBE LOGO - 4. Play/Pause */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isPlaying ? 'text-orange-400 hover:text-orange-300' : 'text-cyan-400 hover:text-cyan-300'}`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.audioSource === 'original' && !props.isPlaying
+                  ? '' /* YouTube button has its own colors */
+                  : props.isPlaying
+                    ? 'text-orange-400 hover:text-orange-300'
+                    : 'text-cyan-400 hover:text-cyan-300'
+                }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                {props.isPlaying ? (
-                  <>
-                    <rect x="7" y="5" width="3" height="14" rx="1" />
-                    <rect x="14" y="5" width="3" height="14" rx="1" />
-                  </>
-                ) : (
-                  <path d="M8 5v14l11-7z" />
-                )}
-              </svg>
+              {/* V99: YouTube Logo when in Original mode and paused - RESTORED proper SVG path */}
+              {!props.isPlaying && props.audioSource === 'original' ? (
+                <svg width="32" height="32" viewBox="0 0 68 48">
+                  {/* Red rounded rectangle background - AUTHENTIC YouTube logo path */}
+                  <path
+                    d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,0,34,0,34,0S12.21,0,6.9,1.55 c-2.93,0.78-4.63,3.26-5.42,6.19C0,13.05,0,24,0,24s0,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,48,34,48,34,48s21.79,0,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C68,34.95,68,24,68,24S68,13.05,66.52,7.74z"
+                    fill="#FF0000"
+                  />
+                  {/* White play triangle */}
+                  <path d="M 45,24 27,14 27,34" fill="white" />
+                </svg>
+              ) : (
+                /* Standard play/pause icons for synth mode OR when playing */
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  {props.isPlaying ? (
+                    <>
+                      <rect x="7" y="5" width="3" height="14" rx="1" />
+                      <rect x="14" y="5" width="3" height="14" rx="1" />
+                    </>
+                  ) : (
+                    <path d="M8 5v14l11-7z" />
+                  )}
+                </svg>
+              )}
             </button>
 
             {/* 5. Gear (Settings) */}
@@ -312,6 +419,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           theme={props.theme}
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
+          isMobileLandscape={props.isMobileLandscape}
         />
       </div>
     </>
