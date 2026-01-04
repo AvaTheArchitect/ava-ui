@@ -1,26 +1,30 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.54: SONGSTERR LOOP CLICK BEHAVIOR
- * Base: V97.51 renderCycle Dependencies
- * Date: January 3rd, 2026
+ * AlphaTab Renderer - V97.55: LANDSCAPE GLITCH FIX
+ * Base: V97.54 Songsterr Loop Click Behavior
+ * Date: January 4th, 2026
  *
- * 🆕 V97.52 NEW FEATURE - CLICK TO MOVE LOOP:
- * ✅ NEW: Single-click moves loop highlight to clicked bar (Songsterr behavior)
- * ✅ FIXED: Loop highlight now stays visible on every click
- * ✅ NO MORE: Highlight flashing and disappearing after initial loop
- * ✅ NO MORE: Having to drag to create subsequent loops
+ * 🔧 V97.55 CRITICAL FIX - LANDSCAPE MODE GLITCHING:
+ * ✅ FIXED: Rendering loop when switching to Original mode in landscape
+ * ✅ FIXED: Auto-scroll breaking after mode switch
+ * ✅ FIXED: 10-20 second glitching/resizing in landscape
  * 
- * 🎯 How It Works:
- * - Loop OFF: Single-click seeks (existing behavior)
- * - Loop ON: Single-click moves loop highlight to new bar (NEW!)
- * - Loop ON: Drag still works for multi-bar selection
- * - Uses same bar-boundary logic as initial loop creation
+ * 🎯 Root Cause:
+ * - Orientation effect was running on EVERY prop change
+ * - No check for actual layout mode change
+ * - Created infinite render loop until stabilization
+ * - Corrupted scroll container during loop
  * 
- * 🔒 PRESERVED FROM V97.51:
- * ✅ renderCycle dependencies for theme + handlers
- * ✅ TypeScript fixes
- * ✅ V97.18 architecture (no manual seekTo)
+ * 🎯 Solution:
+ * - Added lastLayoutModeRef check (was declared but unused!)
+ * - Only apply orientation changes when layout mode ACTUALLY changes
+ * - Prevents unnecessary api.render() calls
+ * - Preserves scroll container integrity
+ * 
+ * 🔒 PRESERVED FROM V97.54:
+ * ✅ Songsterr loop click behavior
+ * ✅ All existing functionality
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -243,7 +247,6 @@ const setupTouchSelection = (
 
         const beat = getBeatAtPosition(api, container, touch.clientX, touch.clientY);
         if (beat) {
-            // ✅ V97.51: FIX - Added missing 'api' parameter
             startBeat = getFirstBeatInBar(api, beat);
             endBeat = beat;
             console.log(`📱 V97.51: Touch start - forced to bar start tick ${startBeat.absolutePlaybackStart}`);
@@ -376,7 +379,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<AlphaTabApi | null>(null);
-    const lastLayoutModeRef = useRef<string | null>(null);  // 🆕 ADD THIS
+    const lastLayoutModeRef = useRef<string | null>(null);
 
     const lastLoadedFileRef = useRef<string>('');
     const [isLoading, setIsLoading] = useState(true);
@@ -386,7 +389,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     // Dark-mode tracking
     const lastThemeRef = useRef<string>('');
-
 
     useEffect(() => {
         if (isSeeking || isPlaying) {
@@ -599,7 +601,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ========== ORIENTATION HANDLING ==========
+    // ========== ORIENTATION HANDLING - V97.55 CRITICAL FIX ==========
     // 🔧 V97.55: Only apply when ACTUAL layout mode changes, not on every prop change
 
     useEffect(() => {
@@ -612,7 +614,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
         const targetLayoutMode = isLandscape ? 'horizontal' : 'page';
 
-        // 🔧 V97.55: Skip if layout mode hasn't ACTUALLY changed
+        // 🔧 V97.55: CRITICAL FIX - Skip if layout mode hasn't ACTUALLY changed
         if (lastLayoutModeRef.current === targetLayoutMode) {
             console.log(`⏭️ V97.55: Layout mode unchanged (${targetLayoutMode}), skipping orientation update`);
             return;
@@ -694,7 +696,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         applyTheme();
-    }, [theme, isRendered, renderCycle]); // 🔧 V97.51: Added renderCycle - fixes theme on song change
+    }, [theme, isRendered, renderCycle]);
 
     // ========== DYNAMIC USER INTERACTION - DISABLED ==========
     // 🚨 V97.51: ALWAYS keep enableUserInteraction = false
@@ -884,7 +886,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('click', handleLoopMoveClick);
         };
-    }, [isRendered, isLooping, renderCycle]); // 🔧 V97.51: Added renderCycle
+    }, [isRendered, isLooping, renderCycle]);
 
     // ========== DOUBLE CLICK PLAY (loop off) ==========
 
@@ -942,7 +944,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('dblclick', handleDoubleClick);
         };
-    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]); // 🔧 V97.51: Added renderCycle
+    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]);
 
     // ========== MOUSE DRAG SELECTION (loop on) ==========
 
