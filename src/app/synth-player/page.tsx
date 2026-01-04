@@ -442,20 +442,20 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
-        
+
         const checkOrientation = () => {
             // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
-            
+
             // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
-                
+
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
@@ -962,9 +962,9 @@ export default function SynthPlayerPage() {
                 <div
                     id="maestro-player"
                     className={`
-                        relative bg-white
-                        ${isMobileLandscape
-                            ? 'min-w-[200vw] inline-block flex-shrink-0 pt-[12vh]'
+                         relative bg-white overflow-hidden
+        ${isMobileLandscape
+                            ? 'w-full h-full pt-[12vh]'
                             : 'w-full'
                         }
                     `}
