@@ -78,7 +78,6 @@ import React, {
     useMemo,
 } from 'react';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
-// import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
