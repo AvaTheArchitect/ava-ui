@@ -376,6 +376,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<AlphaTabApi | null>(null);
+    const lastLayoutModeRef = useRef<string | null>(null);  // 🆕 ADD THIS
 
     const lastLoadedFileRef = useRef<string>('');
     const [isLoading, setIsLoading] = useState(true);
@@ -385,6 +386,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     // Dark-mode tracking
     const lastThemeRef = useRef<string>('');
+
 
     useEffect(() => {
         if (isSeeking || isPlaying) {
@@ -598,6 +600,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     }, [fileUrl, onError]);
 
     // ========== ORIENTATION HANDLING ==========
+    // 🔧 V97.55: Only apply when ACTUAL layout mode changes, not on every prop change
 
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
@@ -606,27 +609,35 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const api = apiRef.current;
         const container = containerRef.current;
 
-        const handleOrientationChange = async () => {
+        const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
+        const targetLayoutMode = isLandscape ? 'horizontal' : 'page';
+
+        // 🔧 V97.55: Skip if layout mode hasn't ACTUALLY changed
+        if (lastLayoutModeRef.current === targetLayoutMode) {
+            console.log(`⏭️ V97.55: Layout mode unchanged (${targetLayoutMode}), skipping orientation update`);
+            return;
+        }
+
+        console.log(`🔄 V97.55: Layout mode CHANGED: ${lastLayoutModeRef.current} → ${targetLayoutMode}`);
+        lastLayoutModeRef.current = targetLayoutMode;
+
+        const applyLayoutMode = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
-            const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
-
-            console.log(`🔄 V97.51: Orientation - isLandscape:${isLandscape}, isMobile:${isMobile}`);
-
             if (isLandscape) {
-                console.log('🎸 V97.51: LANDSCAPE mode');
+                console.log('🎸 V97.55: Applying LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                // ✅ V97.55: Use the MAIN scroll container, not AlphaTab's container
+
                 const scrollElement = scrollContainerRef?.current || container;
                 api.settings.player.scrollElement = scrollElement;
 
-                const horizontalOffset = container.clientWidth * 0.25;
+                const horizontalOffset = scrollElement.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
-                console.log(`📐 V97.51: Horizontal layout, scrollOffset=${horizontalOffset.toFixed(0)}px`);
+                console.log(`📐 V97.55: Horizontal layout, scrollOffset=${horizontalOffset.toFixed(0)}px`);
             } else {
-                console.log('📱 V97.51: PORTRAIT/DESKTOP mode');
+                console.log('📱 V97.55: Applying PORTRAIT/DESKTOP mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -634,7 +645,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.settings.player.scrollElement = scrollElement;
                 (api.settings.player as any).scrollOffset = 100;
 
-                console.log('📐 V97.51: Page layout, scrollOffset=100px');
+                console.log('📐 V97.55: Page layout, scrollOffset=100px');
             }
 
             await api.updateSettings();
@@ -642,7 +653,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             api.render();
         };
 
-        handleOrientationChange();
+        applyLayoutMode();
 
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef, isMobile]);
 
