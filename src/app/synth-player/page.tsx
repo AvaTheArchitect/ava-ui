@@ -2,9 +2,17 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * December 31st, 2025 - V98.15: DESKTOP METRONOME BUTTON INTEGRATED
+ * January 3rd, 2026 - V98.16: FIXED CASCADE LOOP ON MODE SWITCH
  *
- * 🔧 V98.15 LATEST UPDATE:
+ * 🔧 V98.16 LATEST UPDATE:
+ * ✅ Fixed Cascading Glitch on Mobile Landscape Mode Switch:
+ *    - Added 150ms debounce to orientation detection
+ *    - Prevents feedback loop: page.tsx resize → AlphaTabRenderer re-render → api.render() → DOM change → resize event
+ *    - Only updates state when orientation ACTUALLY changes (not on every resize)
+ *    - Fixes 337-cycle cascade when switching from synth to original mode
+ *    - Console logs orientation changes for debugging
+ * 
+ * 🔧 V98.15 PREVIOUS UPDATE:
  * ✅ Desktop Metronome Button Integration:
  *    - Added isMetronomeEnabled and onMetronomeToggle to MaestroControlPanel
  *    - Metronome button now appears in desktop TransportBar
@@ -430,12 +438,31 @@ export default function SynthPlayerPage() {
     }, [handleScroll]);
 
     // ==================== ORIENTATION DETECTION ====================
+    // 🔧 V98.16: Added debounce to prevent cascade loop on mode switch
     useEffect(() => {
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastValue: boolean | null = null;
+        
         const checkOrientation = () => {
-            const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
-            const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
-            setIsMobileLandscape(isTouchDevice && isLandscape && isCompactHeight);
+            // Clear any pending debounce
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            
+            // Debounce to prevent cascade from rapid resize events
+            debounceTimer = setTimeout(() => {
+                const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+                const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
+                const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
+                const newValue = isTouchDevice && isLandscape && isCompactHeight;
+                
+                // 🔧 V98.16: Only update state if value ACTUALLY changed
+                if (lastValue !== newValue) {
+                    lastValue = newValue;
+                    console.log(`📱 V98.16: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    setIsMobileLandscape(newValue);
+                }
+            }, 150); // 150ms debounce prevents cascade
         };
 
         checkOrientation();
@@ -445,6 +472,9 @@ export default function SynthPlayerPage() {
         }
 
         return () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
             if (typeof window !== 'undefined') {
                 window.removeEventListener('resize', checkOrientation);
                 window.removeEventListener('orientationchange', checkOrientation);
