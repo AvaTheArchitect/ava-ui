@@ -962,9 +962,9 @@ export default function SynthPlayerPage() {
                 <div
                     id="maestro-player"
                     className={`
-                         relative bg-white overflow-hidden
+                        relative bg-white
         ${isMobileLandscape
-                            ? 'w-full h-full pt-[12vh]'
+                            ? 'w-max min-w-full h-full pt-[12vh]'
                             : 'w-full'
                         }
                     `}
