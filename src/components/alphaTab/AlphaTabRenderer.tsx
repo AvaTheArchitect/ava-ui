@@ -617,7 +617,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 console.log('🎸 V97.51: LANDSCAPE mode');
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                api.settings.player.scrollElement = container;
+                // ✅ V97.55: Use the MAIN scroll container, not AlphaTab's container
+                const scrollElement = scrollContainerRef?.current || container;
+                api.settings.player.scrollElement = scrollElement;
 
                 const horizontalOffset = container.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
