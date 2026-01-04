@@ -636,8 +636,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
 
             await api.updateSettings();
-            window.dispatchEvent(new Event('resize'));
-            await new Promise((r) => setTimeout(r, 50));
+            await new Promise((r) => setTimeout(r, 100));
             api.render();
         };
 
