@@ -2,9 +2,19 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 3rd, 2026 - V98.16: FIXED CASCADE LOOP ON MODE SWITCH
+ * January 3rd, 2026 - V98.17: CRITICAL FIX - LANDSCAPE CONTAINER CONSTRAINTS
  *
- * 🔧 V98.16 LATEST UPDATE:
+ * 🔧 V98.17 LATEST UPDATE:
+ * ✅ Fixed Cascading Glitch with Container Constraints:
+ *    - Main container locked to 100vw max-width (prevents viewport expansion)
+ *    - Removed w-max from maestro-player (was causing reflow)
+ *    - Added inline-block style with width: max-content for AlphaTab expansion
+ *    - Prevents parent containers from inheriting massive width
+ *    - Header stays at screen width with explicit maxWidth style
+ *    - Fixes rendering loop and header positioning issues
+ *    - Only content scrolls horizontally, viewport stays locked
+ * 
+ * 🔧 V98.16 PREVIOUS UPDATE:
  * ✅ Fixed Cascading Glitch on Mobile Landscape Mode Switch:
  *    - Added 150ms debounce to orientation detection
  *    - Prevents feedback loop: page.tsx resize → AlphaTabRenderer re-render → api.render() → DOM change → resize event
@@ -78,10 +88,10 @@ import React, {
     useMemo,
 } from 'react';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
+import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
-import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
 import { SongSelector } from '@/components/audio/maestro/songs';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import {
@@ -935,12 +945,17 @@ export default function SynthPlayerPage() {
                 className={`
                     w-full overscroll-y-contain
                     ${isMobileLandscape
-                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden'
+                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden relative'
                         : 'pb-32 overflow-y-auto overflow-x-hidden'
                     }
                     ${!isMobileLandscape && isHeaderVisible ? 'pt-16' : 'pt-0'}
                     transition-[padding] duration-300 ease-in-out
                 `}
+                style={isMobileLandscape ? {
+                    // 🔧 V98.17: Lock viewport to screen width, only content scrolls
+                    maxWidth: '100vw',
+                    width: '100vw'
+                } : undefined}
             >
                 {error && (
                     <div className="px-4 mb-4">
@@ -952,7 +967,14 @@ export default function SynthPlayerPage() {
                 )}
 
                 {isMobileLandscape && currentSong && (
-                    <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4">
+                    <div
+                        className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4"
+                        style={{
+                            // 🔧 V98.17: Ensure header stays at screen width
+                            maxWidth: '100vw',
+                            width: '100vw'
+                        }}
+                    >
                         <div className="text-white text-sm font-semibold truncate">
                             {currentSong.artist} - {currentSong.title}
                         </div>
@@ -963,11 +985,18 @@ export default function SynthPlayerPage() {
                     id="maestro-player"
                     className={`
                         relative bg-white
-        ${isMobileLandscape
-                            ? 'w-max min-w-full h-full pt-[12vh]'
+                        ${isMobileLandscape
+                            ? 'h-full pt-[12vh]'
                             : 'w-full'
                         }
                     `}
+                    style={isMobileLandscape ? {
+                        // 🔧 V98.17: Let AlphaTab expand naturally for horizontal scroll
+                        // but don't inherit the massive width to parent containers
+                        display: 'inline-block',
+                        minWidth: '100%',
+                        width: 'max-content'
+                    } : undefined}
                 >
                     <TuningOverlay
                         api={api}
