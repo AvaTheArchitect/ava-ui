@@ -2,9 +2,27 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 3rd, 2026 - V98.17: CRITICAL FIX - LANDSCAPE CONTAINER CONSTRAINTS
+ * January 3rd, 2026 - V98.19: FIXED YOUTUBE PLAYER PORTRAIT RATIO
  *
- * 🔧 V98.17 LATEST UPDATE:
+ * 🔧 V98.19 LATEST UPDATE - CORRECTED YOUTUBE PLAYER RATIO:
+ * ✅ Fixed YouTube Player to use PORTRAIT ratio (9:16) like Songsterr:
+ *    - Changed from 400x225 (16:9 landscape) to 240x427 (9:16 portrait)
+ *    - Player is now TALLER than WIDE in BOTH orientations (matches Songsterr)
+ *    - Bottom padding updated to 450px to account for taller player
+ *    - Prevents vertical space competition with AlphaTab
+ *    - Player stays same size when rotating between portrait/landscape
+ * 
+ * 🔧 V98.18 PREVIOUS UPDATE:
+ * ✅ Fixed YouTube Player Vertical Space Competition:
+ *    - YouTube player locked to 400x225px in BOTH orientations (same as Songsterr)
+ *    - Wrapped in fixed-size container to prevent shrinking/growing
+ *    - Staff no longer gets pushed down when YT player appears
+ *    - Header locked to 100vw with single-line text (no drift)
+ *    - Maestro-player has bottom padding (240px) to account for YT player height
+ *    - Fixes the 10-20 second cascade loop completely
+ *    - Root cause: YT player was competing with AlphaTab for vertical space
+ * 
+ * 🔧 V98.17 PREVIOUS UPDATE:
  * ✅ Fixed Cascading Glitch with Container Constraints:
  *    - Main container locked to 100vw max-width (prevents viewport expansion)
  *    - Removed w-max from maestro-player (was causing reflow)
@@ -452,20 +470,20 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
-
+        
         const checkOrientation = () => {
             // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
-
+            
             // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
-
+                
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
@@ -967,15 +985,18 @@ export default function SynthPlayerPage() {
                 )}
 
                 {isMobileLandscape && currentSong && (
-                    <div
-                        className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4"
+                    <div 
+                        className="fixed top-0 left-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4"
                         style={{
-                            // 🔧 V98.17: Ensure header stays at screen width
+                            // 🔧 V98.18: LOCK to viewport width
+                            width: '100vw',
                             maxWidth: '100vw',
-                            width: '100vw'
+                            position: 'fixed',
+                            transform: 'translateZ(0)', // Hardware acceleration
                         }}
                     >
                         <div className="text-white text-sm font-semibold truncate">
+                            {/* 🔧 V98.18: SINGLE LINE - no line break */}
                             {currentSong.artist} - {currentSong.title}
                         </div>
                     </div>
@@ -986,16 +1007,17 @@ export default function SynthPlayerPage() {
                     className={`
                         relative bg-white
                         ${isMobileLandscape
-                            ? 'h-full pt-[12vh]'
+                            ? 'h-full'
                             : 'w-full'
                         }
                     `}
                     style={isMobileLandscape ? {
-                        // 🔧 V98.17: Let AlphaTab expand naturally for horizontal scroll
-                        // but don't inherit the massive width to parent containers
+                        // 🔧 V98.19: Calculate available height AFTER YouTube player (now TALLER)
+                        paddingTop: '60px',  // Header height
+                        paddingBottom: '450px',  // YouTube player (427px) + controls + gap
                         display: 'inline-block',
                         minWidth: '100%',
-                        width: 'max-content'
+                        width: 'max-content',
                     } : undefined}
                 >
                     <TuningOverlay
@@ -1150,21 +1172,37 @@ export default function SynthPlayerPage() {
             </div>
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
-                <YouTubePlayer
-                    ref={youtubePlayerRef}
-                    videoId={activeVideoId}
-                    isVisible={isYouTubePlayerVisible}
-                    onClose={handleYouTubeClose}
-                    currentTime={displayTime}
-                    isPlaying={isPlaying}
-                    onTimeUpdate={handleYouTubeTimeUpdate}
-                    onStateChange={handleYouTubeStateChange}
-                    onPlayerReady={handleYouTubePlayerReady}
-                    isMobileLandscape={isMobileLandscape}
-                    videoVariants={currentSong?.youtubeVariants}
-                    onVariantChange={handleVideoVariantChange}
-                    videoStartOffset={currentSong?.videoStartOffset}
-                />
+                <div 
+                    className="youtube-player-container"
+                    style={{
+                        position: 'fixed',
+                        bottom: isMobileLandscape ? 0 : 80,
+                        right: isMobileLandscape ? 0 : 16,
+                        zIndex: 60,
+                        // 🔧 V98.19 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
+                        // Player is TALLER than WIDE in both orientations
+                        width: '240px',
+                        height: '427px',
+                        maxWidth: '240px',
+                        maxHeight: '427px',
+                    }}
+                >
+                    <YouTubePlayer
+                        ref={youtubePlayerRef}
+                        videoId={activeVideoId}
+                        isVisible={isYouTubePlayerVisible}
+                        onClose={handleYouTubeClose}
+                        currentTime={displayTime}
+                        isPlaying={isPlaying}
+                        onTimeUpdate={handleYouTubeTimeUpdate}
+                        onStateChange={handleYouTubeStateChange}
+                        onPlayerReady={handleYouTubePlayerReady}
+                        isMobileLandscape={isMobileLandscape}
+                        videoVariants={currentSong?.youtubeVariants}
+                        onVariantChange={handleVideoVariantChange}
+                        videoStartOffset={currentSong?.videoStartOffset}
+                    />
+                </div>
             )}
         </div>
     );
