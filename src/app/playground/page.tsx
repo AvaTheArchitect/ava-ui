@@ -1,25 +1,22 @@
 'use client';
 
 /**
- * AlphaTab + YouTube Playground - V9.6: FIX SEEKING REF RACE CONDITION
- * December 13th, 2025
+ * AlphaTab + YouTube Playground - V9.7: LANDSCAPE SINGLE-ROW MODE
+ * January 4th, 2026
  * 
- * 🔧 V9.6 CRITICAL FIX:
- * ✅ Set isSeekingRef.current = true SYNCHRONOUSLY in handler.seekTo()
- * ✅ This prevents 50ms loop from running before React state updates
- * ✅ Fixes: Cursor jumping when clicking while playing
- * ✅ The race condition: setIsSeeking(true) is async, ref update via useEffect is also async
+ * 🆕 V9.7 ADDED:
+ * ✅ Mobile landscape detection with debounce
+ * ✅ Unified single-row horizontal layout (like main page.tsx)
+ * ✅ Proper container constraints (testing header runaway fix)
+ * ✅ Landscape header display
+ * ✅ Original mode support in landscape
  * 
- * **The Race Condition (V9.5):**
- * 1. handler.seekTo() calls setIsSeeking(true) - ASYNC
- * 2. 50ms loop runs, checks isSeekingRef.current - still FALSE!
- * 3. Loop updates cursor to OLD position
- * 4. useEffect runs, sets isSeekingRef.current = true - TOO LATE!
+ * 🎯 Purpose: Isolate whether glitching is in AlphaTabRenderer or page containers
  * 
- * **The Fix (V9.6):**
- * 1. handler.seekTo() sets isSeekingRef.current = true - SYNC!
- * 2. 50ms loop runs, checks isSeekingRef.current - TRUE! ✅
- * 3. Loop skips update, cursor stays at seek position
+ * 🔒 PRESERVED FROM V9.6:
+ * ✅ Synchronous seeking ref fix
+ * ✅ YouTube integration
+ * ✅ 50ms cursor sync
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -40,6 +37,9 @@ export default function PlaygroundPage() {
     const isPlayingRef = useRef<boolean>(false);
     const seekStabilizeTimeoutRef = useRef<any>(null);
     
+    // 🆕 V9.7: Landscape detection
+    const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
+    
     // Deferred seek pattern (AlphaTab official workaround)
     const initialSeekRef = useRef<number>(-1);
 
@@ -57,6 +57,56 @@ export default function PlaygroundPage() {
         isPlayingRef.current = isPlaying;
     }, [isPlaying]);
 
+    // 🆕 V9.7: ORIENTATION DETECTION WITH DEBOUNCE
+    useEffect(() => {
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastValue: boolean | null = null;
+
+        const checkOrientation = () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+
+            debounceTimer = setTimeout(() => {
+                const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+                const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
+                const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
+                const newValue = isTouchDevice && isLandscape && isCompactHeight;
+
+                // Only update if value actually changed
+                if (lastValue !== newValue) {
+                    lastValue = newValue;
+                    console.log(`📱 V9.7: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    setIsMobileLandscape(newValue);
+                }
+            }, 150); // 150ms debounce
+        };
+
+        checkOrientation();
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', checkOrientation);
+            window.addEventListener('orientationchange', checkOrientation);
+        }
+
+        return () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('resize', checkOrientation);
+                window.removeEventListener('orientationchange', checkOrientation);
+            }
+        };
+    }, []);
+
+    // 🆕 V9.7: Reset scroll position in landscape
+    useEffect(() => {
+        if (isMobileLandscape && scrollContainerRef.current) {
+            scrollContainerRef.current.scrollLeft = 0;
+            console.log('🔄 V9.7: Reset scroll to left in landscape');
+        }
+    }, [isMobileLandscape]);
+
     // Volume management for mode switching
     useEffect(() => {
         if (!apiRef.current) return;
@@ -64,10 +114,10 @@ export default function PlaygroundPage() {
         if (audioSource === 'original') {
             previousVolumeRef.current = apiRef.current.masterVolume || 1.0;
             apiRef.current.masterVolume = 0;
-            console.log('🔇 V9.6: Synth muted for original mode');
+            console.log('🔇 V9.7: Synth muted for original mode');
         } else {
             apiRef.current.masterVolume = previousVolumeRef.current;
-            console.log('🔊 V9.6: Synth volume restored');
+            console.log('🔊 V9.7: Synth volume restored');
         }
     }, [audioSource]);
 
@@ -82,20 +132,20 @@ export default function PlaygroundPage() {
                 return youtubePlayerRef.current?.getPlaybackRate?.() || 1;
             },
             set playbackRate(rate: number) {
-                console.log(`🎚️ V9.6: Setting playback rate: ${rate}`);
+                console.log(`🎚️ V9.7: Setting playback rate: ${rate}`);
                 youtubePlayerRef.current?.setPlaybackRate?.(rate);
             },
             get masterVolume() {
                 return ((youtubePlayerRef.current?.getVolume?.() || 100) / 100);
             },
             set masterVolume(vol: number) {
-                console.log(`🔊 V9.6: Setting volume: ${vol}`);
+                console.log(`🔊 V9.7: Setting volume: ${vol}`);
                 youtubePlayerRef.current?.setVolume?.(vol * 100);
             },
             seekTo(ms: number) {
                 // 🔧 V9.6 CRITICAL FIX: Set ref SYNCHRONOUSLY before async state update!
                 isSeekingRef.current = true;
-                console.log(`🔒 V9.6: isSeekingRef.current = true (SYNC)`);
+                console.log(`🔒 V9.7: isSeekingRef.current = true (SYNC)`);
                 
                 setIsSeeking(true); // Async state update
 
@@ -104,32 +154,27 @@ export default function PlaygroundPage() {
                 const state = youtubePlayerRef.current?.getPlayerState?.();
 
                 if (state !== YT?.PlayerState.PAUSED && state !== YT?.PlayerState.PLAYING) {
-                    // Player not ready - defer seek
                     initialSeekRef.current = sec;
-                    console.log(`⏱️ V9.6: Deferring seek to ${sec.toFixed(2)}s (player not ready, state=${state})`);
+                    console.log(`⏱️ V9.7: Deferring seek to ${sec.toFixed(2)}s`);
                 } else {
-                    // Player ready - seek immediately AND clear deferred seek!
                     youtubePlayerRef.current?.seekTo?.(sec, true);
                     initialSeekRef.current = -1;
-                    console.log(`🔁 V9.6: Immediate seek to ${sec.toFixed(2)}s (state=${state}, deferred CLEARED)`);
+                    console.log(`🔁 V9.7: Immediate seek to ${sec.toFixed(2)}s`);
                 }
             },
             play() {
-                console.log('▶️ V9.6: Handler play()');
+                console.log('▶️ V9.7: Handler play()');
                 
-                // Apply deferred seek on play (only if still pending)
                 if (initialSeekRef.current >= 0) {
-                    console.log(`⏱️ V9.6: Applying deferred seek to ${initialSeekRef.current}s on play`);
+                    console.log(`⏱️ V9.7: Applying deferred seek to ${initialSeekRef.current}s`);
                     youtubePlayerRef.current?.seekTo?.(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
-                } else {
-                    console.log('✅ V9.6: No deferred seek pending');
                 }
                 
                 youtubePlayerRef.current?.playVideo?.();
             },
             pause() {
-                console.log('⏸️ V9.6: Handler pause()');
+                console.log('⏸️ V9.7: Handler pause()');
                 youtubePlayerRef.current?.pauseVideo?.();
             },
         };
@@ -157,7 +202,7 @@ export default function PlaygroundPage() {
         firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
 
         (window as any).onYouTubeIframeAPIReady = () => {
-            console.log('✅ V9.6: YouTube API Ready');
+            console.log('✅ V9.7: YouTube API Ready');
             initYouTubePlayer();
         };
     }, [audioSource]);
@@ -167,9 +212,8 @@ export default function PlaygroundPage() {
         if (!YT || !YT.Player) return;
         if (youtubePlayerRef.current) return;
 
-        // Store initial seek instead of applying it
         initialSeekRef.current = videoStartOffset;
-        console.log(`⏱️ V9.6: Initial seek deferred to ${videoStartOffset}s`);
+        console.log(`⏱️ V9.7: Initial seek deferred to ${videoStartOffset}s`);
 
         youtubePlayerRef.current = new YT.Player('ytplayer', {
             videoId,
@@ -182,33 +226,28 @@ export default function PlaygroundPage() {
             },
             events: {
                 onReady: () => {
-                    console.log('✅ V9.6: YouTube Player Ready (no auto-seek)');
+                    console.log('✅ V9.7: YouTube Player Ready');
                     setIsYouTubeReady(true);
                     setIsSeeking(false);
                     isSeekingRef.current = false;
                 },
                 onStateChange: (event: any) => {
                     const YT = (window as any).YT;
-                    console.log(`🎬 V9.6: YouTube State: ${event.data} (Seeking: ${isSeekingRef.current})`);
+                    console.log(`🎬 V9.7: YouTube State: ${event.data}`);
 
-                    // Update playing state
                     if (event.data === YT.PlayerState.PLAYING) {
                         setIsPlaying(true);
                         isPlayingRef.current = true;
-                        console.log('▶️ V9.6: isPlaying = true');
                     } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
                         setIsPlaying(false);
                         isPlayingRef.current = false;
-                        console.log('⏸️ V9.6: isPlaying = false');
                     }
 
-                    // Clear seeking state
                     if (isSeekingRef.current) {
                         if (!seekStabilizeTimeoutRef.current && 
                             (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED)) {
-                            console.log(`⏱️ V9.6: Starting 500ms seek stabilization timer`);
                             seekStabilizeTimeoutRef.current = setTimeout(() => {
-                                console.log('✅ V9.6: Seek stabilized');
+                                console.log('✅ V9.7: Seek stabilized');
                                 setIsSeeking(false);
                                 isSeekingRef.current = false;
                                 seekStabilizeTimeoutRef.current = null;
@@ -217,14 +256,11 @@ export default function PlaygroundPage() {
                         return;
                     }
 
-                    // Sync AlphaTab state
                     if (apiRef.current) {
                         if (event.data === YT.PlayerState.PLAYING) {
                             apiRef.current.play();
-                            console.log('▶️ V9.6: AlphaTab PLAY sync');
                         } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
                             apiRef.current.pause();
-                            console.log('⏸️ V9.6: AlphaTab PAUSE sync');
                         }
                     }
                 },
@@ -239,18 +275,17 @@ export default function PlaygroundPage() {
         const output = apiRef.current.player.output as any;
 
         if (audioSource === 'original' && isYouTubeReady) {
-            console.log('🔗 V9.6: Attaching YouTube handler to AlphaTab');
+            console.log('🔗 V9.7: Attaching YouTube handler');
             output.handler = youTubeHandlerInstance;
-            console.log('✅ V9.6: Handler attached');
         } else {
             if (output.handler) {
                 output.handler = null;
-                console.log('🔌 V9.6: Handler detached');
+                console.log('🔌 V9.7: Handler detached');
             }
         }
     }, [audioSource, isYouTubeReady, youTubeHandlerInstance]);
 
-    // 50ms Cursor Sync - ONLY WHEN PLAYING!
+    // 50ms Cursor Sync
     useEffect(() => {
         if (!apiRef.current?.player?.output || audioSource !== 'original' || !isYouTubeReady) {
             return;
@@ -259,14 +294,12 @@ export default function PlaygroundPage() {
         const output = apiRef.current.player.output as any;
 
         if (typeof output.updatePosition !== 'function') {
-            console.error('❌ V9.6: output.updatePosition is not a function!');
             return;
         }
 
-        console.log('🔄 V9.6: Starting 50ms cursor sync loop');
+        console.log('🔄 V9.7: Starting 50ms cursor sync loop');
 
         const interval = setInterval(() => {
-            // 🔧 V9.6: Check ref directly (synchronously updated in handler.seekTo)
             if (isSeekingRef.current || !isPlayingRef.current) {
                 return;
             }
@@ -279,13 +312,13 @@ export default function PlaygroundPage() {
                 try {
                     output.updatePosition(timeMs);
                 } catch (err) {
-                    console.error('❌ V9.6: updatePosition error:', err);
+                    console.error('❌ V9.7: updatePosition error:', err);
                 }
             }
         }, 50);
 
         return () => {
-            console.log('⏹️ V9.6: Stopping cursor sync loop');
+            console.log('⏹️ V9.7: Stopping cursor sync loop');
             clearInterval(interval);
         };
     }, [audioSource, isYouTubeReady, videoStartOffset]);
@@ -298,7 +331,7 @@ export default function PlaygroundPage() {
 
         if (audioSource === 'original' && isYouTubeReady && youTubeHandlerInstance) {
             output.handler = youTubeHandlerInstance;
-            console.log('🔗 V9.6: Handler attached/verified on player ready');
+            console.log('🔗 V9.7: Handler attached on player ready');
         }
 
         return () => {
@@ -306,39 +339,30 @@ export default function PlaygroundPage() {
                 const output = apiRef.current.player.output as any;
                 if (output.handler) {
                     output.handler = null;
-                    console.log('🔌 V9.6: Handler detached on cleanup');
                 }
             }
         };
     }, [apiRef.current, playerReady, audioSource, isYouTubeReady, youTubeHandlerInstance]);
 
     const handlePlay = () => {
-        console.log('🎮 V9.6: Play button clicked, mode:', audioSource);
+        console.log('🎮 V9.7: Play button clicked, mode:', audioSource);
 
         if (audioSource === 'original') {
             if (!youtubePlayerRef.current || !apiRef.current) {
-                console.warn('⚠️ V9.6: YouTube or API not ready');
+                console.warn('⚠️ V9.7: YouTube or API not ready');
                 return;
             }
 
             const output = apiRef.current.player?.output as any;
 
             if (output?.handler) {
-                // Play YouTube (applies deferred seek if needed)
                 if (output.handler.play) {
                     output.handler.play();
-                    console.log('▶️ V9.6: YouTube play() via handler');
                 }
-
-                // Activate AlphaTab's playback engine
                 apiRef.current.play();
-                console.log('▶️ V9.6: AlphaTab play() - activates purple notation + auto-scroll');
-            } else {
-                console.warn('⚠️ V9.6: Handler not available');
             }
         } else {
             if (!apiRef.current) {
-                console.warn('⚠️ V9.6: API not ready');
                 return;
             }
             apiRef.current.play();
@@ -346,17 +370,15 @@ export default function PlaygroundPage() {
     };
 
     const handlePause = () => {
-        console.log('🎮 V9.6: Pause button clicked, mode:', audioSource);
+        console.log('🎮 V9.7: Pause button clicked, mode:', audioSource);
 
         if (audioSource === 'original') {
             if (!youtubePlayerRef.current) {
-                console.warn('⚠️ V9.6: YouTube not ready');
                 return;
             }
             youtubePlayerRef.current.pauseVideo?.();
         } else {
             if (!apiRef.current) {
-                console.warn('⚠️ V9.6: API not ready');
                 return;
             }
             apiRef.current.pause();
@@ -364,62 +386,119 @@ export default function PlaygroundPage() {
     };
 
     return (
-        <div className="min-h-screen bg-black text-white">
-            {/* Header Section */}
-            <div className="sticky top-0 z-10 bg-black border-b border-purple-500/30 pb-4 pt-4">
+        <div className="min-h-screen bg-black text-white overflow-hidden">
+            {/* 🆕 V9.7: Header - Fixed position, locked to viewport width */}
+            <div 
+                className={`
+                    sticky top-0 z-10 bg-black border-b border-purple-500/30
+                    ${isMobileLandscape ? 'pb-2 pt-2' : 'pb-4 pt-4'}
+                `}
+                style={{
+                    maxWidth: '100vw',
+                    width: '100vw'
+                }}
+            >
                 <div className="max-w-5xl mx-auto px-4 space-y-4">
-                    <h1 className="text-xl font-bold text-center">🎸 AlphaTab + YouTube Playground (V9.6 - SYNC REF FIX!)</h1>
+                    {/* 🆕 V9.7: Landscape-specific header */}
+                    {isMobileLandscape ? (
+                        <div className="flex items-center justify-between">
+                            <h1 className="text-sm font-bold truncate flex-1">🎸 Playground V9.7 - LANDSCAPE MODE</h1>
+                            <div className="flex gap-2 ml-4">
+                                <button
+                                    className={`px-3 py-1 text-xs rounded ${audioSource === 'synth' ? 'bg-purple-600' : 'bg-gray-700'}`}
+                                    onClick={() => setAudioSource('synth')}
+                                >
+                                    Synth
+                                </button>
+                                <button
+                                    className={`px-3 py-1 text-xs rounded ${audioSource === 'original' ? 'bg-purple-600' : 'bg-gray-700'}`}
+                                    onClick={() => setAudioSource('original')}
+                                >
+                                    Original
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <h1 className="text-xl font-bold text-center">🎸 AlphaTab Playground V9.7 - Landscape Test</h1>
 
-                    {/* Mode Toggle */}
-                    <div className="flex justify-center">
-                        <button
-                            className={`px-4 py-2 mr-2 rounded ${audioSource === 'synth' ? 'bg-purple-600' : 'bg-gray-700'}`}
-                            onClick={() => setAudioSource('synth')}
-                        >
-                            Synth
-                        </button>
-                        <button
-                            className={`px-4 py-2 rounded ${audioSource === 'original' ? 'bg-purple-600' : 'bg-gray-700'}`}
-                            onClick={() => setAudioSource('original')}
-                        >
-                            Original (YouTube)
-                        </button>
-                    </div>
+                            {/* Mode Toggle */}
+                            <div className="flex justify-center">
+                                <button
+                                    className={`px-4 py-2 mr-2 rounded ${audioSource === 'synth' ? 'bg-purple-600' : 'bg-gray-700'}`}
+                                    onClick={() => setAudioSource('synth')}
+                                >
+                                    Synth
+                                </button>
+                                <button
+                                    className={`px-4 py-2 rounded ${audioSource === 'original' ? 'bg-purple-600' : 'bg-gray-700'}`}
+                                    onClick={() => setAudioSource('original')}
+                                >
+                                    Original (YouTube)
+                                </button>
+                            </div>
 
-                    {/* Play/Pause Controls */}
-                    <div className="flex justify-center gap-4">
-                        <button
-                            onClick={handlePlay}
-                            className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 font-bold"
-                        >
-                            ▶️ Play
-                        </button>
-                        <button
-                            onClick={handlePause}
-                            className="px-6 py-3 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
-                        >
-                            ⏸️ Pause
-                        </button>
-                    </div>
+                            {/* Play/Pause Controls */}
+                            <div className="flex justify-center gap-4">
+                                <button
+                                    onClick={handlePlay}
+                                    className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 font-bold"
+                                >
+                                    ▶️ Play
+                                </button>
+                                <button
+                                    onClick={handlePause}
+                                    className="px-6 py-3 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
+                                >
+                                    ⏸️ Pause
+                                </button>
+                            </div>
 
-                    {/* Status Info */}
-                    <div className="text-sm text-gray-400 text-center">
-                        <p>Mode: {audioSource} | API: {apiReady ? '✅' : '❌'} | YouTube: {isYouTubeReady ? '✅' : '❌'}</p>
-                        <p className="text-yellow-400">
-                            Playing: {isPlaying ? '▶️ YES' : '⏸️ NO'} | Seeking: {isSeeking ? '🔒 LOCKED' : '✅ ENABLED'}
-                        </p>
-                        <p className="text-purple-400 text-xs">50ms sync: {isPlaying ? '🔄 ACTIVE' : '⏸️ PAUSED'}</p>
-                    </div>
+                            {/* Status Info */}
+                            <div className="text-sm text-gray-400 text-center">
+                                <p>Mode: {audioSource} | API: {apiReady ? '✅' : '❌'} | YouTube: {isYouTubeReady ? '✅' : '❌'}</p>
+                                <p className="text-yellow-400">
+                                    Playing: {isPlaying ? '▶️ YES' : '⏸️ NO'} | Seeking: {isSeeking ? '🔒 LOCKED' : '✅ ENABLED'}
+                                </p>
+                                <p className={`text-xs ${isMobileLandscape ? 'text-green-400' : 'text-purple-400'}`}>
+                                    Layout: {isMobileLandscape ? '📱 LANDSCAPE SINGLE-ROW' : '📱 PORTRAIT/DESKTOP'}
+                                </p>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="max-w-5xl mx-auto px-4 pt-4 pb-8">
-                {/* Fixed height scrollable container */}
+            {/* 🆕 V9.7: Main Content - Adapts to landscape */}
+            <main
+                ref={scrollContainerRef}
+                className={`
+                    w-full overscroll-y-contain
+                    ${isMobileLandscape
+                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden relative'
+                        : 'pb-32 overflow-y-auto overflow-x-hidden'
+                    }
+                `}
+                style={isMobileLandscape ? {
+                    maxWidth: '100vw',
+                    width: '100vw'
+                } : undefined}
+            >
+                {/* 🆕 V9.7: AlphaTab Container - Unified single row in landscape */}
                 <div
-                    ref={scrollContainerRef}
-                    className="w-full bg-white mb-4 overflow-y-auto"
-                    style={{ height: 'min(600px, 70vh)' }}
+                    id="playground-alphatab"
+                    className={`
+                        relative bg-white
+                        ${isMobileLandscape
+                            ? 'h-full pt-[8vh]'
+                            : 'w-full'
+                        }
+                    `}
+                    style={isMobileLandscape ? {
+                        display: 'inline-block',
+                        minWidth: '100%',
+                        width: 'max-content'
+                    } : undefined}
                 >
                     <AlphaTabRenderer
                         fileUrl={fileUrl}
@@ -429,74 +508,112 @@ export default function PlaygroundPage() {
                         isSeeking={isSeeking}
                         isPlaying={isPlaying}
                         scrollContainerRef={scrollContainerRef}
+                        isMobileLandscape={isMobileLandscape}
                         onApiReady={(api) => {
-                            console.log('✅ V9.6: AlphaTab API Ready');
+                            console.log('✅ V9.7: AlphaTab API Ready');
                             apiRef.current = api;
                             setApiReady(true);
 
                             if (api.playerReady) {
                                 api.playerReady.on(() => {
-                                    console.log('✅ V9.6: AlphaTab Player Ready');
+                                    console.log('✅ V9.7: AlphaTab Player Ready');
                                     setPlayerReady(true);
 
                                     if (audioSource === 'original' && isYouTubeReady && api.player?.output) {
                                         const output = api.player.output as any;
                                         output.handler = youTubeHandlerInstance;
-                                        console.log('🔗 V9.6: Handler attached on player ready');
+                                        console.log('🔗 V9.7: Handler attached on player ready');
                                     }
                                 });
                             }
                         }}
-                        onScoreLoaded={() => console.log('✅ V9.6: Score loaded')}
-                        onRenderFinished={() => console.log('✅ V9.6: Render finished')}
-                        onError={(err) => console.error('❌ V9.6: Error:', err)}
+                        onScoreLoaded={() => console.log('✅ V9.7: Score loaded')}
+                        onRenderFinished={() => console.log('✅ V9.7: Render finished')}
+                        onError={(err) => console.error('❌ V9.7: Error:', err)}
                         minHeight="600px"
                     />
                 </div>
 
-                {/* Fix Explanation Box */}
-                <div className="p-4 bg-gray-900 border border-green-500 rounded mb-4">
-                    <h3 className="text-green-400 font-bold mb-2">✅ V9.6 Fix: Synchronous Seeking Ref!</h3>
-                    <div className="text-xs space-y-2 text-gray-300">
-                        <div className="p-2 bg-red-900/30 border border-red-500/50 rounded">
-                            <p className="text-red-400 font-bold">❌ V9.5 Race Condition:</p>
-                            <ul className="mt-1 space-y-1 text-xs">
-                                <li>1. handler.seekTo() calls <code>setIsSeeking(true)</code> - ASYNC!</li>
-                                <li>2. 50ms loop runs, checks <code>isSeekingRef.current</code> - still FALSE!</li>
-                                <li>3. Loop calls updatePosition() with OLD time - cursor jumps back!</li>
-                                <li>4. useEffect updates ref - TOO LATE!</li>
-                            </ul>
-                        </div>
+                {/* Portrait/Desktop Controls - Hidden in landscape */}
+                {!isMobileLandscape && (
+                    <>
+                        <div className="max-w-5xl mx-auto px-4 pt-4">
+                            {/* Play/Pause Controls for portrait */}
+                            <div className="flex justify-center gap-4 mb-4">
+                                <button
+                                    onClick={handlePlay}
+                                    className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 font-bold"
+                                >
+                                    ▶️ Play
+                                </button>
+                                <button
+                                    onClick={handlePause}
+                                    className="px-6 py-3 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
+                                >
+                                    ⏸️ Pause
+                                </button>
+                            </div>
 
-                        <div className="p-2 bg-green-900/30 border border-green-500/50 rounded">
-                            <p className="text-green-400 font-bold">✅ V9.6 Fix:</p>
-                            <ul className="mt-1 space-y-1 text-xs">
-                                <li>1. handler.seekTo() sets <code className="text-purple-300">isSeekingRef.current = true</code> - SYNC! ✅</li>
-                                <li>2. 50ms loop runs, checks ref - TRUE! Skips update! ✅</li>
-                                <li>3. Cursor stays at seeked position ✅</li>
-                            </ul>
-                        </div>
+                            {/* Info Box */}
+                            <div className="p-4 bg-gray-900 border border-green-500 rounded mb-4">
+                                <h3 className="text-green-400 font-bold mb-2">📱 V9.7: Landscape Single-Row Test</h3>
+                                <div className="text-xs space-y-2 text-gray-300">
+                                    <p>✅ Added mobile landscape detection</p>
+                                    <p>✅ Unified single-row horizontal layout (matches main page)</p>
+                                    <p>✅ Container constraints (testing header runaway fix)</p>
+                                    <p>✅ Original mode support in landscape</p>
+                                    <p className="text-yellow-400 mt-2">🧪 Rotate to landscape to test unified row behavior!</p>
+                                </div>
+                            </div>
 
-                        <div className="p-2 bg-purple-900/30 border border-purple-500/50 rounded">
-                            <p className="text-purple-400 font-bold">🧪 What to Test:</p>
-                            <ul className="mt-1 space-y-1 text-xs">
-                                <li>1. Press Play, then single-click m3 → cursor should move AND stay! ✅</li>
-                                <li>2. Double-click m5 → should play from m5, no jump! ✅</li>
-                                <li>3. While paused, click around → cursor should move immediately ✅</li>
-                                <li>4. Watch for <code className="text-green-300">🔒 V9.6: isSeekingRef.current = true (SYNC)</code></li>
-                            </ul>
+                            {/* YouTube Player */}
+                            {audioSource === 'original' && (
+                                <div className="border-2 border-red-500 rounded p-2">
+                                    <p className="text-xs text-red-400 mb-2">YouTube Player:</p>
+                                    <div id="ytplayer"></div>
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+            </main>
+
+            {/* 🆕 V9.7: Landscape-specific controls (floating bottom bar) */}
+            {isMobileLandscape && (
+                <div 
+                    className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 border-t border-purple-500/30 py-2 px-4"
+                    style={{
+                        maxWidth: '100vw',
+                        width: '100vw'
+                    }}
+                >
+                    <div className="flex items-center justify-center gap-4">
+                        <button
+                            onClick={handlePlay}
+                            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold text-sm"
+                        >
+                            ▶️ Play
+                        </button>
+                        <button
+                            onClick={handlePause}
+                            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold text-sm"
+                        >
+                            ⏸️ Pause
+                        </button>
+                        <div className="text-xs text-gray-400">
+                            {isPlaying ? '▶️ Playing' : '⏸️ Paused'} | Mode: {audioSource}
                         </div>
                     </div>
                 </div>
+            )}
 
-                {/* YouTube Player */}
-                {audioSource === 'original' && (
-                    <div className="border-2 border-red-500 rounded p-2">
-                        <p className="text-xs text-red-400 mb-2">YouTube Player:</p>
-                        <div id="ytplayer"></div>
-                    </div>
-                )}
-            </div>
+            {/* YouTube Player - Hidden in landscape */}
+            {audioSource === 'original' && !isMobileLandscape && (
+                <div className="fixed bottom-4 right-4 border-2 border-red-500 rounded p-2 bg-black">
+                    <p className="text-xs text-red-400 mb-2">YouTube:</p>
+                    <div id="ytplayer"></div>
+                </div>
+            )}
         </div>
     );
 }
