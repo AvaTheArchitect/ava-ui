@@ -2,9 +2,9 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 6th, 2026 - V98.23: HARD RELOAD FIX + REMOVED CUSTOM HEADER
+ * January 6th, 2026 - V98.24: HARD RELOAD FIX + REMOVED CUSTOM HEADER
  *
- * 🔧 V98.23 CRITICAL UPDATE - HARD RELOAD ON MODE CHANGE:
+ * 🔧 V98.24 CRITICAL UPDATE - HARD RELOAD ON MODE CHANGE:
  * ✅ Added key prop to AlphaTabRenderer for hard reload on mode switch
  * ✅ key={`${audioSource}-${isMobileLandscape}`} forces destroy/remount
  * ✅ Prevents glitch where header "takes off to infinity"
@@ -146,8 +146,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.23: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.23: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.24: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.24: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -224,7 +224,7 @@ export default function SynthPlayerPage() {
 
     const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
         if (audioSource !== 'synth') {
-            console.log('⚠️ V98.23: Pitch shift only available in Synth mode');
+            console.log('⚠️ V98.24: Pitch shift only available in Synth mode');
             return;
         }
 
@@ -263,20 +263,20 @@ export default function SynthPlayerPage() {
                     // API may not be ready
                 }
             }
-            console.log('🔄 V98.23: Pitch reset on song change');
+            console.log('🔄 V98.24: Pitch reset on song change');
         }
     }, [currentFileUrl]);
 
     // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.23: Creating YouTube handler instance');
+        console.log('🎬 V98.24: Creating YouTube handler instance');
 
         return {
             play: () => {
-                console.log('▶️ V98.23: Handler.play() called');
+                console.log('▶️ V98.24: Handler.play() called');
 
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(`⏱️ V98.23: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
+                    console.log(`⏱️ V98.24: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
                     youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                     postSeekLockUntilRef.current = performance.now() + 200;
@@ -288,7 +288,7 @@ export default function SynthPlayerPage() {
             },
 
             pause: () => {
-                console.log('⏸️ V98.23: Handler.pause() called');
+                console.log('⏸️ V98.24: Handler.pause() called');
                 youtubePlayerRef.current?.pauseVideo?.();
             },
 
@@ -419,7 +419,7 @@ export default function SynthPlayerPage() {
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
-                    console.log(`📱 V98.23: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    console.log(`📱 V98.24: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
                     setIsMobileLandscape(newValue);
                 }
             }, 150); // 150ms debounce prevents cascade
@@ -470,12 +470,12 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.23: API Ready');
+            console.log('✅ V98.24: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.23: Player Ready');
+                    console.log('✅ V98.24: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
@@ -506,7 +506,7 @@ export default function SynthPlayerPage() {
     // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.23: Score loaded - ${info.title}`);
+            console.log(`✅ V98.24: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -519,7 +519,7 @@ export default function SynthPlayerPage() {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.23: Tuning extracted:', staff.stringTuning.tunings);
+                    console.log('🎸 V98.24: Tuning extracted:', staff.stringTuning.tunings);
                 }
             }
 
@@ -529,11 +529,11 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.23: Rendering Complete');
+        console.log('✅ V98.24: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.23 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.24 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -675,7 +675,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.23: YouTube player ready');
+        console.log('✅ V98.24: YouTube player ready');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
@@ -739,7 +739,7 @@ export default function SynthPlayerPage() {
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.23: updatePosition error:', err);
+                console.error('❌ V98.24: updatePosition error:', err);
             }
             currentTimeRef.current = timeMs;
         }, 50);
@@ -890,7 +890,7 @@ export default function SynthPlayerPage() {
                 onCreatePlaylist={handleCreatePlaylist}
             />
 
-            {/* 🔧 V98.23: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
+            {/* 🔧 V98.24: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
             {/* This tiny header under TopMenuTray has been removed for clean slate */}
             {/* Future: Implement Songsterr-style header that scrolls with canvas */}
 
@@ -952,7 +952,7 @@ export default function SynthPlayerPage() {
                         popoverAnchor={pitchPopoverAnchor}
                     />
 
-                    {/* 🔧 V98.23: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
+                    {/* 🔧 V98.24: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
                     <AlphaTabRenderer
                         key={`${audioSource}-${isMobileLandscape}`} // 👈 Forces hard reset on mode switch
                         fileUrl={currentFileUrl}
