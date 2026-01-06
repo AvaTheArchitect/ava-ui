@@ -2,7 +2,7 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 4th, 2026 - V98.21: FIXED DOM COLLISION & HEADER POSITIONING
+ * January 4th, 2026 - V98.22: FIXED ALPHATAB INTERNAL HEADER + 2-ROW LAYOUT
  *
  * 🔧 V98.20 LATEST UPDATE - FIXED CONTAINER CONSTRAINTS:
  * ✅ Fixed YouTube Player container to properly constrain child component:
@@ -262,6 +262,10 @@ export default function SynthPlayerPage() {
     // ==================== SCROLL CONTAINER REF ====================
     const mainScrollContainerRef = useRef<HTMLElement>(null);
 
+    // ==================== PANEL COORDINATION ====================
+    // 🔧 V98.22: Slideout close reference for panel coordination
+    const slideoutCloseRef = useRef<(() => void) | null>(null);
+
     // Sync refs
     useEffect(() => {
         isPlayingRef.current = isPlaying;
@@ -484,20 +488,20 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
-
+        
         const checkOrientation = () => {
             // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
-
+            
             // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
-
+                
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
@@ -949,34 +953,34 @@ export default function SynthPlayerPage() {
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             <div
                 className={`
-                    fixed top-0 inset-x-0 w-full z-50
+                    fixed top-0 inset-x-0 w-full
                     transform transition-transform duration-300 ease-in-out
                     ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
                 `}
                 style={{
-                    // 🔧 V98.21: Lock to viewport width to prevent DOM collision
+                    // 🔧 V98.22: Reduced z-index to not cover Top Menu Tray
+                    zIndex: 40,
                     maxWidth: '100vw',
                     width: '100vw',
-                    overflow: 'hidden', // Prevent inheriting AlphaTab's massive width
+                    overflow: 'hidden',
                 }}
             >
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
                 />
-
-                {/* 🔧 V98.21: Landscape header INSIDE tray wrapper */}
+                
+                {/* 🔧 V98.22: 2-ROW HEADER like Songsterr (no Album) */}
                 {isMobileLandscape && currentSong && (
-                    <div
+                    <div 
                         className="bg-gradient-to-b from-gray-900/90 to-transparent py-1 px-4"
                         style={{
-                            // Lock to viewport width
                             width: '100vw',
                             maxWidth: '100vw',
                         }}
                     >
                         <div className="flex items-center justify-center gap-2 text-white text-xs font-medium">
-                            {/* 🔧 V98.21: SINGLE LINE - Artist | Title */}
+                            {/* 🔧 V98.22: Songsterr format - "Artist | Title" */}
                             <span className="truncate">{currentSong.artist}</span>
                             <span className="text-gray-400">|</span>
                             <span className="truncate">{currentSong.title}</span>
@@ -1033,9 +1037,9 @@ export default function SynthPlayerPage() {
                         }
                     `}
                     style={isMobileLandscape ? {
-                        // 🔧 V98.19: Calculate available height AFTER YouTube player (now TALLER)
-                        paddingTop: '60px',  // Header height
-                        paddingBottom: '450px',  // YouTube player (427px) + controls + gap
+                        // 🔧 V98.22: Reduced top padding (smaller 2-row header)
+                        paddingTop: '50px',  // Header height (was 60px)
+                        paddingBottom: '450px',  // YouTube player + controls
                         display: 'inline-block',
                         minWidth: '100%',
                         width: 'max-content',
@@ -1145,6 +1149,7 @@ export default function SynthPlayerPage() {
                         onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
                         onArmMetronome={armMetronome}
                         currentBPM={currentBPM}
+                        onSlideoutShouldClose={() => slideoutCloseRef.current?.()} // 🔧 V98.22: Panel coordination
                     />
                 )}
             </footer>
@@ -1158,42 +1163,48 @@ export default function SynthPlayerPage() {
             />
 
             {/* 🆕 MOBILE TOOLS SLIDEOUT - Hidden on desktop */}
-            <div className="md:hidden" style={{ zIndex: 50 }}> {/* 🔧 V98.20: Higher z-index than YT player */}
-                <MobileToolsSlideout
-                    // Count-in
-                    isCountInEnabled={isCountInEnabled}
-                    onCountInToggle={handleCountInToggle}
-                    countInMode={countInMode}
-                    onCountInModeChange={setCountInMode}
+            {/* 🔧 V98.22: Completely disabled in landscape to prevent phantom drawer */}
+            {!isMobileLandscape && (
+                <div className="md:hidden" style={{ zIndex: 50 }}>
+                    <MobileToolsSlideout
+                        // Count-in
+                        isCountInEnabled={isCountInEnabled}
+                        onCountInToggle={handleCountInToggle}
+                        countInMode={countInMode}
+                        onCountInModeChange={setCountInMode}
 
-                    // Metronome
-                    isMetronomeEnabled={isMetronomeEnabled}
-                    onMetronomeToggle={handleMetronomeToggle}
-                    currentBPM={currentBPM}
-                    audioSource={audioSource}
+                        // Metronome
+                        isMetronomeEnabled={isMetronomeEnabled}
+                        onMetronomeToggle={handleMetronomeToggle}
+                        currentBPM={currentBPM}
+                        audioSource={audioSource}
 
-                    // Metronome inline controls (inside slideout)
-                    metronomeVolume={metronomeVolume}
-                    onMetronomeVolumeChange={setMetronomeVolume}
-                    metronomeBalance={metronomeBalance}
-                    onMetronomeBalanceChange={setMetronomeBalance}
-                    metronomeSubdivision={metronomeSubdivision}
-                    onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
-                    metronomeSoundType={metronomeSoundType}
-                    onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
-                    metronomeAccentEnabled={metronomeAccentEnabled}
-                    onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+                        // Metronome inline controls (inside slideout)
+                        metronomeVolume={metronomeVolume}
+                        onMetronomeVolumeChange={setMetronomeVolume}
+                        metronomeBalance={metronomeBalance}
+                        onMetronomeBalanceChange={setMetronomeBalance}
+                        metronomeSubdivision={metronomeSubdivision}
+                        onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
+                        metronomeSoundType={metronomeSoundType}
+                        onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
+                        metronomeAccentEnabled={metronomeAccentEnabled}
+                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
 
-                    // Visual aid
-                    showEdgeTab={true}
+                        // Visual aid
+                        showEdgeTab={true}
 
-                    // 🔧 Audio arming function for mobile PWA
-                    onArmMetronome={armMetronome}
-                />
-            </div>
+                        // 🔧 Audio arming function for mobile PWA
+                        onArmMetronome={armMetronome}
+                        
+                        // 🔧 V98.22: Landscape coordination
+                        isMobileLandscape={isMobileLandscape}
+                    />
+                </div>
+            )}
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
-                <div
+                <div 
                     className="youtube-player-container"
                     style={{
                         position: 'fixed',

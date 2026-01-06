@@ -1,21 +1,25 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V99: RESTORED YOUTUBE LOGO SVG
- * Date: January 2nd, 2026
+ * MaestroControlPanel.tsx - V100: FULL PANEL COORDINATION FIX
+ * Date: January 5th, 2026
  * 
- * 🔧 NEW IN V99:
- * ✅ RESTORED proper YouTube logo SVG path from V93 (rounded rectangle, not ellipse)
- * ✅ Uses authentic YouTube logo path that matches Songsterr exactly
- * ✅ viewBox="0 0 68 48" for correct aspect ratio
+ * 🔧 NEW IN V100:
+ * ✅ FIXED: MobileDrawer now closes when Speed/Track panels open
+ * ✅ FIXED: Speed/Track panels close when MobileDrawer opens
+ * ✅ FIXED: Added onSlideoutShouldClose callback for MobileToolsSlideout coordination
+ * ✅ FIXED: All panels (Track/Speed/Drawer) close MobileToolsSlideout when opening
+ * ✅ Complete coordination between ALL panels (no overlapping)
+ * ✅ Only one panel open at a time across entire app
  * 
- * 🔒 PRESERVED FROM V98:
+ * 🔒 PRESERVED FROM V99:
  * ✅ All count-in functionality
  * ✅ All metronome functionality  
  * ✅ Diagnostic logging
  * ✅ Canvas click detection
  * ✅ Panel coordination
  * ✅ Desktop TransportBar with all props
+ * ✅ YouTube logo SVG
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -72,6 +76,8 @@ export interface MaestroControlPanelProps {
   onMetronomeAccentToggle?: () => void;
   onArmMetronome?: () => Promise<void>;
   currentBPM?: number;
+  // 🆕 V100: Panel coordination with MobileToolsSlideout
+  onSlideoutShouldClose?: () => void;
 }
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
@@ -104,17 +110,22 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [closeAllPanels]);
 
-  // Close other panels when opening one
+  // 🆕 V100: FIXED - Close MobileDrawer AND Slideout when opening Track Mixer
   const handleTrackMixerToggle = () => {
     if (!isTrackMixerOpen) {
       setIsSpeedPanelOpen(false);
+      setIsDrawerOpen(false); // ✅ Close drawer when opening track mixer
+      props.onSlideoutShouldClose?.(); // ✅ Close slideout when opening track mixer
     }
     setIsTrackMixerOpen(!isTrackMixerOpen);
   };
 
+  // 🆕 V100: FIXED - Close MobileDrawer AND Slideout when opening Speed Panel
   const handleSpeedToggle = () => {
     if (!isSpeedPanelOpen) {
       setIsTrackMixerOpen(false);
+      setIsDrawerOpen(false); // ✅ Close drawer when opening speed panel
+      props.onSlideoutShouldClose?.(); // ✅ Close slideout when opening speed panel
     }
     setIsSpeedPanelOpen(!isSpeedPanelOpen);
   };
@@ -133,11 +144,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     props.onLoopToggle();
   };
 
-  // Handle Gear menu
+  // 🆕 V100: FIXED - Close other panels AND Slideout when opening Gear (MobileDrawer)
   const handleGearToggle = () => {
-    setIsTrackMixerOpen(false);
-    setIsSpeedPanelOpen(false);
-    setIsDrawerOpen(true);
+    setIsTrackMixerOpen(false); // ✅ Close track mixer
+    setIsSpeedPanelOpen(false);  // ✅ Close speed panel
+    props.onSlideoutShouldClose?.(); // ✅ Close slideout when opening gear
+    setIsDrawerOpen(true);       // Open drawer
   };
 
   // Handle Track Change
@@ -151,22 +163,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   // V97: Ensure currentBPM calculation matches what page.tsx provides
   const currentBPM = props.currentBPM ?? (props.songInfo ? Math.round(props.songInfo.tempo * props.playbackSpeed) : 120);
 
-  // V99: DIAGNOSTIC logging
+  // V100: Diagnostic logging
   useEffect(() => {
-    console.log('=== MAESTRO CONTROL PANEL V99 ===');
-    console.log('Passing to TransportBar - currentBPM:', currentBPM);
-    console.log('Has onMetronomeToggle:', !!props.onMetronomeToggle);
-    console.log('Has onMetronomeVolumeChange:', !!props.onMetronomeVolumeChange);
-    console.log('Has all callbacks:', !!(
-      props.onMetronomeToggle &&
-      props.onMetronomeVolumeChange &&
-      props.onMetronomeBalanceChange &&
-      props.onMetronomeSubdivisionChange &&
-      props.onMetronomeSoundTypeChange &&
-      props.onMetronomeAccentToggle
-    ));
-  }, [currentBPM, props.onMetronomeToggle, props.onMetronomeVolumeChange, props.onMetronomeBalanceChange,
-    props.onMetronomeSubdivisionChange, props.onMetronomeSoundTypeChange, props.onMetronomeAccentToggle]);
+    console.log('=== MAESTRO CONTROL PANEL V100 ===');
+    console.log('Panel states - Drawer:', isDrawerOpen, 'Speed:', isSpeedPanelOpen, 'TrackMixer:', isTrackMixerOpen);
+  }, [isDrawerOpen, isSpeedPanelOpen, isTrackMixerOpen]);
 
   return (
     <>
@@ -359,31 +360,27 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               </svg>
             </button>
 
-            {/* 🔧 V99: RESTORED YOUTUBE LOGO - 4. Play/Pause */}
+            {/* 4. Play/Pause - YouTube Logo */}
             <button
               onClick={props.onPlayPause}
               disabled={!props.api}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.audioSource === 'original' && !props.isPlaying
-                ? '' /* YouTube button has its own colors */
+                ? ''
                 : props.isPlaying
                   ? 'text-orange-400 hover:text-orange-300'
                   : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
-              {/* V99: YouTube Logo when in Original mode and paused - RESTORED proper SVG path */}
               {!props.isPlaying && props.audioSource === 'original' ? (
                 <svg width="32" height="32" viewBox="0 0 68 48">
-                  {/* Red rounded rectangle background - AUTHENTIC YouTube logo path */}
                   <path
                     d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,0,34,0,34,0S12.21,0,6.9,1.55 c-2.93,0.78-4.63,3.26-5.42,6.19C0,13.05,0,24,0,24s0,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,48,34,48,34,48s21.79,0,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C68,34.95,68,24,68,24S68,13.05,66.52,7.74z"
                     fill="#FF0000"
                   />
-                  {/* White play triangle */}
                   <path d="M 45,24 27,14 27,34" fill="white" />
                 </svg>
               ) : (
-                /* Standard play/pause icons for synth mode OR when playing */
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                   {props.isPlaying ? (
                     <>
@@ -411,7 +408,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           </div>
         </div>
 
-        {/* Mobile Drawer */}
+        {/* Mobile Drawer - V100: Fully coordinated state */}
         <MobileDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}

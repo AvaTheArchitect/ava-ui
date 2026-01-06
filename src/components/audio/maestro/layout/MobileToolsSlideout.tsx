@@ -1,21 +1,22 @@
 'use client';
 
 /**
- * MobileToolsSlideout.tsx V5 - Inline Sound Selector Fix
- * Date: December 31st, 2025
+ * MobileToolsSlideout.tsx V6 - Panel Coordination + Landscape Block
+ * Date: January 5th, 2026
  * 
- * 🔧 V5 FIXES:
- * ✅ Sound selector is now inline collapsible drawer (not popup)
- * ✅ Expands/collapses within the metronome options section
- * ✅ No separate backdrop or z-index issues
- * ✅ Clicking sound options auto-collapses the drawer
- * ✅ MobileToolsSlideout stays open when selecting sounds
+ * 🔧 V6 FIXES:
+ * ✅ Added onOtherPanelOpened callback for panel coordination
+ * ✅ LANDSCAPE MODE: Completely disabled in landscape view
+ * ✅ LANDSCAPE MODE: Auto-closes when switching to landscape
+ * ✅ LANDSCAPE MODE: Prevented from appearing when switching back to portrait
+ * ✅ Orange edge tab hidden in landscape mode
+ * ✅ No interference with landscape mode rendering
  * 
- * 🎵 Features:
+ * 🔒 PRESERVED FROM V5:
+ * ✅ Sound selector inline collapsible drawer
  * ✅ Swipe from right edge to open
- * ✅ Smart Metronome integration with audio arming
- * ✅ Count-in mode selector (3-beat/4-beat)
- * ✅ Inline metronome controls (no separate modal)
+ * ✅ Smart Metronome integration
+ * ✅ Count-in mode selector
  * ✅ Auto-disable metronome in YouTube mode
  */
 
@@ -53,6 +54,12 @@ export interface MobileToolsSlideoutProps {
 
     // Audio arming function from hook
     onArmMetronome?: () => Promise<void>;
+
+    // 🆕 V6: Panel coordination
+    onOtherPanelOpened?: () => void;
+
+    // 🆕 V6: Landscape mode detection
+    isMobileLandscape?: boolean;
 }
 
 export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
@@ -76,14 +83,26 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     onCountInModeChange,
     showEdgeTab = true,
     onArmMetronome,
+    onOtherPanelOpened,
+    isMobileLandscape = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showVisualAid, setShowVisualAid] = useState(true);
     const [isMetronomeDrawerOpen, setIsMetronomeDrawerOpen] = useState(false);
-    const [isSoundSelectorOpen, setIsSoundSelectorOpen] = useState(false); // Now inline, not popup
+    const [isSoundSelectorOpen, setIsSoundSelectorOpen] = useState(false);
     const drawerRef = useRef<HTMLDivElement>(null);
     const touchStartX = useRef<number>(0);
     const touchStartTime = useRef<number>(0);
+
+    // 🆕 V6: LANDSCAPE MODE - Auto-close when switching to landscape
+    useEffect(() => {
+        if (isMobileLandscape && isOpen) {
+            console.log('🔄 V6: Closing slideout - switched to landscape mode');
+            setIsOpen(false);
+            setIsMetronomeDrawerOpen(false);
+            setIsSoundSelectorOpen(false);
+        }
+    }, [isMobileLandscape, isOpen]);
 
     // Sound options
     const SOUND_OPTIONS = [
@@ -139,17 +158,40 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     const handleSoundSelect = (soundId: string) => {
         onMetronomeSoundTypeChange?.(soundId);
         playPreviewSound(soundId);
-        setIsSoundSelectorOpen(false); // Auto-collapse after selection
+        setIsSoundSelectorOpen(false);
+    };
+
+    // 🆕 V6: Toggle with panel coordination
+    const handleToggle = () => {
+        // Don't allow opening in landscape mode
+        if (isMobileLandscape) {
+            console.log('🚫 V6: Blocked slideout opening - in landscape mode');
+            return;
+        }
+
+        const newState = !isOpen;
+        setIsOpen(newState);
+
+        // Notify other panels when opening
+        if (newState && onOtherPanelOpened) {
+            onOtherPanelOpened();
+        }
     };
 
     // Handle touch start
     const handleTouchStart = (e: TouchEvent) => {
+        // 🆕 V6: Block touch events in landscape mode
+        if (isMobileLandscape) return;
+
         touchStartX.current = e.touches[0].clientX;
         touchStartTime.current = Date.now();
     };
 
     // Handle touch move/end (swipe detection)
     const handleTouchEnd = (e: TouchEvent) => {
+        // 🆕 V6: Block touch events in landscape mode
+        if (isMobileLandscape) return;
+
         const touchEndX = e.changedTouches[0].clientX;
         const touchDuration = Date.now() - touchStartTime.current;
         const swipeDistance = touchStartX.current - touchEndX;
@@ -157,7 +199,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
 
         // Swipe from right edge to open (within 50px from edge)
         if (!isOpen && touchStartX.current > screenWidth - 50 && swipeDistance > 50 && touchDuration < 300) {
-            setIsOpen(true);
+            handleToggle();
         }
 
         // Swipe right to close (when drawer is open)
@@ -168,6 +210,9 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
 
     // Add touch listeners
     useEffect(() => {
+        // 🆕 V6: Don't add listeners in landscape mode
+        if (isMobileLandscape) return;
+
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchend', handleTouchEnd, { passive: true });
 
@@ -175,7 +220,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
             document.removeEventListener('touchstart', handleTouchStart);
             document.removeEventListener('touchend', handleTouchEnd);
         };
-    }, [isOpen]);
+    }, [isOpen, isMobileLandscape]);
 
     // Close drawer when clicking outside
     useEffect(() => {
@@ -198,6 +243,11 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
 
     // Check if metronome should be disabled
     const isMetronomeDisabled = audioSource === 'original';
+
+    // 🆕 V6: COMPLETELY HIDE in landscape mode
+    if (isMobileLandscape) {
+        return null;
+    }
 
     return (
         <>
@@ -222,10 +272,10 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                     ${isOpen ? 'translate-x-0' : 'translate-x-[280px]'}
                 `}
             >
-                {/* Edge Tab */}
+                {/* Edge Tab - V6: Only show in portrait mode */}
                 {showEdgeTab && showVisualAid && (
                     <button
-                        onClick={() => setIsOpen(!isOpen)}
+                        onClick={handleToggle}
                         className={`
                             absolute -left-3 bottom-4 
                             w-3 h-20
@@ -396,11 +446,11 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                             {isMetronomeDrawerOpen && !isMetronomeDisabled && (
                                 <div className="px-3 pb-3 space-y-3 border-t border-gray-700/30">
 
-                                    {/* 🔧 FIXED: Sound Selection - Now Inline Collapsible */}
+                                    {/* Sound Selection - Inline Collapsible */}
                                     <div className="pt-3">
                                         <label className="text-xs font-semibold text-gray-300 block mb-2">Sound</label>
 
-                                        {/* Sound Button (shows current selection) */}
+                                        {/* Sound Button */}
                                         <button
                                             onClick={() => setIsSoundSelectorOpen(prev => !prev)}
                                             className="w-full flex items-center justify-between px-3 py-2 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
@@ -419,7 +469,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                                             </svg>
                                         </button>
 
-                                        {/* 🔧 INLINE Sound Options List (not a popup) */}
+                                        {/* Inline Sound Options */}
                                         {isSoundSelectorOpen && (
                                             <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto bg-gray-800/80 rounded-lg p-2">
                                                 {SOUND_OPTIONS.map((sound) => (
