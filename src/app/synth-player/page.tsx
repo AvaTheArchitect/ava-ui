@@ -2,7 +2,7 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 3rd, 2026 - V98.20: FIXED YOUTUBE PLAYER CONTAINER CONSTRAINTS
+ * January 4th, 2026 - V98.21: FIXED DOM COLLISION & HEADER POSITIONING
  *
  * 🔧 V98.20 LATEST UPDATE - FIXED CONTAINER CONSTRAINTS:
  * ✅ Fixed YouTube Player container to properly constrain child component:
@@ -484,20 +484,20 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
-        
+
         const checkOrientation = () => {
             // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
-            
+
             // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
-                
+
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
@@ -953,11 +953,36 @@ export default function SynthPlayerPage() {
                     transform transition-transform duration-300 ease-in-out
                     ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
                 `}
+                style={{
+                    // 🔧 V98.21: Lock to viewport width to prevent DOM collision
+                    maxWidth: '100vw',
+                    width: '100vw',
+                    overflow: 'hidden', // Prevent inheriting AlphaTab's massive width
+                }}
             >
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
                 />
+
+                {/* 🔧 V98.21: Landscape header INSIDE tray wrapper */}
+                {isMobileLandscape && currentSong && (
+                    <div
+                        className="bg-gradient-to-b from-gray-900/90 to-transparent py-1 px-4"
+                        style={{
+                            // Lock to viewport width
+                            width: '100vw',
+                            maxWidth: '100vw',
+                        }}
+                    >
+                        <div className="flex items-center justify-center gap-2 text-white text-xs font-medium">
+                            {/* 🔧 V98.21: SINGLE LINE - Artist | Title */}
+                            <span className="truncate">{currentSong.artist}</span>
+                            <span className="text-gray-400">|</span>
+                            <span className="truncate">{currentSong.title}</span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <SongSelector
@@ -984,7 +1009,7 @@ export default function SynthPlayerPage() {
                     transition-[padding] duration-300 ease-in-out
                 `}
                 style={isMobileLandscape ? {
-                    // 🔧 V98.17: Lock viewport to screen width, only content scrolls
+                    // 🔧 V98.21: Lock viewport width, allow horizontal scroll for content
                     maxWidth: '100vw',
                     width: '100vw'
                 } : undefined}
@@ -994,24 +1019,6 @@ export default function SynthPlayerPage() {
                         <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
                             <h3 className="text-red-400 font-bold mb-2">Error</h3>
                             <p className="text-red-300">{error}</p>
-                        </div>
-                    </div>
-                )}
-
-                {isMobileLandscape && currentSong && (
-                    <div 
-                        className="fixed top-0 left-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4"
-                        style={{
-                            // 🔧 V98.20: REMOVED right-0 to allow full text display
-                            width: '100vw',
-                            maxWidth: '100vw',
-                            position: 'fixed',
-                            transform: 'translateZ(0)', // Hardware acceleration
-                        }}
-                    >
-                        <div className="text-white text-sm font-semibold truncate">
-                            {/* 🔧 V98.20: Text now properly displays at start of song */}
-                            {currentSong.artist} - {currentSong.title}
                         </div>
                     </div>
                 )}
@@ -1186,21 +1193,21 @@ export default function SynthPlayerPage() {
             </div>
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
-                <div 
+                <div
                     className="youtube-player-container"
                     style={{
                         position: 'fixed',
                         bottom: isMobileLandscape ? 0 : 80,
                         right: isMobileLandscape ? 0 : 16,
-                        zIndex: 40, // 🔧 V98.20: BELOW Mobile Drawer (z-index: 50)
-                        // 🔧 V98.20 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
-                        // Container CONSTRAINS the player - overflow hidden prevents escape
+                        zIndex: 40, // BELOW Mobile Drawer (z-index: 50)
+                        // 🔧 V98.21 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
                         width: '240px',
                         height: '427px',
                         maxWidth: '240px',
                         maxHeight: '427px',
-                        overflow: 'hidden', // 🔧 V98.20: Force player to stay within bounds
-                        borderRadius: '8px', // Optional: rounded corners like Songsterr
+                        flexShrink: 0, // 🔧 V98.21: Prevents fighting with AlphaTab for space
+                        overflow: 'hidden', // Force player to stay within bounds
+                        borderRadius: '8px',
                     }}
                 >
                     <YouTubePlayer
