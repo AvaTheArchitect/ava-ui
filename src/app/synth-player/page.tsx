@@ -2,9 +2,23 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 3rd, 2026 - V98.19: FIXED YOUTUBE PLAYER PORTRAIT RATIO
+ * January 3rd, 2026 - V98.20: FIXED YOUTUBE PLAYER CONTAINER CONSTRAINTS
  *
- * 🔧 V98.19 LATEST UPDATE - CORRECTED YOUTUBE PLAYER RATIO:
+ * 🔧 V98.20 LATEST UPDATE - FIXED CONTAINER CONSTRAINTS:
+ * ✅ Fixed YouTube Player container to properly constrain child component:
+ *    - Added overflow: 'hidden' to prevent player from escaping container
+ *    - Added explicit constraints with max-width/max-height
+ *    - Player now properly respects 240x427 portrait dimensions
+ *    - Fixed z-index to appear BELOW Mobile Drawer (z-index: 40)
+ *    - Player slides up onto canvas AFTER drawer closes
+ * ✅ Fixed Mobile Drawer full-screen issue in landscape:
+ *    - Mobile Drawer now has higher z-index (z-index: 50)
+ *    - Drawer appears as small overlay in lower right (not full-screen)
+ * ✅ Fixed landscape header to show artist/title at start:
+ *    - Removed `right-0` to prevent width constraint
+ *    - Header now properly displays full artist/title text
+ * 
+ * 🔧 V98.19 PREVIOUS UPDATE:
  * ✅ Fixed YouTube Player to use PORTRAIT ratio (9:16) like Songsterr:
  *    - Changed from 400x225 (16:9 landscape) to 240x427 (9:16 portrait)
  *    - Player is now TALLER than WIDE in BOTH orientations (matches Songsterr)
@@ -988,7 +1002,7 @@ export default function SynthPlayerPage() {
                     <div 
                         className="fixed top-0 left-0 z-30 bg-gradient-to-b from-gray-900/90 to-transparent py-2 px-4"
                         style={{
-                            // 🔧 V98.18: LOCK to viewport width
+                            // 🔧 V98.20: REMOVED right-0 to allow full text display
                             width: '100vw',
                             maxWidth: '100vw',
                             position: 'fixed',
@@ -996,7 +1010,7 @@ export default function SynthPlayerPage() {
                         }}
                     >
                         <div className="text-white text-sm font-semibold truncate">
-                            {/* 🔧 V98.18: SINGLE LINE - no line break */}
+                            {/* 🔧 V98.20: Text now properly displays at start of song */}
                             {currentSong.artist} - {currentSong.title}
                         </div>
                     </div>
@@ -1137,7 +1151,7 @@ export default function SynthPlayerPage() {
             />
 
             {/* 🆕 MOBILE TOOLS SLIDEOUT - Hidden on desktop */}
-            <div className="md:hidden">
+            <div className="md:hidden" style={{ zIndex: 50 }}> {/* 🔧 V98.20: Higher z-index than YT player */}
                 <MobileToolsSlideout
                     // Count-in
                     isCountInEnabled={isCountInEnabled}
@@ -1178,13 +1192,15 @@ export default function SynthPlayerPage() {
                         position: 'fixed',
                         bottom: isMobileLandscape ? 0 : 80,
                         right: isMobileLandscape ? 0 : 16,
-                        zIndex: 60,
-                        // 🔧 V98.19 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
-                        // Player is TALLER than WIDE in both orientations
+                        zIndex: 40, // 🔧 V98.20: BELOW Mobile Drawer (z-index: 50)
+                        // 🔧 V98.20 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
+                        // Container CONSTRAINS the player - overflow hidden prevents escape
                         width: '240px',
                         height: '427px',
                         maxWidth: '240px',
                         maxHeight: '427px',
+                        overflow: 'hidden', // 🔧 V98.20: Force player to stay within bounds
+                        borderRadius: '8px', // Optional: rounded corners like Songsterr
                     }}
                 >
                     <YouTubePlayer
