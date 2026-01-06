@@ -9,7 +9,9 @@
  * ✅ FIXED: Speed/Track panels close when MobileDrawer opens
  * ✅ FIXED: Added onSlideoutShouldClose callback for MobileToolsSlideout coordination
  * ✅ FIXED: All panels (Track/Speed/Drawer) close MobileToolsSlideout when opening
- * ✅ Complete coordination between ALL panels (no overlapping)
+ * ✅ FIXED: Added registerCloseAllPanels to expose internal panel closing to parent
+ * ✅ FIXED: MobileToolsSlideout can now close Track/Speed/Drawer panels
+ * ✅ Complete bidirectional coordination between ALL panels (no overlapping)
  * ✅ Only one panel open at a time across entire app
  * 
  * 🔒 PRESERVED FROM V99:
@@ -78,6 +80,8 @@ export interface MaestroControlPanelProps {
   currentBPM?: number;
   // 🆕 V100: Panel coordination with MobileToolsSlideout
   onSlideoutShouldClose?: () => void;
+  // 🆕 V100: Callback that page.tsx can use to close internal panels
+  registerCloseAllPanels?: (closeFunc: () => void) => void;
 }
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
@@ -91,6 +95,13 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     setIsSpeedPanelOpen(false);
     setIsDrawerOpen(false);
   }, []);
+
+  // 🆕 V100: Register closeAllPanels with parent on mount
+  useEffect(() => {
+    if (props.registerCloseAllPanels) {
+      props.registerCloseAllPanels(closeAllPanels);
+    }
+  }, [props.registerCloseAllPanels, closeAllPanels]);
 
   // Canvas click detection - close panels when clicking on AlphaTab surface
   useEffect(() => {

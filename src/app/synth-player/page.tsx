@@ -263,8 +263,9 @@ export default function SynthPlayerPage() {
     const mainScrollContainerRef = useRef<HTMLElement>(null);
 
     // ==================== PANEL COORDINATION ====================
-    // 🔧 V98.22: Slideout close reference for panel coordination
+    // 🔧 V98.22: Bidirectional panel coordination
     const slideoutCloseRef = useRef<(() => void) | null>(null);
+    const closeControlPanelsRef = useRef<(() => void) | null>(null);
 
     // Sync refs
     useEffect(() => {
@@ -488,20 +489,20 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
-        
+
         const checkOrientation = () => {
             // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
-            
+
             // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
-                
+
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
@@ -953,40 +954,15 @@ export default function SynthPlayerPage() {
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
             <div
                 className={`
-                    fixed top-0 inset-x-0 w-full
+                    fixed top-0 inset-x-0 w-full z-50
                     transform transition-transform duration-300 ease-in-out
                     ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
                 `}
-                style={{
-                    // 🔧 V98.22: Reduced z-index to not cover Top Menu Tray
-                    zIndex: 40,
-                    maxWidth: '100vw',
-                    width: '100vw',
-                    overflow: 'hidden',
-                }}
             >
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
                 />
-                
-                {/* 🔧 V98.22: 2-ROW HEADER like Songsterr (no Album) */}
-                {isMobileLandscape && currentSong && (
-                    <div 
-                        className="bg-gradient-to-b from-gray-900/90 to-transparent py-1 px-4"
-                        style={{
-                            width: '100vw',
-                            maxWidth: '100vw',
-                        }}
-                    >
-                        <div className="flex items-center justify-center gap-2 text-white text-xs font-medium">
-                            {/* 🔧 V98.22: Songsterr format - "Artist | Title" */}
-                            <span className="truncate">{currentSong.artist}</span>
-                            <span className="text-gray-400">|</span>
-                            <span className="truncate">{currentSong.title}</span>
-                        </div>
-                    </div>
-                )}
             </div>
 
             <SongSelector
@@ -1000,6 +976,26 @@ export default function SynthPlayerPage() {
                 onPlaylistAction={handlePlaylistAction}
                 onCreatePlaylist={handleCreatePlaylist}
             />
+
+            {/* 🔧 V98.22: Landscape header - BELOW TopMenuTray */}
+            {isMobileLandscape && currentSong && (
+                <div
+                    className="fixed left-0 right-0 z-40 bg-gradient-to-b from-gray-900/90 to-transparent py-1 px-4"
+                    style={{
+                        // Position below TopMenuTray (which is ~64px tall)
+                        top: '64px',
+                        width: '100vw',
+                        maxWidth: '100vw',
+                    }}
+                >
+                    <div className="flex items-center justify-center gap-2 text-white text-xs font-medium">
+                        {/* 🔧 V98.22: Songsterr format - "Artist | Title" */}
+                        <span className="truncate">{currentSong.artist}</span>
+                        <span className="text-gray-400">|</span>
+                        <span className="truncate">{currentSong.title}</span>
+                    </div>
+                </div>
+            )}
 
             <main
                 ref={mainScrollContainerRef}
@@ -1150,6 +1146,9 @@ export default function SynthPlayerPage() {
                         onArmMetronome={armMetronome}
                         currentBPM={currentBPM}
                         onSlideoutShouldClose={() => slideoutCloseRef.current?.()} // 🔧 V98.22: Panel coordination
+                        registerCloseAllPanels={(closeFunc) => {
+                            closeControlPanelsRef.current = closeFunc;
+                        }} // 🔧 V98.22: Register close function
                     />
                 )}
             </footer>
@@ -1196,15 +1195,19 @@ export default function SynthPlayerPage() {
 
                         // 🔧 Audio arming function for mobile PWA
                         onArmMetronome={armMetronome}
-                        
-                        // 🔧 V98.22: Landscape coordination
+
+                        // 🔧 V98.22: Bidirectional panel coordination
                         isMobileLandscape={isMobileLandscape}
+                        onOtherPanelOpened={() => {
+                            // Close Track Mixer/Speed/Gear when slideout opens
+                            closeControlPanelsRef.current?.();
+                        }}
                     />
                 </div>
             )}
 
             {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
-                <div 
+                <div
                     className="youtube-player-container"
                     style={{
                         position: 'fixed',
