@@ -1,23 +1,23 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V97.56: HORIZONTAL MODE INITIALIZATION FIX
- * Base: V97.55 Landscape Glitch Fix
- * Date: January 4th, 2026
+ * AlphaTab Renderer - V98.23: SUPPRESS ALPHATAB INTERNAL HEADER
+ * Base: V97.56 Horizontal Mode Initialization Fix
+ * Date: January 6th, 2026
  *
- * 🔧 V97.56 CRITICAL UPDATE:
- * ✅ FIXED: Horizontal mode now properly re-renders like page mode
- * ✅ FIXED: Scroll container explicitly set before render
- * ✅ FIXED: Settings applied in correct order
- * ✅ ADDED: 200ms stabilization delay for horizontal mode
+ * 🔧 V98.23 CRITICAL UPDATE - SUPPRESS ALPHATAB HEADER:
+ * ✅ ADDED: settings.display.resources to clear internal header rows
+ * ✅ Clears Title, Artist, Album from AlphaTab's internal rendering
+ * ✅ Eliminates "BPM jump" gap caused by 3-row header
+ * ✅ Prevents header from "taking off to infinity" during mode switch
  * 
- * 🎯 Key Changes:
- * - Added proper scroll container setup BEFORE updateSettings
- * - Added render stabilization delay in horizontal mode
- * - Ensured settings.player.scrollElement is always set
- * - Fixed order of operations: scrollElement → updateSettings → render
+ * 🎯 Fix Location:
+ * - Added in initAlphaTab after api creation
+ * - Sets copyright, title, words, artist, album to empty strings
+ * - Applied BEFORE first render to prevent header rendering
  * 
- * 🔒 PRESERVED FROM V97.55:
+ * 🔒 PRESERVED FROM V97.56:
+ * ✅ Horizontal mode initialization fix
  * ✅ Layout mode change detection
  * ✅ Songsterr loop behavior
  * ✅ All existing functionality
@@ -66,12 +66,12 @@ const getBeatAtPosition = (
     for (const offset of offsets) {
         const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
         if (beat) {
-            console.log(`✅ V97.56: getBeatAtPos success with offset ${offset}px`);
+            console.log(`✅ V98.23: getBeatAtPos success with offset ${offset}px`);
             return beat;
         }
     }
 
-    console.warn('⚠️ V97.56: getBeatAtPos failed with all offsets');
+    console.warn('⚠️ V98.23: getBeatAtPos failed with all offsets');
     return null;
 };
 
@@ -160,7 +160,7 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
             }
         }
     } catch (err) {
-        console.warn('⚠️ V97.56: tickCache scan failed:', err);
+        console.warn('⚠️ V98.23: tickCache scan failed:', err);
     }
 
     return beat;
@@ -358,7 +358,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V97.56: Initializing AlphaTab...');
+                console.log('🎵 V98.23: Initializing AlphaTab...');
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
@@ -379,20 +379,31 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V97.56: AlphaTab initialized');
+                console.log('✅ V98.23: AlphaTab initialized');
 
                 (window as any).__at = api;
 
+                // 🔧 V98.23: CRITICAL FIX - Suppress AlphaTab's internal header
+                console.log('🎯 V98.23: Applying header suppression fix...');
+                api.settings.display.resources = {
+                    copyright: "",
+                    title: "",    // 👈 Clears AlphaTab row 1 (Title)
+                    words: "",
+                    artist: "",   // 👈 Clears AlphaTab row 2 (Artist)
+                    album: ""     // 👈 Clears AlphaTab row 3 (Album)
+                } as any;
+
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
+                console.log('✅ V98.23: Header suppression applied');
 
                 await loadGuitarProFile(api, fileUrl);
-                console.log('📂 V97.56: File loaded');
+                console.log('📂 V98.23: File loaded');
                 initialFileLoadedRef.current = true;
                 lastLoadedFileRef.current = fileUrl;
 
                 api.scoreLoaded.on((score: any) => {
-                    console.log('📊 V97.56: Score loaded');
+                    console.log('📊 V98.23: Score loaded');
                     const tracks: Track[] = score.tracks.map((t: any) => ({
                         index: t.index,
                         name: t.name,
@@ -412,14 +423,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     if (api && !destroyed) {
                         api.updateSettings();
                         api.render();
-                        console.log('✅ V97.56: Layout recalculated');
+                        console.log('✅ V98.23: Layout recalculated');
 
                         lastThemeRef.current = '';
                     }
                 });
 
                 api.renderFinished.on(() => {
-                    console.log('🎨 V97.56: Render finished');
+                    console.log('🎨 V98.23: Render finished');
                     setIsRendered(true);
                     setIsLoading(false);
                     setRenderCycle(rc => rc + 1);
@@ -428,7 +439,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 onApiReady?.(api);
             } catch (err) {
-                console.error('❌ V97.56: Init error:', err);
+                console.error('❌ V98.23: Init error:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 setIsLoading(false);
                 onError?.(errorMsg);
@@ -457,7 +468,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const api = apiRef.current;
         if (!api) return;
 
-        console.log(`🔄 V97.56: Updating player mode to: ${playerMode}`);
+        console.log(`🔄 V98.23: Updating player mode to: ${playerMode}`);
         (api.settings.player as any).playerMode = playerMode;
         api.updateSettings();
     }, [playerMode]);
@@ -471,7 +482,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (externalMediaHandler) {
             const output = api.player.output as any;
             output.handler = externalMediaHandler;
-            console.log('🔗 V97.56: External handler attached');
+            console.log('🔗 V98.23: External handler attached');
 
             return () => {
                 if (api.player?.output) {
@@ -496,21 +507,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (!api || !initialFileLoadedRef.current) return;
 
         if (lastLoadedFileRef.current === fileUrl) {
-            console.log('⏭️ V97.56: Same file, skipping reload');
+            console.log('⏭️ V98.23: Same file, skipping reload');
             return;
         }
 
         const loadNewFile = async () => {
             try {
-                console.log(`🔄 V97.56: Loading new file: ${fileUrl}`);
+                console.log(`🔄 V98.23: Loading new file: ${fileUrl}`);
 
                 lastThemeRef.current = '';
 
                 await loadGuitarProFile(api, fileUrl);
                 lastLoadedFileRef.current = fileUrl;
-                console.log('✅ V97.56: New file loaded');
+                console.log('✅ V98.23: New file loaded');
             } catch (err) {
-                console.error('❌ V97.56: Error loading new file:', err);
+                console.error('❌ V98.23: Error loading new file:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 onError?.(errorMsg);
             }
@@ -532,18 +543,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const targetLayoutMode = isLandscape ? 'horizontal' : 'page';
 
         if (lastLayoutModeRef.current === targetLayoutMode) {
-            console.log(`⏭️ V97.56: Layout mode unchanged (${targetLayoutMode}), skipping`);
+            console.log(`⏭️ V98.23: Layout mode unchanged (${targetLayoutMode}), skipping`);
             return;
         }
 
-        console.log(`🔄 V97.56: Layout mode CHANGED: ${lastLayoutModeRef.current} → ${targetLayoutMode}`);
+        console.log(`🔄 V98.23: Layout mode CHANGED: ${lastLayoutModeRef.current} → ${targetLayoutMode}`);
         lastLayoutModeRef.current = targetLayoutMode;
 
         const applyLayoutMode = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
             if (isLandscape) {
-                console.log('🎸 V97.56: Applying LANDSCAPE mode');
+                console.log('🎸 V98.23: Applying LANDSCAPE mode');
                 
                 // 🔧 V97.56: Set scroll container BEFORE settings
                 const scrollElement = scrollContainerRef?.current || container;
@@ -555,7 +566,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 const horizontalOffset = scrollElement.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
-                console.log(`📐 V97.56: Horizontal setup complete, scrollOffset=${horizontalOffset.toFixed(0)}px`);
+                console.log(`📐 V98.23: Horizontal setup complete, scrollOffset=${horizontalOffset.toFixed(0)}px`);
                 
                 // 🔧 V97.56: Apply settings THEN render
                 await api.updateSettings();
@@ -565,9 +576,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 
                 api.render();
                 
-                console.log('✅ V97.56: Horizontal render triggered');
+                console.log('✅ V98.23: Horizontal render triggered');
             } else {
-                console.log('📱 V97.56: Applying PORTRAIT/DESKTOP mode');
+                console.log('📱 V98.23: Applying PORTRAIT/DESKTOP mode');
                 
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
@@ -576,7 +587,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 (api.settings.player as any).scrollOffset = 100;
 
-                console.log('📐 V97.56: Page layout setup complete');
+                console.log('📐 V98.23: Page layout setup complete');
                 
                 await api.updateSettings();
                 await new Promise((r) => setTimeout(r, 100));
@@ -598,7 +609,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const applyTheme = async () => {
             const alphaTab = await import('@coderline/alphatab');
-            console.log(`🎨 V97.56: Applying ${theme} theme`);
+            console.log(`🎨 V98.23: Applying ${theme} theme`);
             lastThemeRef.current = theme;
 
             const resources = api.settings.display.resources as any;
@@ -621,7 +632,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             await api.updateSettings();
             api.render();
-            console.log(`✅ V97.56: Theme ${theme} applied`);
+            console.log(`✅ V98.23: Theme ${theme} applied`);
         };
 
         applyTheme();
@@ -635,7 +646,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         (api.settings.player as any).enableUserInteraction = false;
         api.updateSettings();
-        console.log('🔒 V97.56: enableUserInteraction locked to FALSE');
+        console.log('🔒 V98.23: enableUserInteraction locked to FALSE');
     }, [isLooping]);
 
     // ========== INSTANT LOOP AT CURSOR ==========

@@ -2,114 +2,27 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 4th, 2026 - V98.22: FIXED ALPHATAB INTERNAL HEADER + 2-ROW LAYOUT
+ * January 6th, 2026 - V98.23: HARD RELOAD FIX + REMOVED CUSTOM HEADER
  *
- * 🔧 V98.20 LATEST UPDATE - FIXED CONTAINER CONSTRAINTS:
- * ✅ Fixed YouTube Player container to properly constrain child component:
- *    - Added overflow: 'hidden' to prevent player from escaping container
- *    - Added explicit constraints with max-width/max-height
- *    - Player now properly respects 240x427 portrait dimensions
- *    - Fixed z-index to appear BELOW Mobile Drawer (z-index: 40)
- *    - Player slides up onto canvas AFTER drawer closes
- * ✅ Fixed Mobile Drawer full-screen issue in landscape:
- *    - Mobile Drawer now has higher z-index (z-index: 50)
- *    - Drawer appears as small overlay in lower right (not full-screen)
- * ✅ Fixed landscape header to show artist/title at start:
- *    - Removed `right-0` to prevent width constraint
- *    - Header now properly displays full artist/title text
+ * 🔧 V98.23 CRITICAL UPDATE - HARD RELOAD ON MODE CHANGE:
+ * ✅ Added key prop to AlphaTabRenderer for hard reload on mode switch
+ * ✅ key={`${audioSource}-${isMobileLandscape}`} forces destroy/remount
+ * ✅ Prevents glitch where header "takes off to infinity"
+ * ✅ Prevents "f" symbol disappearing during mode switch
+ * ✅ Removed custom landscape header (tiny shadow under TopMenuTray)
+ * ✅ Clean slate for future Songsterr-style header implementation
  * 
- * 🔧 V98.19 PREVIOUS UPDATE:
- * ✅ Fixed YouTube Player to use PORTRAIT ratio (9:16) like Songsterr:
- *    - Changed from 400x225 (16:9 landscape) to 240x427 (9:16 portrait)
- *    - Player is now TALLER than WIDE in BOTH orientations (matches Songsterr)
- *    - Bottom padding updated to 450px to account for taller player
- *    - Prevents vertical space competition with AlphaTab
- *    - Player stays same size when rotating between portrait/landscape
+ * 🎯 Key Changes:
+ * - AlphaTabRenderer now uses key prop for hard reset
+ * - Removed landscape header div (lines ~193-207 in V98.22)
+ * - All other functionality preserved
  * 
- * 🔧 V98.18 PREVIOUS UPDATE:
- * ✅ Fixed YouTube Player Vertical Space Competition:
- *    - YouTube player locked to 400x225px in BOTH orientations (same as Songsterr)
- *    - Wrapped in fixed-size container to prevent shrinking/growing
- *    - Staff no longer gets pushed down when YT player appears
- *    - Header locked to 100vw with single-line text (no drift)
- *    - Maestro-player has bottom padding (240px) to account for YT player height
- *    - Fixes the 10-20 second cascade loop completely
- *    - Root cause: YT player was competing with AlphaTab for vertical space
- * 
- * 🔧 V98.17 PREVIOUS UPDATE:
- * ✅ Fixed Cascading Glitch with Container Constraints:
- *    - Main container locked to 100vw max-width (prevents viewport expansion)
- *    - Removed w-max from maestro-player (was causing reflow)
- *    - Added inline-block style with width: max-content for AlphaTab expansion
- *    - Prevents parent containers from inheriting massive width
- *    - Header stays at screen width with explicit maxWidth style
- *    - Fixes rendering loop and header positioning issues
- *    - Only content scrolls horizontally, viewport stays locked
- * 
- * 🔧 V98.16 PREVIOUS UPDATE:
- * ✅ Fixed Cascading Glitch on Mobile Landscape Mode Switch:
- *    - Added 150ms debounce to orientation detection
- *    - Prevents feedback loop: page.tsx resize → AlphaTabRenderer re-render → api.render() → DOM change → resize event
- *    - Only updates state when orientation ACTUALLY changes (not on every resize)
- *    - Fixes 337-cycle cascade when switching from synth to original mode
- *    - Console logs orientation changes for debugging
- * 
- * 🔧 V98.15 PREVIOUS UPDATE:
- * ✅ Desktop Metronome Button Integration:
- *    - Added isMetronomeEnabled and onMetronomeToggle to MaestroControlPanel
- *    - Metronome button now appears in desktop TransportBar
- *    - Triangle icon shows in bottom menu tray
- *    - Auto-grays out in YouTube mode (shows "Synth mode only" tooltip)
- *    - Button turns GREEN when enabled, BLUE when disabled
- *    - Works alongside mobile MobileToolsSlideout
- * 
- * 🔧 V98.15 PREVIOUS FIXES:
- * ✅ Mobile PWA Audio Context Fix (Complete):
- *    - useSmartMetronome V3 now properly returns armMetronome function
- *    - Destructured armMetronome from hook (no workaround needed)
- *    - Pass armMetronome to MobileToolsSlideout as onArmMetronome
- *    - Mobile browsers recognize metronome toggle as user interaction
- *    - Audio context properly initialized on first metronome toggle
- *    - Check console for "🔊 Audio Context Armed via User Gesture"
- * ✅ Issue #1 (No metronome sound):
- *    - Audio context now properly resumed for mobile
- *    - Added debug logging for tick events
- *    - Check console for "🥁 Metronome tick" messages
- * ✅ Issue #2 (Controls in wrong place):
- *    - Removed MetronomeSettings modal
- *    - All metronome controls now INSIDE MobileToolsSlideout
- *    - Collapsible "Options" section for inline controls
- * ✅ Issue #3 (4-beat count-in not working):
- *    - Updated CountInOverlay with mode prop
- *    - Updated handlePlayPause to support both 3-beat and 4-beat
- *    - Count-in mode buttons work correctly in slideout
- * 
- * 🆕 V98.15 FEATURES:
- * ✅ Count-in with tick sound (3-beat or 4-beat)
- * ✅ Auto-disable Count In after countdown
- * ✅ CountInOverlay component with mode support
- * ✅ useSmartMetronome V3 headless hook:
- *    - BPM sync from AlphaTab score
- *    - Playback speed compensation
- *    - Volume and stereo balance controls
- *    - Subdivision modes (quarter, eighth, triplet, sixteenth notes)
- *    - Accent toggle for downbeat emphasis
- *    - 7 sound types: Woodblock, Click, Beep, Drum Stick, Electronic, Kick Drum, Snare Drum
- *    - Auto-disable in YouTube mode (synth only)
- *    - armMetronome function for mobile PWA audio context initialization
- * ✅ Desktop TransportBar integration:
- *    - Professional triangle metronome icon
- *    - Active in Synth mode (blue/green)
- *    - Grayed out in YouTube mode
- *    - Tooltip shows mode requirements
- * ✅ MobileToolsSlideout with inline controls:
- *    - Professional metronome icon (triangle shape)
- *    - All metronome controls inside (no separate modal)
- *    - Optional orange visual aid tab (toggleable)
- *    - BPM display
- *    - Count-in mode selector (3-beat/4-beat)
- *    - Audio context arming button for mobile
- * ✅ BPM tracking from AlphaTab score tempo
+ * 🔒 PRESERVED FROM V98.22:
+ * ✅ YouTube player portrait ratio (9:16)
+ * ✅ Container constraints for landscape
+ * ✅ All metronome features
+ * ✅ Count-in functionality
+ * ✅ All existing controls
  */
 
 import React, {
@@ -233,8 +146,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.15: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.15: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.23: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.23: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -287,31 +200,31 @@ export default function SynthPlayerPage() {
 
     // ==================== PITCH SHIFT HANDLER ====================
     const handlePitchShiftChange = useCallback((semitones: number) => {
-        console.log(`🎵 V98.15: handlePitchShiftChange called with ${semitones} semitones`);
+        console.log(`🎵 V98.23: handlePitchShiftChange called with ${semitones} semitones`);
         setPitchShift(semitones);
 
         if (api) {
-            console.log(`🎵 V98.15: API exists, checking score...`);
+            console.log(`🎵 V98.23: API exists, checking score...`);
             if (api.score?.tracks) {
                 try {
                     const allTracks = api.score.tracks;
-                    console.log(`🎵 V98.15: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
+                    console.log(`🎵 V98.23: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
                     api.changeTrackTranspositionPitch(allTracks, semitones);
-                    console.log(`✅ V98.15: Audio pitch shifted by ${semitones} semitones`);
+                    console.log(`✅ V98.23: Audio pitch shifted by ${semitones} semitones`);
                 } catch (err) {
-                    console.error('❌ V98.15: changeTrackTranspositionPitch error:', err);
+                    console.error('❌ V98.23: changeTrackTranspositionPitch error:', err);
                 }
             } else {
-                console.warn('⚠️ V98.15: No score or tracks available');
+                console.warn('⚠️ V98.23: No score or tracks available');
             }
         } else {
-            console.warn('⚠️ V98.15: API not available');
+            console.warn('⚠️ V98.23: API not available');
         }
     }, [api]);
 
     const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
         if (audioSource !== 'synth') {
-            console.log('⚠️ V98.15: Pitch shift only available in Synth mode');
+            console.log('⚠️ V98.23: Pitch shift only available in Synth mode');
             return;
         }
 
@@ -350,20 +263,20 @@ export default function SynthPlayerPage() {
                     // API may not be ready
                 }
             }
-            console.log('🔄 V98.15: Pitch reset on song change');
+            console.log('🔄 V98.23: Pitch reset on song change');
         }
     }, [currentFileUrl]);
 
     // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.15: Creating YouTube handler instance');
+        console.log('🎬 V98.23: Creating YouTube handler instance');
 
         return {
             play: () => {
-                console.log('▶️ V98.15: Handler.play() called');
+                console.log('▶️ V98.23: Handler.play() called');
 
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(`⏱️ V98.15: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
+                    console.log(`⏱️ V98.23: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
                     youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                     postSeekLockUntilRef.current = performance.now() + 200;
@@ -375,7 +288,7 @@ export default function SynthPlayerPage() {
             },
 
             pause: () => {
-                console.log('⏸️ V98.15: Handler.pause() called');
+                console.log('⏸️ V98.23: Handler.pause() called');
                 youtubePlayerRef.current?.pauseVideo?.();
             },
 
@@ -506,7 +419,7 @@ export default function SynthPlayerPage() {
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
-                    console.log(`📱 V98.16: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    console.log(`📱 V98.23: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
                     setIsMobileLandscape(newValue);
                 }
             }, 150); // 150ms debounce prevents cascade
@@ -557,12 +470,12 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.15: API Ready');
+            console.log('✅ V98.23: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.15: Player Ready');
+                    console.log('✅ V98.23: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
@@ -593,7 +506,7 @@ export default function SynthPlayerPage() {
     // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.15: Score loaded - ${info.title}`);
+            console.log(`✅ V98.23: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -606,7 +519,7 @@ export default function SynthPlayerPage() {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.15: Tuning extracted:', staff.stringTuning.tunings);
+                    console.log('🎸 V98.23: Tuning extracted:', staff.stringTuning.tunings);
                 }
             }
 
@@ -616,11 +529,11 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.15: Rendering Complete');
+        console.log('✅ V98.23: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.15 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.23 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -725,7 +638,7 @@ export default function SynthPlayerPage() {
                     try {
                         api.changeTrackTranspositionPitch(api.score.tracks, 0);
                     } catch (err) {
-                        console.error('❌ V98.15: Reset pitch error:', err);
+                        console.error('❌ V98.23: Reset pitch error:', err);
                     }
                 }
             }
@@ -762,7 +675,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.15: YouTube player ready');
+        console.log('✅ V98.23: YouTube player ready');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
@@ -826,7 +739,7 @@ export default function SynthPlayerPage() {
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.15: updatePosition error:', err);
+                console.error('❌ V98.23: updatePosition error:', err);
             }
             currentTimeRef.current = timeMs;
         }, 50);
@@ -977,25 +890,9 @@ export default function SynthPlayerPage() {
                 onCreatePlaylist={handleCreatePlaylist}
             />
 
-            {/* 🔧 V98.22: Landscape header - BELOW TopMenuTray */}
-            {isMobileLandscape && currentSong && (
-                <div
-                    className="fixed left-0 right-0 z-40 bg-gradient-to-b from-gray-900/90 to-transparent py-1 px-4"
-                    style={{
-                        // Position below TopMenuTray (which is ~64px tall)
-                        top: '64px',
-                        width: '100vw',
-                        maxWidth: '100vw',
-                    }}
-                >
-                    <div className="flex items-center justify-center gap-2 text-white text-xs font-medium">
-                        {/* 🔧 V98.22: Songsterr format - "Artist | Title" */}
-                        <span className="truncate">{currentSong.artist}</span>
-                        <span className="text-gray-400">|</span>
-                        <span className="truncate">{currentSong.title}</span>
-                    </div>
-                </div>
-            )}
+            {/* 🔧 V98.23: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
+            {/* This tiny header under TopMenuTray has been removed for clean slate */}
+            {/* Future: Implement Songsterr-style header that scrolls with canvas */}
 
             <main
                 ref={mainScrollContainerRef}
@@ -1055,7 +952,9 @@ export default function SynthPlayerPage() {
                         popoverAnchor={pitchPopoverAnchor}
                     />
 
+                    {/* 🔧 V98.23: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
                     <AlphaTabRenderer
+                        key={`${audioSource}-${isMobileLandscape}`} // 👈 Forces hard reset on mode switch
                         fileUrl={currentFileUrl}
                         playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
                         externalMediaHandler={youTubeMediaHandlerInstance}
