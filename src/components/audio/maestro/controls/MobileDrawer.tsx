@@ -1,17 +1,15 @@
 'use client';
 
 /**
- * MobileDrawer.tsx - V98: ULTRA-COMPACT BOTTOM POPUP (Songsterr Match)
+ * MobileDrawer.tsx - V99: RIGHT-ALIGNED MINI POPUP (Songsterr Match)
  * Date: January 5th, 2026
  * 
- * 🔧 NEW IN V98:
- * ✅ DRASTICALLY reduced size (~75% smaller)
- * ✅ Tight to bottom edge (no pb-24 spacing)
- * ✅ Ultra-compact width (280px fixed)
- * ✅ Much smaller height (max 400px)
- * ✅ Minimal padding everywhere
- * ✅ Smaller fonts, tighter spacing
- * ✅ Matches Songsterr's tiny popup exactly
+ * 🔧 NEW IN V99:
+ * ✅ ANCHORED TO BOTTOM-RIGHT (not centered)
+ * ✅ 50% smaller than V98 (220px width)
+ * ✅ Reduced height (320px max) to prevent cutoff in landscape
+ * ✅ Positioned with `justify-end` at far right edge
+ * ✅ Even tighter spacing and smaller fonts
  * 
  * 🔒 PRESERVED:
  * ✅ Audio Source, Theme, Utilities
@@ -55,12 +53,12 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* 🔥 V98: ULTRA-COMPACT - tight to bottom, minimal size */}
-      <div className={`fixed inset-x-0 bottom-0 z-[9999] flex items-end justify-center pb-[90px] px-3 ${visibilityClass}`}>
-        <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-full max-w-[280px] max-h-[400px] overflow-hidden flex flex-col">
+      {/* 🔥 V99: FAR RIGHT, EVEN SMALLER - anchored bottom-right */}
+      <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[90px] pr-2 ${visibilityClass}`}>
+        <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col">
 
-          {/* Header - Ultra compact */}
-          <div className="bg-gray-900/95 backdrop-blur-sm px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+          {/* Header - Minimal */}
+          <div className="bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
             <h2 className="text-sm font-bold text-white">Settings</h2>
             <button
               onClick={onClose}
@@ -73,20 +71,20 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </button>
           </div>
 
-          {/* Content - Ultra tight spacing */}
-          <div className="px-3 py-2 space-y-2 overflow-y-auto flex-1">
+          {/* Content - Even tighter spacing */}
+          <div className="px-2 py-1.5 space-y-1.5 overflow-y-auto flex-1">
 
             {/* AUDIO SOURCE - Minimal spacing */}
             <div>
-              <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+              <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                 Audio Source
               </h3>
 
-              {/* Synth - Ultra compact */}
+              {/* Synth - Micro compact */}
               <button
                 onClick={() => onAudioSourceChange('synth')}
                 className={`
-                  w-full p-2 rounded-lg mb-1.5 text-left border transition-all
+                  w-full p-1.5 rounded-lg mb-1 text-left border transition-all
                   ${audioSource === 'synth'
                     ? 'bg-cyan-500/20 border-cyan-500 ring-1 ring-cyan-500/50'
                     : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
@@ -110,11 +108,11 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 </div>
               </button>
 
-              {/* Original - Ultra compact */}
+              {/* Original - Micro compact */}
               <button
                 onClick={() => onAudioSourceChange('original')}
                 className={`
-                  w-full p-2 rounded-lg text-left border transition-all
+                  w-full p-1.5 rounded-lg text-left border transition-all
                   ${audioSource === 'original'
                     ? 'bg-orange-500/20 border-orange-500 ring-1 ring-orange-500/50'
                     : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
@@ -147,7 +145,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 </h3>
                 <button
                   onClick={onThemeToggle}
-                  className="w-full flex items-center justify-between p-2 rounded-lg bg-gray-800/50 border border-gray-700 hover:bg-gray-700/50 transition-colors"
+                  className="w-full flex items-center justify-between p-1.5 rounded-lg bg-gray-800/50 border border-gray-700 hover:bg-gray-700/50 transition-colors"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-lg">{theme === 'dark' ? '🌙' : '☀️'}</span>
@@ -172,12 +170,12 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
               <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
                 Utilities
               </h3>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {/* Print */}
                 <button
                   disabled
                   onClick={onPrintOpen}
-                  className="w-full flex items-center gap-1.5 p-2 rounded-lg bg-gray-800/30 border border-gray-700/50 opacity-50 cursor-not-allowed"
+                  className="w-full flex items-center gap-1.5 p-1.5 rounded-lg bg-gray-800/30 border border-gray-700/50 opacity-50 cursor-not-allowed"
                 >
                   <span className="text-lg">🖨️</span>
                   <div className="text-left flex-1">
@@ -189,7 +187,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 {/* Export */}
                 <button
                   disabled
-                  className="w-full flex items-center gap-1.5 p-2 rounded-lg bg-gray-800/30 border border-gray-700/50 opacity-50 cursor-not-allowed"
+                  className="w-full flex items-center gap-1.5 p-1.5 rounded-lg bg-gray-800/30 border border-gray-700/50 opacity-50 cursor-not-allowed"
                 >
                   <span className="text-lg">📤</span>
                   <div className="text-left flex-1">
