@@ -9,6 +9,8 @@
  * ✅ 50% smaller than V98 (220px width)
  * ✅ Reduced height (320px max) to prevent cutoff in landscape
  * ✅ Positioned with `justify-end` at far right edge
+ * ✅ TIGHT to bottom tray (pb-[80px]) and right edge (no padding)
+ * ✅ AUTO-CLOSE on selections (Synth/Original/Theme)
  * ✅ Even tighter spacing and smaller fonts
  * 
  * 🔒 PRESERVED:
@@ -53,10 +55,10 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* 🔥 V99: FAR RIGHT, EVEN SMALLER - anchored bottom-right */}
-      <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[90px] pr-2 ${visibilityClass}`}>
+      {/* 🔥 V99: FAR RIGHT, TIGHT TO BOTTOM TRAY - no gaps */}
+      <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[80px] ${visibilityClass}`}>
         <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col">
-
+          
           {/* Header - Minimal */}
           <div className="bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
             <h2 className="text-sm font-bold text-white">Settings</h2>
@@ -82,7 +84,10 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
               {/* Synth - Micro compact */}
               <button
-                onClick={() => onAudioSourceChange('synth')}
+                onClick={() => {
+                  onAudioSourceChange('synth');
+                  onClose(); // Auto-close drawer
+                }}
                 className={`
                   w-full p-1.5 rounded-lg mb-1 text-left border transition-all
                   ${audioSource === 'synth'
@@ -110,7 +115,10 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
               {/* Original - Micro compact */}
               <button
-                onClick={() => onAudioSourceChange('original')}
+                onClick={() => {
+                  onAudioSourceChange('original');
+                  onClose(); // Auto-close drawer
+                }}
                 className={`
                   w-full p-1.5 rounded-lg text-left border transition-all
                   ${audioSource === 'original'
@@ -144,7 +152,10 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   Appearance
                 </h3>
                 <button
-                  onClick={onThemeToggle}
+                  onClick={() => {
+                    onThemeToggle();
+                    onClose(); // Auto-close drawer
+                  }}
                   className="w-full flex items-center justify-between p-1.5 rounded-lg bg-gray-800/50 border border-gray-700 hover:bg-gray-700/50 transition-colors"
                 >
                   <div className="flex items-center gap-1.5">
