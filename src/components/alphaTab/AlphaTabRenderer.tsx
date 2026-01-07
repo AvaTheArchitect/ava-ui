@@ -387,10 +387,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 // 🔧 V98.26: CRITICAL FIX - Suppress song information element entirely
                 console.log('🎯 V98.26: Applying notation.elements.songInformation = false...');
-                (api.settings.notation as any).elements = {
-                    ...(api.settings.notation as any).elements,
-                    songInformation: false  // Prevents BPM gap, header flash, "f" displacement
-                };
+                
+                // Safely set notation elements (create structure if it doesn't exist)
+                if (!api.settings.notation) {
+                    (api.settings as any).notation = {};
+                }
+                if (!(api.settings.notation as any).elements) {
+                    (api.settings.notation as any).elements = {};
+                }
+                (api.settings.notation as any).elements.songInformation = false;
 
                 // Standard padding for last system
                 api.settings.display.lastSystemPaddingBottom = 300;
