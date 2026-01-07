@@ -1,21 +1,22 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V98.24: FIX RESOURCES OBJECT OVERWRITE
+ * AlphaTab Renderer - V98.26: PART 2 - NOTATION ELEMENTS FIX
  * Base: V97.56 Horizontal Mode Initialization Fix
  * Date: January 6th, 2026
  *
- * 🔧 V98.24 CRITICAL FIX - CORRECTED RESOURCE UPDATE:
- * ✅ FIXED: Now updates properties instead of replacing entire object
- * ✅ Prevents "undefined is not an object (evaluating 'e.raw')" error
- * ✅ Clears Title, Artist, Album from AlphaTab's internal rendering
- * ✅ Eliminates "BPM jump" gap caused by 3-row header
- * ✅ Prevents header from "taking off to infinity" during mode switch
+ * 🔧 V98.26 CRITICAL FIX - SUPPRESS SONG INFORMATION ELEMENT:
+ * ✅ ADDED: notation.elements.songInformation = false
+ * ✅ Prevents header container from being created at all
+ * ✅ Eliminates BPM gap and "f" displacement
+ * ✅ Stops header flash during orientation changes
+ * ✅ Official AlphaTab API method for header suppression
  * 
  * 🎯 Fix Location:
- * - Added in initAlphaTab after api creation
- * - Updates individual resource properties (not entire object)
- * - Applied BEFORE first render to prevent header rendering
+ * - Added in initAlphaTab settings object
+ * - Disables songInformation element entirely (not just clearing text)
+ * - Applied BEFORE api creation to prevent container rendering
+ * - Uses official AlphaTab notation.elements API
  * 
  * 🔒 PRESERVED FROM V97.56:
  * ✅ Horizontal mode initialization fix
@@ -65,9 +66,9 @@ const getBeatAtPosition = (
 
     const offsets = [0, -4, 4, -8, 8];
     for (const offset of offsets) {
-        const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
+                    const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
         if (beat) {
-            console.log(`✅ V98.24: getBeatAtPos success with offset ${offset}px`);
+            console.log(`✅ V98.26: getBeatAtPos success with offset ${offset}px`);
             return beat;
         }
     }
@@ -359,10 +360,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V98.24: Initializing AlphaTab...');
+                console.log('🎵 V98.26: Initializing AlphaTab...');
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
+                // 🔧 V98.26: CRITICAL FIX - Suppress song information element entirely
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
@@ -372,6 +374,12 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     isMobile,
                     enableUserInteraction: false,
                     scrollContainer: scrollElement,
+                    // 👇 V98.26: Disable song information container (prevents header rendering)
+                    notation: {
+                        elements: {
+                            songInformation: false  // Prevents BPM gap, header flash, "f" displacement
+                        }
+                    }
                 });
 
                 if (destroyed) {
@@ -380,22 +388,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V98.24: AlphaTab initialized');
+                console.log('✅ V98.26: AlphaTab initialized with songInformation disabled');
 
                 (window as any).__at = api;
 
-                // 🔧 V98.24: CRITICAL FIX - Update properties instead of replacing object
-                console.log('🎯 V98.24: Applying header suppression fix...');
-                const resources = api.settings.display.resources as any;
-                resources.copyright = "";
-                resources.title = "";    // 👈 Clears AlphaTab row 1 (Title)
-                resources.words = "";
-                resources.artist = "";   // 👈 Clears AlphaTab row 2 (Artist)
-                resources.album = "";    // 👈 Clears AlphaTab row 3 (Album)
-
+                // Standard padding for last system
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
-                console.log('✅ V98.24: Header suppression applied');
+                console.log('✅ V98.26: Settings applied');
 
                 await loadGuitarProFile(api, fileUrl);
                 console.log('📂 V98.23: File loaded');
@@ -555,11 +555,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             if (isLandscape) {
                 console.log('🎸 V98.23: Applying LANDSCAPE mode');
-
+                
                 // 🔧 V97.56: Set scroll container BEFORE settings
                 const scrollElement = scrollContainerRef?.current || container;
                 api.settings.player.scrollElement = scrollElement;
-
+                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
@@ -567,28 +567,28 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
                 console.log(`📐 V98.23: Horizontal setup complete, scrollOffset=${horizontalOffset.toFixed(0)}px`);
-
+                
                 // 🔧 V97.56: Apply settings THEN render
                 await api.updateSettings();
-
+                
                 // 🔧 V97.56: Add stabilization delay for horizontal mode
                 await new Promise((r) => setTimeout(r, 200));
-
+                
                 api.render();
-
+                
                 console.log('✅ V98.23: Horizontal render triggered');
             } else {
                 console.log('📱 V98.23: Applying PORTRAIT/DESKTOP mode');
-
+                
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-
+                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 (api.settings.player as any).scrollOffset = 100;
 
                 console.log('📐 V98.23: Page layout setup complete');
-
+                
                 await api.updateSettings();
                 await new Promise((r) => setTimeout(r, 100));
                 api.render();
@@ -722,7 +722,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
 
         api.playbackRangeChanged.on(handleRangeChange);
-        api.renderFinished.on(() => { });
+        api.renderFinished.on(() => {});
 
         return () => {
             api.playbackRangeChanged.off(handleRangeChange);

@@ -2,20 +2,21 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 6th, 2026 - V98.25: PART 1 - REMOVE TUNING OVERLAY
+ * January 6th, 2026 - V98.26: PART 2 - NOTATION ELEMENTS FIX
  *
- * 🔧 V98.25 PART 1 UPDATE - SIMPLIFY LAYOUT:
- * ✅ Removed TuningOverlay component entirely
- * ✅ Simplifies layout to isolate glitch cause
- * ✅ Pitch shift controls still available in control panel
- * ✅ Tuning data extraction preserved for future use
- * ✅ Eliminates potential SVG injection conflicts
+ * 🔧 V98.26 PART 2 UPDATE - PROPER HEADER SUPPRESSION:
+ * ✅ Uses AlphaTabRenderer V98.26 with notation.elements fix
+ * ✅ Prevents song information container from rendering at all
+ * ✅ Eliminates BPM gap, header flash, "f" displacement
+ * ✅ Official AlphaTab API method for suppressing headers
+ * ✅ TuningOverlay remains removed (Part 1 confirmed not the cause)
  * 
  * 🎯 Testing Hypothesis:
- * - Check if TuningOverlay was causing layout race condition
- * - If glitch persists, proceed to Part 2 (notation.elements fix)
+ * - notation.elements.songInformation = false should prevent all header-related glitches
+ * - No more flashing 3-row header during orientation changes
+ * - BPM and "f" should stay in correct positions
  * 
- * 🔒 PRESERVED FROM V98.24:
+ * 🔒 PRESERVED FROM V98.25:
  * ✅ YouTube player portrait ratio (9:16)
  * ✅ Container constraints for landscape
  * ✅ All metronome features
@@ -144,8 +145,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.25: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.25: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.26: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.26: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -417,7 +418,7 @@ export default function SynthPlayerPage() {
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
-                    console.log(`📱 V98.25: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    console.log(`📱 V98.26: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
                     setIsMobileLandscape(newValue);
                 }
             }, 150); // 150ms debounce prevents cascade
@@ -468,12 +469,12 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.25: API Ready');
+            console.log('✅ V98.26: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.25: Player Ready');
+                    console.log('✅ V98.26: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
@@ -504,7 +505,7 @@ export default function SynthPlayerPage() {
     // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.25: Score loaded - ${info.title}`);
+            console.log(`✅ V98.26: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -517,7 +518,7 @@ export default function SynthPlayerPage() {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.25: Tuning extracted (for future use):', staff.stringTuning.tunings);
+                    console.log('🎸 V98.26: Tuning extracted (for future use):', staff.stringTuning.tunings);
                 }
             }
 
@@ -527,11 +528,11 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.25: Rendering Complete');
+        console.log('✅ V98.26: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.25 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.26 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -888,7 +889,7 @@ export default function SynthPlayerPage() {
                 onCreatePlaylist={handleCreatePlaylist}
             />
 
-            {/* 🔧 V98.25: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
+            {/* 🔧 V98.26: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
             {/* This tiny header under TopMenuTray has been removed for clean slate */}
             {/* Future: Implement Songsterr-style header that scrolls with canvas */}
 
