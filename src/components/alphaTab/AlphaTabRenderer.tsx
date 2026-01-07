@@ -1,22 +1,22 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V98.26: PART 2 - NOTATION ELEMENTS FIX
+ * AlphaTab Renderer - V98.27: NOTATION ELEMENTS PROPER FIX
  * Base: V97.56 Horizontal Mode Initialization Fix
  * Date: January 6th, 2026
  *
- * 🔧 V98.26 CRITICAL FIX - SUPPRESS SONG INFORMATION ELEMENT:
- * ✅ ADDED: notation.elements.songInformation = false
- * ✅ Prevents header container from being created at all
+ * 🔧 V98.27 CRITICAL FIX - DISABLE NOTATION ELEMENTS BEFORE LAYOUT SWITCH:
+ * ✅ Uses proper NotationElement.set() API from AlphaTab
+ * ✅ Disables ALL score info elements before orientation/mode change
+ * ✅ Applied DURING layout mode switch (not after init)
+ * ✅ Prevents header container from being rendered at all
  * ✅ Eliminates BPM gap and "f" displacement
- * ✅ Stops header flash during orientation changes
- * ✅ Official AlphaTab API method for header suppression
  * 
  * 🎯 Fix Location:
- * - Added in initAlphaTab settings object
- * - Disables songInformation element entirely (not just clearing text)
- * - Applied BEFORE api creation to prevent container rendering
- * - Uses official AlphaTab notation.elements API
+ * - Applied in orientation change useEffect
+ * - Uses api.settings.notation.elements.set() with NotationElement enum
+ * - Disables elements BEFORE layout mode switch
+ * - Official AlphaTab API method
  * 
  * 🔒 PRESERVED FROM V97.56:
  * ✅ Horizontal mode initialization fix
@@ -68,7 +68,7 @@ const getBeatAtPosition = (
     for (const offset of offsets) {
                     const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
         if (beat) {
-            console.log(`✅ V98.26: getBeatAtPos success with offset ${offset}px`);
+            console.log(`✅ V98.27: getBeatAtPos success with offset ${offset}px`);
             return beat;
         }
     }
@@ -360,7 +360,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V98.26: Initializing AlphaTab...');
+                console.log('🎵 V98.27: Initializing AlphaTab...');
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
@@ -381,26 +381,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V98.26: AlphaTab initialized');
+                console.log('✅ V98.27: AlphaTab initialized');
 
                 (window as any).__at = api;
-
-                // 🔧 V98.26: CRITICAL FIX - Suppress song information element entirely
-                console.log('🎯 V98.26: Applying notation.elements.songInformation = false...');
-                
-                // Safely set notation elements (create structure if it doesn't exist)
-                if (!api.settings.notation) {
-                    (api.settings as any).notation = {};
-                }
-                if (!(api.settings.notation as any).elements) {
-                    (api.settings.notation as any).elements = {};
-                }
-                (api.settings.notation as any).elements.songInformation = false;
 
                 // Standard padding for last system
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
-                console.log('✅ V98.26: Settings applied (songInformation disabled)');
+                console.log('✅ V98.27: Settings applied');
 
                 await loadGuitarProFile(api, fileUrl);
                 console.log('📂 V98.23: File loaded');
