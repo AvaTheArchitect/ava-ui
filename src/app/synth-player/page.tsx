@@ -2,22 +2,20 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 6th, 2026 - V98.24: HARD RELOAD FIX + REMOVED CUSTOM HEADER
+ * January 6th, 2026 - V98.25: PART 1 - REMOVE TUNING OVERLAY
  *
- * 🔧 V98.24 CRITICAL UPDATE - HARD RELOAD ON MODE CHANGE:
- * ✅ Added key prop to AlphaTabRenderer for hard reload on mode switch
- * ✅ key={`${audioSource}-${isMobileLandscape}`} forces destroy/remount
- * ✅ Prevents glitch where header "takes off to infinity"
- * ✅ Prevents "f" symbol disappearing during mode switch
- * ✅ Removed custom landscape header (tiny shadow under TopMenuTray)
- * ✅ Clean slate for future Songsterr-style header implementation
+ * 🔧 V98.25 PART 1 UPDATE - SIMPLIFY LAYOUT:
+ * ✅ Removed TuningOverlay component entirely
+ * ✅ Simplifies layout to isolate glitch cause
+ * ✅ Pitch shift controls still available in control panel
+ * ✅ Tuning data extraction preserved for future use
+ * ✅ Eliminates potential SVG injection conflicts
  * 
- * 🎯 Key Changes:
- * - AlphaTabRenderer now uses key prop for hard reset
- * - Removed landscape header div (lines ~193-207 in V98.22)
- * - All other functionality preserved
+ * 🎯 Testing Hypothesis:
+ * - Check if TuningOverlay was causing layout race condition
+ * - If glitch persists, proceed to Part 2 (notation.elements fix)
  * 
- * 🔒 PRESERVED FROM V98.22:
+ * 🔒 PRESERVED FROM V98.24:
  * ✅ YouTube player portrait ratio (9:16)
  * ✅ Container constraints for landscape
  * ✅ All metronome features
@@ -33,7 +31,7 @@ import React, {
     useMemo,
 } from 'react';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
-import { TuningOverlay } from '@/components/alphaTab/TuningOverlay';
+// 🔧 V98.25: TuningOverlay removed for testing
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
@@ -146,8 +144,8 @@ export default function SynthPlayerPage() {
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.24: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.24: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.25: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.25: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -419,7 +417,7 @@ export default function SynthPlayerPage() {
                 // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
-                    console.log(`📱 V98.24: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    console.log(`📱 V98.25: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
                     setIsMobileLandscape(newValue);
                 }
             }, 150); // 150ms debounce prevents cascade
@@ -470,12 +468,12 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.24: API Ready');
+            console.log('✅ V98.25: API Ready');
             setApi(alphaTabApi);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.24: Player Ready');
+                    console.log('✅ V98.25: Player Ready');
                     setPlayerReady(true);
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
@@ -506,7 +504,7 @@ export default function SynthPlayerPage() {
     // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.24: Score loaded - ${info.title}`);
+            console.log(`✅ V98.25: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -519,7 +517,7 @@ export default function SynthPlayerPage() {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.24: Tuning extracted:', staff.stringTuning.tunings);
+                    console.log('🎸 V98.25: Tuning extracted (for future use):', staff.stringTuning.tunings);
                 }
             }
 
@@ -529,11 +527,11 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.24: Rendering Complete');
+        console.log('✅ V98.25: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.24 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.25 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -890,7 +888,7 @@ export default function SynthPlayerPage() {
                 onCreatePlaylist={handleCreatePlaylist}
             />
 
-            {/* 🔧 V98.24: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
+            {/* 🔧 V98.25: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
             {/* This tiny header under TopMenuTray has been removed for clean slate */}
             {/* Future: Implement Songsterr-style header that scrolls with canvas */}
 
@@ -938,21 +936,11 @@ export default function SynthPlayerPage() {
                         width: 'max-content',
                     } : undefined}
                 >
-                    <TuningOverlay
-                        api={api}
-                        tuning={tuningData}
-                        pitchShift={pitchShift}
-                        onPitchShiftChange={handlePitchShiftChange}
-                        isSynthMode={audioSource === 'synth'}
-                        theme={theme}
-                        isReady={playerReady && !!songInfo}
-                        isPlaying={isPlaying}
-                        isPopoverOpen={isPitchPopoverOpen}
-                        onPopoverToggle={setIsPitchPopoverOpen}
-                        popoverAnchor={pitchPopoverAnchor}
-                    />
+                    {/* 🔧 V98.25 PART 1: TuningOverlay removed for testing */}
+                    {/* TuningOverlay was here - removed to isolate glitch cause */}
+                    {/* Pitch shift still available in control panel */}
 
-                    {/* 🔧 V98.24: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
+                    {/* 🔧 V98.25: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
                     <AlphaTabRenderer
                         key={`${audioSource}-${isMobileLandscape}`} // 👈 Forces hard reset on mode switch
                         fileUrl={currentFileUrl}
