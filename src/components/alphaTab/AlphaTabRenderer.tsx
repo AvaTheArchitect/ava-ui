@@ -364,7 +364,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
-                // 🔧 V98.26: CRITICAL FIX - Suppress song information element entirely
                 const api = await initAlphaTab({
                     container: containerRef.current,
                     playerMode,
@@ -374,12 +373,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     isMobile,
                     enableUserInteraction: false,
                     scrollContainer: scrollElement,
-                    // 👇 V98.26: Disable song information container (prevents header rendering)
-                    notation: {
-                        elements: {
-                            songInformation: false  // Prevents BPM gap, header flash, "f" displacement
-                        }
-                    }
                 });
 
                 if (destroyed) {
@@ -388,14 +381,21 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V98.26: AlphaTab initialized with songInformation disabled');
+                console.log('✅ V98.26: AlphaTab initialized');
 
                 (window as any).__at = api;
+
+                // 🔧 V98.26: CRITICAL FIX - Suppress song information element entirely
+                console.log('🎯 V98.26: Applying notation.elements.songInformation = false...');
+                (api.settings.notation as any).elements = {
+                    ...(api.settings.notation as any).elements,
+                    songInformation: false  // Prevents BPM gap, header flash, "f" displacement
+                };
 
                 // Standard padding for last system
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
-                console.log('✅ V98.26: Settings applied');
+                console.log('✅ V98.26: Settings applied (songInformation disabled)');
 
                 await loadGuitarProFile(api, fileUrl);
                 console.log('📂 V98.23: File loaded');
