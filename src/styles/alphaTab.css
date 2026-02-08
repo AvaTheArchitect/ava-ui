@@ -1,16 +1,14 @@
 /**
- * alphaTab Required Styles - V94 TRACK NAME TUNING FIXES
- * Date: December 20th, 2025
- * 
- * 🆕 NEW IN V94:
- * ✅ Track name (tuning display) rotation override
- * ✅ Clickable tuning text cursor styles
- * ✅ Pitch shift badge positioning
- * 
- * 🔒 PRESERVED FROM V93:
- * ✅ Dark mode selection overlay
- * ✅ Cursor colors
- * ✅ Loop handle z-index
+ * alphaTab Required Styles - V99 Cursor Debug Toggle (CLONED)
+ * Source: alphaTab.css (original backed up as alphaTab.12-20-26.css)
+ *
+ * 🆕 V99:
+ * ✅ Keeps default cursor PURPLE
+ * ✅ Adds optional RED debug override via wrapper class:
+ *    Add `debug-default-cursor-red` to the alphatab container element.
+ *
+ * Example wrapper:
+ *   <div className="alphatab-container debug-default-cursor-red">...</div>
  */
 
 /* Main alphaTab container - PORTRAIT MODE (default) */
@@ -33,20 +31,44 @@
     display: none !important;
 }
 
-/* Beat line cursor - Purple line */
-.at-cursor-beat {
-    background: rgba(168, 85, 247, 0.9) !important;
-    z-index: 999 !important;
-}
+/* ========================================
+   CURSOR COLOR - PROD + DEBUG OVERRIDE
+   ======================================== */
 
+/* 🟣 PRODUCTION DEFAULT: Purple beat cursor */
+.at-cursor-beat,
 #maestro-player .at-cursor-beat {
     background: rgba(168, 85, 247, 0.9) !important;
+    z-index: 999 !important;
 }
 
 @media (max-width: 768px) {
     .at-cursor-beat {
         background: rgba(168, 85, 247, 1) !important;
         min-width: 2px !important;
+    }
+}
+
+
+/* 🔴 DEBUG OVERRIDE: Red cursor when wrapper class is present
+   Put `debug-default-cursor-red` on the SAME element that wraps #maestro-player
+   (usually your AlphaTabRenderer container).
+*/
+.debug-default-cursor-red .at-cursor-beat,
+.debug-default-cursor-red #maestro-player .at-cursor-beat,
+.alphatab-container.debug-default-cursor-red .at-cursor-beat,
+.alphatab-container.debug-default-cursor-red #maestro-player .at-cursor-beat {
+    background: rgba(255, 0, 0, 0.95) !important;
+    box-shadow: 0 0 6px rgba(255, 0, 0, 0.75) !important;
+    z-index: 999 !important;
+}
+
+@media (max-width: 768px) {
+    .debug-default-cursor-red .at-cursor-beat,
+    .alphatab-container.debug-default-cursor-red .at-cursor-beat {
+        background: rgba(255, 0, 0, 1) !important;
+        min-width: 2px !important;
+        box-shadow: 0 0 6px rgba(255, 0, 0, 0.75) !important;
     }
 }
 
@@ -73,7 +95,14 @@
 /* ========================================
    LOOP SELECTION OVERLAY
    ======================================== */
+/* 🎯 V98.30: DISABLE AlphaTab's broken selection overlay renderer */
+.at-selection,
+.at-selection div {
+    display: none !important;
+    visibility: hidden !important;
+}
 
+/* COMMENTED OUT - Original styling (kept for reference)
 .at-selection div {
     position: absolute;
     background: rgba(0, 0, 0, 0.15) !important;
@@ -82,6 +111,7 @@
     border: none !important;
     border-radius: 0;
 }
+*/
 
 /* Dark mode selection overlay */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-selection div,
@@ -191,7 +221,7 @@
     .maestro-loop-bubble {
         display: none !important;
     }
-    
+
     .at-surface {
         overflow: visible !important;
     }

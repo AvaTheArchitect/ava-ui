@@ -2,26 +2,21 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 6th, 2026 - V98.26: PART 2 - NOTATION ELEMENTS FIX
+ * January 27th, 2026 - V98.67: CANVAS RELOAD BUG FIX
  *
- * 🔧 V98.26 PART 2 UPDATE - PROPER HEADER SUPPRESSION:
- * ✅ Uses AlphaTabRenderer V98.26 with notation.elements fix
- * ✅ Prevents song information container from rendering at all
- * ✅ Eliminates BPM gap, header flash, "f" displacement
- * ✅ Official AlphaTab API method for suppressing headers
- * ✅ TuningOverlay remains removed (Part 1 confirmed not the cause)
+ * 🔥 V98.67 CRITICAL FIX - CANVAS RELOAD BUG:
+ * ✅ Removed audioSource from AlphaTabRenderer key prop
+ * ✅ Fixed handleAudioSourceChange to use 0/1 like v98.6 (working version)
+ * ✅ Canvas no longer remounts when switching between synth/original
+ * ✅ Audio source switching now works flawlessly
  * 
- * 🎯 Testing Hypothesis:
- * - notation.elements.songInformation = false should prevent all header-related glitches
- * - No more flashing 3-row header during orientation changes
- * - BPM and "f" should stay in correct positions
- * 
- * 🔒 PRESERVED FROM V98.25:
- * ✅ YouTube player portrait ratio (9:16)
- * ✅ Container constraints for landscape
- * ✅ All metronome features
- * ✅ Count-in functionality
- * ✅ All existing controls
+ * 🔊 V98.66 FEATURES (PRESERVED):
+ * ✅ Master volume ref pattern (prevents unwanted rerenders)
+ * ✅ Pitch shift with tuning detection
+ * ✅ Count-in with 3-beat and 4-beat modes
+ * ✅ Headless metronome
+ * ✅ AudioContext state logging
+ * ✅ Track isolation with selectedTrackIndex
  */
 
 import React, {
@@ -32,7 +27,6 @@ import React, {
     useMemo,
 } from 'react';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
-// 🔧 V98.25: TuningOverlay removed for testing
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
@@ -71,7 +65,14 @@ export default function SynthPlayerPage() {
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
     const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
-    // Pause transition flag
+    // ==================== MASTER VOLUME STATE ====================
+    const [masterVolume, setMasterVolume] = useState<number>(1.0);
+    const masterVolumeRef = useRef<number>(1.0);
+
+    useEffect(() => {
+        masterVolumeRef.current = masterVolume;
+    }, [masterVolume]);
+
     const pauseTransitionRef = useRef<boolean>(false);
 
     // ==================== COUNT IN STATE ====================
@@ -139,14 +140,13 @@ export default function SynthPlayerPage() {
     const [isYouTubeReady, setIsYouTubeReady] = useState(false);
     const youtubePlayerRef = useRef<any>(null);
 
-    // Deferred seek and post-seek lock
     const initialSeekRef = useRef<number>(-1);
     const postSeekLockUntilRef = useRef<number>(0);
 
     const defaultYouTubeId = useMemo(() => {
         const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.26: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.26: YouTube ID: ${videoId}`);
+        console.log(`🎬 V98.67: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
+        console.log(`🎬 V98.67: YouTube ID: ${videoId}`);
         return videoId;
     }, [currentSong]);
 
@@ -175,7 +175,6 @@ export default function SynthPlayerPage() {
     const mainScrollContainerRef = useRef<HTMLElement>(null);
 
     // ==================== PANEL COORDINATION ====================
-    // 🔧 V98.22: Bidirectional panel coordination
     const slideoutCloseRef = useRef<(() => void) | null>(null);
     const closeControlPanelsRef = useRef<(() => void) | null>(null);
 
@@ -199,31 +198,31 @@ export default function SynthPlayerPage() {
 
     // ==================== PITCH SHIFT HANDLER ====================
     const handlePitchShiftChange = useCallback((semitones: number) => {
-        console.log(`🎵 V98.23: handlePitchShiftChange called with ${semitones} semitones`);
+        console.log(`🎵 V98.67: handlePitchShiftChange called with ${semitones} semitones`);
         setPitchShift(semitones);
 
         if (api) {
-            console.log(`🎵 V98.23: API exists, checking score...`);
+            console.log(`🎵 V98.67: API exists, checking score...`);
             if (api.score?.tracks) {
                 try {
                     const allTracks = api.score.tracks;
-                    console.log(`🎵 V98.23: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
+                    console.log(`🎵 V98.67: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
                     api.changeTrackTranspositionPitch(allTracks, semitones);
-                    console.log(`✅ V98.23: Audio pitch shifted by ${semitones} semitones`);
+                    console.log(`✅ V98.67: Audio pitch shifted by ${semitones} semitones`);
                 } catch (err) {
-                    console.error('❌ V98.23: changeTrackTranspositionPitch error:', err);
+                    console.error('❌ V98.67: changeTrackTranspositionPitch error:', err);
                 }
             } else {
-                console.warn('⚠️ V98.23: No score or tracks available');
+                console.warn('⚠️ V98.67: No score or tracks available');
             }
         } else {
-            console.warn('⚠️ V98.23: API not available');
+            console.warn('⚠️ V98.67: API not available');
         }
     }, [api]);
 
     const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
         if (audioSource !== 'synth') {
-            console.log('⚠️ V98.24: Pitch shift only available in Synth mode');
+            console.log('⚠️ V98.67: Pitch shift only available in Synth mode');
             return;
         }
 
@@ -235,6 +234,15 @@ export default function SynthPlayerPage() {
         });
     }, [audioSource]);
 
+    // ==================== MASTER VOLUME HANDLER ====================
+    const handleMasterVolumeChange = useCallback((volume: number) => {
+        setMasterVolume(volume);
+        if (api) {
+            api.masterVolume = volume;
+            console.log(`🔊 V98.67: Master volume → ${Math.round(volume * 100)}%`);
+        }
+    }, [api]);
+
     // ==================== COUNT IN TOGGLE ====================
     const handleCountInToggle = useCallback(() => {
         setIsCountInEnabled(prev => !prev);
@@ -243,7 +251,6 @@ export default function SynthPlayerPage() {
 
     // ==================== METRONOME HANDLERS ====================
     const handleMetronomeToggle = useCallback(() => {
-        // Auto-disable if in YouTube mode
         if (audioSource === 'original') {
             console.log('⚠️ Metronome only works in Synth mode');
             return;
@@ -262,20 +269,20 @@ export default function SynthPlayerPage() {
                     // API may not be ready
                 }
             }
-            console.log('🔄 V98.24: Pitch reset on song change');
+            console.log('🔄 V98.67: Pitch reset on song change');
         }
     }, [currentFileUrl]);
 
     // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.24: Creating YouTube handler instance');
+        console.log('🎬 V98.67: Creating YouTube handler instance');
 
         return {
             play: () => {
-                console.log('▶️ V98.24: Handler.play() called');
+                console.log('▶️ V98.67: Handler.play() called');
 
                 if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(`⏱️ V98.24: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
+                    console.log(`⏱️ V98.67: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
                     youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                     postSeekLockUntilRef.current = performance.now() + 200;
@@ -287,7 +294,7 @@ export default function SynthPlayerPage() {
             },
 
             pause: () => {
-                console.log('⏸️ V98.24: Handler.pause() called');
+                console.log('⏸️ V98.67: Handler.pause() called');
                 youtubePlayerRef.current?.pauseVideo?.();
             },
 
@@ -352,7 +359,6 @@ export default function SynthPlayerPage() {
         };
     }, [currentSong?.videoStartOffset, isYouTubeReady]);
 
-    // Update display every 500ms
     useEffect(() => {
         if (!isPlaying) return;
         const interval = setInterval(() => {
@@ -397,31 +403,27 @@ export default function SynthPlayerPage() {
     }, [handleScroll]);
 
     // ==================== ORIENTATION DETECTION ====================
-    // 🔧 V98.16: Added debounce to prevent cascade loop on mode switch
     useEffect(() => {
         let debounceTimer: ReturnType<typeof setTimeout> | null = null;
         let lastValue: boolean | null = null;
 
         const checkOrientation = () => {
-            // Clear any pending debounce
             if (debounceTimer) {
                 clearTimeout(debounceTimer);
             }
 
-            // Debounce to prevent cascade from rapid resize events
             debounceTimer = setTimeout(() => {
                 const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
                 const newValue = isTouchDevice && isLandscape && isCompactHeight;
 
-                // 🔧 V98.16: Only update state if value ACTUALLY changed
                 if (lastValue !== newValue) {
                     lastValue = newValue;
-                    console.log(`📱 V98.26: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
+                    console.log(`📱 V98.67: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
                     setIsMobileLandscape(newValue);
                 }
-            }, 150); // 150ms debounce prevents cascade
+            }, 150);
         };
 
         checkOrientation();
@@ -441,7 +443,6 @@ export default function SynthPlayerPage() {
         };
     }, []);
 
-    // Reset scroll position in landscape
     useEffect(() => {
         if (isMobileLandscape && mainScrollContainerRef.current) {
             mainScrollContainerRef.current.scrollLeft = 0;
@@ -469,13 +470,30 @@ export default function SynthPlayerPage() {
     // ==================== EVENT HANDLERS ====================
     const handleApiReady = useCallback(
         (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.26: API Ready');
+            console.log('✅ V98.67: API Ready');
             setApi(alphaTabApi);
+
+            alphaTabApi.masterVolume = masterVolumeRef.current;
+            console.log(`🔊 V98.67: Initialized api.masterVolume = ${masterVolumeRef.current}`);
 
             if (alphaTabApi.playerReady) {
                 alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.26: Player Ready');
+                    console.log('✅ V98.67: Player Ready');
                     setPlayerReady(true);
+
+                    if (alphaTabApi.player?.output) {
+                        const output = alphaTabApi.player.output as any;
+
+                        if (output.context) {
+                            console.log('🔊 V98.67: AudioContext state:', output.context.state);
+
+                            if (output.context.state === 'suspended') {
+                                console.warn('⚠️ V98.67: AudioContext SUSPENDED - needs play button click');
+                            } else if (output.context.state === 'running') {
+                                console.log('✅ V98.67: AudioContext RUNNING - audio ready!');
+                            }
+                        }
+                    }
 
                     if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
                         const output = alphaTabApi.player.output as any;
@@ -502,10 +520,9 @@ export default function SynthPlayerPage() {
         [youTubeMediaHandlerInstance, audioSource],
     );
 
-    // ==================== SCORE LOADED WITH TUNING EXTRACTION ====================
     const handleScoreLoaded = useCallback(
         (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.26: Score loaded - ${info.title}`);
+            console.log(`✅ V98.67: Score loaded - ${info.title}`);
             setSongInfo(info);
             setTracks(trackList);
             setSelectedTrack(0);
@@ -513,12 +530,30 @@ export default function SynthPlayerPage() {
             setTrackMuteState(new Map(trackList.map((_, index) => [index, false])));
             setTrackSoloState(new Map(trackList.map((_, index) => [index, false])));
 
-            // Extract tuning data
+            if (api?.score?.tracks) {
+                console.log('🔊 V98.67: TRACK VOLUME CHECK:');
+                api.score.tracks.forEach((track: any, idx: number) => {
+                    const volume = track.playbackInfo?.volume;
+                    console.log(`  Track ${idx} (${track.name}):`, {
+                        volume: volume,
+                        volumeNormalized: volume ? volume / 16 : 'undefined',
+                        isMuted: track.playbackInfo?.isMute,
+                        isSolo: track.playbackInfo?.isSolo,
+                    });
+
+                    if (volume === undefined || volume === 0) {
+                        console.warn(`⚠️ V98.67: Track ${idx} has invalid volume! Setting to 16`);
+                        track.playbackInfo.volume = 16;
+                        api.changeTrackVolume([track], 1.0);
+                    }
+                });
+            }
+
             if (api?.score?.tracks?.[0]?.staves?.[0]) {
                 const staff = api.score.tracks[0].staves[0];
                 if (staff.stringTuning && staff.stringTuning.tunings) {
                     setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.26: Tuning extracted (for future use):', staff.stringTuning.tunings);
+                    console.log('🎸 V98.67: Tuning extracted:', staff.stringTuning.tunings);
                 }
             }
 
@@ -528,11 +563,11 @@ export default function SynthPlayerPage() {
     );
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.26: Rendering Complete');
+        console.log('✅ V98.67: Rendering Complete');
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.26 ERROR: ${errorMsg}`);
+        console.error(`❌ V98.67 ERROR: ${errorMsg}`);
         setError(errorMsg);
     }, []);
 
@@ -540,13 +575,24 @@ export default function SynthPlayerPage() {
     const handlePlayPause = useCallback(async () => {
         if (!api) return;
 
-        // ========== COUNT-IN LOGIC (SUPPORTS BOTH MODES) ==========
+        if (audioSource === 'synth' && api.player?.output) {
+            const output = api.player.output as any;
+            if (output.context && output.context.state === 'suspended') {
+                console.log('🔊 V98.67: Resuming AudioContext...');
+                try {
+                    await output.context.resume();
+                    console.log('✅ V98.67: AudioContext resumed!');
+                } catch (err) {
+                    console.error('❌ V98.67: Failed to resume AudioContext:', err);
+                }
+            }
+        }
+
         if (!isPlaying && isCountInEnabled) {
             const maxCount = countInMode === 'four-beat' ? 4 : 3;
             console.log(`🔔 Starting ${maxCount}-beat countdown...`);
             setIsCountingDown(true);
 
-            // Countdown (visual only - CountInOverlay handles sound)
             for (let i = maxCount; i > 0; i--) {
                 setCountdownValue(i);
                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -554,11 +600,10 @@ export default function SynthPlayerPage() {
 
             setCountdownValue(0);
             setIsCountingDown(false);
-            setIsCountInEnabled(false); // Auto-disable after use
+            setIsCountInEnabled(false);
             console.log('✅ Countdown complete, Count In auto-disabled');
         }
 
-        // ========== EXISTING PLAYBACK LOGIC ==========
         if (audioSource === 'original') {
             const output = api.player?.output as any;
             if (output?.handler) {
@@ -597,11 +642,25 @@ export default function SynthPlayerPage() {
                     api.playbackRange = null;
                     setHasLoopSelection(false);
                 }
+
+                // 🎸 V98.89: Change VISUAL track only, preserve audio state
                 api.renderTracks([api.score.tracks[trackIndex]]);
+
+                // 🔊 V98.89: CRITICAL - Ensure all backing tracks remain audible
+                // Only mute/solo if explicitly requested via UI
+                api.score.tracks.forEach((track: any, idx: number) => {
+                    const shouldBeMuted = trackMuteState.get(idx) || false;
+                    const shouldBeSolo = trackSoloState.get(idx) || false;
+
+                    api.changeTrackMute([track], shouldBeMuted);
+                    api.changeTrackSolo([track], shouldBeSolo);
+                });
+
+                console.log(`🎸 V98.89: Switched to Track ${trackIndex}, backing tracks preserved`);
                 setSelectedTrack(trackIndex);
             }
         },
-        [api, isLooping],
+        [api, isLooping, trackMuteState, trackSoloState],
     );
 
     const handleLoopToggle = useCallback(() => {
@@ -626,24 +685,33 @@ export default function SynthPlayerPage() {
         [api],
     );
 
-    // ==================== AUDIO SOURCE CHANGE WITH PITCH RESET ====================
+    // 🔥 V98.67: FIXED AUDIO SOURCE CHANGE (NO MORE CANVAS RELOAD BUG)
     const handleAudioSourceChange = useCallback(
         (source: 'synth' | 'original') => {
+            console.log(`🎵 V98.67: Audio source changing to: ${source}`);
             setAudioSource(source);
 
+            // Reset pitch shift when switching to YouTube mode
             if (source === 'original' && pitchShift !== 0) {
                 setPitchShift(0);
                 if (api?.score?.tracks) {
                     try {
                         api.changeTrackTranspositionPitch(api.score.tracks, 0);
                     } catch (err) {
-                        console.error('❌ V98.23: Reset pitch error:', err);
+                        console.error('❌ V98.67: Reset pitch error:', err);
                     }
                 }
             }
 
+            // 🔥 V98.67: KEY FIX - Mute/unmute like v98.6 working version
             if (api) {
-                api.masterVolume = source === 'original' ? 0 : 1;
+                if (source === 'original') {
+                    api.masterVolume = 0;
+                    console.log('🔇 V98.67: AlphaTab synth MUTED');
+                } else {
+                    api.masterVolume = masterVolume; // Restore user's volume
+                    console.log(`🔊 V98.67: AlphaTab synth UNMUTED (${Math.round(masterVolume * 100)}%)`);
+                }
             }
 
             if (source === 'original' && activeVideoId) {
@@ -655,7 +723,7 @@ export default function SynthPlayerPage() {
                 setIsYouTubeReady(false);
             }
         },
-        [api, activeVideoId, pitchShift],
+        [api, activeVideoId, pitchShift, masterVolume],
     );
 
     const handleVideoVariantChange = useCallback((newVideoId: string) => {
@@ -674,7 +742,7 @@ export default function SynthPlayerPage() {
     }, []);
 
     const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.24: YouTube player ready');
+        console.log('✅ V98.67: YouTube player ready');
         setIsYouTubeReady(true);
         setIsSeeking(false);
         isSeekingRef.current = false;
@@ -716,7 +784,6 @@ export default function SynthPlayerPage() {
         [api],
     );
 
-    // 50ms CURSOR SYNC LOOP
     useEffect(() => {
         if (!api || audioSource !== 'original' || !isYouTubeReady) return;
         if (!api.player?.output) return;
@@ -738,7 +805,7 @@ export default function SynthPlayerPage() {
             try {
                 output.updatePosition(timeMs);
             } catch (err) {
-                console.error('❌ V98.24: updatePosition error:', err);
+                console.error('❌ V98.67: updatePosition error:', err);
             }
             currentTimeRef.current = timeMs;
         }, 50);
@@ -746,7 +813,6 @@ export default function SynthPlayerPage() {
         return () => clearInterval(syncInterval);
     }, [api, audioSource, isYouTubeReady, currentSong?.videoStartOffset]);
 
-    // ENSURE HANDLER IS ATTACHED
     useEffect(() => {
         if (!api || !playerReady || !api.player?.output) return;
         const output = api.player.output as any;
@@ -761,7 +827,6 @@ export default function SynthPlayerPage() {
         };
     }, [api, playerReady, youTubeMediaHandlerInstance]);
 
-    // ENABLE USER INTERACTION
     useEffect(() => {
         if (!api) return;
         (api.settings.player as any).enableUserInteraction = isLooping;
@@ -826,7 +891,6 @@ export default function SynthPlayerPage() {
         setTheme(prev => prev === 'dark' ? 'light' : 'dark');
     }, []);
 
-    // ==================== RENDER ====================
     const handleTrackMuteToggle = useCallback(
         (trackIndex: number) => {
             if (!api || !api.score) return;
@@ -889,10 +953,6 @@ export default function SynthPlayerPage() {
                 onCreatePlaylist={handleCreatePlaylist}
             />
 
-            {/* 🔧 V98.26: REMOVED CUSTOM LANDSCAPE HEADER (was lines ~193-207 in V98.22) */}
-            {/* This tiny header under TopMenuTray has been removed for clean slate */}
-            {/* Future: Implement Songsterr-style header that scrolls with canvas */}
-
             <main
                 ref={mainScrollContainerRef}
                 className={`
@@ -905,7 +965,6 @@ export default function SynthPlayerPage() {
                     transition-[padding] duration-300 ease-in-out
                 `}
                 style={isMobileLandscape ? {
-                    // 🔧 V98.21: Lock viewport width, allow horizontal scroll for content
                     maxWidth: '100vw',
                     width: '100vw'
                 } : undefined}
@@ -929,21 +988,16 @@ export default function SynthPlayerPage() {
                         }
                     `}
                     style={isMobileLandscape ? {
-                        // 🔧 V98.22: Reduced top padding (smaller 2-row header)
-                        paddingTop: '50px',  // Header height (was 60px)
-                        paddingBottom: '450px',  // YouTube player + controls
+                        paddingTop: '50px',
+                        paddingBottom: '450px',
                         display: 'inline-block',
                         minWidth: '100%',
                         width: 'max-content',
                     } : undefined}
                 >
-                    {/* 🔧 V98.25 PART 1: TuningOverlay removed for testing */}
-                    {/* TuningOverlay was here - removed to isolate glitch cause */}
-                    {/* Pitch shift still available in control panel */}
-
-                    {/* 🔧 V98.25: HARD RELOAD FIX - Added key prop to force destroy/remount on mode change */}
+                    {/* 🔥 V98.67: KEY FIX - Removed audioSource from key prop! */}
                     <AlphaTabRenderer
-                        key={`${audioSource}-${isMobileLandscape}`} // 👈 Forces hard reset on mode switch
+                        key={isMobileLandscape ? 'landscape' : 'portrait'}
                         fileUrl={currentFileUrl}
                         playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
                         externalMediaHandler={youTubeMediaHandlerInstance}
@@ -952,6 +1006,7 @@ export default function SynthPlayerPage() {
                         isMobileLandscape={isMobileLandscape}
                         isSeeking={isSeeking}
                         isPlaying={isPlaying}
+                        selectedTrackIndex={selectedTrack}
                         onApiReady={handleApiReady}
                         onScoreLoaded={handleScoreLoaded}
                         onRenderFinished={handleRenderFinished}
@@ -1003,6 +1058,8 @@ export default function SynthPlayerPage() {
                         trackSoloState={trackSoloState}
                         theme={theme}
                         isMobileLandscape={isMobileLandscape}
+                        masterVolume={masterVolume}
+                        onMasterVolumeChange={handleMasterVolumeChange}
                         onPlayPause={handlePlayPause}
                         onStop={handleStop}
                         onLoopToggle={handleLoopToggle}
@@ -1033,15 +1090,14 @@ export default function SynthPlayerPage() {
                         onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
                         onArmMetronome={armMetronome}
                         currentBPM={currentBPM}
-                        onSlideoutShouldClose={() => slideoutCloseRef.current?.()} // 🔧 V98.22: Panel coordination
+                        onSlideoutShouldClose={() => slideoutCloseRef.current?.()}
                         registerCloseAllPanels={(closeFunc) => {
                             closeControlPanelsRef.current = closeFunc;
-                        }} // 🔧 V98.22: Register close function
+                        }}
                     />
                 )}
             </footer>
 
-            {/* COUNT IN OVERLAY - Updated with mode support */}
             <CountInOverlay
                 count={countdownValue}
                 isVisible={isCountingDown}
@@ -1049,24 +1105,17 @@ export default function SynthPlayerPage() {
                 onComplete={() => console.log('🎵 Countdown complete')}
             />
 
-            {/* 🆕 MOBILE TOOLS SLIDEOUT - Hidden on desktop */}
-            {/* 🔧 V98.22: Completely disabled in landscape to prevent phantom drawer */}
             {!isMobileLandscape && (
                 <div className="md:hidden" style={{ zIndex: 50 }}>
                     <MobileToolsSlideout
-                        // Count-in
                         isCountInEnabled={isCountInEnabled}
                         onCountInToggle={handleCountInToggle}
                         countInMode={countInMode}
                         onCountInModeChange={setCountInMode}
-
-                        // Metronome
                         isMetronomeEnabled={isMetronomeEnabled}
                         onMetronomeToggle={handleMetronomeToggle}
                         currentBPM={currentBPM}
                         audioSource={audioSource}
-
-                        // Metronome inline controls (inside slideout)
                         metronomeVolume={metronomeVolume}
                         onMetronomeVolumeChange={setMetronomeVolume}
                         metronomeBalance={metronomeBalance}
@@ -1077,17 +1126,10 @@ export default function SynthPlayerPage() {
                         onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
                         metronomeAccentEnabled={metronomeAccentEnabled}
                         onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
-
-                        // Visual aid
                         showEdgeTab={true}
-
-                        // 🔧 Audio arming function for mobile PWA
                         onArmMetronome={armMetronome}
-
-                        // 🔧 V98.22: Bidirectional panel coordination
                         isMobileLandscape={isMobileLandscape}
                         onOtherPanelOpened={() => {
-                            // Close Track Mixer/Speed/Gear when slideout opens
                             closeControlPanelsRef.current?.();
                         }}
                     />
@@ -1101,14 +1143,13 @@ export default function SynthPlayerPage() {
                         position: 'fixed',
                         bottom: isMobileLandscape ? 0 : 80,
                         right: isMobileLandscape ? 0 : 16,
-                        zIndex: 40, // BELOW Mobile Drawer (z-index: 50)
-                        // 🔧 V98.21 CRITICAL: PORTRAIT RATIO (9:16) like Songsterr
+                        zIndex: 40,
                         width: '240px',
                         height: '427px',
                         maxWidth: '240px',
                         maxHeight: '427px',
-                        flexShrink: 0, // 🔧 V98.21: Prevents fighting with AlphaTab for space
-                        overflow: 'hidden', // Force player to stay within bounds
+                        flexShrink: 0,
+                        overflow: 'hidden',
                         borderRadius: '8px',
                     }}
                 >

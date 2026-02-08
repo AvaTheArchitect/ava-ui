@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2015",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -17,45 +13,19 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
-    "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@/components/*": [
-        "src/components/*"
-      ],
-      "@/lib/*": [
-        "src/lib/*"
-      ],
-      "@/store/*": [
-        "src/store/*"
-      ],
-      "@lib/*": [
-        "lib/*"
-      ],
-      "@cipher/*": [
-        "lib/cipher/*"
-      ],
-      "@components/*": [
-        "src/components/*"
-      ],
-      "@brain/*": [
-        "brain/*",
-        "MaestroBrain"
-      ],
-      "@brain/core/*": [
-        "brain/core/*"
-      ],
-      "@brain/modules/*": [
-        "brain/modules/*"
-      ],
-      "@brain/integrations/*": [
-        "brain/integrations/*"
-      ],
-      "@maestro/brain": [
-        "brain/index"
-      ]
+      "@/*": ["./src/*"],
+      "@/components/*": ["./src/components/*"],
+      "@/lib/*": ["./src/lib/*"],
+      "@/store/*": ["./src/store/*"],
+      "@lib/*": ["./lib/*"],
+      "@cipher/*": ["./lib/cipher/*"],
+      "@components/*": ["./src/components/*"],
+      "@brain/*": ["./brain/*"],
+      "@brain/core/*": ["./brain/core/*"],
+      "@brain/modules/*": ["./brain/modules/*"],
+      "@brain/integrations/*": ["./brain/integrations/*"],
+      "@maestro/brain": ["./brain/index"]
     },
     "incremental": true,
     "plugins": [

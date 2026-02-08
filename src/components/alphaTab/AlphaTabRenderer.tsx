@@ -1,33 +1,67 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V98.27: NOTATION ELEMENTS PROPER FIX
- * Base: V97.56 Horizontal Mode Initialization Fix
- * Date: January 6th, 2026
+ * AlphaTab Renderer - V99.3: DUAL TRACK INDEX + AUDIO CLOCK AUTHORITY
+ * Base: V99.2 (Authority-First Beat Handler)
+ * Date: February 6th, 2026
+ * 
+ * 🔒 Note for Claude:
+ *  Cursor Solo vs Audio Playback Separation (DO NOT MERGE):
+ *  cursorTrackIndicesRef is cursor-only (tickCache/findBeat while paused).
+ *  allTrackIndicesRef is playback truth (tickCache/findBeat while playing).
+ *  Audio playback must remain full-band unless user mutes tracks.
+ *  Do not set api.tracks = [soloTrack].
+ *  Do not mute other tracks when solo changes.
+ *  Preserve the scoreLoaded block that unmutes all tracks and restores volume defaults.
  *
- * 🔧 V98.27 CRITICAL FIX - DISABLE NOTATION ELEMENTS BEFORE LAYOUT SWITCH:
- * ✅ Uses proper NotationElement.set() API from AlphaTab
- * ✅ Disables ALL score info elements before orientation/mode change
- * ✅ Applied DURING layout mode switch (not after init)
- * ✅ Prevents header container from being rendered at all
- * ✅ Eliminates BPM gap and "f" displacement
+ * 🎉 V99.3 FIXES (Production Ready):
+ * ✅ DUAL TRACK INDEX REFS: cursorTrackIndicesRef (visual) vs allTrackIndicesRef (playback truth)
+ * ✅ AUDIO CLOCK AUTHORITY: playerPositionChanged uses api.player.tickPosition over e.currentTick while playing
+ * ✅ BEAT LOOKUP SCOPE: All tracks while playing (prevents snap-back), selected track while paused (visual focus)
+ * ✅ playedBeatChanged RE-RESOLVE: Re-resolves beat from tickCache using audio tick, not event beat
+ * ✅ REPEAT-PROOF: Works correctly in GP5 files with 3x repeats (like "Rise") — no more snap-back
  * 
- * 🎯 Fix Location:
- * - Applied in orientation change useEffect
- * - Uses api.settings.notation.elements.set() with NotationElement enum
- * - Disables elements BEFORE layout mode switch
- * - Official AlphaTab API method
+ * 🎯 PRESERVED FROM V99.2:
+ * ✅ Authority-first beat handler (audio clock over event beat)
+ * ✅ Authority seek (forces both audio + visual on click)
+ * ✅ Play re-sync (reasserts seek on play start)
+ * ✅ Tighter loop detection
+ * ✅ All V99.1 and earlier fixes
  * 
- * 🔒 PRESERVED FROM V97.56:
- * ✅ Horizontal mode initialization fix
- * ✅ Layout mode change detection
- * ✅ Songsterr loop behavior
- * ✅ All existing functionality
+ * 🔒 PROTECTED CRITICAL FIXES (DO NOT MODIFY WITHOUT REVIEW):
+ * 
+ * 1️⃣ V98.115 FIX #1 - Pause Reset Prevention
+ * 2️⃣ V98.115 FIX #2 - Drag Flicker Prevention
+ * 3️⃣ V98.120 - Loop State Tracking
+ * 4️⃣ V98.122/V98.124 - Ironclad Enforcer
+ * 5️⃣ V98.123 - Listener Attachment
+ * 6️⃣ V98.125 - Manual Positioning Lock + Sticky Range Cleanup
+ * 7️⃣ V98.126 - Track Change Cursor Re-Anchor + Cipher Enhancements
+ * 8️⃣ V99.0 - Audio Hard Reset + Bounds Retry + Tighter Loop Detection
+ * 9️⃣ V99.1 - Authority Seek - GP5 Repeat Fix
+ * 🔟 V99.2 - Authority-First Beat Handler
+ * 1️⃣1️⃣ V99.3 - Dual Track Index + Audio Clock Authority (NEW)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+// 🎯 VERSION TRACKING
+const ALPHATAB_RENDERER_VERSION = 'v99.3';
+const VERSION_DATE = 'February 6th, 2026';
+const ALPHATAB_PACKAGE_VERSION = '1.8.1';
+
+// 🛠️ DEBUG FLAGS (Production: Set all to false)
+const DEBUG = true; // Master switch for cursor/beat logs
+const DEBUG_PLAYER_STATE = true; // Track player state changes
+const DEBUG_LOOP_BOUNDARY = true; // Log near loop end behavior
+const DEBUG_BOUNDARY_ENFORCER = true; // Log boundary enforcer actions
+const DEBUG_ENFORCER_CONDITIONS = true; // Log WHY enforcer doesn't trigger
+const DEBUG_RANGE_LISTENER = true; // Log listener attachment + range changes
+const DEBUG_MANUAL_POSITION = true; // Log manual positioning lock actions
+
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { initAlphaTab, loadGuitarProFile } from '@/lib/alphaTab/initAlphaTab';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+import { CustomLoopOverlay } from '@/components/alphaTab/CustomLoopOverlay';
+import { MaestroCursor } from '@/components/alphaTab/MaestroCursor';
 
 export interface AlphaTabRendererProps {
     fileUrl: string;
@@ -48,9 +82,89 @@ export interface AlphaTabRendererProps {
     isSeeking?: boolean;
     isPlaying?: boolean;
     theme?: 'light' | 'dark';
+    selectedTrackIndex?: number;
 }
 
+// ==================== ANIMATION CONTROL ====================
+
+const SNATCHBACK_BUFFER = 100;
+
+const setLoopCursorMode = (api: AlphaTabApi, isLooping: boolean) => {
+    try {
+        const playerSettings = api.settings.player as any;
+        if (isLooping) {
+            playerSettings.enableCursorAnimation = false;
+        } else {
+            playerSettings.enableCursorAnimation = true;
+        }
+        api.updateSettings();
+    } catch (err) {
+        // Silent
+    }
+};
+
 // ==================== HELPER FUNCTIONS ====================
+
+const calculateDynamicMargin = (
+    api: AlphaTabApi,
+    range: { startTick: number; endTick: number },
+    selectedTrackIndex: number = 0
+): number => {
+    try {
+        const score = api.score;
+        if (!score?.masterBars) return 3000;
+
+        let lastBar: any = null;
+        for (const bar of score.masterBars) {
+            const barStart = bar.start;
+            const barEnd = barStart + bar.calculateDuration();
+            if (barStart < range.endTick && barEnd >= range.endTick) {
+                lastBar = bar;
+                break;
+            }
+        }
+
+        if (!lastBar) return 3000;
+
+        const track = score.tracks[selectedTrackIndex];
+        if (!track) return 3000;
+
+        let lastNoteTick = 0;
+        let foundAnyNotes = false;
+
+        for (const staff of track.staves) {
+            const bar = staff.bars?.find((b: any) => b.masterBar === lastBar);
+            if (!bar) continue;
+
+            for (const voice of bar.voices) {
+                for (const beat of voice.beats) {
+                    if (!beat.notes || beat.notes.length === 0) continue;
+
+                    for (const note of beat.notes) {
+                        const hasFret = typeof note.fret === 'number' && note.fret >= 0;
+                        const hasString = typeof note.string === 'number' && note.string >= 1;
+
+                        if (hasFret && hasString) {
+                            const beatEnd = beat.absolutePlaybackStart + beat.playbackDuration;
+                            lastNoteTick = Math.max(lastNoteTick, beatEnd);
+                            foundAnyNotes = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!foundAnyNotes || lastNoteTick === 0) return 1200;
+
+        const spaceAtEnd = range.endTick - lastNoteTick;
+
+        if (spaceAtEnd < 200) return 100;
+        else if (spaceAtEnd < 800) return 600;
+        else return 1200;
+    } catch (err) {
+        return 3000;
+    }
+};
 
 const getBeatAtPosition = (
     api: AlphaTabApi,
@@ -66,15 +180,52 @@ const getBeatAtPosition = (
 
     const offsets = [0, -4, 4, -8, 8];
     for (const offset of offsets) {
-                    const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
-        if (beat) {
-            console.log(`✅ V98.27: getBeatAtPos success with offset ${offset}px`);
-            return beat;
+        const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
+        if (beat) return beat;
+    }
+
+    return null;
+};
+
+const getSnappedBarBoundaries = (
+    api: AlphaTabApi,
+    startTick: number,
+    endTick: number
+): { startTick: number; endTick: number } | null => {
+    const score = api.score;
+    if (!score?.masterBars) return null;
+
+    let startBar: any = null;
+    let endBar: any = null;
+
+    for (const bar of score.masterBars) {
+        const barStart = bar.start;
+        const barEnd = barStart + bar.calculateDuration();
+
+        if (startTick >= barStart && startTick < barEnd) {
+            startBar = bar;
+            break;
         }
     }
 
-    console.warn('⚠️ V98.23: getBeatAtPos failed with all offsets');
-    return null;
+    const searchEndTick = Math.max(endTick - 1, startTick);
+
+    for (const bar of score.masterBars) {
+        const barStart = bar.start;
+        const barEnd = barStart + bar.calculateDuration();
+
+        if (searchEndTick >= barStart && searchEndTick < barEnd) {
+            endBar = bar;
+            break;
+        }
+    }
+
+    if (!startBar || !endBar) return null;
+
+    const snappedStart = startBar.start;
+    const snappedEnd = endBar.start + endBar.calculateDuration();
+
+    return { startTick: snappedStart, endTick: snappedEnd };
 };
 
 const getBarBoundariesFromMaster = (api: AlphaTabApi, beat: any): { startTick: number; endTick: number } | null => {
@@ -104,25 +255,14 @@ const getBarBoundaries = (beat: any): { startTick: number; endTick: number } | n
     if (!beat || !beat.voice || !beat.voice.bar) return null;
 
     const bar = beat.voice.bar;
-    let barStartTick = Number.MAX_SAFE_INTEGER;
-    let barEndTick = 0;
+    const masterBar = bar.masterBar;
 
-    for (const voice of bar.voices) {
-        if (voice.beats && voice.beats.length > 0) {
-            const firstBeat = voice.beats[0];
-            const lastBeat = voice.beats[voice.beats.length - 1];
+    if (!masterBar) return null;
 
-            const voiceStart = firstBeat.absolutePlaybackStart;
-            const voiceEnd = lastBeat.absolutePlaybackStart + lastBeat.playbackDuration;
-
-            barStartTick = Math.min(barStartTick, voiceStart);
-            barEndTick = Math.max(barEndTick, voiceEnd);
-        }
-    }
-
-    return barStartTick !== Number.MAX_SAFE_INTEGER
-        ? { startTick: barStartTick, endTick: barEndTick }
-        : null;
+    return {
+        startTick: masterBar.start,
+        endTick: masterBar.start + masterBar.calculateDuration()
+    };
 };
 
 const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
@@ -162,7 +302,7 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
             }
         }
     } catch (err) {
-        console.warn('⚠️ V98.23: tickCache scan failed:', err);
+        // Ignore
     }
 
     return beat;
@@ -170,7 +310,11 @@ const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
 
 const setupTouchSelection = (
     api: AlphaTabApi,
-    container: HTMLElement
+    container: HTMLElement,
+    cursorRef: React.RefObject<MaestroCursor | null>,
+    cursorTrackIndicesRef: React.RefObject<Set<number>>,
+    isPlayingRef: React.RefObject<boolean>,
+    manualPositioningLockRef: React.MutableRefObject<number> // 🔥 V98.125: Added lock ref (MutableRefObject for write access)
 ) => {
     let startBeat: any = null;
     let endBeat: any = null;
@@ -241,13 +385,16 @@ const setupTouchSelection = (
                     if (!endBoundaries) endBoundaries = getBarBoundaries(endBeat);
 
                     if (startBoundaries && endBoundaries) {
-                        const loopStart = Math.min(startBoundaries.startTick, endBoundaries.startTick);
-                        const loopEnd = Math.max(startBoundaries.endTick, endBoundaries.endTick);
+                        const rawStart = Math.min(startBoundaries.startTick, endBoundaries.startTick);
+                        const rawEnd = Math.max(startBoundaries.endTick, endBoundaries.endTick);
 
-                        api.playbackRange = {
-                            startTick: loopStart,
-                            endTick: loopEnd,
-                        };
+                        const snapped = getSnappedBarBoundaries(api, rawStart, rawEnd);
+                        if (snapped) {
+                            api.playbackRange = {
+                                startTick: snapped.startTick,
+                                endTick: snapped.endTick,
+                            };
+                        }
                     }
                 }
             }
@@ -266,6 +413,41 @@ const setupTouchSelection = (
         if (!touchMoved && Date.now() - touchStartTime < 400) {
             if (isDoubleTap && api.playbackRange) {
                 api.playbackRange = null;
+            }
+        } else if (touchMoved && api.playbackRange) {
+            // ============================================
+            // 🔥 V98.125: BEAT-BASED ANCHOR + MANUAL LOCK
+            // ============================================
+            const cursor = cursorRef.current;
+            if (cursor && api.renderer?.boundsLookup) {
+                const startTick = api.playbackRange.startTick;
+                const trackIndices = cursorTrackIndicesRef.current;
+                const tickCache = (api as any).tickCache;
+
+                // 🔥 V98.125: Use beat resolution for repeat-safe seeking
+                const startBeatResult = tickCache?.findBeat?.(trackIndices, startTick);
+
+                if (startBeatResult?.beat) {
+                    const startBounds = api.renderer.boundsLookup.findBeat(startBeatResult.beat);
+                    const tempRange = { startTick, endTick: api.playbackRange.endTick };
+
+                    // 🔥 V98.125: Set manual positioning lock BEFORE cursor update
+                    manualPositioningLockRef.current = Date.now();
+                    if (DEBUG_MANUAL_POSITION) {
+                        console.log('🔒 TOUCH: Manual positioning lock engaged');
+                    }
+
+                    cursor.requestSnap();
+                    cursor.setBeat(startBeatResult.beat, startBounds);
+                    cursor.setTick(startTick, startBeatResult.beat, startBounds, null, tempRange);
+
+                    // Only set tickPosition if NOT playing
+                    if (!isPlayingRef.current) {
+                        api.tickPosition = startTick;
+                    }
+
+                    if (DEBUG) console.log(`✅ TOUCH: Anchored cursor at tick ${startTick}`);
+                }
             }
         }
 
@@ -311,31 +493,64 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     externalMediaHandler,
     scrollContainerRef,
     isMobileLandscape = false,
+    audioSource = 'synth',
     isLooping = false,
     onLoopRangeChange,
-    audioSource = 'synth',
     isSeeking = false,
     isPlaying = false,
     theme = 'light',
+    selectedTrackIndex = 0,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<AlphaTabApi | null>(null);
+    const cursorRef = useRef<MaestroCursor | null>(null);
     const lastLayoutModeRef = useRef<string | null>(null);
-
+    const lastUpdateTickRef = useRef<number>(-1);
     const lastLoadedFileRef = useRef<string>('');
-    const [isLoading, setIsLoading] = useState(true);
-    const [isRendered, setIsRendered] = useState(false);
-    const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
-    const [renderCycle, setRenderCycle] = useState(0);
-
     const lastThemeRef = useRef<string>('');
-
     const startHandleRef = useRef<HTMLDivElement | null>(null);
     const endHandleRef = useRef<HTMLDivElement | null>(null);
     const dragCleanupRef = useRef<(() => void) | null>(null);
     const mouseCleanupRef = useRef<(() => void) | null>(null);
     const touchCleanupRef = useRef<(() => void) | null>(null);
     const initialFileLoadedRef = useRef(false);
+    const marginRef = useRef<number>(800);
+    const playbackRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+
+    // ============================================
+    // 🔥 V99.3: DUAL TRACK INDEX REFS
+    // cursorTrackIndicesRef → selected track only (visual focus, used when paused)
+    // allTrackIndicesRef → all tracks (playback truth, used when playing)
+    // ============================================
+    const cursorTrackIndicesRef = useRef<Set<number>>(new Set([0]));
+    const allTrackIndicesRef = useRef<Set<number>>(new Set([0]));
+    // ============================================
+    // 🔒 END DUAL TRACK INDEX REFS 🔒
+    // ============================================
+
+    // ============================================
+    // 🔒 CRITICAL FIX BLOCK - DO NOT MODIFY 🔒
+    // V98.115 FIX #1: Pause Reset Prevention
+    // V98.115 FIX #2: Drag Flicker Prevention
+    // V98.120: Loop State Tracking
+    // V98.124: Enforcer Cooldown
+    // V98.125: Manual Positioning Lock (NEW)
+    // ============================================
+    const isDraggingRef = useRef<boolean>(false); // FIX #2: Track drag state
+    const lastStableRangeRef = useRef<{ startTick: number; endTick: number } | null>(null); // FIX #2: Stable range during drag
+    const isPlayingRef = useRef<boolean>(false); // FIX #1: Track playing state
+    const isLoopingRef = useRef<boolean>(false); // V98.120: Synced from isLooping prop (prevents stale closure)
+    const lastEnforcerTriggerRef = useRef<number>(0); // V98.124: Enforcer cooldown timestamp
+    const manualPositioningLockRef = useRef<number>(0); // 🔥 V98.125: Manual positioning lock timestamp
+    const lastUserSeekTickRef = useRef<number | null>(null); // 🔥 V99.1: Authority seek - remember last user seek
+    // ============================================
+    // 🔒 END CRITICAL FIX BLOCK 🔒
+    // ============================================
+
+    const [isLoading, setIsLoading] = useState(true);
+    const [isRendered, setIsRendered] = useState(false);
+    const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
+    const [renderCycle, setRenderCycle] = useState(0);
 
     const detectMobile = (): boolean => {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -347,6 +562,51 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     };
 
     const [isMobile] = useState(detectMobile());
+
+    // ============================================
+    // 🔥 V99.1: AUTHORITY SEEK HELPER
+    // Forces BOTH audio player AND visual tick to seek position
+    // Prevents "jump back" on play in GP5 files with repeat mapping issues
+    // ============================================
+    const authoritySeekToTick = useCallback((api: AlphaTabApi, tick: number, beat?: any) => {
+        // 1️⃣ Force the AUDIO engine to the tick
+        if (api.player?.seekTicks) {
+            api.player.seekTicks(tick);
+        }
+
+        // 2️⃣ Update the API tick (visual/state)
+        api.tickPosition = tick;
+
+        // 3️⃣ Remember this seek so PLAY can reassert it
+        lastUserSeekTickRef.current = tick;
+
+        // 4️⃣ Keep internal lastUpdate aligned
+        lastUpdateTickRef.current = tick;
+
+        // 5️⃣ Snap Maestro cursor immediately if we have beat/bounds
+        if (beat && cursorRef.current && api.renderer?.boundsLookup) {
+            const beatBounds = api.renderer.boundsLookup.findBeat(beat);
+            if (beatBounds) {
+                cursorRef.current.requestSnap();
+                cursorRef.current.setBeat(beat, beatBounds);
+                cursorRef.current.setTick(tick, beat, beatBounds, null, null);
+            }
+        }
+
+        if (DEBUG) console.log(`🛡️ V99.1: Authority seek to tick ${tick}`);
+    }, []);
+
+    // ============================================
+    // 🔒 CRITICAL: V98.120 Loop State Sync 🔒
+    // DO NOT REMOVE - Prevents stale closure in playerPositionChanged
+    // ============================================
+    useEffect(() => {
+        isLoopingRef.current = !!isLooping;
+        if (DEBUG) console.log(`🔄 isLoopingRef synced: ${isLoopingRef.current}`);
+    }, [isLooping]);
+    // ============================================
+    // 🔒 END LOOP STATE SYNC 🔒
+    // ============================================
 
     // ========== INIT ALPHATAB ==========
 
@@ -360,7 +620,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
-                console.log('🎵 V98.27: Initializing AlphaTab...');
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
@@ -381,22 +640,16 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 }
 
                 apiRef.current = api;
-                console.log('✅ V98.27: AlphaTab initialized');
-
                 (window as any).__at = api;
 
-                // Standard padding for last system
                 api.settings.display.lastSystemPaddingBottom = 300;
                 await api.updateSettings();
-                console.log('✅ V98.27: Settings applied');
 
                 await loadGuitarProFile(api, fileUrl);
-                console.log('📂 V98.23: File loaded');
                 initialFileLoadedRef.current = true;
                 lastLoadedFileRef.current = fileUrl;
 
                 api.scoreLoaded.on((score: any) => {
-                    console.log('📊 V98.23: Score loaded');
                     const tracks: Track[] = score.tracks.map((t: any) => ({
                         index: t.index,
                         name: t.name,
@@ -413,26 +666,524 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     setScoreIsLoaded(true);
                     onScoreLoaded?.(songInfo, tracks);
 
+                    // ============================================
+                    // 🔥 V99.3: Initialize BOTH track refs
+                    // allTrackIndicesRef = all tracks (playback truth, never changes)
+                    // cursorTrackIndicesRef = selected track (visual focus)
+                    // ============================================
+                    allTrackIndicesRef.current = new Set(score.tracks.map((t: any) => t.index));
+                    cursorTrackIndicesRef.current = new Set([selectedTrackIndex ?? 0]);
+
                     if (api && !destroyed) {
+                        // ============================================
+                        // 🔒 V99.0: AUDIO HARD RESET 🔒
+                        // Ensures clean slate: no ghost Solo/Mute states
+                        // ============================================
+                        const allTracks = score.tracks;
+
+                        // 1️⃣ Clear ALL Solo states (prevents track isolation)
+                        api.changeTrackSolo(allTracks, false);
+
+                        // 2️⃣ Clear ALL Mute states (ensures full band)
+                        api.changeTrackMute(allTracks, false);
+
+                        // 3️⃣ Standardize volume levels
+                        allTracks.forEach((track: any) => {
+                            if (!track.playbackInfo?.volume || track.playbackInfo.volume === 0) {
+                                track.playbackInfo.volume = 16;
+                            }
+                        });
+
                         api.updateSettings();
                         api.render();
-                        console.log('✅ V98.23: Layout recalculated');
+
+                        if (DEBUG) {
+                            console.log('🛡️ V99.0: Audio Engine Hard-Reset. All tracks active, Solo/Mute cleared.');
+                        }
 
                         lastThemeRef.current = '';
                     }
                 });
 
+                // ============================================
+                // 🔒 CRITICAL: V98.115 FIX #1 - Playing State Tracking 🔒
+                // DO NOT REMOVE - Required for pause reset prevention
+                // ============================================
+                api.playerStateChanged.on((e: any) => {
+                    const stopped = !!e?.stopped;
+                    const state = e?.state ?? e?.playerState ?? (stopped ? 'stopped' : 'unknown');
+                    const stateNames: Record<number, string> = {
+                        0: 'PAUSED',
+                        1: 'PLAYING',
+                        2: 'STOPPED'
+                    };
+                    const stateName = typeof state === 'number'
+                        ? (stateNames[state] || `UNKNOWN(${state})`)
+                        : String(state);
+
+                    const wasPlaying = isPlayingRef.current;
+                    isPlayingRef.current = (state === 1 || state === 'playing') && !stopped;
+
+                    // ============================================
+                    // 🔥 V99.1: AUTHORITY RE-SYNC ON PLAY
+                    // Reasserts last user seek when play starts (fixes GP5 repeat "jump back")
+                    // ============================================
+                    if (!wasPlaying && isPlayingRef.current) {
+                        const pendingSeek = lastUserSeekTickRef.current;
+                        if (pendingSeek != null && api.player?.seekTicks) {
+                            api.player.seekTicks(pendingSeek);
+                            api.tickPosition = pendingSeek;
+                            if (DEBUG) {
+                                console.log(`🛡️ V99.1: Authority re-sync on PLAY → tick ${pendingSeek}`);
+                            }
+                        }
+                    }
+
+                    if (DEBUG_PLAYER_STATE) {
+                        console.log(`🎵 Player state: ${stateName}`, {
+                            state,
+                            stopped,
+                            tick: api.tickPosition,
+                            wasPlaying,
+                            nowPlaying: isPlayingRef.current
+                        });
+
+                        if (state === 2 && isLooping && playbackRangeRef.current) {
+                            console.error('🚨 UNEXPECTED STOP during loop playback');
+                            console.log('   Range:', playbackRangeRef.current);
+                            console.log('   Current tick:', api.tickPosition);
+                            console.log('   Loop enabled:', (api.settings.player as any).enableLoop);
+                        }
+                    }
+                });
+                // ============================================
+                // 🔒 END PLAYING STATE TRACKING 🔒
+                // ============================================
+
                 api.renderFinished.on(() => {
-                    console.log('🎨 V98.23: Render finished');
                     setIsRendered(true);
                     setIsLoading(false);
                     setRenderCycle(rc => rc + 1);
                     onRenderFinished?.();
+
+                    lastUpdateTickRef.current = -1;
+
+                    if (containerRef.current) {
+                        const host = containerRef.current;
+
+                        if (host.style.position !== 'relative') {
+                            host.style.position = 'relative';
+                        }
+
+                        if (!cursorRef.current) {
+                            cursorRef.current = new MaestroCursor(host);
+                            api.cursorHandler = cursorRef.current;
+
+                            setTimeout(() => {
+                                const cursor = cursorRef.current;
+                                if (!cursor || !api.renderer?.boundsLookup) return;
+
+                                const trackIndices = cursorTrackIndicesRef.current;
+                                const tickCache = (api as any).tickCache;
+                                const beatResult = tickCache?.findBeat?.(trackIndices, 0);
+
+                                if (beatResult?.beat) {
+                                    const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                                    cursor.setBeat(beatResult.beat, beatBounds);
+                                }
+                            }, 200);
+
+                        } else {
+                            const el = cursorRef.current.element;
+                            if (el && !host.contains(el)) {
+                                host.appendChild(el);
+                            }
+
+                            cursorRef.current.requestSnap();
+
+                            setTimeout(() => {
+                                if (!cursorRef.current || !api.renderer?.boundsLookup) return;
+
+                                const currentTick = api.tickPosition;
+                                const trackIndices = cursorTrackIndicesRef.current;
+                                const tickCache = (api as any).tickCache;
+
+                                if (tickCache) {
+                                    const beatResult = tickCache.findBeat(trackIndices, currentTick);
+                                    if (beatResult?.beat) {
+                                        const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                                        if (beatBounds) {
+                                            cursorRef.current.setBeat(beatResult.beat, beatBounds);
+                                        }
+                                    }
+                                }
+                            }, 100);
+                        }
+
+                        setTimeout(() => {
+                            const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
+                            // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
+                        }, 100);
+                    }
+                });
+
+                // ============================================
+                // 🔥 V99.3: playedBeatChanged RE-RESOLVE
+                // Re-resolves beat from tickCache using audio tick, NOT event beat.
+                // Prevents GP5 repeat snap-back where event beat points into repeat section.
+                // ============================================
+                api.playedBeatChanged.on((eventBeat: any) => {
+                    const cursor = cursorRef.current;
+                    if (!cursor || !api.renderer?.boundsLookup) return;
+
+                    // ✅ Truth tick from audio clock
+                    const audioTick = api.player?.tickPosition ?? api.tickPosition ?? 0;
+                    const tickCache = (api as any).tickCache;
+                    if (!tickCache) return;
+
+                    // ✅ Track scope depends on playing state
+                    const indices = isPlayingRef.current
+                        ? allTrackIndicesRef.current
+                        : cursorTrackIndicesRef.current;
+
+                    // Resolve beat by truth tick (not eventBeat)
+                    const tryTicks = [audioTick, audioTick - 1, audioTick - 10].filter(t => t >= 0);
+                    let resolved: any = null;
+                    for (const t of tryTicks) {
+                        const r = tickCache.findBeat(indices, t);
+                        if (r?.beat) { resolved = r; break; }
+                    }
+
+                    if (!resolved?.beat) return;
+
+                    const beatBounds = api.renderer.boundsLookup.findBeat(resolved.beat);
+                    if (!beatBounds) return;
+
+                    cursor.setBeat(resolved.beat, beatBounds);
+
+                    // Diagnostic: show disagreement between event beat and audio clock
+                    const eventTick = eventBeat?.absolutePlaybackStart ?? null;
+                    if (eventTick != null && Math.abs(audioTick - eventTick) > 1000 && isPlayingRef.current) {
+                        if (DEBUG) {
+                            console.log(`⚖️ V99.3 Timeline Correction (beatChanged)`, { audioTick, eventTick });
+                        }
+                    }
+
+                    if (DEBUG) {
+                        const measureNum = Math.floor((resolved.beat.absolutePlaybackStart ?? audioTick) / 1920) + 1;
+                        console.log(`🎵 Beat changed: M${measureNum}, audioTick ${audioTick}`);
+                    }
+                });
+                // ============================================
+                // 🔒 END V99.3 playedBeatChanged RE-RESOLVE 🔒
+                // ============================================
+
+                // ============================================
+                // 🔥 V98.125: ENHANCED playerPositionChanged
+                // V99.3: Audio clock authority + dual track index scope
+                // ============================================
+                api.playerPositionChanged.on((e: any) => {
+                    const cursor = cursorRef.current;
+                    if (!cursor || !api.renderer?.boundsLookup) return;
+
+                    // ============================================
+                    // 🔥 V99.3: AUDIO CLOCK AUTHORITY
+                    // Playing: use api.player.tickPosition (immune to repeat mapping bugs)
+                    // Paused/Stopped: use e.currentTick (fine for UI seeks)
+                    // ============================================
+                    const eventTick = e.currentTick;
+                    const audioTick = api.player?.tickPosition ?? api.tickPosition ?? eventTick;
+                    const newTick = isPlayingRef.current ? audioTick : eventTick;
+
+                    // Diagnostic: show when authority override kicks in
+                    if (isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000) {
+                        if (DEBUG) {
+                            console.log(`⚖️ V99.3 AUTHORITY OVERRIDE`, { audioTick, eventTick, delta: audioTick - eventTick });
+                        }
+                    }
+                    // ============================================
+                    // 🔒 END AUDIO CLOCK AUTHORITY 🔒
+                    // ============================================
+
+                    const now = Date.now();
+
+                    // ============================================
+                    // 🔥 V98.125: MANUAL POSITIONING LOCK GUARD
+                    // Ignores position updates for 150ms after manual cursor anchoring
+                    // Prevents playerPositionChanged from overwriting loop selection anchors
+                    // ============================================
+                    const timeSinceManualPosition = now - manualPositioningLockRef.current;
+                    if (timeSinceManualPosition < 150) {
+                        if (DEBUG_MANUAL_POSITION) {
+                            console.log(`🔒 Ignoring position update (${timeSinceManualPosition}ms since manual lock)`);
+                        }
+                        return; // Skip update - manual positioning in progress
+                    }
+                    // ============================================
+                    // 🔒 END MANUAL POSITIONING LOCK GUARD 🔒
+                    // ============================================
+
+                    const loopActive = isLoopingRef.current;
+                    const playing = isPlayingRef.current;
+                    // 🔥 V98.125: Only use sticky range when loop is actually ON
+                    const activeRange = loopActive
+                        ? (playbackRangeRef.current || lastStableRangeRef.current)
+                        : null;
+
+                    if (DEBUG_ENFORCER_CONDITIONS && loopActive && newTick > 94000) {
+                        console.log('🧪 ENFORCER GATES @ tick', newTick, {
+                            loopActive,
+                            playing,
+                            liveRange: !!playbackRangeRef.current,
+                            stableRange: !!lastStableRangeRef.current,
+                            activeRange: !!activeRange,
+                            rangeStart: activeRange?.startTick,
+                            rangeEnd: activeRange?.endTick,
+                        });
+                    }
+
+                    // ============================================
+                    // 🔒 CRITICAL: V98.122/V98.124/V98.125 IRONCLAD ENFORCER 🔒
+                    // DO NOT REMOVE - Prevents cursor overshoot & player stop at loop end
+                    // V98.125: Added activeRange validation guard
+                    // ============================================
+                    if (loopActive && playing && activeRange) {
+                        const { startTick, endTick } = activeRange;
+
+                        // 🔥 V98.125: Validate range is non-zero before enforcing
+                        if (endTick <= startTick) {
+                            if (DEBUG_BOUNDARY_ENFORCER) {
+                                console.warn('🛡️ Enforcer skipped - invalid range', { startTick, endTick });
+                            }
+                            // Don't enforce on invalid range - fall through to normal handling
+                        } else {
+                            const SAFETY_MARGIN = 120;
+                            const threshold = endTick - SAFETY_MARGIN;
+
+                            if (newTick >= threshold) {
+                                if (newTick < startTick + 200) {
+                                    lastEnforcerTriggerRef.current = 0;
+                                }
+
+                                const COOLDOWN_MS = 200;
+                                const timeSinceLastTrigger = now - lastEnforcerTriggerRef.current;
+
+                                if (timeSinceLastTrigger < COOLDOWN_MS) {
+                                    if (DEBUG_BOUNDARY_ENFORCER) {
+                                        console.log(`🛡️ Enforcer on cooldown (${timeSinceLastTrigger}ms since last trigger)`);
+                                    }
+                                    return;
+                                }
+
+                                if (DEBUG_BOUNDARY_ENFORCER) {
+                                    console.log(`🛡️ ========================================`);
+                                    console.log(`🛡️ IRONCLAD ENFORCER TRIGGERED!`);
+                                    console.log(`🛡️ tick ${newTick} >= threshold ${threshold}`);
+                                    console.log(`🛡️ Range: ${startTick} - ${endTick}`);
+                                    console.log(`🛡️ Using: ${playbackRangeRef.current ? 'LIVE' : 'STABLE'} range`);
+                                    console.log(`🛡️ ========================================`);
+                                }
+
+                                try {
+                                    cursor.requestSnap();
+
+                                    if (api.player?.seekTicks) {
+                                        api.player.seekTicks(startTick);
+                                        if (DEBUG_BOUNDARY_ENFORCER) {
+                                            console.log(`🛡️    ✅ Seeked to ${startTick} via player.seekTicks`);
+                                        }
+                                    } else {
+                                        api.tickPosition = startTick;
+                                        if (DEBUG_BOUNDARY_ENFORCER) {
+                                            console.log(`🛡️    ✅ Seeked to ${startTick} via api.tickPosition`);
+                                        }
+                                    }
+
+                                    lastEnforcerTriggerRef.current = now;
+                                    lastUpdateTickRef.current = startTick;
+
+                                    if (DEBUG_BOUNDARY_ENFORCER) {
+                                        console.log(`🛡️    🛑 Exiting handler - blocking 96000+ ticks`);
+                                    }
+                                    return;
+                                } catch (err) {
+                                    console.error('🚨 Boundary enforcer failed:', err);
+                                }
+                            }
+                        }
+                    } else {
+                        if (DEBUG_ENFORCER_CONDITIONS && loopActive && newTick > 94000) {
+                            console.warn('🧪 ENFORCER BLOCKED:', {
+                                loopActive,
+                                playing,
+                                liveRange: !!playbackRangeRef.current,
+                                stableRange: !!lastStableRangeRef.current,
+                                activeRange: !!activeRange,
+                                tick: newTick
+                            });
+                        }
+                    }
+                    // ============================================
+                    // 🔒 END IRONCLAD ENFORCER 🔒
+                    // ============================================
+
+                    // 🔥 V98.125: Only clamp if we have a valid range
+                    const effectiveTick = (activeRange && activeRange.endTick > activeRange.startTick)
+                        ? Math.min(newTick, activeRange.endTick - 1)
+                        : newTick;
+
+                    if (DEBUG_LOOP_BOUNDARY && activeRange && Math.abs(newTick - activeRange.endTick) < 50) {
+                        console.log(`🧱 Near loop end: raw=${newTick} clamped=${effectiveTick} end=${activeRange.endTick}`);
+                    }
+
+                    const lastTick = lastUpdateTickRef.current;
+
+                    if (effectiveTick === lastTick) return;
+
+                    // ============================================
+                    // 🔒 CRITICAL: V98.115 FIX #1 - Pause Guard 🔒
+                    // DO NOT REMOVE - Prevents cursor reset to M1 on pause
+                    // ============================================
+                    if (!playing) {
+                        if (effectiveTick === 0 && lastTick > 1000) {
+                            if (DEBUG) console.log('🛑 Ignoring transient tick=0 on pause');
+                            return;
+                        }
+                        if (lastTick > 0 && lastTick !== effectiveTick && Math.abs(effectiveTick - lastTick) < 1000) {
+                            if (DEBUG) console.log('🛑 Cursor frozen during pause');
+                            return;
+                        }
+                    }
+                    // ============================================
+                    // 🔒 END PAUSE GUARD 🔒
+                    // ============================================
+
+                    // ============================================
+                    // 🔒 CRITICAL: V98.115 FIX #2 - Drag Selection Lock 🔒
+                    // DO NOT REMOVE - Prevents cursor flicker during drag
+                    // ============================================
+                    if (loopActive && isDraggingRef.current) {
+                        if (!activeRange) {
+                            if (DEBUG) console.log('🛑 Ignoring frame: range disappeared during drag');
+                            return;
+                        }
+                        if (activeRange.startTick === 0 && lastTick > 1000) {
+                            if (DEBUG) console.log('🛑 Ignoring transient startTick=0 during drag');
+                            return;
+                        }
+                    }
+                    // ============================================
+                    // 🔒 END DRAG SELECTION LOCK 🔒
+                    // ============================================
+
+                    // ============================================
+                    // 🔥 V99.1: LOOP RESET DETECTION (LOOP-ONLY + PLAYING + VALID RANGE)
+                    // Compare EFFECTIVE ticks to avoid false positives (e.g., end-of-song 667200 → 1)
+                    // ============================================
+                    const prevTick = lastUpdateTickRef.current;
+                    const currTick = effectiveTick;
+                    const isValidRange = !!activeRange && activeRange.endTick > activeRange.startTick;
+
+                    const isLoopReset =
+                        loopActive &&          // Gate 1: loop mode must be ON
+                        playing &&             // Gate 2: must be actively playing
+                        isValidRange &&        // Gate 3: must have a real range
+                        prevTick >= 0 &&       // Gate 4: prev tick must be valid
+                        currTick < prevTick && // Gate 5: backwards jump
+                        Math.abs(currTick - prevTick) > 100;
+
+                    if (isLoopReset) {
+                        if (DEBUG) console.log(`🔄 Loop reset detected - tick jumped from ${prevTick} to ${currTick}`);
+                        cursor.requestSnap();
+                    }
+
+                    lastUpdateTickRef.current = effectiveTick;
+
+                    const tickCache = (api as any).tickCache;
+
+                    if (!tickCache) return;
+
+                    // ============================================
+                    // 🔥 V99.3: BEAT LOOKUP SCOPE SWITCH
+                    // Playing: all tracks (prevents snap-back into repeat section)
+                    // Paused: selected track (visual focus)
+                    // ============================================
+                    const indicesForBeatLookup = isPlayingRef.current
+                        ? allTrackIndicesRef.current      // ✅ Playing: all tracks (prevents snap-back)
+                        : cursorTrackIndicesRef.current;   // ✅ Paused: selected track (visual focus)
+
+                    const beatResult = tickCache.findBeat(indicesForBeatLookup, effectiveTick);
+
+                    if (DEBUG) {
+                        console.log(`🎯 V99.3 Beat lookup`, {
+                            playing: isPlayingRef.current,
+                            tickUsed: effectiveTick,
+                            scope: isPlayingRef.current ? 'all' : 'selected',
+                            found: !!beatResult?.beat
+                        });
+                    }
+                    // ============================================
+                    // 🔒 END BEAT LOOKUP SCOPE SWITCH 🔒
+                    // ============================================
+
+                    if (!beatResult?.beat) {
+                        // 🔥 V99.0: Suppress warning at song end when not looping (benign noise)
+                        const isNearSongEnd = effectiveTick > 0 && api.score?.masterBars
+                            && effectiveTick >= (api.score.masterBars[api.score.masterBars.length - 1]?.start ?? Infinity);
+
+                        if (DEBUG && !(isNearSongEnd && !loopActive)) {
+                            console.warn(`⚠️ No beat found for tick ${effectiveTick}`);
+                        }
+                        return;
+                    }
+
+                    const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                    if (!beatBounds) {
+                        if (DEBUG) console.warn(`⚠️ No bounds for beat at tick ${effectiveTick}`);
+                        return;
+                    }
+
+                    // 🔥 V98.125: Validate range before using for lookahead
+                    const rangeForLookahead = (activeRange && activeRange.endTick > activeRange.startTick)
+                        ? activeRange
+                        : null;
+                    const rangeEnd = rangeForLookahead?.endTick ?? null;
+
+                    let nextBeatCenterX: number | null = null;
+                    const nb = beatResult.beat.nextBeat;
+                    if (nb) {
+                        const nbStart = nb.absolutePlaybackStart;
+
+                        if (rangeEnd === null || nbStart < (rangeEnd - 1)) {
+                            try {
+                                const nbBounds = api.renderer.boundsLookup.findBeat(nb);
+                                if (nbBounds?.visualBounds) {
+                                    nextBeatCenterX = nbBounds.visualBounds.x + (nbBounds.visualBounds.w / 2);
+                                }
+                            } catch (err) {
+                                if (DEBUG) console.warn('⚠️ Failed to get next beat bounds:', err);
+                            }
+                        } else {
+                            if (DEBUG) console.log(`🛑 Next beat ${nbStart} past range end ${rangeEnd}`);
+                        }
+                    }
+
+                    try {
+                        cursor.setTick(
+                            effectiveTick,
+                            beatResult.beat,
+                            beatBounds,
+                            nextBeatCenterX,
+                            rangeForLookahead
+                        );
+                    } catch (err) {
+                        console.error('🚨 [MaestroCursor] setTick crashed - playback continues:', err);
+                    }
                 });
 
                 onApiReady?.(api);
+
             } catch (err) {
-                console.error('❌ V98.23: Init error:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 setIsLoading(false);
                 onError?.(errorMsg);
@@ -443,11 +1194,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return () => {
             destroyed = true;
+
+            if (cursorRef.current) {
+                cursorRef.current.destroy();
+                cursorRef.current = null;
+            }
+
             if (apiRef.current) {
                 try {
                     apiRef.current.destroy();
                 } catch (e) {
-                    console.error('Error destroying AlphaTab', e);
+                    // Silent
                 }
                 apiRef.current = null;
             }
@@ -455,18 +1212,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [fileUrl, soundFontPath, scrollContainerRef, isMobile, playerMode]);
 
-    // ========== PLAYER MODE CHANGES ==========
+    // ========== PLAYER MODE, HANDLER, FILE LOADING ==========
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
-
-        console.log(`🔄 V98.23: Updating player mode to: ${playerMode}`);
         (api.settings.player as any).playerMode = playerMode;
         api.updateSettings();
     }, [playerMode]);
-
-    // ========== ATTACH EXTERNAL HANDLER ==========
 
     useEffect(() => {
         const api = apiRef.current;
@@ -475,7 +1228,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (externalMediaHandler) {
             const output = api.player.output as any;
             output.handler = externalMediaHandler;
-            console.log('🔗 V98.23: External handler attached');
 
             return () => {
                 if (api.player?.output) {
@@ -493,28 +1245,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         }
     }, [externalMediaHandler]);
 
-    // ========== LOAD NEW FILE ==========
-
     useEffect(() => {
         const api = apiRef.current;
         if (!api || !initialFileLoadedRef.current) return;
 
-        if (lastLoadedFileRef.current === fileUrl) {
-            console.log('⏭️ V98.23: Same file, skipping reload');
-            return;
-        }
+        if (lastLoadedFileRef.current === fileUrl) return;
 
         const loadNewFile = async () => {
             try {
-                console.log(`🔄 V98.23: Loading new file: ${fileUrl}`);
-
                 lastThemeRef.current = '';
-
                 await loadGuitarProFile(api, fileUrl);
                 lastLoadedFileRef.current = fileUrl;
-                console.log('✅ V98.23: New file loaded');
             } catch (err) {
-                console.error('❌ V98.23: Error loading new file:', err);
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 onError?.(errorMsg);
             }
@@ -523,7 +1265,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         loadNewFile();
     }, [fileUrl, onError]);
 
-    // ========== ORIENTATION HANDLING - V97.56 ENHANCED FIX ==========
+    // ========== ORIENTATION, THEME, LOOPS ==========
 
     useEffect(() => {
         if (!apiRef.current || !isRendered || !scoreIsLoaded) return;
@@ -535,53 +1277,32 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
         const targetLayoutMode = isLandscape ? 'horizontal' : 'page';
 
-        if (lastLayoutModeRef.current === targetLayoutMode) {
-            console.log(`⏭️ V98.23: Layout mode unchanged (${targetLayoutMode}), skipping`);
-            return;
-        }
+        if (lastLayoutModeRef.current === targetLayoutMode) return;
 
-        console.log(`🔄 V98.23: Layout mode CHANGED: ${lastLayoutModeRef.current} → ${targetLayoutMode}`);
         lastLayoutModeRef.current = targetLayoutMode;
 
         const applyLayoutMode = async () => {
             const alphaTab = await import('@coderline/alphatab');
 
             if (isLandscape) {
-                console.log('🎸 V98.23: Applying LANDSCAPE mode');
-                
-                // 🔧 V97.56: Set scroll container BEFORE settings
                 const scrollElement = scrollContainerRef?.current || container;
                 api.settings.player.scrollElement = scrollElement;
-                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
 
                 const horizontalOffset = scrollElement.clientWidth * 0.25;
                 (api.settings.player as any).scrollOffset = horizontalOffset;
 
-                console.log(`📐 V98.23: Horizontal setup complete, scrollOffset=${horizontalOffset.toFixed(0)}px`);
-                
-                // 🔧 V97.56: Apply settings THEN render
                 await api.updateSettings();
-                
-                // 🔧 V97.56: Add stabilization delay for horizontal mode
                 await new Promise((r) => setTimeout(r, 200));
-                
                 api.render();
-                
-                console.log('✅ V98.23: Horizontal render triggered');
             } else {
-                console.log('📱 V98.23: Applying PORTRAIT/DESKTOP mode');
-                
                 const scrollElement = scrollContainerRef?.current || document.documentElement;
                 api.settings.player.scrollElement = scrollElement;
-                
                 api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
                 api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
                 (api.settings.player as any).scrollOffset = 100;
 
-                console.log('📐 V98.23: Page layout setup complete');
-                
                 await api.updateSettings();
                 await new Promise((r) => setTimeout(r, 100));
                 api.render();
@@ -592,8 +1313,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
     }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef, isMobile]);
 
-    // ========== THEME (DARK/LIGHT) ==========
-
     useEffect(() => {
         const api = apiRef.current;
         if (!api || !isRendered) return;
@@ -602,7 +1321,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const applyTheme = async () => {
             const alphaTab = await import('@coderline/alphatab');
-            console.log(`🎨 V98.23: Applying ${theme} theme`);
             lastThemeRef.current = theme;
 
             const resources = api.settings.display.resources as any;
@@ -625,24 +1343,125 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             await api.updateSettings();
             api.render();
-            console.log(`✅ V98.23: Theme ${theme} applied`);
         };
 
         applyTheme();
     }, [theme, isRendered, renderCycle]);
 
-    // ========== DYNAMIC USER INTERACTION - DISABLED ==========
+    // ========== LOOP MODE CONTROL ==========
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
-        (api.settings.player as any).enableUserInteraction = false;
+        const playerSettings = api.settings.player as any;
+        playerSettings.enableLoop = !!isLooping;
         api.updateSettings();
-        console.log('🔒 V98.23: enableUserInteraction locked to FALSE');
+
+        setLoopCursorMode(api, isLooping);
+
+        return () => {
+            if (api) {
+                setLoopCursorMode(api, false);
+            }
+        };
     }, [isLooping]);
 
-    // ========== INSTANT LOOP AT CURSOR ==========
+    // ============================================
+    // 🔒 CRITICAL: V98.123 LISTENER ATTACHMENT FIX 🔒
+    // DO NOT REMOVE - Ensures listener attaches AFTER API is ready
+    // Root cause: useEffect ran before API ready, never re-ran
+    // Fix: Added scoreIsLoaded dependency to trigger re-run
+    // ============================================
+    useEffect(() => {
+        const api = apiRef.current;
+
+        if (!api || !scoreIsLoaded) {
+            if (DEBUG_RANGE_LISTENER) {
+                console.log('🔌 Range listener NOT attached - API not ready', {
+                    hasApi: !!api,
+                    scoreIsLoaded
+                });
+            }
+            return;
+        }
+
+        if (DEBUG_RANGE_LISTENER) {
+            console.log('🔌 ========================================');
+            console.log('🔌 V98.123: Attaching playbackRangeChanged listener');
+            console.log('🔌 ========================================');
+        }
+
+        if (api.playbackRange) {
+            playbackRangeRef.current = api.playbackRange;
+            lastStableRangeRef.current = api.playbackRange;
+            if (DEBUG_RANGE_LISTENER) {
+                console.log('🔌 INIT: Populated refs from api.playbackRange', api.playbackRange);
+            }
+        }
+
+        const handleRangeChange = (e: any) => {
+            const fromEvent = e?.playbackRange ?? null;
+            const fromApi = api.playbackRange ?? null;
+            const next = fromEvent || fromApi;
+
+            if (DEBUG_RANGE_LISTENER) {
+                console.log('🔌 Range change event fired', {
+                    fromEvent,
+                    fromApi,
+                    selected: next,
+                    live: playbackRangeRef.current,
+                    stable: lastStableRangeRef.current
+                });
+            }
+
+            if (next) {
+                lastStableRangeRef.current = next;
+                if (DEBUG_RANGE_LISTENER) {
+                    console.log(`🧷 Stable Range Memory Locked: ${next.startTick} - ${next.endTick}`);
+                }
+            }
+
+            if (!next && isLoopingRef.current && isPlayingRef.current) {
+                if (DEBUG_RANGE_LISTENER) {
+                    console.log('🧷 Ignoring transient playbackRange=null while playing');
+                }
+                return;
+            }
+
+            // 🔥 V98.125: Clear sticky range when playbackRange becomes null and loop is OFF
+            if (!next && !isLoopingRef.current) {
+                lastStableRangeRef.current = null;
+                if (DEBUG_RANGE_LISTENER) {
+                    console.log('🧹 Cleared stable range (loop OFF, range null)');
+                }
+            }
+
+            playbackRangeRef.current = next;
+
+            if (next) {
+                onLoopRangeChange?.(next.startTick, next.endTick);
+            } else {
+                onLoopRangeChange?.(null, null);
+            }
+        };
+
+        api.playbackRangeChanged.on(handleRangeChange);
+
+        if (DEBUG_RANGE_LISTENER) {
+            console.log('🔌 ✅ Listener attached successfully');
+        }
+
+        return () => {
+            if (DEBUG_RANGE_LISTENER) {
+                console.log('🔌 Detaching playbackRangeChanged listener');
+            }
+            api.playbackRangeChanged.off(handleRangeChange);
+        };
+    }, [onLoopRangeChange, scoreIsLoaded]);
+    // ============================================
+    // 🔒 END LISTENER ATTACHMENT FIX 🔒
+    // ============================================
 
     useEffect(() => {
         const api = apiRef.current;
@@ -652,7 +1471,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         if (!api.playbackRange && api.tickPosition !== undefined) {
             const currentTick = api.tickPosition;
-            const trackIndices = api.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]);
+            const trackIndices = cursorTrackIndicesRef.current;
             const tickCache = (api as any).tickCache;
 
             if (tickCache) {
@@ -667,17 +1486,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     }
 
                     if (boundaries) {
-                        api.playbackRange = {
-                            startTick: boundaries.startTick,
-                            endTick: boundaries.endTick,
-                        };
+                        const snapped = getSnappedBarBoundaries(api, boundaries.startTick, boundaries.endTick);
+                        if (snapped) {
+                            api.playbackRange = {
+                                startTick: snapped.startTick,
+                                endTick: snapped.endTick,
+                            };
+                        }
                     }
                 }
             }
         }
     }, [isLooping, isRendered]);
-
-    // ========== LOOP HANDLES ==========
 
     useEffect(() => {
         if (startHandleRef.current) {
@@ -697,32 +1517,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 dragCleanupRef.current = null;
             }
         };
-    }, [isLooping, onLoopRangeChange]);
+    }, [isLooping]);
 
-    // ========== PLAYBACK RANGE CHANGES ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        const handleRangeChange = (e: any) => {
-            if (e.playbackRange) {
-                const { startTick, endTick } = e.playbackRange;
-                onLoopRangeChange?.(startTick, endTick);
-            } else {
-                onLoopRangeChange?.(null, null);
-            }
-        };
-
-        api.playbackRangeChanged.on(handleRangeChange);
-        api.renderFinished.on(() => {});
-
-        return () => {
-            api.playbackRangeChanged.off(handleRangeChange);
-        };
-    }, [onLoopRangeChange, isLooping, fileUrl]);
-
-    // ========== SINGLE CLICK SEEK (loop off) ==========
+    // ========== SINGLE CLICK SEEK ==========
 
     useEffect(() => {
         const api = apiRef.current;
@@ -740,10 +1537,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 return;
             }
 
+            // 🔥 V98.125: Use getBeatAtPosition for repeat-safe seeking
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
             if (beat && beat.absolutePlaybackStart !== undefined) {
                 const tickPosition = beat.absolutePlaybackStart;
-                api.tickPosition = tickPosition;
+
+                if (DEBUG) console.log(`🎯 SEEK TO: tick ${tickPosition} (M${Math.floor(tickPosition / 1920) + 1})`);
+
+                // 🔥 V99.1: Use Authority Seek (audio + visual + cursor)
+                authoritySeekToTick(api, tickPosition, beat);
+
+                if (DEBUG) console.log(`✅ SEEK: Authority seek completed`);
             }
         };
 
@@ -752,46 +1556,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         return () => {
             target.removeEventListener('click', handleClick);
         };
-    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]);
-
-    // ========== SINGLE CLICK LOOP MOVE ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        const container = containerRef.current;
-
-        if (!api || !container || !isRendered || !isLooping) {
-            return;
-        }
-
-        const surface = container.querySelector('.at-surface') as HTMLElement | null;
-        const target = surface || container;
-
-        const handleLoopMoveClick = (e: MouseEvent) => {
-            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-            if (!beat) return;
-
-            const firstBeat = getFirstBeatInBar(api, beat);
-
-            let boundaries = getBarBoundariesFromMaster(api, firstBeat);
-            if (!boundaries) {
-                boundaries = getBarBoundaries(firstBeat);
-            }
-
-            if (boundaries) {
-                api.playbackRange = {
-                    startTick: boundaries.startTick,
-                    endTick: boundaries.endTick,
-                };
-            }
-        };
-
-        target.addEventListener('click', handleLoopMoveClick);
-
-        return () => {
-            target.removeEventListener('click', handleLoopMoveClick);
-        };
-    }, [isRendered, isLooping, renderCycle]);
+    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, renderCycle, authoritySeekToTick]);
 
     // ========== DOUBLE CLICK PLAY ==========
 
@@ -855,6 +1620,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         let startBeat: any = null;
         let endBeat: any = null;
         let isDragging = false;
+        let mouseDownX = 0;
+        let mouseDownY = 0;
+        let mouseMoved = false;
 
         const handleMouseDown = (e: MouseEvent) => {
             if (e.button !== 0) return;
@@ -863,6 +1631,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (!beat) return;
 
             isDragging = true;
+            isDraggingRef.current = true;
+
+            mouseMoved = false;
+            mouseDownX = e.clientX;
+            mouseDownY = e.clientY;
 
             startBeat = getFirstBeatInBar(api, beat);
             endBeat = beat;
@@ -873,10 +1646,45 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             }
 
             if (boundaries) {
-                api.playbackRange = {
-                    startTick: boundaries.startTick,
-                    endTick: boundaries.endTick,
-                };
+                const snapped = getSnappedBarBoundaries(api, boundaries.startTick, boundaries.endTick);
+                if (snapped) {
+                    // ============================================
+                    // 🔥 V98.125: BEAT-BASED ANCHOR + MANUAL LOCK (MOUSEDOWN)
+                    // ============================================
+                    if (cursorRef.current && api.renderer?.boundsLookup) {
+                        const startTick = snapped.startTick;
+                        const trackIndices = cursorTrackIndicesRef.current;
+                        const tickCache = (api as any).tickCache;
+                        const startBeatResult = tickCache?.findBeat?.(trackIndices, startTick);
+
+                        if (startBeatResult?.beat) {
+                            const startBounds = api.renderer.boundsLookup.findBeat(startBeatResult.beat);
+                            const tempRange = { startTick: snapped.startTick, endTick: snapped.endTick };
+
+                            // 🔥 V98.125: Set manual positioning lock BEFORE cursor update
+                            manualPositioningLockRef.current = Date.now();
+                            if (DEBUG_MANUAL_POSITION) {
+                                console.log('🔒 MOUSEDOWN: Manual positioning lock engaged');
+                            }
+
+                            cursorRef.current.requestSnap();
+                            cursorRef.current.setBeat(startBeatResult.beat, startBounds);
+                            cursorRef.current.setTick(startTick, startBeatResult.beat, startBounds, null, tempRange);
+
+                            if (!isPlayingRef.current) {
+                                lastUpdateTickRef.current = startTick;
+                                api.tickPosition = startTick;
+                            }
+
+                            if (DEBUG) console.log(`✅ MOUSEDOWN: Anchored cursor at tick ${startTick}`);
+                        }
+                    }
+
+                    api.playbackRange = {
+                        startTick: snapped.startTick,
+                        endTick: snapped.endTick,
+                    };
+                }
             }
 
             document.addEventListener('mousemove', handleMouseMove);
@@ -885,6 +1693,13 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging || !startBeat) return;
+
+            const dx = Math.abs(e.clientX - mouseDownX);
+            const dy = Math.abs(e.clientY - mouseDownY);
+            if (dx > 5 || dy > 5) {
+                mouseMoved = true;
+            }
+
             e.preventDefault();
 
             const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
@@ -899,19 +1714,131 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (!endBoundaries) endBoundaries = getBarBoundaries(endBeat);
 
             if (startBoundaries && endBoundaries) {
-                const loopStart = Math.min(startBoundaries.startTick, endBoundaries.startTick);
-                const loopEnd = Math.max(startBoundaries.endTick, endBoundaries.endTick);
+                const rawStart = Math.min(startBoundaries.startTick, endBoundaries.startTick);
+                const rawEnd = Math.max(startBoundaries.endTick, endBoundaries.endTick);
 
-                api.playbackRange = {
-                    startTick: loopStart,
-                    endTick: loopEnd,
-                };
+                const snapped = getSnappedBarBoundaries(api, rawStart, rawEnd);
+                if (snapped) {
+                    api.playbackRange = {
+                        startTick: snapped.startTick,
+                        endTick: snapped.endTick,
+                    };
+                }
             }
         };
 
-        const handleMouseUp = () => {
+        const handleMouseUp = (e: MouseEvent) => {
             if (!isDragging) return;
+
+            isDraggingRef.current = false;
+
+            if (mouseMoved && startBeat && endBeat) {
+                let startBoundaries = getBarBoundariesFromMaster(api, startBeat);
+                let endBoundaries = getBarBoundariesFromMaster(api, endBeat);
+
+                if (!startBoundaries) startBoundaries = getBarBoundaries(startBeat);
+                if (!endBoundaries) endBoundaries = getBarBoundaries(endBeat);
+
+                if (startBoundaries && endBoundaries) {
+                    const rawStart = Math.min(startBoundaries.startTick, endBoundaries.startTick);
+                    const rawEnd = Math.max(startBoundaries.endTick, endBoundaries.endTick);
+
+                    const snapped = getSnappedBarBoundaries(api, rawStart, rawEnd);
+                    if (snapped) {
+                        // ============================================
+                        // 🔥 V98.125: BEAT-BASED ANCHOR + MANUAL LOCK (MOUSEUP)
+                        // ============================================
+                        if (cursorRef.current && api.renderer?.boundsLookup) {
+                            const startTick = snapped.startTick;
+                            const trackIndices = cursorTrackIndicesRef.current;
+                            const tickCache = (api as any).tickCache;
+                            const startBeatResult = tickCache?.findBeat?.(trackIndices, startTick);
+
+                            if (startBeatResult?.beat) {
+                                const startBounds = api.renderer.boundsLookup.findBeat(startBeatResult.beat);
+                                const tempRange = { startTick: snapped.startTick, endTick: snapped.endTick };
+
+                                // 🔥 V98.125: Set manual positioning lock BEFORE cursor update
+                                manualPositioningLockRef.current = Date.now();
+                                if (DEBUG_MANUAL_POSITION) {
+                                    console.log('🔒 MOUSEUP: Manual positioning lock engaged');
+                                }
+
+                                cursorRef.current.requestSnap();
+                                cursorRef.current.setBeat(startBeatResult.beat, startBounds);
+                                cursorRef.current.setTick(startTick, startBeatResult.beat, startBounds, null, tempRange);
+
+                                if (!isPlayingRef.current) {
+                                    lastUpdateTickRef.current = startTick;
+                                    api.tickPosition = startTick;
+                                }
+
+                                if (DEBUG) console.log(`✅ MOUSEUP: Anchored cursor at tick ${startTick}`);
+                            }
+                        }
+
+                        api.playbackRange = {
+                            startTick: snapped.startTick,
+                            endTick: snapped.endTick,
+                        };
+                    }
+                }
+            }
+            else if (!mouseMoved && startBeat) {
+                const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
+                if (beat) {
+                    const firstBeat = getFirstBeatInBar(api, beat);
+                    let boundaries = getBarBoundariesFromMaster(api, firstBeat);
+                    if (!boundaries) {
+                        boundaries = getBarBoundaries(firstBeat);
+                    }
+
+                    if (boundaries) {
+                        const snapped = getSnappedBarBoundaries(api, boundaries.startTick, boundaries.endTick);
+                        if (snapped) {
+                            // ============================================
+                            // 🔥 V98.125: BEAT-BASED ANCHOR + MANUAL LOCK (CLICK)
+                            // ============================================
+                            if (cursorRef.current && api.renderer?.boundsLookup) {
+                                const startTick = snapped.startTick;
+                                const trackIndices = cursorTrackIndicesRef.current;
+                                const tickCache = (api as any).tickCache;
+                                const startBeatResult = tickCache?.findBeat?.(trackIndices, startTick);
+
+                                if (startBeatResult?.beat) {
+                                    const startBounds = api.renderer.boundsLookup.findBeat(startBeatResult.beat);
+                                    const tempRange = { startTick: snapped.startTick, endTick: snapped.endTick };
+
+                                    // 🔥 V98.125: Set manual positioning lock BEFORE cursor update
+                                    manualPositioningLockRef.current = Date.now();
+                                    if (DEBUG_MANUAL_POSITION) {
+                                        console.log('🔒 CLICK: Manual positioning lock engaged');
+                                    }
+
+                                    cursorRef.current.requestSnap();
+                                    cursorRef.current.setBeat(startBeatResult.beat, startBounds);
+                                    cursorRef.current.setTick(startTick, startBeatResult.beat, startBounds, null, tempRange);
+
+                                    if (!isPlayingRef.current) {
+                                        lastUpdateTickRef.current = startTick;
+                                        api.tickPosition = startTick;
+                                    }
+
+                                    if (DEBUG) console.log(`✅ CLICK: Anchored cursor at tick ${startTick}`);
+                                }
+                            }
+
+                            api.playbackRange = {
+                                startTick: snapped.startTick,
+                                endTick: snapped.endTick,
+                            };
+                        }
+                    }
+                }
+            }
+
             isDragging = false;
+            mouseMoved = false;
             startBeat = null;
             endBeat = null;
             document.removeEventListener('mousemove', handleMouseMove);
@@ -931,6 +1858,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         target.addEventListener('dblclick', handleDoubleClick as EventListener);
 
         mouseCleanupRef.current = () => {
+            isDraggingRef.current = false;
             target.removeEventListener('mousedown', handleMouseDown as EventListener);
             target.removeEventListener('dblclick', handleDoubleClick as EventListener);
             document.removeEventListener('mousemove', handleMouseMove);
@@ -955,7 +1883,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         const setupTimer = setTimeout(() => {
             if (api && container) {
-                touchCleanupRef.current = setupTouchSelection(api, container);
+                touchCleanupRef.current = setupTouchSelection(
+                    api,
+                    container,
+                    cursorRef,
+                    cursorTrackIndicesRef,
+                    isPlayingRef,
+                    manualPositioningLockRef // 🔥 V98.125: Pass manual lock ref to touch handler
+                );
             }
         }, 300);
 
@@ -968,45 +1903,149 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         };
     }, [isRendered, isLooping, isMobile]);
 
-    // ========== LOOP PLAYBACK ENFORCEMENT ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api || !isLooping) return;
-
-        const handlePlayerPositionChanged = (e: any) => {
-            if (!api.playbackRange) return;
-
-            const { startTick, endTick } = api.playbackRange;
-
-            if (e.currentTick >= endTick) {
-                api.tickPosition = startTick;
-
-                if (api.playerState === 1) {
-                    setTimeout(() => {
-                        if (api && api.play) api.play();
-                    }, 10);
-                }
-            }
-        };
-
-        api.playerPositionChanged.on(handlePlayerPositionChanged);
-
-        return () => {
-            api.playerPositionChanged.off(handlePlayerPositionChanged);
-        };
-    }, [isLooping]);
-
     // ========== CLEAR LOOP WHEN DISABLED ==========
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
 
-        if (!isLooping && api.playbackRange) {
-            api.playbackRange = null;
+        if (!isLooping) {
+            if (api.playbackRange) {
+                api.playbackRange = null;
+            }
+            // 🔥 V98.125: Clear sticky refs when loop mode is disabled
+            playbackRangeRef.current = null;
+            lastStableRangeRef.current = null;
         }
     }, [isLooping]);
+
+    // ============================================
+    // 🔥 V99.0/V99.3: TRACK CHANGE CURSOR RE-ANCHOR WITH BOUNDS RETRY
+    // Cursor-only: updates cursorTrackIndicesRef + repositions cursor
+    // V99.3: Only updates cursorTrackIndicesRef (allTrackIndicesRef stays unchanged)
+    // DOES NOT change api.tracks or mute state (audio remains full band)
+    // ============================================
+    useEffect(() => {
+        const api = apiRef.current;
+        const cursor = cursorRef.current;
+        if (!api || !cursor || !isRendered || !scoreIsLoaded) return;
+
+        // ============================================
+        // 🔥 V99.3: Only update CURSOR visual scope
+        // allTrackIndicesRef stays unchanged (set once in scoreLoaded)
+        // ============================================
+        cursorTrackIndicesRef.current = new Set([selectedTrackIndex ?? 0]);
+
+        const tickCache = (api as any).tickCache;
+        if (!tickCache || !api.renderer?.boundsLookup) return;
+
+        const attemptReAnchor = (retryCount: number = 0) => {
+            // Prefer current tick position
+            const targetTick = api.tickPosition ?? 0;
+
+            // Try exact tick, then small fallbacks (handles "end tick" / gaps)
+            const tryTicks = [targetTick, targetTick - 1, targetTick - 10, targetTick - 120].filter(t => t >= 0);
+            let beatResult: any = null;
+
+            for (const t of tryTicks) {
+                const res = tickCache.findBeat(cursorTrackIndicesRef.current, t);
+                if (res?.beat) {
+                    beatResult = { ...res, resolvedTick: t };
+                    break;
+                }
+            }
+
+            // Hard fallback to tick 0 if all else fails
+            if (!beatResult?.beat) {
+                const res0 = tickCache.findBeat(cursorTrackIndicesRef.current, 0);
+                if (res0?.beat) {
+                    beatResult = { ...res0, resolvedTick: 0 };
+                }
+            }
+
+            // 🔥 V99.0: Suppress warning at song end (treat as benign noise)
+            const isNearSongEnd = targetTick > 0 && api.score?.masterBars
+                && targetTick >= (api.score.masterBars[api.score.masterBars.length - 1]?.start ?? Infinity);
+
+            if (!beatResult?.beat) {
+                if (DEBUG && !isNearSongEnd && retryCount === 0) {
+                    console.warn('⚠️ Track change: no beat found to re-anchor cursor', {
+                        selectedTrackIndex,
+                        targetTick
+                    });
+                }
+                return;
+            }
+
+            const beat = beatResult.beat;
+            const beatBounds = api.renderer.boundsLookup.findBeat(beat);
+
+            // 🔥 V99.0: BOUNDS RETRY LOGIC
+            // If bounds aren't ready, retry after render settles
+            if (!beatBounds) {
+                if (retryCount < 3) {
+                    if (DEBUG && retryCount === 0) {
+                        console.log(`🔄 Track change: bounds not ready, retrying... (attempt ${retryCount + 1})`);
+                    }
+
+                    // Try again after next frame
+                    if (retryCount === 0) {
+                        requestAnimationFrame(() => attemptReAnchor(retryCount + 1));
+                    } else {
+                        // Subsequent retries use setTimeout for longer delay
+                        setTimeout(() => attemptReAnchor(retryCount + 1), 80);
+                    }
+                    return;
+                }
+
+                // Final failure after retries
+                if (DEBUG) {
+                    console.warn('⚠️ Track change: beat has no bounds after retries', {
+                        selectedTrackIndex,
+                        tick: beatResult.resolvedTick,
+                        retries: retryCount
+                    });
+                }
+                return;
+            }
+
+            // 🔥 V98.126 CIPHER TWEAK #1: Use beat's own start tick (prevents drift in GP3/repeat files)
+            const anchorTick = beat.absolutePlaybackStart ?? beatResult.resolvedTick;
+
+            // 🔥 V98.126 CIPHER TWEAK #2: Respect loop mode when re-anchoring
+            const loopActive = isLoopingRef.current;
+            const activeRange = loopActive
+                ? (playbackRangeRef.current || lastStableRangeRef.current)
+                : null;
+            const rangeForCursor = (activeRange && activeRange.endTick > activeRange.startTick)
+                ? activeRange
+                : null;
+
+            // Re-anchor cursor to new track's beat/bounds
+            cursor.requestSnap();
+            cursor.setBeat(beat, beatBounds);
+            cursor.setTick(anchorTick, beat, beatBounds, null, rangeForCursor);
+
+            if (DEBUG) {
+                console.log('✅ Track change: cursor re-anchored', {
+                    selectedTrackIndex,
+                    targetTick,
+                    resolvedTick: beatResult.resolvedTick,
+                    anchorTick,
+                    loopActive,
+                    rangeActive: !!rangeForCursor,
+                    retriesNeeded: retryCount
+                });
+            }
+        };
+
+        // Start re-anchor attempt
+        attemptReAnchor(0);
+
+    }, [selectedTrackIndex, isRendered, scoreIsLoaded, renderCycle]); // 🔥 V99.0: Added renderCycle dependency
+    // ============================================
+    // 🔒 END TRACK CHANGE CURSOR RE-ANCHOR 🔒
+    // ============================================
 
     // ========== RENDER ==========
 
@@ -1031,18 +2070,24 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
             <div
                 ref={containerRef}
-                className={`${className} alphatab-container`}
+                className="alphatab-container"
                 style={{
-                    minHeight,
+                    position: 'relative',
                     width: '100%',
+                    minHeight,
                     overflow: 'auto',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor,
-                    position: 'relative',
-                    zIndex: 10,
                     paddingLeft: 'env(safe-area-inset-left, 0px)',
                     paddingRight: 'env(safe-area-inset-right, 0px)',
+                    zIndex: 10,
                 }}
+            />
+
+            <CustomLoopOverlay
+                api={apiRef.current}
+                isLooping={isLooping}
+                theme={theme}
             />
         </div>
     );
