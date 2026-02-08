@@ -72,3 +72,8 @@ ava-ui/
 maestro-ai.pub
 maestro-ai-input/processed/
 ava/
+*.backup*
+*.BACKUP.*
+*.old
+**/*.MASTER*.tsx
+**/MaestroControlPanel.V*.tsx.*
