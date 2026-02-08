@@ -80,3 +80,5 @@ ava/
 cipher-engine-clean-v2/
 claude/
 alphaTab/
+src/styles/*.Dec*.css
+src/styles/*.[0-9]*-[0-9]*-[0-9]*.css
