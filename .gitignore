@@ -77,3 +77,6 @@ ava/
 *.old
 **/*.MASTER*.tsx
 **/MaestroControlPanel.V*.tsx.*
+cipher-engine-clean-v2/
+claude/
+alphaTab/
