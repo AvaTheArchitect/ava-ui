@@ -6,3 +6,9 @@ url = https://github.com/AvaTheArchitect/cipher-engine-clean-v2.git
 path = components/cipher
 url = https://github.com/AvaTheArchitect/cipher-engine.git
 
+[submodule "ava"]
+	path = ava
+	url = https://github.com/AvaTheArchitect/ava-ui.git
+[submodule "claude"]
+	path = claude
+	url = https://github.com/AvaTheArchitect/cipher-docs.git
