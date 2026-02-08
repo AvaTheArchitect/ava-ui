@@ -6,13 +6,15 @@
  * Date: February 6th, 2026
  * 
  * 🔒 Note for Claude:
- *  Cursor Solo vs Audio Playback Separation (DO NOT MERGE):
- *  cursorTrackIndicesRef is cursor-only (tickCache/findBeat while paused).
- *  allTrackIndicesRef is playback truth (tickCache/findBeat while playing).
- *  Audio playback must remain full-band unless user mutes tracks.
- *  Do not set api.tracks = [soloTrack].
- *  Do not mute other tracks when solo changes.
- *  Preserve the scoreLoaded block that unmutes all tracks and restores volume defaults.
+ * Cursor Solo vs Audio Playback Separation (DO NOT MERGE):
+ * cursorTrackIndicesRef is cursor-only (tickCache/findBeat while paused).
+ * The smooth scroll behavior relies on high-frequency e.currentTick updates during - 
+ * playerPositionChanged these must remain untouched unless absolutely necessary.
+ * allTrackIndicesRef is playback truth (tickCache/findBeat while playing).
+ * Audio playback must remain full-band unless user mutes tracks.
+ * Do not set api.tracks = [soloTrack].
+ * Do not mute other tracks when solo changes.
+ * Preserve the scoreLoaded block that unmutes all tracks and restores volume defaults.
  *
  * 🎉 V99.3 FIXES (Production Ready):
  * ✅ DUAL TRACK INDEX REFS: cursorTrackIndicesRef (visual) vs allTrackIndicesRef (playback truth)
@@ -828,54 +830,56 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 });
 
                 // ============================================
-                // 🔥 V99.3: playedBeatChanged RE-RESOLVE
-                // Re-resolves beat from tickCache using audio tick, NOT event beat.
-                // Prevents GP5 repeat snap-back where event beat points into repeat section.
+                // 🔥 V99.3: playedBeatChanged with SNAP-BACK GUARD
+                // Uses event beat directly for smooth cursor visuals.
+                // Only re-resolves from tickCache when audio clock disagrees
+                // with event beat by >1000 ticks (GP5 repeat snap-back).
                 // ============================================
                 api.playedBeatChanged.on((eventBeat: any) => {
                     const cursor = cursorRef.current;
                     if (!cursor || !api.renderer?.boundsLookup) return;
 
-                    // ✅ Truth tick from audio clock
+                    // Check for snap-back: audio clock vs event beat
                     const audioTick = api.player?.tickPosition ?? api.tickPosition ?? 0;
-                    const tickCache = (api as any).tickCache;
-                    if (!tickCache) return;
+                    const eventTick = eventBeat?.absolutePlaybackStart ?? 0;
+                    const isSnapBack = isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000;
 
-                    // ✅ Track scope depends on playing state
-                    const indices = isPlayingRef.current
-                        ? allTrackIndicesRef.current
-                        : cursorTrackIndicesRef.current;
+                    if (isSnapBack) {
+                        // ✅ Snap-back detected: re-resolve beat from audio clock using all tracks
+                        const tickCache = (api as any).tickCache;
+                        if (!tickCache) return;
 
-                    // Resolve beat by truth tick (not eventBeat)
-                    const tryTicks = [audioTick, audioTick - 1, audioTick - 10].filter(t => t >= 0);
-                    let resolved: any = null;
-                    for (const t of tryTicks) {
-                        const r = tickCache.findBeat(indices, t);
-                        if (r?.beat) { resolved = r; break; }
-                    }
+                        const tryTicks = [audioTick, audioTick - 1, audioTick - 10].filter(t => t >= 0);
+                        let resolved: any = null;
+                        for (const t of tryTicks) {
+                            const r = tickCache.findBeat(allTrackIndicesRef.current, t);
+                            if (r?.beat) { resolved = r; break; }
+                        }
 
-                    if (!resolved?.beat) return;
+                        if (!resolved?.beat) return;
 
-                    const beatBounds = api.renderer.boundsLookup.findBeat(resolved.beat);
-                    if (!beatBounds) return;
+                        const beatBounds = api.renderer.boundsLookup.findBeat(resolved.beat);
+                        if (!beatBounds) return;
 
-                    cursor.setBeat(resolved.beat, beatBounds);
+                        cursor.setBeat(resolved.beat, beatBounds);
 
-                    // Diagnostic: show disagreement between event beat and audio clock
-                    const eventTick = eventBeat?.absolutePlaybackStart ?? null;
-                    if (eventTick != null && Math.abs(audioTick - eventTick) > 1000 && isPlayingRef.current) {
                         if (DEBUG) {
                             console.log(`⚖️ V99.3 Timeline Correction (beatChanged)`, { audioTick, eventTick });
                         }
+                    } else {
+                        // ✅ Normal: use event beat directly (smooth visuals)
+                        const beatBounds = api.renderer.boundsLookup.findBeat(eventBeat);
+                        cursor.setBeat(eventBeat, beatBounds);
                     }
 
                     if (DEBUG) {
-                        const measureNum = Math.floor((resolved.beat.absolutePlaybackStart ?? audioTick) / 1920) + 1;
-                        console.log(`🎵 Beat changed: M${measureNum}, audioTick ${audioTick}`);
+                        const tick = isSnapBack ? audioTick : eventTick;
+                        const measureNum = Math.floor(tick / 1920) + 1;
+                        console.log(`🎵 Beat changed: M${measureNum}, tick ${tick}${isSnapBack ? ' (corrected)' : ''}`);
                     }
                 });
                 // ============================================
-                // 🔒 END V99.3 playedBeatChanged RE-RESOLVE 🔒
+                // 🔒 END V99.3 playedBeatChanged SNAP-BACK GUARD 🔒
                 // ============================================
 
                 // ============================================
@@ -887,18 +891,22 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     if (!cursor || !api.renderer?.boundsLookup) return;
 
                     // ============================================
-                    // 🔥 V99.3: AUDIO CLOCK AUTHORITY
-                    // Playing: use api.player.tickPosition (immune to repeat mapping bugs)
-                    // Paused/Stopped: use e.currentTick (fine for UI seeks)
+                    // 🔥 V99.3: AUDIO CLOCK AUTHORITY (SNAP-BACK GUARD)
+                    // Uses eventTick for smooth 60fps cursor interpolation.
+                    // Only overrides to audioTick when a large disagreement is
+                    // detected (the GP5 repeat snap-back case, delta > 1000).
+                    // This preserves MaestroCursor's smooth linear interpolation
+                    // while still catching repeat-mapping bugs.
                     // ============================================
                     const eventTick = e.currentTick;
                     const audioTick = api.player?.tickPosition ?? api.tickPosition ?? eventTick;
-                    const newTick = isPlayingRef.current ? audioTick : eventTick;
+                    const isSnapBack = isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000;
+                    const newTick = isSnapBack ? audioTick : eventTick;
 
                     // Diagnostic: show when authority override kicks in
-                    if (isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000) {
+                    if (isSnapBack) {
                         if (DEBUG) {
-                            console.log(`⚖️ V99.3 AUTHORITY OVERRIDE`, { audioTick, eventTick, delta: audioTick - eventTick });
+                            console.log(`⚖️ V99.3 AUTHORITY OVERRIDE (snap-back)`, { audioTick, eventTick, delta: audioTick - eventTick });
                         }
                     }
                     // ============================================
@@ -1105,23 +1113,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                     // ============================================
                     // 🔥 V99.3: BEAT LOOKUP SCOPE SWITCH
-                    // Playing: all tracks (prevents snap-back into repeat section)
-                    // Paused: selected track (visual focus)
+                    // Snap-back detected: use all tracks (prevents fallback into repeat section)
+                    // Normal / paused: use selected track (visual focus)
                     // ============================================
-                    const indicesForBeatLookup = isPlayingRef.current
-                        ? allTrackIndicesRef.current      // ✅ Playing: all tracks (prevents snap-back)
-                        : cursorTrackIndicesRef.current;   // ✅ Paused: selected track (visual focus)
+                    const indicesForBeatLookup = isSnapBack
+                        ? allTrackIndicesRef.current       // ✅ Snap-back: all tracks (prevents repeat fallback)
+                        : cursorTrackIndicesRef.current;   // ✅ Normal: selected track (visual focus)
 
                     const beatResult = tickCache.findBeat(indicesForBeatLookup, effectiveTick);
-
-                    if (DEBUG) {
-                        console.log(`🎯 V99.3 Beat lookup`, {
-                            playing: isPlayingRef.current,
-                            tickUsed: effectiveTick,
-                            scope: isPlayingRef.current ? 'all' : 'selected',
-                            found: !!beatResult?.beat
-                        });
-                    }
                     // ============================================
                     // 🔒 END BEAT LOOKUP SCOPE SWITCH 🔒
                     // ============================================
