@@ -78,6 +78,8 @@ export interface MaestroControlPanelProps {
   onMetronomeAccentToggle?: () => void;
   onArmMetronome?: () => Promise<void>;
   currentBPM?: number;
+  masterVolume?: number;
+  onMasterVolumeChange?: (volume: number) => void;
   // 🆕 V100: Panel coordination with MobileToolsSlideout
   onSlideoutShouldClose?: () => void;
   // 🆕 V100: Callback that page.tsx can use to close internal panels
