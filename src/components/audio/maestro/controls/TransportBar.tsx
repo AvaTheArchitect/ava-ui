@@ -1,21 +1,19 @@
 'use client';
 
 /**
- * TransportBar.tsx - V97: DIAGNOSTIC VERSION + FIXES
- * Date: January 1st, 2026
+ * TransportBar.tsx - V98.62: MASTER VOLUME INTEGRATION
+ * Date: January 15th, 2026
  * 
- * 🔧 FIXES FROM V94:
- * ✅ Removed currentBPM = 120 default (was masking actual BPM)
- * ✅ Removed empty callback fallbacks (|| (() => {}))
- * ✅ Added console.log diagnostics for button clicks
- * ✅ Added prop validation checks
- * ✅ Conditional MetronomePanel rendering (only if callbacks exist)
+ * 🆕 V98.62 UPDATES:
+ * ✅ Added masterVolume and onMasterVolumeChange props
+ * ✅ Passing master volume props to TrackMixerPanel
+ * ✅ Props flow from page.tsx → MaestroControlPanel → TransportBar → TrackMixerPanel
  * 
- * 🐛 DIAGNOSTICS:
- * ✅ Logs when metronome button is clicked
- * ✅ Logs current BPM value
- * ✅ Logs which callbacks are missing
- * ✅ Shows panel state changes
+ * 🔒 PRESERVED FROM V97:
+ * ✅ Diagnostic logging for metronome
+ * ✅ All panel management logic
+ * ✅ Count-in and metronome functionality
+ * ✅ Theme toggle and pitch shift
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -51,6 +49,9 @@ interface ExtendedTransportBarProps extends TransportBarProps {
   onMetronomeAccentToggle?: () => void;
   onArmMetronome?: () => Promise<void>;
   currentBPM?: number;
+  // 🎵 V98.62: Master Volume props
+  masterVolume?: number;
+  onMasterVolumeChange?: (volume: number) => void;
 }
 
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
@@ -80,7 +81,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   onCountInToggle,
   countInMode = 'three-beat',
   onCountInModeChange,
-  // 🔧 V97: No defaults on metronome props
+  // Metronome props
   isMetronomeEnabled = false,
   onMetronomeToggle,
   metronomeVolume = 0.7,
@@ -94,7 +95,10 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   metronomeAccentEnabled = true,
   onMetronomeAccentToggle,
   onArmMetronome,
-  currentBPM, // 🔧 NO DEFAULT - use actual value
+  currentBPM,
+  // 🎵 V98.62: Master Volume
+  masterVolume = 1.0,
+  onMasterVolumeChange,
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
@@ -111,10 +115,11 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 
   // 🐛 DIAGNOSTIC: Log prop validation on mount
   useEffect(() => {
-    console.log('=== TRANSPORTBAR V97 DIAGNOSTIC ===');
+    console.log('=== TRANSPORTBAR V98.62 DIAGNOSTIC ===');
     console.log('currentBPM prop:', currentBPM);
     console.log('songInfo tempo:', songInfo?.tempo);
     console.log('Calculated BPM:', currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120));
+    console.log('🔊 masterVolume:', masterVolume);
 
     const missingCallbacks: string[] = [];
     if (!onMetronomeToggle) missingCallbacks.push('onMetronomeToggle');
@@ -129,7 +134,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     } else {
       console.log('✅ All metronome callbacks present');
     }
-  }, [currentBPM, songInfo, playbackSpeed, onMetronomeToggle, onMetronomeVolumeChange,
+  }, [currentBPM, songInfo, playbackSpeed, masterVolume, onMetronomeToggle, onMetronomeVolumeChange,
     onMetronomeBalanceChange, onMetronomeSubdivisionChange, onMetronomeSoundTypeChange,
     onMetronomeAccentToggle]);
 
@@ -247,10 +252,10 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 
   const isSynthMode = audioSource === 'synth';
 
-  // 🔧 V97: Calculate BPM with proper fallback
+  // Calculate BPM with proper fallback
   const displayBPM = currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120);
 
-  // 🐛 Check if we have all required metronome callbacks
+  // Check if we have all required metronome callbacks
   const hasAllMetronomeCallbacks = !!(
     onMetronomeToggle &&
     onMetronomeVolumeChange &&
@@ -259,9 +264,6 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     onMetronomeSoundTypeChange &&
     onMetronomeAccentToggle
   );
-
-  console.log('🎵 Render check - hasAllMetronomeCallbacks:', hasAllMetronomeCallbacks);
-  console.log('🎵 isMetronomePanelOpen:', isMetronomePanelOpen);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
@@ -281,6 +283,8 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               onSoloToggle={onTrackSoloToggle}
               isPanelOpen={isTrackMixerOpen}
               onTogglePanel={handleTrackMixerToggle}
+              masterVolume={masterVolume}
+              onMasterVolumeChange={onMasterVolumeChange}
             />
           </div>
 
@@ -358,7 +362,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             )}
           </div>
 
-          {/* Metronome - 🐛 DIAGNOSTIC VERSION */}
+          {/* Metronome */}
           <div className="relative" ref={metronomePanelRef}>
             <button
               onClick={(e) => {
@@ -386,7 +390,6 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               </span>
             </button>
 
-            {/* 🔧 V97: Only render panel if all callbacks exist */}
             {hasAllMetronomeCallbacks ? (
               <MetronomePanel
                 isEnabled={isMetronomeEnabled}

@@ -1,12 +1,18 @@
 /**
  * Maestro Control Panel - Shared Type Definitions
  * Centralizes all interfaces for menu tray components
- * MaestroControlTypes.ts - Updated for Dark Mode
- * Date: December 18th, 2025
+ * MaestroControlTypes.ts - V98.62: MASTER VOLUME TYPES
+ * Date: January 15th, 2026
  * 
- * 🆕 UPDATES:
- * ✅ Added theme and onThemeToggle to TransportBarProps
- * */
+ * 🆕 V98.62 UPDATES:
+ * ✅ Added masterVolume and onMasterVolumeChange to MaestroControlPanelProps
+ * ✅ Added masterVolume and onMasterVolumeChange to TransportBarProps
+ * ✅ Added masterVolume and onMasterVolumeChange to TrackMixerPanelProps
+ * 
+ * 🔒 PRESERVED:
+ * ✅ Theme and onThemeToggle props
+ * ✅ All existing interfaces unchanged
+ */
 import type { AlphaTabApi, Track, SongInfo } from "@/lib/alphaTab/types";
 
 // ==================== MAIN CONTROL PANEL ====================
@@ -39,6 +45,10 @@ export interface MaestroControlPanelProps {
 
   // Theme
   theme?: "light" | "dark";
+
+  // 🎵 V98.62: Master Volume
+  masterVolume?: number;
+  onMasterVolumeChange?: (volume: number) => void;
 
   // Callbacks
   onPlayPause: () => void;
@@ -88,6 +98,10 @@ export interface TrackMixerPanelProps {
   onTrackChange: (index: number) => void;
   onMuteToggle: (index: number) => void;
   onSoloToggle: (index: number) => void;
+  
+  // 🎵 V98.62: Master Volume
+  masterVolume?: number;
+  onMasterVolumeChange?: (volume: number) => void;
 }
 
 export interface AudioSourceToggleProps {
@@ -109,7 +123,12 @@ export interface TransportBarProps {
   songInfo: SongInfo | null;
   trackMuteState: Map<number, boolean>;
   trackSoloState: Map<number, boolean>;
-  theme?: "light" | "dark";           
+  theme?: "light" | "dark";
+  
+  // 🎵 V98.62: Master Volume
+  masterVolume?: number;
+  onMasterVolumeChange?: (volume: number) => void;
+  
   onPlayPause: () => void;
   onLoopToggle: () => void;
   onSpeedChange: (speed: number) => void;
