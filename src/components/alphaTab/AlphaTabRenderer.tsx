@@ -621,7 +621,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                         setTimeout(() => {
                             const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
-                            // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
+                            nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
                         }, 100);
                     }
                 });
