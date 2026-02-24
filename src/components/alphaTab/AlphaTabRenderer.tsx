@@ -643,7 +643,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                                 }
                             }, 100);
                         }
+                        setTimeout(() => {
+                            const el = cursorRef.current?.element;
 
+                            console.log('📍 Cursor el exists:', !!el);
+                            console.log('📍 In DOM:', el ? document.contains(el) : false);
+                            console.log('📍 Visibility:', el?.style.visibility);
+                            console.log('📍 Opacity:', el?.style.opacity);
+                            console.log('📍 Transform:', el?.style.transform);
+                            console.log('📍 ZIndex:', el?.style.zIndex);
+                            console.log('📍 tickCache exists:', !!(api as any).tickCache);
+                        }, 1000);
                         setTimeout(() => {
                             const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
                             // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
