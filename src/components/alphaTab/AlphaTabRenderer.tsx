@@ -558,24 +558,22 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // 🔒 END PLAYING STATE TRACKING 🔒
                 // ============================================
                 api.renderFinished.on(() => {
-                    // 🔍 DIAGNOSTIC: Confirm handler fires on iOS PWA
-                    console.log('🧩 renderFinished fired', {
-                        hasContainer: !!containerRef.current,
-                        hasCursor: !!cursorRef.current,
-                        ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
-                    });
 
-                    setIsRendered(true);
-                    setIsLoading(false);
-                    setRenderCycle(rc => rc + 1);
-                    onRenderFinished?.();
+                    const handleRenderFinished = () => {
+                        console.log('🧩 renderFinished fired', {
+                            hasContainer: !!containerRef.current,
+                            hasCursor: !!cursorRef.current,
+                            ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
+                        });
 
-                    lastUpdateTickRef.current = -1;
+                        setIsRendered(true);
+                        setIsLoading(false);
+                        setRenderCycle(rc => rc + 1);
+                        onRenderFinished?.();
 
-                    // ============================================================
-                    // 🔒 START: REPLACE EVERYTHING FROM HERE...
-                    // ============================================================
-                    if (containerRef.current) {
+                        lastUpdateTickRef.current = -1;
+
+                        if (!containerRef.current) return;
                         const host = containerRef.current;
 
                         if (host.style.position !== 'relative') {
@@ -583,8 +581,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         }
 
                         // ============================================================
-                        // 🔥 MOBILE-SAFE CURSOR CREATION (Cipher fix)
-                        // Checks DOM presence, not just ref — handles PWA reflow/remount
+                        // 🔥 MOBILE-SAFE CURSOR CREATION
+                        // DOM-aware, not just ref-aware — handles PWA reflow/remount
                         // ============================================================
                         let needsCreation = false;
 
@@ -592,7 +590,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             needsCreation = true;
                         } else {
                             const el = cursorRef.current.element;
-                            // Ref exists but element was destroyed (mobile remount case)
                             if (!el || !host.contains(el)) {
                                 cursorRef.current.destroy();
                                 cursorRef.current = null;
@@ -608,7 +605,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                                 hostChildren: host.childElementCount
                             });
                         } else {
-                            // Belt + suspenders: re-attach if somehow detached
                             const existingCursor = cursorRef.current;
                             if (existingCursor) {
                                 const el = existingCursor.element;
@@ -619,7 +615,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         }
 
                         // ============================================================
-                        // 🔥 MOBILE-SAFE ANCHOR: Retry loop (replaces 200ms single-shot)
+                        // 🔥 MOBILE-SAFE ANCHOR: Retry loop
                         // ============================================================
                         const anchorCursorAtStart = (attempt = 0) => {
                             const cursor = cursorRef.current;
@@ -632,8 +628,6 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             }
 
                             const trackIndices = cursorTrackIndicesRef.current;
-
-                            // On re-render (track change etc), anchor to current tick not 0
                             const targetTick = needsCreation ? 0 : (api.tickPosition ?? 0);
                             const beatResult = tickCache.findBeat(trackIndices, targetTick);
 
@@ -656,17 +650,15 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                         setTimeout(() => anchorCursorAtStart(0), 150);
 
                         // ============================================================
-                        // 🔍 DIAGNOSTIC: 1s delayed state check
+                        // 🔍 DIAGNOSTIC
                         // ============================================================
                         setTimeout(() => {
                             const el = cursorRef.current?.element;
                             console.log('📍 Cursor el exists:', !!el);
                             console.log('📍 In DOM:', el ? document.contains(el) : false);
                             console.log('📍 Visibility:', el?.style.visibility);
-                            console.log('📍 Opacity:', el?.style.opacity);
                             console.log('📍 Transform:', el?.style.transform);
-                            console.log('📍 ZIndex:', el?.style.zIndex);
-                            console.log('📍 tickCache exists:', !!(api as any).tickCache);
+                            console.log('📍 tickCache:', !!(api as any).tickCache);
                             console.log('📍 DOM query:', document.querySelector('#maestro-cursor-v43'));
                         }, 1000);
 
@@ -674,6 +666,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
                             // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
                         }, 100);
+                    };
+
+                    // Register for future renders (track changes, re-renders)
+                    api.renderFinished.on(handleRenderFinished);
+
+                    // ⚡ PWA RACE FIX: If AlphaTab already rendered before listener attached, fire manually
+                    // Check for .at-surface SVG — most reliable signal that render completed
+                    const alreadyRendered = !!containerRef.current?.querySelector('.at-surface svg, .at-viewport svg');
+                    if (alreadyRendered) {
+                        console.log('⚡ PWA: AlphaTab already rendered — manually triggering cursor init');
+                        handleRenderFinished();
                     }
                     // ============================================================
                     // 🔒 END: ...TO HERE (full replacement boundary)
