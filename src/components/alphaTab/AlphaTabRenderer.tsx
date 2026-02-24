@@ -1604,7 +1604,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     position: 'relative',
                     width: '100%',
                     minHeight,
-                    overflow: 'auto',
+                    overflow: 'visible',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor,
                     paddingLeft: 'env(safe-area-inset-left, 0px)',
