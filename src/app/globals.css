@@ -24,3 +24,96 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+/**
+ * Maestro Cursor - Drag Visual Feedback V99.23
+ * Ghost cursor effect with WHITE DOT preserved
+ * DEFAULT: Purple cursor with WHITE dot (Maestro style)
+ * DRAGGING: Ghost white cursor with WHITE dot visible (Songsterr feedback)
+ */
+
+/* 🆕 V99.23: Loop surface with mix-blend-mode (Songsterr style) */
+.maestro-loop-surface {
+    mix-blend-mode: multiply !important;
+    pointer-events: none;
+}
+
+/* Default cursor - PURPLE body with WHITE dot when idle (Maestro color) */
+.maestro-cursor-icursor path:first-child,
+.maestro-cursor path:first-child,
+#maestro-cursor-v43 path:first-child {
+  fill: rgba(168, 85, 247, 0.45);
+  transition: fill 0.2s ease-in-out;
+}
+
+/* 🔥 CRITICAL: White dot must stay white always */
+.maestro-cursor-icursor path:last-child,
+.maestro-cursor path:last-child,
+#maestro-cursor-v43 path:last-child {
+  fill: #ffffff !important;
+  fill-opacity: 1 !important;
+}
+
+/* 🆕 V99.23: Ghost cursor body - Translucent white (not solid white-out) */
+.maestro-cursor-icursor.is-dragging svg path:first-child,
+.maestro-cursor.is-dragging svg path:first-child,
+#maestro-cursor-v43.is-dragging svg path:first-child {
+  /* Main purple body becomes translucent ghost */
+  fill: #ffffff !important;
+  fill-opacity: 0.3 !important;
+  stroke: #ffffff !important;
+  stroke-width: 1px;
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.5));
+  transition: fill 0.1s ease-in-out;
+}
+
+/* 🔥 CRITICAL: White dot stays solid even during drag */
+.maestro-cursor-icursor.is-dragging svg path:last-child,
+.maestro-cursor.is-dragging svg path:last-child,
+#maestro-cursor-v43.is-dragging svg path:last-child {
+  fill: #ffffff !important;
+  fill-opacity: 1 !important;
+}
+
+/* Fallback: If no svg wrapper, target direct children */
+.maestro-cursor-icursor.is-dragging path,
+.maestro-cursor-icursor.is-dragging circle,
+.maestro-cursor.is-dragging path,
+.maestro-cursor.is-dragging circle,
+#maestro-cursor-v43.is-dragging path,
+#maestro-cursor-v43.is-dragging circle {
+  fill: #ffffff !important;
+  fill-opacity: 0.3 !important;
+  stroke: #ffffff !important;
+}
+
+/* Optional: Add glow effect during drag */
+.maestro-cursor-icursor.is-dragging,
+.maestro-cursor.is-dragging,
+#maestro-cursor-v43.is-dragging {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
+}
+
+/* 🆕 V99.23: Frozen visual state (no movement during drag) */
+.maestro-cursor-icursor.is-dragging,
+.maestro-cursor.is-dragging,
+#maestro-cursor-v43.is-dragging {
+  opacity: 0.5 !important;
+  transition: none !important;
+  pointer-events: none;
+}
+
+/* Handle drag cursor */
+.maestro-loop-handle {
+  cursor: ew-resize;
+}
+
+.maestro-loop-handle:active {
+  cursor: ew-resize;
+}
+
+/* Prevent text selection during drag */
+body.loop-dragging {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: ew-resize !important;
+}

@@ -1,12 +1,19 @@
 /**
- * MaestroCursor v4.2b - Bottom Point Base Shift Experiment
+ * MaestroCursor v4.3 - onNotesX Fix for Double-Digit Centering
  *
- * ✅ Same as v4.2, with ONE change:
- * - Adds bottomPointBaseShift to push the point downward 1–2px
- *   WITHOUT changing the top, and WITHOUT stretching the tip itself.
+ * ✅ Based on v4.2b + AlphaTab 1.8.1 cursor bug fix
+ * ✅ Uses beatBounds.onNotesX (actual note position) instead of calculating from visualBounds
+ * ✅ Fixes off-center cursor on double-digit frets (10-25) in GP3 files
+ * ✅ Aligns with native cursor fix (GitHub #2546)
+ *
+ * Changes from v4.2b:
+ * - extractVisualBounds() → extractBeatPosition() (returns bounds + noteX)
+ * - setBeat() uses pos.noteX for positioning
+ * - setTick() uses pos.noteX as currentCenterX
  */
 
 'use client';
+
 
 // ========== TYPES & INTERFACES ==========
 
@@ -47,9 +54,6 @@ export class MaestroCursor {
     private cursorWidth = 12;
     private topOverhang = 26;
     private bottomOverhang = 12;
-
-    // ✅ NEW: shifts the *base* of the point down (NOT the tip length)
-    // Try 1 or 2
     private bottomPointBaseShift = 2;
 
     private hasInitialPosition = false;
@@ -64,7 +68,7 @@ export class MaestroCursor {
 
     constructor(container: HTMLElement) {
         this.element = document.createElement('div');
-        this.element.id = 'maestro-cursor-v42';
+        this.element.id = 'maestro-cursor-v43';
         this.element.className = 'maestro-cursor-icursor';
 
         Object.assign(this.element.style, {
@@ -99,14 +103,16 @@ export class MaestroCursor {
         this.currentBeat = beat;
         this.currentBeatBounds = beatBounds;
 
-        const vb = this.extractVisualBounds(beatBounds);
-        if (!vb) return;
+        // ✅ V4.3: Use extractBeatPosition to get onNotesX
+        const pos = this.extractBeatPosition(beatBounds);
+        if (!pos) return;
 
-        const finalX = (vb.x + vb.w / 2) - (this.cursorWidth / 2);
+        const vb = pos.bounds;
 
-        // ✅ CHANGED: totalHeight includes base shift so SVG has room
+        // ✅ V4.3: Use pos.noteX (actual note position) instead of calculated center
+        const finalX = pos.noteX - (this.cursorWidth / 2);
+
         const totalHeight = vb.h + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
-
         const finalY = vb.y - this.topOverhang;
 
         // Always reset ratchet in setBeat (handles seeks correctly)
@@ -137,15 +143,19 @@ export class MaestroCursor {
         beat: Beat | null,
         beatBounds: BeatBounds | null,
         nextBeatCenterX: number | null,
-        playbackRange: PlaybackRange | null = null
+        playbackRange: PlaybackRange | null = null,
+        isDragging: boolean = false
     ): void {
         if (!beat || this.pendingSnap) return;
 
-        const vb = this.extractVisualBounds(beatBounds);
-        if (!vb) {
-            if (DEBUG) console.warn('⚠️ MaestroCursor: No visual bounds available');
+        // ✅ V4.3: Use extractBeatPosition to get onNotesX
+        const pos = this.extractBeatPosition(beatBounds);
+        if (!pos) {
+            if (DEBUG) console.warn('⚠️ MaestroCursor: No beat position available');
             return;
         }
+
+        const vb = pos.bounds;
 
         const beatStart = beat.absolutePlaybackStart;
         const loopEnd = (playbackRange && playbackRange.endTick > 0)
@@ -168,20 +178,25 @@ export class MaestroCursor {
         // 1️⃣ RATCHET & BOUNDARY CLAMP
         // ============================================
         effectiveTick = Math.min(effectiveTick, loopEnd);
-        const backwardJump = this.maxTicksSeenForCurrentBeat - effectiveTick;
 
-        if (backwardJump > 500) {
+        if (isDragging) {
+            // 🔓 LOCK REMOVED: Allow free movement during drag
             this.maxTicksSeenForCurrentBeat = effectiveTick;
-            if (DEBUG) console.log('🔄 Loop reset detected in cursor');
         } else {
-            effectiveTick = Math.max(effectiveTick, this.maxTicksSeenForCurrentBeat);
-            this.maxTicksSeenForCurrentBeat = effectiveTick;
+            const backwardJump = this.maxTicksSeenForCurrentBeat - effectiveTick;
+            if (backwardJump > 500) {
+                this.maxTicksSeenForCurrentBeat = effectiveTick;
+            } else {
+                effectiveTick = Math.max(effectiveTick, this.maxTicksSeenForCurrentBeat);
+                this.maxTicksSeenForCurrentBeat = effectiveTick;
+            }
         }
-
         // ============================================
         // 2️⃣ TARGET X (Real Position Logic)
         // ============================================
-        const currentCenterX = vb.x + (vb.w / 2);
+        // ✅ V4.3: Use pos.noteX (actual note position) as starting point
+        const currentCenterX = pos.noteX;
+
         let rangeEndTargetX: number | null = null;
         const nextStart = beat.nextBeat?.absolutePlaybackStart ?? null;
 
@@ -255,10 +270,7 @@ export class MaestroCursor {
         // 6️⃣ RENDER
         // ============================================
         const finalX = interpolatedX - (this.cursorWidth / 2);
-
-        // ✅ CHANGED: totalHeight includes base shift so SVG has room
         const totalHeight = vb.h + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
-
         const finalY = vb.y - this.topOverhang;
 
         this.draw(finalX, finalY, totalHeight);
@@ -266,6 +278,20 @@ export class MaestroCursor {
 
     requestSnap(): void {
         this.pendingSnap = true;
+    }
+
+    /**
+        * 🆕 V99.23: Set dragging visual state
+        * Adds/removes .is-dragging class and prevents movement
+        */
+    public setDragging(isDragging: boolean): void {
+        if (isDragging) {
+            this.element.classList.add('is-dragging');
+            console.log('🔒 V99.23: Cursor frozen for drag');
+        } else {
+            this.element.classList.remove('is-dragging');
+            console.log('🔓 V99.23: Cursor unfrozen');
+        }
     }
 
     // ========== PRIVATE METHODS ==========
@@ -281,10 +307,31 @@ export class MaestroCursor {
         void this.element.offsetHeight;
     }
 
-    private extractVisualBounds(bb: BeatBounds | null): VisualBounds | null {
+    /**
+     * ✅ V4.3: NEW METHOD - Extracts beat position using onNotesX
+     * Returns both visualBounds and the actual note X coordinate
+     * Fixes off-center cursor on double-digit frets (GP3 files)
+     */
+    private extractBeatPosition(bb: BeatBounds | null): { bounds: VisualBounds; noteX: number } | null {
         if (!bb) return null;
-        const b = bb.visualBounds || bb.realBounds;
-        return (b && typeof b.x === 'number') ? b as VisualBounds : null;
+
+        const bounds = bb.visualBounds || bb.realBounds;
+        if (!bounds || typeof bounds.x !== 'number') return null;
+
+        // ✅ Use onNotesX (actual note position from AlphaTab renderer)
+        // Falls back to center calculation if onNotesX unavailable (shouldn't happen in 1.8.1+)
+        const noteX = typeof (bb as any).onNotesX === 'number'
+            ? (bb as any).onNotesX
+            : (bounds.x + bounds.w / 2);
+
+        if (DEBUG && (bb as any).onNotesX === undefined) {
+            console.warn('⚠️ onNotesX unavailable, using fallback calculation');
+        }
+
+        return {
+            bounds: bounds as VisualBounds,
+            noteX
+        };
     }
 
     private ensureSVG(totalHeight: number, beatHeight: number): void {
@@ -294,22 +341,16 @@ export class MaestroCursor {
     }
 
     private renderSVG(totalHeight: number, beatHeight: number): void {
-        const w = this.cursorWidth;      // 12 or 14
-        const mid = w / 2;               // 6 or 7
+        const w = this.cursorWidth;
+        const mid = w / 2;
 
-        // baseY moves the *base* of the triangle down (your current win)
         const baseY = beatHeight + this.topOverhang + this.bottomPointBaseShift;
-
-        // Tip stays 2px below svg box (same as before)
         const tipY = totalHeight + 2;
-
-        // Rounded top corners: keep the same feel as before
-        // (if you want it slightly tighter for width=12, set this to Math.min(7, mid))
         const topR = Math.min(6, mid);
-        //White dot (guitar pick shape)
-        const dotScale = 1.18;     // try 1.12 → 1.25
-        const dotCenterX = mid;    // keep centered
-        const dotCenterY = 7.5;    // center-ish for your dot (y range ~3..12)
+
+        const dotScale = 1.18;
+        const dotCenterX = mid;
+        const dotCenterY = 7.5;
 
         this.element.innerHTML = `
         <svg width="${w}" height="${totalHeight}"
@@ -340,23 +381,22 @@ export class MaestroCursor {
                 fill="rgba(168, 85, 247, 0.45)"
                 filter="url(#maestroCursorShadow)" />
 
-            <!-- White dot (centered dynamically) -->
-           <path d="
-    M ${mid - 3.5} 6
-    C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
-    C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
-    C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
-    C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6
-    Z"
-    fill="white"
-    transform="
-        translate(${dotCenterX} ${dotCenterY})
-        scale(${dotScale})
-        translate(${-dotCenterX} ${-dotCenterY})
-    "
-/>
+            <path d="
+                M ${mid - 3.5} 6
+                C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
+                C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
+                C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
+                C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6
+                Z"
+                fill="white"
+                transform="
+                    translate(${dotCenterX} ${dotCenterY})
+                    scale(${dotScale})
+                    translate(${-dotCenterX} ${-dotCenterY})
+                "
+            />
         </svg>
-    `;
+        `;
     }
 
     destroy(): void {

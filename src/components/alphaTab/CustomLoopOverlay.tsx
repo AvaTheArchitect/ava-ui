@@ -49,40 +49,40 @@ export const CustomLoopOverlay: React.FC<CustomLoopOverlayProps> = ({
 
         try {
             const { startTick, endTick } = api.playbackRange;
-            
+
             // Use tickCache to find beats (same method as V98.31)
             const trackIndices = api.tracks
                 ? new Set(api.tracks.map((t: any) => t.index))
                 : new Set([0]);
             const tickCache = (api as any).tickCache;
-            
+
             if (!tickCache) {
                 console.warn('⚠️ V98.32: tickCache not available');
                 return;
             }
-            
+
             // Find beats at start and end
             const startBeatResult = tickCache.findBeat(trackIndices, startTick);
             const endBeatResult = tickCache.findBeat(trackIndices, endTick - 1);
-            
+
             if (!startBeatResult?.beat || !endBeatResult?.beat) {
                 console.warn('⚠️ V98.32: Could not find beats');
                 return;
             }
-            
+
             // Get bounds for the beats
             const startBounds = api.renderer.boundsLookup.findBeat(startBeatResult.beat);
             const endBounds = api.renderer.boundsLookup.findBeat(endBeatResult.beat);
-            
+
             if (!startBounds || !endBounds) {
                 console.warn('⚠️ V98.32: Could not find beat bounds');
                 return;
             }
-            
+
             // Extract bar bounds from beat bounds
             const startBarBounds = (startBounds as any)?.barBounds;
             const endBarBounds = (endBounds as any)?.barBounds;
-            
+
             if (!startBarBounds) {
                 console.warn('⚠️ V98.32: Could not find bar bounds');
                 return;
@@ -104,15 +104,15 @@ export const CustomLoopOverlay: React.FC<CustomLoopOverlayProps> = ({
                 if (startMasterBounds?.staffSystemBounds) {
                     const systemBounds = startMasterBounds.staffSystemBounds.visualBounds;
                     const startRectWidth = (systemBounds.x + systemBounds.w) - startVis.x;
-                    
+
                     rectangles.push({
                         left: `${startVis.x}px`,
                         top: `${startVis.y}px`,
                         width: `${startRectWidth}px`,
                         height: `${startVis.h}px`,
                         position: 'absolute' as const,
-                        backgroundColor: theme === 'dark' 
-                            ? 'rgba(255, 255, 255, 0.15)' 
+                        backgroundColor: theme === 'dark'
+                            ? 'rgba(255, 255, 255, 0.15)'
                             : 'rgba(0, 0, 0, 0.15)',
                         pointerEvents: 'none' as const,
                         zIndex: 997,
@@ -124,15 +124,15 @@ export const CustomLoopOverlay: React.FC<CustomLoopOverlayProps> = ({
                 if (endMasterBounds?.staffSystemBounds) {
                     const systemBounds = endMasterBounds.staffSystemBounds.visualBounds;
                     const endRectWidth = (endVis.x + endVis.w) - systemBounds.x;
-                    
+
                     rectangles.push({
                         left: `${systemBounds.x}px`,
                         top: `${endVis.y}px`,
                         width: `${endRectWidth}px`,
                         height: `${endVis.h}px`,
                         position: 'absolute' as const,
-                        backgroundColor: theme === 'dark' 
-                            ? 'rgba(255, 255, 255, 0.15)' 
+                        backgroundColor: theme === 'dark'
+                            ? 'rgba(255, 255, 255, 0.15)'
                             : 'rgba(0, 0, 0, 0.15)',
                         pointerEvents: 'none' as const,
                         zIndex: 997,
@@ -147,20 +147,20 @@ export const CustomLoopOverlay: React.FC<CustomLoopOverlayProps> = ({
                 const y = startVis.y;
                 const width = (endVis.x + endVis.w) - startVis.x;
                 const height = startVis.h;
-                
+
                 const style: React.CSSProperties = {
                     position: 'absolute',
                     left: `${x}px`,
                     top: `${y}px`,
                     width: `${width}px`,
                     height: `${height}px`,
-                    backgroundColor: theme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.15)' 
+                    backgroundColor: theme === 'dark'
+                        ? 'rgba(255, 255, 255, 0.15)'
                         : 'rgba(0, 0, 0, 0.15)',
                     pointerEvents: 'none',
                     zIndex: 997,
                 };
-                
+
                 setOverlayStyles([style]);
                 console.log(`🎯 V98.32: Loop overlay positioned at (${x}, ${y}) size ${width}x${height}`);
             }
