@@ -578,20 +578,45 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                             api.cursorHandler = cursorRef.current;
 
-                            setTimeout(() => {
+
+                            const anchorCursorAtStart = (attempt = 0) => {
                                 const cursor = cursorRef.current;
                                 if (!cursor || !api.renderer?.boundsLookup) return;
 
-                                const trackIndices = cursorTrackIndicesRef.current;
                                 const tickCache = (api as any).tickCache;
-                                const beatResult = tickCache?.findBeat?.(trackIndices, 0);
-
-                                if (beatResult?.beat) {
-                                    const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-                                    cursor.setBeat(beatResult.beat, beatBounds);
+                                if (!tickCache) {
+                                    // tickCache not ready yet — retry up to 10x with backoff
+                                    if (attempt < 10) {
+                                        setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
+                                    }
+                                    return;
                                 }
-                            }, 200);
 
+                                const trackIndices = cursorTrackIndicesRef.current;
+                                const beatResult = tickCache.findBeat(trackIndices, 0);
+
+                                if (!beatResult?.beat) {
+                                    if (attempt < 10) {
+                                        setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
+                                    }
+                                    return;
+                                }
+
+                                const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                                if (!beatBounds) {
+                                    if (attempt < 5) {
+                                        setTimeout(() => anchorCursorAtStart(attempt + 1), 80);
+                                    }
+                                    return;
+                                }
+
+                                cursor.requestSnap();
+                                cursor.setBeat(beatResult.beat, beatBounds);
+
+                                if (DEBUG) console.log(`✅ Cursor anchored at M1 (attempt ${attempt + 1})`);
+                            };
+
+                            setTimeout(() => anchorCursorAtStart(0), 150);
                         } else {
                             const el = cursorRef.current.element;
                             if (el && !host.contains(el)) {
@@ -621,7 +646,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                         setTimeout(() => {
                             const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
-                            nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
+                            // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
                         }, 100);
                     }
                 });
