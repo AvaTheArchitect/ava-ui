@@ -557,8 +557,14 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // ============================================
                 // 🔒 END PLAYING STATE TRACKING 🔒
                 // ============================================
-
                 api.renderFinished.on(() => {
+                    // 🔍 DIAGNOSTIC: Confirm handler fires on iOS PWA
+                    console.log('🧩 renderFinished fired', {
+                        hasContainer: !!containerRef.current,
+                        hasCursor: !!cursorRef.current,
+                        ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
+                    });
+
                     setIsRendered(true);
                     setIsLoading(false);
                     setRenderCycle(rc => rc + 1);
@@ -566,6 +572,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                     lastUpdateTickRef.current = -1;
 
+                    // ============================================================
+                    // 🔒 START: REPLACE EVERYTHING FROM HERE...
+                    // ============================================================
                     if (containerRef.current) {
                         const host = containerRef.current;
 
@@ -573,79 +582,84 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             host.style.position = 'relative';
                         }
 
+                        // ============================================================
+                        // 🔥 MOBILE-SAFE CURSOR CREATION (Cipher fix)
+                        // Checks DOM presence, not just ref — handles PWA reflow/remount
+                        // ============================================================
+                        let needsCreation = false;
+
                         if (!cursorRef.current) {
-                            cursorRef.current = new MaestroCursor(host);
-
-                            api.cursorHandler = cursorRef.current;
-
-
-                            const anchorCursorAtStart = (attempt = 0) => {
-                                const cursor = cursorRef.current;
-                                if (!cursor || !api.renderer?.boundsLookup) return;
-
-                                const tickCache = (api as any).tickCache;
-                                if (!tickCache) {
-                                    // tickCache not ready yet — retry up to 10x with backoff
-                                    if (attempt < 10) {
-                                        setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
-                                    }
-                                    return;
-                                }
-
-                                const trackIndices = cursorTrackIndicesRef.current;
-                                const beatResult = tickCache.findBeat(trackIndices, 0);
-
-                                if (!beatResult?.beat) {
-                                    if (attempt < 10) {
-                                        setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
-                                    }
-                                    return;
-                                }
-
-                                const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-                                if (!beatBounds) {
-                                    if (attempt < 5) {
-                                        setTimeout(() => anchorCursorAtStart(attempt + 1), 80);
-                                    }
-                                    return;
-                                }
-
-                                cursor.requestSnap();
-                                cursor.setBeat(beatResult.beat, beatBounds);
-
-                                if (DEBUG) console.log(`✅ Cursor anchored at M1 (attempt ${attempt + 1})`);
-                            };
-
-                            setTimeout(() => anchorCursorAtStart(0), 150);
+                            needsCreation = true;
                         } else {
                             const el = cursorRef.current.element;
-                            if (el && !host.contains(el)) {
-                                host.appendChild(el);
+                            // Ref exists but element was destroyed (mobile remount case)
+                            if (!el || !host.contains(el)) {
+                                cursorRef.current.destroy();
+                                cursorRef.current = null;
+                                needsCreation = true;
+                            }
+                        }
+
+                        if (needsCreation) {
+                            cursorRef.current = new MaestroCursor(host);
+                            api.cursorHandler = cursorRef.current;
+                            console.log('🟣 MaestroCursor created/recreated', {
+                                hostExists: !!host,
+                                hostChildren: host.childElementCount
+                            });
+                        } else {
+                            // Belt + suspenders: re-attach if somehow detached
+                            const existingCursor = cursorRef.current;
+                            if (existingCursor) {
+                                const el = existingCursor.element;
+                                if (el && !host.contains(el)) host.appendChild(el);
+                                existingCursor.requestSnap();
+                            }
+                            console.log('🟢 MaestroCursor reused');
+                        }
+
+                        // ============================================================
+                        // 🔥 MOBILE-SAFE ANCHOR: Retry loop (replaces 200ms single-shot)
+                        // ============================================================
+                        const anchorCursorAtStart = (attempt = 0) => {
+                            const cursor = cursorRef.current;
+                            if (!cursor || !api.renderer?.boundsLookup) return;
+
+                            const tickCache = (api as any).tickCache;
+                            if (!tickCache) {
+                                if (attempt < 10) setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
+                                return;
                             }
 
-                            cursorRef.current.requestSnap();
+                            const trackIndices = cursorTrackIndicesRef.current;
 
-                            setTimeout(() => {
-                                if (!cursorRef.current || !api.renderer?.boundsLookup) return;
+                            // On re-render (track change etc), anchor to current tick not 0
+                            const targetTick = needsCreation ? 0 : (api.tickPosition ?? 0);
+                            const beatResult = tickCache.findBeat(trackIndices, targetTick);
 
-                                const currentTick = api.tickPosition;
-                                const trackIndices = cursorTrackIndicesRef.current;
-                                const tickCache = (api as any).tickCache;
+                            if (!beatResult?.beat) {
+                                if (attempt < 10) setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
+                                return;
+                            }
 
-                                if (tickCache) {
-                                    const beatResult = tickCache.findBeat(trackIndices, currentTick);
-                                    if (beatResult?.beat) {
-                                        const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-                                        if (beatBounds) {
-                                            cursorRef.current.setBeat(beatResult.beat, beatBounds);
-                                        }
-                                    }
-                                }
-                            }, 100);
-                        }
+                            const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
+                            if (!beatBounds) {
+                                if (attempt < 5) setTimeout(() => anchorCursorAtStart(attempt + 1), 80);
+                                return;
+                            }
+
+                            cursor.requestSnap();
+                            cursor.setBeat(beatResult.beat, beatBounds);
+                            if (DEBUG) console.log(`✅ Cursor anchored at tick ${targetTick} (attempt ${attempt + 1})`);
+                        };
+
+                        setTimeout(() => anchorCursorAtStart(0), 150);
+
+                        // ============================================================
+                        // 🔍 DIAGNOSTIC: 1s delayed state check
+                        // ============================================================
                         setTimeout(() => {
                             const el = cursorRef.current?.element;
-
                             console.log('📍 Cursor el exists:', !!el);
                             console.log('📍 In DOM:', el ? document.contains(el) : false);
                             console.log('📍 Visibility:', el?.style.visibility);
@@ -653,14 +667,18 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                             console.log('📍 Transform:', el?.style.transform);
                             console.log('📍 ZIndex:', el?.style.zIndex);
                             console.log('📍 tickCache exists:', !!(api as any).tickCache);
+                            console.log('📍 DOM query:', document.querySelector('#maestro-cursor-v43'));
                         }, 1000);
+
                         setTimeout(() => {
                             const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
                             // nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
                         }, 100);
                     }
+                    // ============================================================
+                    // 🔒 END: ...TO HERE (full replacement boundary)
+                    // ============================================================
                 });
-
                 // ============================================
                 // 🔥 V99.3: playedBeatChanged with SNAP-BACK GUARD
                 // Uses event beat directly for smooth cursor visuals.
@@ -1604,7 +1622,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     position: 'relative',
                     width: '100%',
                     minHeight,
-                    overflow: 'visible',
+                    overflow: 'auto',
                     WebkitOverflowScrolling: 'touch',
                     backgroundColor,
                     paddingLeft: 'env(safe-area-inset-left, 0px)',
