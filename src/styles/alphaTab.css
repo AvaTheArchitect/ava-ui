@@ -1,14 +1,6 @@
 /**
- * alphaTab Required Styles - V99 Cursor Debug Toggle (CLONED)
- * Source: alphaTab.css (original backed up as alphaTab.12-20-26.css)
- *
- * 🆕 V99:
- * ✅ Keeps default cursor PURPLE
- * ✅ Adds optional RED debug override via wrapper class:
- *    Add `debug-default-cursor-red` to the alphatab container element.
- *
- * Example wrapper:
- *   <div className="alphatab-container debug-default-cursor-red">...</div>
+ * alphaTab Required Styles - V101
+ * 🎉 V101: Hide native beat cursor — MaestroCursor is the authority
  */
 
 /* Main alphaTab container - PORTRAIT MODE (default) */
@@ -26,49 +18,31 @@
     overflow: visible;
 }
 
-/* HIDE the bar cursor - we only want the beat line */
-.at-cursor-bar {
+/* ========================================
+   V101: HIDE BOTH NATIVE CURSORS
+   MaestroCursor handles all visual cursor rendering
+   ======================================== */
+.at-cursor-bar,
+.at-cursor-beat {
     display: none !important;
 }
 
 /* ========================================
-   CURSOR COLOR - PROD + DEBUG OVERRIDE
+   DEBUG OVERRIDE: Red native cursor for testing
+   Add `debug-native-cursor` to alphatab-container to reveal it
    ======================================== */
-
-/* 🟣 PRODUCTION DEFAULT: Purple beat cursor */
-.at-cursor-beat,
-#maestro-player .at-cursor-beat {
-    background: rgba(168, 85, 247, 0.9) !important;
-    z-index: 999 !important;
-}
-
-@media (max-width: 768px) {
-    .at-cursor-beat {
-        background: rgba(168, 85, 247, 1) !important;
-        min-width: 2px !important;
-    }
-}
-
-
-/* 🔴 DEBUG OVERRIDE: Red cursor when wrapper class is present
-   Put `debug-default-cursor-red` on the SAME element that wraps #maestro-player
-   (usually your AlphaTabRenderer container).
-*/
-.debug-default-cursor-red .at-cursor-beat,
-.debug-default-cursor-red #maestro-player .at-cursor-beat,
-.alphatab-container.debug-default-cursor-red .at-cursor-beat,
-.alphatab-container.debug-default-cursor-red #maestro-player .at-cursor-beat {
+.debug-native-cursor .at-cursor-beat {
+    display: block !important;
     background: rgba(255, 0, 0, 0.95) !important;
     box-shadow: 0 0 6px rgba(255, 0, 0, 0.75) !important;
     z-index: 999 !important;
 }
 
 @media (max-width: 768px) {
-    .debug-default-cursor-red .at-cursor-beat,
-    .alphatab-container.debug-default-cursor-red .at-cursor-beat {
+    .debug-native-cursor .at-cursor-beat {
+        display: block !important;
         background: rgba(255, 0, 0, 1) !important;
         min-width: 2px !important;
-        box-shadow: 0 0 6px rgba(255, 0, 0, 0.75) !important;
     }
 }
 
@@ -76,7 +50,6 @@
    V94: TRACK NAME / TUNING DISPLAY FIXES
    ======================================== */
 
-/* Make tuning text clickable with proper cursor */
 .at-surface-svg text[role="button"] {
     cursor: pointer !important;
     transition: opacity 0.15s ease;
@@ -86,7 +59,6 @@
     opacity: 0.8;
 }
 
-/* Disabled state (non-synth mode or playing) */
 .at-surface-svg text[role="button"][aria-disabled="true"] {
     cursor: not-allowed !important;
     opacity: 0.5;
@@ -95,25 +67,12 @@
 /* ========================================
    LOOP SELECTION OVERLAY
    ======================================== */
-/* 🎯 V98.30: DISABLE AlphaTab's broken selection overlay renderer */
 .at-selection,
 .at-selection div {
     display: none !important;
     visibility: hidden !important;
 }
 
-/* COMMENTED OUT - Original styling (kept for reference)
-.at-selection div {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.15) !important;
-    pointer-events: none;
-    z-index: 997;
-    border: none !important;
-    border-radius: 0;
-}
-*/
-
-/* Dark mode selection overlay */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-selection div,
 .alphatab-container[style*="background-color:#1a1a1a"] .at-selection div {
     background: rgba(255, 255, 255, 0.15) !important;
@@ -163,7 +122,6 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Loading overlay */
 .at-loading {
     display: flex;
     align-items: center;
@@ -182,37 +140,17 @@
     background: rgba(26, 26, 26, 0.9);
 }
 
-/* Scrollbar styling */
-.at-surface::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
-}
+.at-surface::-webkit-scrollbar { width: 12px; height: 12px; }
+.at-surface::-webkit-scrollbar-track { background: #f1f1f1; }
+.at-surface::-webkit-scrollbar-thumb { background: #888; border-radius: 6px; }
+.at-surface::-webkit-scrollbar-thumb:hover { background: #555; }
 
-.at-surface::-webkit-scrollbar-track {
-    background: #f1f1f1;
-}
-
-.at-surface::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 6px;
-}
-
-.at-surface::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
-
-/* Dark mode scrollbar */
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-track,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-track {
-    background: #2a2a2a;
-}
+.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-track { background: #2a2a2a; }
 
 .alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb {
-    background: #555;
-}
+.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb { background: #555; }
 
-/* Print styles */
 @media print {
     .at-cursor-bar,
     .at-cursor-beat,
@@ -221,23 +159,14 @@
     .maestro-loop-bubble {
         display: none !important;
     }
-
-    .at-surface {
-        overflow: visible !important;
-    }
+    .at-surface { overflow: visible !important; }
 }
 
 /* ========================================
-   V94: PITCH SHIFT POPOVER ANIMATION
+   PITCH SHIFT POPOVER ANIMATION
    ======================================== */
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0);    }
 }
