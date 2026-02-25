@@ -91,12 +91,38 @@
 }
 
 /* ========================================
-   HIGHLIGHT EFFECT
+   HIGHLIGHT EFFECT — V101
+   Neutralize ALL color changes on active notes.
+   Purple cursor is the sole visual indicator of position.
+   Bend notation, slurs, articulations — all stay default color.
+   ======================================== */
+.at-highlight * {
+    fill: inherit !important;
+    stroke: inherit !important;
+}
+
+/* ========================================
+   FRET NUMBERS — base + active state
+   Active fret numbers get bolder (Songsterr-style "pops through" cursor)
+   No color change — just weight contrast
    ======================================== */
 
-.at-highlight * {
-    fill: #a855f7 !important;
-    stroke: #a855f7 !important;
+/* All fret numbers: strong but not heavy */
+.at-surface-svg text {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+/* Active fret numbers only: maximum weight so they read through cursor */
+.at-highlight text {
+    font-weight: 900 !important;
+    fill: #000000 !important;
+}
+
+/* Dark mode active fret numbers */
+.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-highlight text,
+.alphatab-container[style*="background-color:#1a1a1a"] .at-highlight text {
+    fill: #ffffff !important;
 }
 
 /* ========================================
