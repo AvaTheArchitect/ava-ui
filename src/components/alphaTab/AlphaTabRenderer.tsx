@@ -482,6 +482,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 // ✅ Register listener BEFORE file load
                 api.renderFinished.on(handleRenderFinished);
 
+                // 🔍 DIAGNOSTIC: Manual trigger for iPhone console testing
+                // Test with: window.__maestroInitCursor?.()
+                (window as any).__maestroInitCursor = handleRenderFinished;
+
                 // ============================================================
                 // scoreLoaded — registered before file load
                 // ============================================================
