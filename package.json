@@ -28,6 +28,7 @@
     "@codemirror/view": "^6.38.1",
     "@coderline/alphatab": "^1.8.1",
     "@coderline/alphatab-webpack": "^1.8.1",
+    "@supabase/supabase-js": "^2.99.1",
     "@types/jszip": "^3.4.0",
     "adm-zip": "^0.5.16",
     "axios": "^1.10.0",

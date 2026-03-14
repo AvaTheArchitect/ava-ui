@@ -1,15 +1,15 @@
 /**
- * AlphaTab Initialization Utility - V100.7
- * Date: February 1st, 2026
+ * AlphaTab Initialization Utility - V100.8
+ * Date: March 13th, 2026
  *
- * 🔥 V100.7: CURSOR SYSTEM ENABLED (VISUAL HIDDEN)
+ * 🔥 V100.8: WORKERS DISABLED — M1 + Supabase async + StrictMode stability fix
+ * ✅ settings.core.useWorkers = false (prevents blank canvas race condition)
+ * ✅ Log updated to reflect actual audio output path (ScriptProcessor)
+ *
+ * 🔒 V100.7 FEATURES (PRESERVED):
+ * ✅ Cursor SYSTEM enabled (visual hidden via cursorType = 0)
  * ✅ enableCursor = true (keeps playedBeatChanged firing!)
- * ✅ cursorType = 0 (hides native visual)
- * ✅ Enables MaestroCursor hybrid approach
- *
- * 🔒 V100.6 FEATURES (PRESERVED):
- * ✅ Workers enabled globally
- * ✅ Multi-threading: SVG rendering + Audio synthesis
+ * ✅ enableAnimatedBeatCursor = true
  * ✅ includeNoteBounds for custom cursor
  * ✅ StaveProfile.Tab for tab-only display
  */
@@ -53,14 +53,14 @@ export async function initAlphaTab(
     "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/";
   settings.core.enableLazyLoading = false;
 
-  // 🚀 V100.6: ENABLE WORKERS GLOBALLY
-  settings.core.useWorkers = true;
+  // 🔒 V100.8: Workers OFF — required for M1 + Supabase async + StrictMode timing
+  settings.core.useWorkers = false;
 
   // 🎯 V100.5: CRITICAL - Enable note bounds for custom cursor!
   settings.core.includeNoteBounds = true;
 
-  console.log("🚀 V100.7: AlphaTab Multi-threading ENABLED (SVG + Synth)");
-  console.log("🎯 V100.7: includeNoteBounds ENABLED for custom cursor");
+  console.log("🔒 V100.8: AlphaTab workers DISABLED (M1 + StrictMode stable)");
+  console.log("🎯 V100.8: includeNoteBounds ENABLED for custom cursor");
 
   // ==================== DISPLAY SETTINGS ====================
   settings.display.scale = 1.0;
@@ -72,21 +72,21 @@ export async function initAlphaTab(
       layoutMode === "page"
         ? alphaTab.LayoutMode.Page
         : alphaTab.LayoutMode.Horizontal;
-    console.log(`📱 V100.7: Mobile layout = ${layoutMode}`);
+    console.log(`📱 V100.8: Mobile layout = ${layoutMode}`);
   } else {
     settings.display.layoutMode = alphaTab.LayoutMode.Page;
-    console.log("🖥️ V100.7: Desktop layout = Page");
+    console.log("🖥️ V100.8: Desktop layout = Page");
   }
 
   settings.display.staveProfile = alphaTab.StaveProfile.Tab;
-  console.log("🎼 V100.7: Using Tab profile (tab-only, time sigs auto-show)");
+  console.log("🎼 V100.8: Using Tab profile (tab-only, time sigs auto-show)");
 
   // ==================== NOTATION SETTINGS ====================
   settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
   settings.notation.rhythmHeight = 15;
   settings.notation.notationMode = alphaTab.NotationMode.SongBook;
 
-  console.log("✅ V100.7: Rhythm mode configured for tab display");
+  console.log("✅ V100.8: Rhythm mode configured for tab display");
 
   // ==================== PLAYER SETTINGS ====================
   if (playerMode === "synthesizer") {
@@ -100,7 +100,7 @@ export async function initAlphaTab(
     settings.player.enableAnimatedBeatCursor = true; // ← CHANGED FROM false
     (settings.display as any).cursorType = 0; // ← ADDED - hides visual (0 = None)
     console.log(
-      "✅ V100.7: Cursor SYSTEM enabled (visual hidden for MaestroCursor)",
+      "✅ V100.8: Cursor SYSTEM enabled (visual hidden for MaestroCursor)",
     );
 
     settings.player.enableUserInteraction = false;
@@ -112,20 +112,20 @@ export async function initAlphaTab(
         (settings.player as any).scrollElement = scrollContainer;
         (settings.player as any).scrollOffsetY = -200;
         (settings.player as any).scrollOffsetX = 0;
-        console.log("✅ V100.7: SYNTH scrollElement = custom container");
+        console.log("✅ V100.8: SYNTH scrollElement = custom container");
       } else {
         (settings.player as any).scrollElement = document.documentElement;
         (settings.player as any).scrollOffsetY = 100;
         (settings.player as any).scrollOffsetX = 0;
         console.log(
-          "✅ V100.7: SYNTH scrollElement = document.documentElement",
+          "✅ V100.8: SYNTH scrollElement = document.documentElement",
         );
       }
     } else {
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log("✅ V100.7: SYNTH scrollElement = container (Horizontal)");
+      console.log("✅ V100.8: SYNTH scrollElement = container (Horizontal)");
     }
 
     console.log("🎹 SYNTHESIZER MODE enabled");
@@ -133,7 +133,7 @@ export async function initAlphaTab(
     console.log(
       "🔊 Output: Auto (AlphaTab selects best - likely AudioWorklet)",
     );
-    console.log("⚡ Workers: ENABLED (global setting)");
+    console.log("⚡ Render workers: OFF | Audio output: ScriptProcessor");
   } else if (playerMode === "external") {
     settings.player.playerMode = alphaTab.PlayerMode.EnabledExternalMedia;
 
@@ -142,7 +142,7 @@ export async function initAlphaTab(
     settings.player.enableAnimatedBeatCursor = true; // ← CHANGED FROM false
     (settings.display as any).cursorType = 0; // ← ADDED - hides visual (0 = None)
     console.log(
-      "✅ V100.7: Cursor SYSTEM enabled (visual hidden for MaestroCursor)",
+      "✅ V100.8: Cursor SYSTEM enabled (visual hidden for MaestroCursor)",
     );
 
     settings.player.enableUserInteraction = false;
@@ -153,23 +153,24 @@ export async function initAlphaTab(
         (settings.player as any).scrollElement = scrollContainer;
         (settings.player as any).scrollOffsetY = -200;
         (settings.player as any).scrollOffsetX = 0;
-        console.log("✅ V100.7: EXTERNAL scrollElement = custom container");
+        console.log("✅ V100.8: EXTERNAL scrollElement = custom container");
       } else {
         (settings.player as any).scrollElement = document.documentElement;
         (settings.player as any).scrollOffsetY = 100;
         (settings.player as any).scrollOffsetX = 0;
         console.log(
-          "✅ V100.7: EXTERNAL scrollElement = document.documentElement",
+          "✅ V100.8: EXTERNAL scrollElement = document.documentElement",
         );
       }
     } else {
       (settings.player as any).scrollElement = container;
       (settings.player as any).scrollOffsetX = container.clientWidth * 0.15;
       (settings.player as any).scrollOffsetY = 0;
-      console.log("✅ V100.7: EXTERNAL scrollElement = container");
+      console.log("✅ V100.8: EXTERNAL scrollElement = container");
     }
 
     console.log("🎵 EXTERNAL MEDIA MODE");
+    console.log("⚡ Render workers: OFF | Audio output: ScriptProcessor");
   } else {
     settings.player.playerMode = alphaTab.PlayerMode.Disabled;
     settings.player.enableCursor = false;
@@ -178,11 +179,11 @@ export async function initAlphaTab(
 
   if (!enableLoopSelection) {
     console.log(
-      "🔒 V100.7: Native loop selection DISABLED (custom DOM handles)",
+      "🔒 V100.8: Native loop selection DISABLED (custom DOM handles)",
     );
   }
 
-  console.log("🎸 AlphaTab V100.7 initialized:", {
+  console.log("🎸 AlphaTab V100.8 initialized:", {
     engine: settings.core.engine,
     layoutMode: settings.display.layoutMode,
     staveProfile: "Tab (tab-only)",
@@ -191,7 +192,7 @@ export async function initAlphaTab(
     includeNoteBounds: true,
     cursorSystem: "ENABLED (visual hidden)",
     customCursor: "Maestro (Songsterr-style)",
-    workersEnabled: true,
+    workersEnabled: false,
     isMobile,
   });
 
@@ -201,7 +202,7 @@ export async function initAlphaTab(
   // Print environment info for debugging
   if (typeof window !== "undefined" && alphaTab.Environment) {
     console.log("╔═══════════════════════════════════════════════════════╗");
-    console.log("║     AlphaTab Environment Info - V100.7                 ║");
+    console.log("║     AlphaTab Environment Info - V100.8                 ║");
     console.log("╚═══════════════════════════════════════════════════════╝");
     console.log(`User Agent: ${navigator.userAgent}`);
     console.log(`Screen: ${window.innerWidth}x${window.innerHeight}`);
@@ -226,7 +227,7 @@ export async function loadGuitarProFile(
   api: AlphaTabApi,
   fileUrl: string,
 ): Promise<void> {
-  console.log(`📂 V100.7: Loading Guitar Pro file: ${fileUrl}`);
+  console.log(`📂 V100.8: Loading Guitar Pro file: ${fileUrl}`);
 
   const response = await fetch(fileUrl);
   if (!response.ok) {

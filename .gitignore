@@ -81,3 +81,18 @@ cipher-engine-clean-v2/
 claude/
 src/styles/*.Dec*.css
 src/styles/*.[0-9]*-[0-9]*-[0-9]*.css
+
+# ── Maestro version backup files (intentionally kept locally, never committed) ──
+*.v1
+*.v2
+*.v2.2
+*.v98.*
+*.v99.*
+*.v100.*
+*.v101
+*.v100.Master
+*.V98.*
+*.V99.*
+src/styles/alphaTab.css.Feb2026
+src/components/alphaTab/MaestroCursor.v*.tsx
+src/components/audio/maestro/tabs/*.tsx.v*

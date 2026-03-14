@@ -1,43 +1,209 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   MAESTRO.AI — globals.css
+   Updated: March 2026
+
+   SCOPE OF THIS FILE
+   ──────────────────
+   ✅ CSS custom properties (design tokens) for:
+        - Canvas background / foreground (light/dark tab theme)
+        - Panel surfaces (MyTabsPanel, NewTabPanel, SettingsPanel, etc.)
+        - Modal overlays and elevation shadows
+        - Shared typography color tiers
+        - Accent / brand colors
+        - Tailwind @theme registration
+
+   ❌ NOT in this file:
+        - TopMenuTray chrome     → future maestro.css (fixed dark surface)
+        - TransportBar chrome    → future maestro.css (fixed dark surface)
+        - Component-specific px / layout rules → stay in component files
+
+   THEMING STRATEGY
+   ────────────────
+   Three switching mechanisms — all three must stay in sync:
+     1. [data-theme='dark']  — explicit toggle via TransportBar light/dark button
+     2. @media prefers-color-scheme: dark  — OS-level system preference fallback
+        (Note: variable block is intentionally duplicated here. CSS has no native
+        mixin/extend. The duplication is load-bearing — do not "clean it up".)
+     3. @media prefers-color-scheme: light (implicit — :root defaults are light)
+
+   ELEVATION / OVERLAY RULES
+   ─────────────────────────
+   Full modal (NewTabPanel, SettingsPanel, MyTabsPanel):
+     backdrop: var(--overlay-modal)
+     shadow:   var(--shadow-elevation)
+
+   Popover / transport panel (TrackSwitcher, TempoPicker, TuningDropdown):
+     shadow only: var(--shadow-elevation)
+     NO backdrop — user needs to see notation while adjusting.
+   ============================================================================ */
+
+
+/* ── Light mode defaults ─────────────────────────────────────────────────────*/
 :root {
+  /* Canvas */
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Panel surfaces */
+  --panel-bg:        #ffffff;
+  --section-bg:      #f9f9f9;
+  --section-border:  rgba(0, 0, 0, 0.08);
+
+  /* Typography tiers
+     primary → body copy
+     secondary → labels, sub-headings
+     muted → placeholders, meta, disabled states */
+  --text-primary:    #171717;
+  --text-secondary:  #4b5563;   /* gray-600 */
+  --text-muted:      #71717a;   /* zinc-500 — replaces old "110,110,110 ghost" */
+
+  /* Borders */
+  --panel-border:    rgba(0, 0, 0, 0.06);
+  --upload-border:   #d1d5db;
+  --upload-border-hover: #9ca3af;
+
+  /* Brand accent */
+  --accent-purple:   #9333ea;   /* purple-600 */
+
+  /* Modal overlay
+     Dark dim even in light mode — white overlays wash out notation. */
+  --overlay-modal: rgba(0, 0, 0, 0.35);
+
+  /* Elevation shadow — two-layer system.
+     Primary layer:  wide spread, simulates natural lift.
+     Secondary layer: tighter contact shadow, anchors the panel. */
+  --shadow-elevation:
+    0 20px 40px -8px rgba(0, 0, 0, 0.18),
+    0 10px 16px -6px rgba(0, 0, 0, 0.12);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+/* ── Dark mode — explicit toggle ([data-theme='dark']) ───────────────────────*/
+[data-theme='dark'] {
+  /* Canvas */
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  /* Panel surfaces — zinc palette matches Maestro dark chrome */
+  --panel-bg:       #18181b;   /* zinc-900 */
+  --section-bg:     #09090b;   /* zinc-950 */
+  --section-border: #27272a;   /* zinc-800 */
+
+  /* Typography */
+  --text-primary:   #fafafa;   /* near-white, avoids halation bleed */
+  --text-secondary: #a1a1aa;   /* zinc-400 */
+  --text-muted:     #71717a;   /* zinc-500 */
+
+  /* Borders */
+  --panel-border:   rgba(255, 255, 255, 0.08);
+  --upload-border:  #3f3f46;   /* zinc-700 */
+  --upload-border-hover: #52525b; /* zinc-600 */
+
+  /* Brand accent — lighter shade pops on dark surfaces */
+  --accent-purple:  #a855f7;   /* purple-500 */
+
+  /* Modal overlay */
+  --overlay-modal: rgba(0, 0, 0, 0.65);
+
+  /* Elevation shadow — deeper primary + purple ambient glow.
+     Pure-black shadows have no contrast on near-black backgrounds.
+     Purple-900 glow (rgba 88,28,135) anchors the panel visually. */
+  --shadow-elevation:
+    0 25px 50px -8px rgba(0, 0, 0, 0.55),
+    0 0    24px     rgba(88, 28, 135, 0.28);
 }
 
+
+/* ── Dark mode — OS system preference fallback ───────────────────────────────
+   Intentionally duplicates [data-theme='dark'] block.
+   CSS has no native mixin. This duplication is load-bearing:
+   it fires when no data-theme attribute is set but the OS is in dark mode.
+   If you "clean up" the duplication, OS-preference users lose dark mode. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --panel-bg:       #18181b;
+    --section-bg:     #09090b;
+    --section-border: #27272a;
+
+    --text-primary:   #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted:     #71717a;
+
+    --panel-border:   rgba(255, 255, 255, 0.08);
+    --upload-border:  #3f3f46;
+    --upload-border-hover: #52525b;
+
+    --accent-purple:  #a855f7;
+
+    --overlay-modal: rgba(0, 0, 0, 0.65);
+
+    --shadow-elevation:
+      0 25px 50px -8px rgba(0, 0, 0, 0.55),
+      0 0    24px     rgba(88, 28, 135, 0.28);
   }
 }
 
+
+/* ── Tailwind @theme registration ────────────────────────────────────────────
+   Makes CSS variables available as Tailwind utility classes.
+   Usage:
+     bg-background       → var(--background)
+     text-foreground     → var(--foreground)
+     bg-panel            → var(--panel-bg)
+     text-maestro-purple → var(--accent-purple)
+     shadow-maestro      → var(--shadow-elevation)      ← box-shadow utility
+*/
+@theme inline {
+  --color-background:      var(--background);
+  --color-foreground:      var(--foreground);
+  --color-panel:           var(--panel-bg);
+  --color-maestro-purple:  var(--accent-purple);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Box-shadow utility: className="shadow-maestro" */
+  --shadow-maestro: var(--shadow-elevation);
+}
+
+
+/* ── Body defaults ───────────────────────────────────────────────────────────
+   Applies canvas background/foreground. Panels and components pull from
+   --panel-bg / --text-primary independently — they don't inherit from body. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, system-ui, "system-ui", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-/**
- * Maestro Cursor - Drag Visual Feedback V99.23
- * Ghost cursor effect with WHITE DOT preserved
- * DEFAULT: Purple cursor with WHITE dot (Maestro style)
- * DRAGGING: Ghost white cursor with WHITE dot visible (Songsterr feedback)
- */
 
-/* 🆕 V99.23: Loop surface with mix-blend-mode (Songsterr style) */
+
+/* ── PWA / mobile tap target reset ──────────────────────────────────────────*/
+* {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+
+/* ============================================================================
+   MAESTRO CURSOR — Drag Visual Feedback V99.23
+   Ghost cursor effect with WHITE DOT preserved
+   DEFAULT:  Purple cursor with WHITE dot (Maestro style)
+   DRAGGING: Ghost white cursor with WHITE dot visible (Songsterr feedback)
+   ============================================================================ */
+
+/* V99.23: Loop surface with mix-blend-mode (Songsterr style) */
 .maestro-loop-surface {
-    mix-blend-mode: multiply !important;
-    pointer-events: none;
+  mix-blend-mode: multiply !important;
+  pointer-events: none;
 }
 
-/* Default cursor - PURPLE body with WHITE dot when idle (Maestro color) */
+/* Default cursor — PURPLE body with WHITE dot when idle */
 .maestro-cursor-icursor path:first-child,
 .maestro-cursor path:first-child,
 #maestro-cursor-v43 path:first-child {
@@ -53,11 +219,10 @@ body {
   fill-opacity: 1 !important;
 }
 
-/* 🆕 V99.23: Ghost cursor body - Translucent white (not solid white-out) */
+/* V99.23: Ghost cursor body — translucent white (not solid white-out) */
 .maestro-cursor-icursor.is-dragging svg path:first-child,
 .maestro-cursor.is-dragging svg path:first-child,
 #maestro-cursor-v43.is-dragging svg path:first-child {
-  /* Main purple body becomes translucent ghost */
   fill: #ffffff !important;
   fill-opacity: 0.3 !important;
   stroke: #ffffff !important;
@@ -86,14 +251,14 @@ body {
   stroke: #ffffff !important;
 }
 
-/* Optional: Add glow effect during drag */
+/* Glow effect during drag */
 .maestro-cursor-icursor.is-dragging,
 .maestro-cursor.is-dragging,
 #maestro-cursor-v43.is-dragging {
   filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
 }
 
-/* 🆕 V99.23: Frozen visual state (no movement during drag) */
+/* V99.23: Frozen visual state — no movement during drag */
 .maestro-cursor-icursor.is-dragging,
 .maestro-cursor.is-dragging,
 #maestro-cursor-v43.is-dragging {
@@ -102,7 +267,7 @@ body {
   pointer-events: none;
 }
 
-/* Handle drag cursor */
+/* Loop handle drag cursor */
 .maestro-loop-handle {
   cursor: ew-resize;
 }
@@ -117,3 +282,4 @@ body.loop-dragging {
   -webkit-user-select: none !important;
   cursor: ew-resize !important;
 }
+

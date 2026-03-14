@@ -1,11 +1,19 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V101: Mobile PWA Cursor Fix
- * Base: V99.4 (Clean Build)
- * Date: February 24th, 2026
+ * AlphaTab Renderer - V101.1: M1 Init Stability
+ * Base: V101 (Mobile PWA Cursor Fix)
+ * Date: March 13th, 2026
  *
- * 🎉 V101 CHANGES:
+ * 🔥 V101.1 CHANGES (M1 + Supabase async + StrictMode guard set):
+ * ✅ waitForContainerWidth() — blocks init until container has layout dimensions
+ * ✅ initTokenRef — stale-token guard cancels overlapping StrictMode double-invokes
+ * ✅ isInitializingRef — sync lock prevents two concurrent init chains
+ * ✅ Stale-token check immediately after waitForContainerWidth() await
+ * ✅ Cleanup increments token + clears init lock before api.destroy()
+ * ✅ Post-paint fallback — re-renders if containerRef.clientWidth is still 0 after init
+ *
+ * 🔒 V101 FEATURES (PRESERVED):
  * ✅ handleRenderFinished extracted as named function (PWA race fix)
  * ✅ ALL event listeners registered BEFORE loadGuitarProFile (critical order fix)
  * ✅ DOM-aware cursor creation (needsCreation pattern from Cipher)
@@ -27,11 +35,12 @@
  * 1️⃣1️⃣ V99.3 - Dual Track Index + Audio Clock Authority
  * 1️⃣2️⃣ V99.4 - Clean Build (Drag Selection Removed)
  * 1️⃣3️⃣ V101  - Mobile PWA Cursor Fix (event registration order + DOM-aware creation)
+ * 1️⃣4️⃣ V101.1 - M1 Init Stability (width wait + stale token + init lock + post-paint)
  */
 
 // 🎯 VERSION TRACKING
-const ALPHATAB_RENDERER_VERSION = 'v101';
-const VERSION_DATE = 'February 24th, 2026';
+const ALPHATAB_RENDERER_VERSION = 'v101.1';
+const VERSION_DATE = 'March 13th, 2026';
 const ALPHATAB_PACKAGE_VERSION = '1.8.1';
 
 // 🛠️ DEBUG FLAGS (Production: Set all to false)
@@ -84,6 +93,13 @@ const setLoopCursorMode = (api: AlphaTabApi, isLooping: boolean) => {
 };
 
 // ==================== HELPER FUNCTIONS ====================
+
+// 🔥 V101.1: Wait for container to have layout dimensions before init
+const waitForContainerWidth = (el: HTMLElement): Promise<void> =>
+    new Promise(resolve => {
+        const check = () => (el.clientWidth > 0 ? resolve() : requestAnimationFrame(check));
+        check();
+    });
 
 const getBeatAtPosition = (
     api: AlphaTabApi,
@@ -241,6 +257,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const initialFileLoadedRef = useRef(false);
     const playbackRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
 
+    // 🔥 V101.1: Init stability refs
+    const initTokenRef = useRef<number>(0);
+    const isInitializingRef = useRef<boolean>(false);
+
     // ============================================
     // 🔥 V99.3: DUAL TRACK INDEX REFS
     // ============================================
@@ -312,9 +332,27 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
             if (!containerRef.current) return;
             if (apiRef.current) return;
 
+            // 🔥 V101.1: Sync init lock — prevents two concurrent init chains
+            if (isInitializingRef.current) return;
+            isInitializingRef.current = true;
+
+            // 🔥 V101.1: Mint a token for this init attempt
+            const token = ++initTokenRef.current;
+
             try {
                 setIsLoading(true);
                 setRenderCycle(rc => rc + 1);
+
+                // 🔥 V101.1: Wait for container to have real layout dimensions
+                // Blocks on M1 + Supabase async until CSS paint gives us a width
+                await waitForContainerWidth(containerRef.current);
+
+                // 🔥 V101.1: Stale-token check — if StrictMode unmounted and
+                // remounted us during the await above, bail out of the stale chain
+                if (token !== initTokenRef.current || destroyed) {
+                    isInitializingRef.current = false;
+                    return;
+                }
 
                 const scrollElement = scrollContainerRef?.current || document.body;
 
@@ -329,7 +367,7 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     scrollContainer: scrollElement,
                 });
 
-                if (destroyed) { api.destroy(); return; }
+                if (destroyed) { api.destroy(); isInitializingRef.current = false; return; }
 
                 apiRef.current = api;
                 (window as any).__at = api;
@@ -801,12 +839,30 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     handleRenderFinished();
                 }
 
+                // ============================================================
+                // 🔥 V101.1: POST-PAINT FALLBACK
+                // If container width is still 0 after init (e.g. CSS not flushed
+                // yet on M1 cold boot), wait one paint frame and force a re-render.
+                // ============================================================
+                if (containerRef.current && containerRef.current.clientWidth === 0) {
+                    console.warn('⚠️ V101.1: Container width still 0 after init — scheduling post-paint re-render');
+                    requestAnimationFrame(() => {
+                        if (containerRef.current && containerRef.current.clientWidth > 0 && apiRef.current) {
+                            console.log('⚡ V101.1: Post-paint fallback triggered — re-rendering');
+                            apiRef.current.render();
+                        }
+                    });
+                }
+
                 onApiReady?.(api);
 
             } catch (err) {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 setIsLoading(false);
                 onError?.(errorMsg);
+            } finally {
+                // 🔥 V101.1: Always release the init lock
+                isInitializingRef.current = false;
             }
         };
 
@@ -814,6 +870,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
         return () => {
             destroyed = true;
+            // 🔥 V101.1: Invalidate any in-flight init chain + release lock
+            ++initTokenRef.current;
+            isInitializingRef.current = false;
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
             if (apiRef.current) {
                 try { apiRef.current.destroy(); } catch (e) { /* Silent */ }

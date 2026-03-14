@@ -2,16 +2,33 @@
 
 /**
  * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * January 27th, 2026 - V98.67: CANVAS RELOAD BUG FIX
+ * V99.3 — MetadataEditorPanel wired as in-app overlay
  *
- * 🔥 V98.67 CRITICAL FIX - CANVAS RELOAD BUG:
- * ✅ Removed audioSource from AlphaTabRenderer key prop
- * ✅ Fixed handleAudioSourceChange to use 0/1 like v98.6 (working version)
- * ✅ Canvas no longer remounts when switching between synth/original
- * ✅ Audio source switching now works flawlessly
- * 
- * 🔊 V98.66 FEATURES (PRESERVED):
- * ✅ Master volume ref pattern (prevents unwanted rerenders)
+ * 🔥 V99.3 CHANGES:
+ * ✅ MetadataEditorPanel import added
+ * ✅ metaEditorState: { tabId, source } drives open/close
+ * ✅ MyTabsPanel.onEditMetadata → opens MetadataEditorPanel, closes MyTabs
+ * ✅ MetadataEditorPanel.onClose → returns to MyTabs if source === 'mytabs'
+ * ✅ /meta-editor route kept as dev/testing fallback (unchanged)
+ *
+ * 🔒 V99.2.1 PRESERVED:
+ * ✅ NewTabPanel wired
+ * ✅ Batch signed URLs + search RPC
+ * ✅ All existing features preserved
+ *
+ * ✅ STEP 1:  Imports — SongSelector removed, MyTabsPanel + NewTabPanel added
+ * ✅ STEP 2:  New state — isNewTabOpen
+ * ✅ STEP 3:  Supabase batch signed URL loader (replaces loadInitialSongData seed)
+ * ✅ STEP 4:  Supabase signed URL resolver per song
+ * ✅ STEP 5:  searchTabs RPC callback
+ * ✅ STEP 6:  AlphaTabRenderer gated on signedUrl, key={signedUrl}, fileUrl={signedUrl}
+ * ✅ STEP 7:  handleDeletePlaylist added
+ * ✅ STEP 8:  TopMenuTray gets onNewTabOpen prop
+ * ✅ STEP 9:  SongSelector replaced with MyTabsPanel + NewTabPanel
+ *
+ * 🔒 V98.67 BASE PRESERVED:
+ * ✅ Canvas reload bug fix (key no longer includes audioSource)
+ * ✅ Master volume ref pattern
  * ✅ Pitch shift with tuning detection
  * ✅ Count-in with 3-beat and 4-beat modes
  * ✅ Headless metronome
@@ -26,11 +43,17 @@ import React, {
     useEffect,
     useMemo,
 } from 'react';
+// ✅ STEP 1: Supabase client
+import { supabase } from '@/lib/alphaTab/supabase';
 import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
-import { SongSelector } from '@/components/audio/maestro/songs';
+// ✅ STEP 1: SongSelector removed, MyTabsPanel + NewTabPanel added
+import { MyTabsPanel } from '@/components/audio/maestro/tabs/MyTabsPanel';
+import { NewTabPanel } from '@/components/audio/maestro/tabs/NewTabPanel';
+// ✅ V99.3: MetadataEditorPanel in-app overlay
+import { MetadataEditorPanel } from '@/components/audio/maestro/tabs/MetadataEditorPanel';
 import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import {
     CountInOverlay,
@@ -121,18 +144,120 @@ export default function SynthPlayerPage() {
     // ==================== THEME STATE ====================
     const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-    // ==================== SONG STATE MANAGEMENT ====================
-    const [songState, setSongState] = useState<SongState>(() => loadInitialSongData());
+    // ==================== SONG STATE — seeded locally, replaced by Supabase async ====================
+    // loadInitialSongData() guarantees the UI is never blank on boot.
+    // The Supabase effect below overwrites this once the fetch resolves.
+    const [songState, setSongState] = useState<SongState>(
+        loadInitialSongData()
+    );
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
+    // ✅ STEP 2: New state
+    const [isNewTabOpen, setIsNewTabOpen] = useState(false);
+
+    // ✅ V99.3: Meta editor overlay state — null tabId = closed
+    const [metaEditorState, setMetaEditorState] = useState<{
+        tabId: string | null;
+        source: 'mytabs' | 'newtab' | null;
+    }>({ tabId: null, source: null });
+
+    // ✅ STEP 3: Signed URL state — gates AlphaTabRenderer mount
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    // Batch URL cache — keyed by "file_name.file_extension"
+    const signedUrlCacheRef = useRef<Map<string, string>>(new Map());
+
+    // ✅ STEP 3: Supabase — fetch all songs + batch sign all URLs on mount
+    useEffect(() => {
+        async function loadSongsFromDB() {
+            const { data, error } = await supabase.from('tabs').select('*');
+            console.log("SUPABASE TABS RESULT:", { data, error });
+            if (error) {
+                console.error("SUPABASE ERROR:", error);
+                return;
+            }
+            if (!data || data.length === 0) {
+                console.warn("SUPABASE RETURNED NO TABS — local seed remains active");
+                return;
+            }
+
+            // ✅ V99.3: Full mapper — snake_case DB → camelCase SongItem
+            const formattedSongs = data.map(tab => ({
+                id: tab.id,
+                title: tab.title,
+                artist: tab.artist,
+                album: tab.album ?? '',
+                difficulty: tab.difficulty ?? undefined,
+                instrument: tab.instrument ?? undefined,
+                tuning: tab.tuning ?? undefined,
+                genre: tab.genre ?? undefined,
+                tempo: tab.tempo ?? undefined,
+                file_name: tab.file_name,
+                file_extension: tab.file_extension,
+                // ── Thumbnail + editor status ──
+                thumbnailUrl: tab.thumbnail_url ?? undefined,
+                thumbnailPath: tab.thumbnail_path ?? undefined,
+                status: tab.status ?? 'draft',
+                updatedAt: tab.updated_at ?? undefined,
+                // ── Legacy bridge fields ─────────────────────────────────────
+                // These map from tabs columns for current player compatibility.
+                // TODO: replace with tab_youtube main row once player is refactored.
+                // ─────────────────────────────────────────────────────────────
+                youtubeVideoId: tab.youtube_video_id ?? undefined,
+                videoStartOffset: tab.video_start_offset ?? 0,
+                isFavorite: false,
+            }));
+
+            // Batch sign all files — 1 request, 1hr expiry
+            const paths = data
+                .filter(t => t.file_name && t.file_extension)
+                .map(t => `${t.file_name}.${t.file_extension}`);
+
+            const { data: urlData } = await supabase.storage
+                .from('tabs')
+                .createSignedUrls(paths, 60 * 60);
+
+            if (urlData) {
+                urlData.forEach(entry => {
+                    if (entry.path && entry.signedUrl)
+                        signedUrlCacheRef.current.set(entry.path, entry.signedUrl);
+                });
+            }
+
+            setSongState(prev => ({
+                ...prev,
+                songs: formattedSongs,
+                currentSongId: formattedSongs[0]?.id ?? null,
+            }));
+        }
+        loadSongsFromDB();
+    }, []);
 
     const currentSong = useMemo(
         () => getSongById(songState.songs, songState.currentSongId || ''),
         [songState.songs, songState.currentSongId],
     );
 
-    const currentFileUrl =
-        currentSong?.fileUrl ||
-        '/data/sample-songs/real-songs/ozzy-no-more-tears/ozzy-no-more-tears.gp3';
+    // ✅ STEP 4: Supabase — resolve signed URL from cache per song
+    useEffect(() => {
+        if (!currentSong?.file_name || !currentSong?.file_extension) return;
+        const path = `${currentSong.file_name}.${currentSong.file_extension}`;
+        const cached = signedUrlCacheRef.current.get(path);
+        if (cached) {
+            setSignedUrl(cached);
+        } else {
+            // Fallback — should rarely fire after batch sign
+            supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data }) => {
+                if (data?.signedUrl) setSignedUrl(data.signedUrl);
+            });
+        }
+    }, [currentSong]);
+
+    // ✅ STEP 5: Supabase search RPC
+    const searchTabs = useCallback(async (query: string) => {
+        if (!query.trim()) return [];
+        const { data, error } = await supabase.rpc('search_tabs', { q: query });
+        if (error) return [];
+        return data ?? [];
+    }, []);
 
     // ==================== YOUTUBE PLAYER STATE ====================
     const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
@@ -271,7 +396,7 @@ export default function SynthPlayerPage() {
             }
             console.log('🔄 V98.67: Pitch reset on song change');
         }
-    }, [currentFileUrl]);
+    }, [signedUrl]);
 
     // ==================== EXTERNAL MEDIA HANDLER ====================
     const youTubeMediaHandlerInstance = useMemo(() => {
@@ -562,6 +687,7 @@ export default function SynthPlayerPage() {
         [api],
     );
 
+    // V98.67 baseline handleRenderFinished — no resize dispatch
     const handleRenderFinished = useCallback(() => {
         console.log('✅ V98.67: Rendering Complete');
     }, []);
@@ -887,6 +1013,14 @@ export default function SynthPlayerPage() {
         [],
     );
 
+    // ✅ STEP 7: handleDeletePlaylist
+    const handleDeletePlaylist = useCallback((playlistId: string) => {
+        setSongState(prev => ({
+            ...prev,
+            playlists: prev.playlists.filter(p => p.id !== playlistId),
+        }));
+    }, []);
+
     const handleThemeToggle = useCallback(() => {
         setTheme(prev => prev === 'dark' ? 'light' : 'dark');
     }, []);
@@ -935,23 +1069,51 @@ export default function SynthPlayerPage() {
                     ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
                 `}
             >
+                {/* ✅ STEP 8: onNewTabOpen added */}
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
+                    onNewTabOpen={() => setIsNewTabOpen(true)}
                 />
             </div>
 
-            <SongSelector
+            {/* ✅ STEP 9: MyTabsPanel — pencil triggers MetadataEditorPanel overlay */}
+            <MyTabsPanel
                 isOpen={isSongSelectorOpen}
                 onClose={() => setIsSongSelectorOpen(false)}
                 songs={songState.songs}
                 playlists={songState.playlists}
-                currentSongId={songState.currentSongId}
+                currentSong={songState.songs.find(s => s.id === songState.currentSongId) ?? null}
                 onSongSelect={handleSongSelect}
                 onToggleFavorite={handleToggleFavorite}
-                onPlaylistAction={handlePlaylistAction}
+                onPlaylistAction={(type, songId, playlistId) => handlePlaylistAction(type, songId, playlistId)}
                 onCreatePlaylist={handleCreatePlaylist}
+                onDeletePlaylist={handleDeletePlaylist}
+                isDarkMode={theme === 'dark'}
+                onEditMetadata={(songId) =>
+                    setMetaEditorState({ tabId: songId, source: 'mytabs' })
+                }
             />
+
+            {/* NewTabPanel */}
+            <NewTabPanel
+                isOpen={isNewTabOpen}
+                onClose={() => setIsNewTabOpen(false)}
+                theme={theme}
+            />
+
+            {/* ✅ V99.3: MetadataEditorPanel — in-app overlay, peer to MyTabsPanel */}
+            {metaEditorState.tabId && (
+                <MetadataEditorPanel
+                    tabId={metaEditorState.tabId}
+                    onClose={() => {
+                        const src = metaEditorState.source;
+                        setMetaEditorState({ tabId: null, source: null });
+                        if (src === 'mytabs') setIsSongSelectorOpen(true);
+                        // src === 'newtab' → add setIsNewTabOpen(true) when wiring NewTabPanel
+                    }}
+                />
+            )}
 
             <main
                 ref={mainScrollContainerRef}
@@ -995,28 +1157,32 @@ export default function SynthPlayerPage() {
                         width: 'max-content',
                     } : undefined}
                 >
-                    {/* 🔥 V98.67: KEY FIX - Removed audioSource from key prop! */}
-                    <AlphaTabRenderer
-                        key={isMobileLandscape ? 'landscape' : 'portrait'}
-                        fileUrl={currentFileUrl}
-                        playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
-                        externalMediaHandler={youTubeMediaHandlerInstance}
-                        soundFontPath="/soundfont/sonivox.sf2"
-                        scrollContainerRef={mainScrollContainerRef}
-                        isMobileLandscape={isMobileLandscape}
-                        isSeeking={isSeeking}
-                        isPlaying={isPlaying}
-                        selectedTrackIndex={selectedTrack}
-                        onApiReady={handleApiReady}
-                        onScoreLoaded={handleScoreLoaded}
-                        onRenderFinished={handleRenderFinished}
-                        onError={handleError}
-                        minHeight="600px"
-                        isLooping={isLooping}
-                        onLoopRangeChange={handleLoopRangeChange}
-                        audioSource={audioSource}
-                        theme={theme}
-                    />
+                    {/* ✅ STEP 6: AlphaTabRenderer gated on signedUrl.
+                        key={signedUrl} forces clean remount on song change —
+                        this is the fix for the blank canvas rendering bug. */}
+                    {signedUrl && (
+                        <AlphaTabRenderer
+                            key={signedUrl}
+                            fileUrl={signedUrl}
+                            playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
+                            externalMediaHandler={youTubeMediaHandlerInstance}
+                            soundFontPath="/soundfont/sonivox.sf2"
+                            scrollContainerRef={mainScrollContainerRef}
+                            isMobileLandscape={isMobileLandscape}
+                            isSeeking={isSeeking}
+                            isPlaying={isPlaying}
+                            selectedTrackIndex={selectedTrack}
+                            onApiReady={handleApiReady}
+                            onScoreLoaded={handleScoreLoaded}
+                            onRenderFinished={handleRenderFinished}
+                            onError={handleError}
+                            minHeight="600px"
+                            isLooping={isLooping}
+                            onLoopRangeChange={handleLoopRangeChange}
+                            audioSource={audioSource}
+                            theme={theme}
+                        />
+                    )}
                 </div>
 
                 {!isMobileLandscape && (
