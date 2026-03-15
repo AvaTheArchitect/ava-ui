@@ -96,3 +96,4 @@ src/styles/*.[0-9]*-[0-9]*-[0-9]*.css
 src/styles/alphaTab.css.Feb2026
 src/components/alphaTab/MaestroCursor.v*.tsx
 src/components/audio/maestro/tabs/*.tsx.v*
+src/lib/song-data/*.ts.v*

@@ -2,9 +2,11 @@
 
 /**
  * Song Selection Components - Export Barrel
- * November 21st, 2025
+ * March 15th, 2026
  *
  * Song library and playlist management UI.
+ * Note: SongSelector/SongList/SongItem are legacy components, superseded by
+ * MyTabsPanel. Retained for compilation compatibility — retire when ready.
  */
 
 export { SongSelector } from "./SongSelector";

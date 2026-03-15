@@ -20,3 +20,6 @@ export * from "./songLoader";
 // Export canonical genre + tuning data
 export * from "./genres";
 export * from "./tunings";
+
+// Export official query layer
+export * from "./queries";

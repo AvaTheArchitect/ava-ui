@@ -61,10 +61,10 @@ import {
     type MetronomeSoundType,
     type SubdivisionMode
 } from '@/components/audio/maestro/controls';
+import { fetchSongs } from '@/lib/song-data/queries';
 import {
-    loadInitialSongData,
     getSongById,
-    SongState,
+    type SongState,
 } from '@/lib/song-data';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
@@ -144,12 +144,12 @@ export default function SynthPlayerPage() {
     // ==================== THEME STATE ====================
     const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-    // ==================== SONG STATE — seeded locally, replaced by Supabase async ====================
-    // loadInitialSongData() guarantees the UI is never blank on boot.
-    // The Supabase effect below overwrites this once the fetch resolves.
-    const [songState, setSongState] = useState<SongState>(
-        loadInitialSongData()
-    );
+    // ── Empty shell — fetchSongs() fills it on mount ──
+    const [songState, setSongState] = useState<SongState>({
+        songs: [],
+        playlists: [],
+        currentSongId: null,
+    });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
     // ✅ STEP 2: New state
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
@@ -165,51 +165,16 @@ export default function SynthPlayerPage() {
     // Batch URL cache — keyed by "file_name.file_extension"
     const signedUrlCacheRef = useRef<Map<string, string>>(new Map());
 
-    // ✅ STEP 3: Supabase — fetch all songs + batch sign all URLs on mount
+    // ✅ Phase 3B: fetchSongs() replaces inline mapper
     useEffect(() => {
-        async function loadSongsFromDB() {
-            const { data, error } = await supabase.from('tabs').select('*');
-            console.log("SUPABASE TABS RESULT:", { data, error });
-            if (error) {
-                console.error("SUPABASE ERROR:", error);
-                return;
-            }
-            if (!data || data.length === 0) {
-                console.warn("SUPABASE RETURNED NO TABS — local seed remains active");
-                return;
-            }
+        async function load() {
+            const songs = await fetchSongs();
+            if (!songs.length) return;
 
-            // ✅ V99.3: Full mapper — snake_case DB → camelCase SongItem
-            const formattedSongs = data.map(tab => ({
-                id: tab.id,
-                title: tab.title,
-                artist: tab.artist,
-                album: tab.album ?? '',
-                difficulty: tab.difficulty ?? undefined,
-                instrument: tab.instrument ?? undefined,
-                tuning: tab.tuning ?? undefined,
-                genre: tab.genre ?? undefined,
-                tempo: tab.tempo ?? undefined,
-                file_name: tab.file_name,
-                file_extension: tab.file_extension,
-                // ── Thumbnail + editor status ──
-                thumbnailUrl: tab.thumbnail_url ?? undefined,
-                thumbnailPath: tab.thumbnail_path ?? undefined,
-                status: tab.status ?? 'draft',
-                updatedAt: tab.updated_at ?? undefined,
-                // ── Legacy bridge fields ─────────────────────────────────────
-                // These map from tabs columns for current player compatibility.
-                // TODO: replace with tab_youtube main row once player is refactored.
-                // ─────────────────────────────────────────────────────────────
-                youtubeVideoId: tab.youtube_video_id ?? undefined,
-                videoStartOffset: tab.video_start_offset ?? 0,
-                isFavorite: false,
-            }));
-
-            // Batch sign all files — 1 request, 1hr expiry
-            const paths = data
-                .filter(t => t.file_name && t.file_extension)
-                .map(t => `${t.file_name}.${t.file_extension}`);
+            // Batch sign all Storage URLs — 1 request, 1hr expiry
+            const paths = songs
+                .filter(s => s.file_name && s.file_extension)
+                .map(s => `${s.file_name}.${s.file_extension}`);
 
             const { data: urlData } = await supabase.storage
                 .from('tabs')
@@ -220,15 +185,16 @@ export default function SynthPlayerPage() {
                     if (entry.path && entry.signedUrl)
                         signedUrlCacheRef.current.set(entry.path, entry.signedUrl);
                 });
+                console.log(`✅ Phase 3B: Batch signed ${urlData.length} URLs (1hr expiry)`);
             }
 
             setSongState(prev => ({
                 ...prev,
-                songs: formattedSongs,
-                currentSongId: formattedSongs[0]?.id ?? null,
+                songs,
+                currentSongId: songs[0]?.id ?? null,
             }));
         }
-        loadSongsFromDB();
+        load();
     }, []);
 
     const currentSong = useMemo(
@@ -687,9 +653,15 @@ export default function SynthPlayerPage() {
         [api],
     );
 
-    // V98.67 baseline handleRenderFinished — no resize dispatch
     const handleRenderFinished = useCallback(() => {
         console.log('✅ V98.67: Rendering Complete');
+        // ── Delay scroll reset to fire AFTER AlphaTab's internal post-render
+        // scroll positioning, which overrides an immediate scrollTop=0 ──
+        setTimeout(() => {
+            if (mainScrollContainerRef.current) {
+                mainScrollContainerRef.current.scrollTop = 0;
+            }
+        }, 150);
     }, []);
 
     const handleError = useCallback((errorMsg: string) => {
@@ -968,6 +940,10 @@ export default function SynthPlayerPage() {
         }
         setSongState(prev => ({ ...prev, currentSongId: songId }));
         setIsSongSelectorOpen(false);
+        // ── Reset scroll so header is fully visible on song change ──
+        if (mainScrollContainerRef.current) {
+            mainScrollContainerRef.current.scrollTop = 0;
+        }
     }, [api]);
 
     const handleToggleFavorite = useCallback((songId: string) => {
@@ -1123,7 +1099,7 @@ export default function SynthPlayerPage() {
                         ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden relative'
                         : 'pb-32 overflow-y-auto overflow-x-hidden'
                     }
-                    ${!isMobileLandscape && isHeaderVisible ? 'pt-16' : 'pt-0'}
+                    ${!isMobileLandscape && isHeaderVisible ? 'pt-[79px]' : 'pt-0'}
                     transition-[padding] duration-300 ease-in-out
                 `}
                 style={isMobileLandscape ? {

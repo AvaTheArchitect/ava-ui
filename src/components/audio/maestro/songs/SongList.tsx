@@ -2,21 +2,20 @@
 
 /**
  * SongList.tsx - Song List Renderer
- * November 21st, 2025
- * 
- * Renders a list of songs using SongItemComponent.
- * Handles empty states and list titles.
+ * November 21st, 2025 | Fixed March 14th, 2026
+ *
+ * Fix: Playlist → ClientPlaylist (Playlist is DB row, has no songIds)
  */
 
 import React from 'react';
-import { SongItem, Playlist } from '@/lib/song-data';
+import { SongItem, ClientPlaylist } from '@/lib/song-data';
 import { SongItemComponent } from './SongItem';
 
 export interface SongListProps {
     songs: SongItem[];
     title: string;
     currentSongId: string | null;
-    playlists: Playlist[];
+    playlists: ClientPlaylist[];
     onSongSelect: (songId: string) => void;
     onToggleFavorite: (songId: string) => void;
     onPlaylistAction: (type: 'add' | 'remove', songId: string, playlistId: string) => void;
@@ -35,7 +34,6 @@ export const SongList: React.FC<SongListProps> = ({
 }) => {
     return (
         <div className="p-6">
-            {/* List Header */}
             <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-purple-400">
                     {title}
@@ -43,18 +41,11 @@ export const SongList: React.FC<SongListProps> = ({
                 </h3>
             </div>
 
-            {/* Song List or Empty State */}
             {songs.length === 0 ? (
                 <div className="text-center py-12">
-                    <svg
-                        width="64"
-                        height="64"
-                        viewBox="0 0 24 24"
+                    <svg width="64" height="64" viewBox="0 0 24 24"
                         className="mx-auto mb-4 text-gray-600"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                    >
+                        fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                     </svg>
                     <p className="text-gray-400 italic">{emptyMessage}</p>
