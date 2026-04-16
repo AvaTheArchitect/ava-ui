@@ -588,13 +588,13 @@ export default function SynthPlayerPage() {
             <main
                 ref={mainScrollContainerRef}
                 className={`
-                    w-full overscroll-y-contain
-                    isMobileLandscape
-                    ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
-                    : 'pb-32 overflow-y-auto overflow-x-hidden'
-                    ${!isMobileLandscape && isHeaderVisible ? 'pt-[79px]' : 'pt-0'}
-                    transition-[padding] duration-300
-                `}
+  w-full overscroll-y-contain
+  ${isMobileLandscape
+                        ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
+                        : 'pb-32 overflow-y-auto overflow-x-hidden'}
+  ${!isMobileLandscape && isHeaderVisible ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+  transition-[padding] duration-300
+`}
                 style={isMobileLandscape ? { maxWidth: '100vw', width: '100vw' } : undefined}
             >
                 {error && (
