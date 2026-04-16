@@ -189,6 +189,21 @@ body {
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
+/* ── PWA safe-area utilities ─────────────────────────────────────────────────
+   Use these on fixed headers/footers in iOS PWA (translucent status bar).
+   env() is 0 on desktop — no side effects outside iOS PWA.
+
+   .safe-area-pt  → top bars (TopMenuTray, landing header) — clears Dynamic Island
+   .safe-area-pb  → bottom bars (TransportBar, landing nav) — clears home indicator
+   .safe-area-pt-content → main content top offset when header uses safe-area-pt
+   ─────────────────────────────────────────────────────────────────────────── */
+.safe-area-pt {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
 
 /* ============================================================================
    MAESTRO CURSOR — Drag Visual Feedback V99.23

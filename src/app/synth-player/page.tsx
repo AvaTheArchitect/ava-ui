@@ -548,7 +548,7 @@ export default function SynthPlayerPage() {
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
-            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 safe-area-pt ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
@@ -589,9 +589,9 @@ export default function SynthPlayerPage() {
                 ref={mainScrollContainerRef}
                 className={`
                     w-full overscroll-y-contain
-                    ${isMobileLandscape
-                        ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden relative'
-                        : 'pb-32 overflow-y-auto overflow-x-hidden'}
+                    isMobileLandscape
+                    ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
+                    : 'pb-32 overflow-y-auto overflow-x-hidden'
                     ${!isMobileLandscape && isHeaderVisible ? 'pt-[79px]' : 'pt-0'}
                     transition-[padding] duration-300
                 `}
@@ -609,7 +609,7 @@ export default function SynthPlayerPage() {
                     id="maestro-player"
                     className={`relative bg-white ${isMobileLandscape ? 'h-full' : 'w-full'}`}
                     style={isMobileLandscape ? {
-                        paddingTop: '50px', paddingBottom: '450px',
+                        paddingTop: '50px', paddingBottom: '120px',
                         display: 'inline-block', minWidth: '100%', width: 'max-content',
                     } : undefined}
                 >
