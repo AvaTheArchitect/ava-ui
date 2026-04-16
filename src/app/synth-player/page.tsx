@@ -25,7 +25,8 @@ import React, {
     useState, useCallback, useRef, useEffect, useMemo,
 } from 'react';
 import { supabase } from '@/lib/alphaTab/supabase';
-import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer_V106';
+// page.tsx — change path only, name stays identical
+import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';

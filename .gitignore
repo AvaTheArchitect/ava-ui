@@ -131,3 +131,5 @@ src/components/alphaTab/AlphaTabRenderer_V104.tsx*
 src/components/alphaTab/AlphaTabRenderer_V105.tsx*
 src/components/alphaTab/AlphaTabRenderer_V106.tsx*
 src/lib/alphaTab/TempoClusterManager.ts.Phase1
+# local one-off save files
+*.ORIGINAL.SAVE

@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer_V102';
+import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer';
 import { supabase } from '@/lib/alphaTab/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────

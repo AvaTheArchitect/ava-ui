@@ -1,1398 +1,1377 @@
 'use client';
 
 /**
- * AlphaTab Renderer - V101.1: M1 Init Stability
- * Base: V101 (Mobile PWA Cursor Fix)
- * Date: March 13th, 2026
+ * AlphaTabRenderer.tsx
+ * Current version: V106
+ * Date: April 15th, 2026
+ * Cloned from V105 — 4 surgical Layout Profile patches applied (Cipher spec).
  *
- * 🔥 V101.1 CHANGES (M1 + Supabase async + StrictMode guard set):
- * ✅ waitForContainerWidth() — blocks init until container has layout dimensions
- * ✅ initTokenRef — stale-token guard cancels overlapping StrictMode double-invokes
- * ✅ isInitializingRef — sync lock prevents two concurrent init chains
- * ✅ Stale-token check immediately after waitForContainerWidth() await
- * ✅ Cleanup increments token + clears init lock before api.destroy()
- * ✅ Post-paint fallback — re-renders if containerRef.clientWidth is still 0 after init
+ * V106 CHANGES:
+ * ✅ [P1] Imports: resolveLayoutProfile + applyAlphaTabLayoutProfile + LayoutProfileName
+ * ✅ [P2] 3 refs: alphaTabModuleRef, activeProfileRef, isApplyingProfileRef
+ * ✅ [P3] init(): import alphaTab module, stash ref, resolve + bake profile at
+ *         initAlphaTab construction via layoutProfile param.
+ * ✅ [P3b] renderFinished setTimeout: isApplyingProfileRef.current = false (one line)
+ * ✅ [P4] Resize useEffect: applyProfile only when profile name changes; guard
+ *         resets via existing renderFinished handler (no re-subscription).
+ * ✅ GP8_DISPLAY_OVERRIDES: removed 3 zero-padding keys now owned by SongBook profile:
+ *         firstNotationStaffPaddingTop, notationStaffPaddingTop, effectStaffPaddingTop
  *
- * 🔒 V101 FEATURES (PRESERVED):
- * ✅ handleRenderFinished extracted as named function (PWA race fix)
- * ✅ ALL event listeners registered BEFORE loadGuitarProFile (critical order fix)
- * ✅ DOM-aware cursor creation (needsCreation pattern from Cipher)
- * ✅ Mobile-safe anchor retry loop (replaces 200ms single-shot)
- * ✅ alreadyRendered SVG check (fires handler if event was missed)
- * ✅ Native cursor hidden (was confusing mobile testing)
+ * FLOW (one-directional, no loops):
+ *   init   → bake profile in constructor → render
+ *   resize → applyProfile (if changed)  → render → [renderFinished]
+ *                                                     → gp8 engine
+ *                                                     → isApplyingProfileRef = false
  *
- * 🔒 PROTECTED CRITICAL FIXES (DO NOT MODIFY WITHOUT REVIEW):
- * 1️⃣  V98.115 FIX #1 - Pause Reset Prevention
- * 2️⃣  V98.115 FIX #2 - Drag Flicker Prevention
- * 3️⃣  V98.120 - Loop State Tracking
- * 4️⃣  V98.122/V98.124 - Ironclad Enforcer
- * 5️⃣  V98.123 - Listener Attachment
- * 6️⃣  V98.125 - Manual Positioning Lock + Sticky Range Cleanup
- * 7️⃣  V98.126 - Track Change Cursor Re-Anchor + Cipher Enhancements
- * 8️⃣  V99.0 - Audio Hard Reset + Bounds Retry + Tighter Loop Detection
- * 9️⃣  V99.1 - Authority Seek - GP5 Repeat Fix
- * 🔟  V99.2 - Authority-First Beat Handler
- * 1️⃣1️⃣ V99.3 - Dual Track Index + Audio Clock Authority
- * 1️⃣2️⃣ V99.4 - Clean Build (Drag Selection Removed)
- * 1️⃣3️⃣ V101  - Mobile PWA Cursor Fix (event registration order + DOM-aware creation)
- * 1️⃣4️⃣ V101.1 - M1 Init Stability (width wait + stale token + init lock + post-paint)
+ * 🔒 V105 PRESERVED EXACTLY (all other behavior unchanged):
+ *   ✅ Patches A–D (expandedBeatStart, resolveNextBeatExpanded, publishCursorAtTick, Patch D click)
+ *   ✅ MaestroCursorV2 (attachMaestroCursorV2)
+ *   ✅ Curtain state machine (renderTokenRef, hasRevealedRef, QUIET_MS=250)
+ *   ✅ Auto-scroll contract (scrollContainer at init, applyScrollMode post-READY)
+ *   ✅ GP8 layout engine hook
+ *   ✅ stableVisualKeyRef + getVisualKeyForBeat() — SRV Layer 1a
+ *   ✅ D1 monotonic beat gate + bypass window
+ *   ✅ seekFreezeUntilRef / seekTargetTickRef (250ms freeze)
+ *   ✅ Click-to-seek single-flight (seekTokenRef + resumeTimerRef)
+ *   ✅ E2 same-masterBar sticky override guard
+ *   ✅ BeatCustomLoopOverlay, double-click-to-play
+ * 
+ *  🔒 DEPLOYMENT ENTRYPOINT — DO NOT import AlphaTabRenderer_V### directly in pages.
+ *  This file is the single committed export. Versioned backups stay local as
+ *  AlphaTabRenderer_V106.tsx.LOCKED etc. Active version: V106 (April 16, 2026).
  */
 
-// 🎯 VERSION TRACKING
-const ALPHATAB_RENDERER_VERSION = 'v101.1';
-const VERSION_DATE = 'March 13th, 2026';
-const ALPHATAB_PACKAGE_VERSION = '1.8.1';
-
-// 🛠️ DEBUG FLAGS (Production: Set all to false)
-const DEBUG = true;
-const DEBUG_PLAYER_STATE = true;
-const DEBUG_LOOP_BOUNDARY = true;
-const DEBUG_BOUNDARY_ENFORCER = true;
-const DEBUG_ENFORCER_CONDITIONS = true;
-const DEBUG_RANGE_LISTENER = true;
-const DEBUG_MANUAL_POSITION = true;
-
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { initAlphaTab, loadGuitarProFile } from '@/lib/alphaTab/initAlphaTab';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    initAlphaTab,
+    loadGuitarProFile,
+    resolveLayoutProfile,
+    resolveProfileByWidth,                  // [V102.2] width-tier resolver for ResizeObserver
+    resolveTrackLayoutProfile,              // [V102.2] track-aware profile picker
+    applyAlphaTabLayoutProfile,
+    applyAlphaTabLayoutProfileSettings,    // [V102.2] settings-only, no render
+    type LayoutProfileName,
+} from '@/lib/alphaTab/initAlphaTab';
+import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
+import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
+import { runGp8LayoutEngine } from '@/lib/alphaTab/gp8LayoutEngine';
+import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
-import { CustomLoopOverlay } from '@/components/alphaTab/CustomLoopOverlay';
-import { MaestroCursor } from '@/components/alphaTab/MaestroCursor';
 
-export interface AlphaTabRendererProps {
+export interface AlphaTabRendererV102Props {
     fileUrl: string;
+    trackIndices?: number[];
+    isPlaying: boolean;
+    onPlayStateChange: (playing: boolean) => void;
+    onRendered?: () => void;
+    onBoundsReady?: () => void;
+    onPlayerReady?: () => void;
     onApiReady?: (api: AlphaTabApi) => void;
-    onScoreLoaded?: (info: SongInfo, tracks: Track[]) => void;
-    onRenderFinished?: () => void;
-    onError?: (error: string) => void;
-    className?: string;
-    minHeight?: string;
-    playerMode?: 'disabled' | 'external' | 'synthesizer';
+    onScoreLoaded?: (songInfo: SongInfo, tracks: Track[]) => void;
+    loopEnabled: boolean;
+    playbackRange: { startTick: number; endTick: number } | null;
+    onLoopToggle: (enabled: boolean) => void;
+    onLoopChange: (startTick: number, endTick: number) => void;
+    onLoopClear: () => void;
     soundFontPath?: string;
-    scrollContainerRef?: React.RefObject<HTMLElement>;
-    isMobileLandscape?: boolean;
-    audioSource?: 'synth' | 'original';
-    isLooping?: boolean;
-    onLoopRangeChange?: (start: number | null, end: number | null) => void;
-    externalMediaHandler?: any;
-    isSeeking?: boolean;
-    isPlaying?: boolean;
     theme?: 'light' | 'dark';
-    selectedTrackIndex?: number;
+    className?: string;
+    scrollContainer?: HTMLElement | null;
 }
 
-// ==================== ANIMATION CONTROL ====================
+// ─── Auto-scroll contract ─────────────────────────────────────────────────────
+// 🔒 LOCKED — DO NOT CHANGE without understanding the pump/flash regression history.
+// Rule 1: scrollContainer wired at initAlphaTab (not in applyScrollMode).
+// Rule 2: applyScrollMode() ONLY toggles scrollMode + updateSettings().
+// Rule 3: applyScrollMode(true) ONLY after READY (isSettling=false).
+// Rule 4: updateSettings() required for AT 1.8.x to pick up scrollMode changes.
+// ─────────────────────────────────────────────────────────────────────────────
 
-const setLoopCursorMode = (api: AlphaTabApi, isLooping: boolean) => {
-    try {
-        const playerSettings = api.settings.player as any;
-        playerSettings.enableCursorAnimation = !isLooping;
-        api.updateSettings();
-    } catch (err) {
-        // Silent
-    }
+// 🔒 FROZEN BASELINE — March 25, 2026 (Stage 3 / V29).
+// [P1] 3 zero-padding keys removed — SongBook profile owns headroom now:
+//   firstNotationStaffPaddingTop, notationStaffPaddingTop, effectStaffPaddingTop
+const GP8_DISPLAY_OVERRIDES: Record<string, number> = {
+    firstSystemPaddingTop: 12,
+    // firstNotationStaffPaddingTop ← REMOVED — SongBook profile owns this
+    // notationStaffPaddingTop      ← REMOVED — SongBook profile owns this
+    notationStaffPaddingBottom: 10,
+    lastNotationStaffPaddingBottom: 12,
+    lyricLinesPaddingBetween: 10,
+    trackStaffPaddingBetween: 2,
+    systemPaddingBottom: 8,
+    // effectStaffPaddingTop        ← REMOVED — SongBook profile owns this
+    effectStaffPaddingBottom: 6,
 };
 
-// ==================== HELPER FUNCTIONS ====================
-
-// 🔥 V101.1: Wait for container to have layout dimensions before init
-const waitForContainerWidth = (el: HTMLElement): Promise<void> =>
-    new Promise(resolve => {
-        const check = () => (el.clientWidth > 0 ? resolve() : requestAnimationFrame(check));
-        check();
-    });
-
-const getBeatAtPosition = (
-    api: AlphaTabApi,
-    container: HTMLElement,
-    x: number,
-    y: number
-) => {
-    if (!api.renderer?.boundsLookup) return null;
-
-    const rect = container.getBoundingClientRect();
-    const relX = x - rect.left + container.scrollLeft;
-    const relY = y - rect.top + container.scrollTop;
-
-    const offsets = [0, -4, 4, -8, 8];
-    for (const offset of offsets) {
-        const beat = api.renderer.boundsLookup.getBeatAtPos(relX + offset, relY);
-        if (beat) return beat;
-    }
-
-    return null;
-};
-
-const getSnappedBarBoundaries = (
-    api: AlphaTabApi,
-    startTick: number,
-    endTick: number
-): { startTick: number; endTick: number } | null => {
-    const score = api.score;
-    if (!score?.masterBars) return null;
-
-    let startBar: any = null;
-    let endBar: any = null;
-
-    for (const bar of score.masterBars) {
-        const barStart = bar.start;
-        const barEnd = barStart + bar.calculateDuration();
-        if (startTick >= barStart && startTick < barEnd) { startBar = bar; break; }
-    }
-
-    const searchEndTick = Math.max(endTick - 1, startTick);
-    for (const bar of score.masterBars) {
-        const barStart = bar.start;
-        const barEnd = barStart + bar.calculateDuration();
-        if (searchEndTick >= barStart && searchEndTick < barEnd) { endBar = bar; break; }
-    }
-
-    if (!startBar || !endBar) return null;
-    return {
-        startTick: startBar.start,
-        endTick: endBar.start + endBar.calculateDuration()
-    };
-};
-
-const getBarBoundariesFromMaster = (api: AlphaTabApi, beat: any): { startTick: number; endTick: number } | null => {
-    if (!beat) return null;
-
-    const bounds = api.renderer?.boundsLookup?.findBeat(beat);
-    const master = (bounds as any)?.barBounds?.masterBarBounds;
-    if (!master) return null;
-
-    if (master.startTick !== undefined && master.endTick !== undefined) {
-        return { startTick: master.startTick, endTick: master.endTick };
-    }
-
-    if (Array.isArray(master.beats) && master.beats.length > 0) {
-        const first = master.beats[0];
-        const last = master.beats[master.beats.length - 1];
-        return {
-            startTick: first.absolutePlaybackStart,
-            endTick: last.absolutePlaybackStart + (last.playbackDuration || 0)
+async function waitForContainerWidth(el: HTMLElement, maxWait = 3000): Promise<void> {
+    const deadline = Date.now() + maxWait;
+    return new Promise(resolve => {
+        const check = () => {
+            if (el.clientWidth > 0 || Date.now() >= deadline) { resolve(); return; }
+            requestAnimationFrame(check);
         };
-    }
+        requestAnimationFrame(check);
+    });
+}
 
-    return null;
-};
+function getTrackSet(api: any): Set<number> {
+    return api.tracks
+        ? new Set<number>(api.tracks.map((t: any) => t.index as number))
+        : new Set<number>([0]);
+}
 
-const getBarBoundaries = (beat: any): { startTick: number; endTick: number } | null => {
-    if (!beat?.voice?.bar) return null;
-    const masterBar = beat.voice.bar.masterBar;
-    if (!masterBar) return null;
-    return {
-        startTick: masterBar.start,
-        endTick: masterBar.start + masterBar.calculateDuration()
+function forceRevealSurface(
+    host: HTMLElement,
+    cancelRef: { current: number },
+    label = 'forceReveal',
+    maxMs = 3000,
+): void {
+    const start = performance.now();
+    const cancelToken = cancelRef.current;
+    const tick = () => {
+        if (cancelRef.current !== cancelToken) return;
+        const surf = host.querySelector('.at-surface') as HTMLElement | null;
+        if (!surf) {
+            if (performance.now() - start < maxMs) requestAnimationFrame(tick);
+            return;
+        }
+        surf.style.visibility = 'visible';
+        surf.style.opacity = '1';
+        (surf.style as any).webkitOpacity = '1';
+        surf.style.fontSize = '';
+        surf.style.lineHeight = '';
+        surf.style.overflow = '';
+        surf.style.pointerEvents = '';
+        void surf.getBoundingClientRect();
+        const cs = getComputedStyle(surf);
+        const ok = cs.opacity !== '0'
+            && cs.visibility !== 'hidden'
+            && cs.fontSize !== '0px'
+            && cs.lineHeight !== '0px';
+        if (!ok && performance.now() - start < maxMs) requestAnimationFrame(tick);
+        else if (!ok) console.warn(`⚠️ ${label}: surface still hidden after ${maxMs}ms`);
     };
-};
+    requestAnimationFrame(tick);
+}
 
-const getFirstBeatInBar = (api: AlphaTabApi, beat: any): any => {
-    if (!beat) return beat;
+function showCurtain(curtain: HTMLDivElement | null): void {
+    if (curtain) curtain.style.display = 'block';
+}
+function hideCurtainAtomic(curtain: HTMLDivElement | null): void {
+    if (curtain) curtain.style.display = 'none';
+}
 
-    const bounds = api.renderer?.boundsLookup?.findBeat(beat);
-    const master = (bounds as any)?.barBounds?.masterBarBounds;
-
-    if (master) {
-        if (master.firstBeat) return master.firstBeat;
-        if (Array.isArray(master.beats) && master.beats.length > 0) return master.beats[0];
+function isSurfacePaintable(host: HTMLElement): boolean {
+    const surf = host.querySelector('.at-surface') as HTMLElement | null;
+    if (!surf) return false;
+    const cs = getComputedStyle(surf);
+    if (cs.opacity === '0' || cs.visibility === 'hidden' ||
+        cs.fontSize === '0px' || cs.lineHeight === '0px' || cs.overflow === 'hidden') return false;
+    const svgs = surf.querySelectorAll('svg');
+    if (!svgs.length) return false;
+    for (const svg of Array.from(svgs).slice(0, 3)) {
+        const r = (svg as SVGSVGElement).getBoundingClientRect();
+        if (r.width > 10 && r.height > 10) return true;
     }
+    return false;
+}
 
-    if ((beat as any).beatIndexInBar === 0) return beat;
+/**
+ * [Cipher Fix A] Resolve the true next beat for cursor interpolation.
+ * Kept for reference; replaced by resolveNextBeatExpanded in the timing path.
+ */
+function resolveNextBeat(api: any, curBeat: any, trackSet: Set<number>): any | null {
+    const curStart = curBeat?.absolutePlaybackStart;
+    if (typeof curStart !== 'number') return null;
+    let nb = curBeat?.nextBeat;
+    while (nb) {
+        const nbStart = nb?.absolutePlaybackStart;
+        if (typeof nbStart === 'number' && nbStart > curStart) return nb;
+        nb = nb?.nextBeat ?? null;
+    }
+    const tickCache = (api as any).tickCache;
+    if (!tickCache?.findBeat) return null;
+    const probes = [1, 2, 3, 5, 10, 20, 40, 60, 120, 240, 480];
+    for (const d of probes) {
+        const r = tickCache.findBeat(trackSet, curStart + d);
+        const b = r?.beat;
+        const bs = b?.absolutePlaybackStart;
+        if (b && typeof bs === 'number' && bs > curStart) return b;
+    }
+    return null;
+}
 
-    if (beat.voice?.bar?.voices) {
-        for (const voice of beat.voice.bar.voices) {
-            if (voice.beats?.length > 0) {
-                const firstBeat = voice.beats[0];
-                if (firstBeat.index === 0 || (firstBeat as any).beatIndexInBar === 0) return firstBeat;
+/**
+ * [B] Resolve next beat AND its expanded tick (t from forward scan).
+ * Returns nextStart in EXPANDED (playback) time — correct for shuffle/repeat songs.
+ *
+ * [V105.1] Skip candidates whose absolutePlaybackStart <= curBeat's — these are late
+ * pickup/ornament beats (e.g. beat 480 arriving after beat 600 in SRV).
+ */
+function resolveNextBeatExpanded(
+    api: any,
+    trackSet: Set<number>,
+    expandedStart: number,
+    curBeat: any,
+): { nextBeat: any | null; nextStart: number | null } {
+    const tickCache = (api as any).tickCache;
+    if (!tickCache?.findBeat) return { nextBeat: null, nextStart: null };
+    const curAbs = curBeat?.absolutePlaybackStart ?? 0;
+    const curMbIdx = curBeat?.voice?.bar?.masterBar?.index;
+
+    const curBb = api?.renderer?.boundsLookup?.findBeat?.(curBeat);
+    const curX = curBb?.visualBounds
+        ? (typeof curBb.onNotesX === 'number' ? curBb.onNotesX : curBb.visualBounds.x + curBb.visualBounds.w / 2)
+        : null;
+
+    let didLogSkip = false;
+    for (let t = expandedStart + 1; t <= expandedStart + 4000; t++) {
+        const r = tickCache.findBeat(trackSet, t);
+        if (!r?.beat) continue;
+        const b = r.beat;
+
+        if (b.absolutePlaybackStart === curAbs &&
+            b?.voice?.bar?.masterBar?.index === curMbIdx) continue;
+
+        if (b.absolutePlaybackStart <= curAbs) {
+            if (!didLogSkip) {
+                didLogSkip = true;
+                console.log('[resolveNextBeatExpanded] skipped backward candidate', {
+                    curAbs, bAbs: b.absolutePlaybackStart, firstT: t,
+                });
+            }
+            continue;
+        }
+
+        if (curX !== null) {
+            const cBb = api?.renderer?.boundsLookup?.findBeat?.(b);
+            if (cBb?.visualBounds) {
+                const cX = typeof cBb.onNotesX === 'number'
+                    ? cBb.onNotesX
+                    : cBb.visualBounds.x + cBb.visualBounds.w / 2;
+                if (cX < curX - 6) continue;
             }
         }
+
+        return { nextBeat: b, nextStart: t };
     }
+    return { nextBeat: null, nextStart: null };
+}
 
-    try {
-        const tickCache = (api as any).tickCache;
-        if (tickCache && beat.absolutePlaybackStart !== undefined) {
-            const trackIndices = api.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]);
-            for (let t = beat.absolutePlaybackStart; t >= Math.max(0, beat.absolutePlaybackStart - 2000); t--) {
-                const res = tickCache.findBeat(trackIndices, t);
-                if (res?.beat && (res.beat as any).beatIndexInBar === 0) return res.beat;
-            }
-        }
-    } catch (err) {
-        // Ignore
-    }
+/** [SRV Layer 1a] Rounded "column key" for a beat's visual position. */
+function getVisualKeyForBeat(api: any, beat: any): string | null {
+    const bb = api?.renderer?.boundsLookup?.findBeat?.(beat);
+    const vb = bb?.visualBounds;
+    if (!vb) return null;
+    return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
+}
 
-    return beat;
-};
-
-// ==================== COMPONENT ====================
-
-export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
+export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     fileUrl,
+    trackIndices = [0],
+    isPlaying,
+    onPlayStateChange,
+    onRendered,
+    onBoundsReady,
+    onPlayerReady,
     onApiReady,
     onScoreLoaded,
-    onRenderFinished,
-    onError,
-    className = '',
-    minHeight = '600px',
-    playerMode = 'external',
+    loopEnabled,
+    playbackRange,
+    onLoopToggle,
+    onLoopChange,
+    onLoopClear,
     soundFontPath = '/soundfont/sonivox.sf2',
-    externalMediaHandler,
-    scrollContainerRef,
-    isMobileLandscape = false,
-    audioSource = 'synth',
-    isLooping = false,
-    onLoopRangeChange,
-    isSeeking = false,
-    isPlaying = false,
     theme = 'light',
-    selectedTrackIndex = 0,
-}) => {
+    className,
+    scrollContainer,
+}: AlphaTabRendererV102Props) {
+
     const containerRef = useRef<HTMLDivElement>(null);
-    const apiRef = useRef<AlphaTabApi | null>(null);
-    const cursorRef = useRef<MaestroCursor | null>(null);
-    const lastLayoutModeRef = useRef<string | null>(null);
-    const lastUpdateTickRef = useRef<number>(-1);
-    const lastLoadedFileRef = useRef<string>('');
-    const lastThemeRef = useRef<string>('');
-    const initialFileLoadedRef = useRef(false);
-    const playbackRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+    const curtainRef = useRef<HTMLDivElement>(null);
+    const apiRef = useRef<any>(null);
+    const cursorRef = useRef<MaestroCursorV2 | null>(null);
+    const initTokenRef = useRef(0);
+    // 🔒 trackIndicesRef — keeps scoreLoaded from reading stale closure value.
+    // Without this, scoreLoaded always renders [0] because init() captures the
+    // prop at mount time. The ref is always current, so the first renderTracks()
+    // call uses the correct winning track index set by page.tsx handleScoreLoaded.
+    const trackIndicesRef = useRef(trackIndices);
+    useEffect(() => { trackIndicesRef.current = trackIndices; }, [trackIndices]);
 
-    // 🔥 V101.1: Init stability refs
-    const initTokenRef = useRef<number>(0);
-    const isInitializingRef = useRef<boolean>(false);
-
-    // 🔥 V101.2: Gate track-change re-anchor until first stable load cycle completes.
-    // Prevents the selectedTrackIndex effect from firing during AlphaTab's late
-    // geometry passes — which is the real source of the delayed scroll jump.
-    const hasCompletedInitialAnchorRef = useRef<boolean>(false);
-
-    // ============================================
-    // 🔥 V99.3: DUAL TRACK INDEX REFS
-    // ============================================
-    const cursorTrackIndicesRef = useRef<Set<number>>(new Set([0]));
-    const allTrackIndicesRef = useRef<Set<number>>(new Set([0]));
-
-    // ============================================
-    // 🔒 CRITICAL FIX BLOCK - DO NOT MODIFY 🔒
-    // ============================================
-    const isDraggingRef = useRef<boolean>(false);
-    const lastStableRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
-    const isPlayingRef = useRef<boolean>(false);
-    const isLoopingRef = useRef<boolean>(false);
-    const lastEnforcerTriggerRef = useRef<number>(0);
-    const manualPositioningLockRef = useRef<number>(0);
-    const lastUserSeekTickRef = useRef<number | null>(null);
+    // ── [P2] Layout profile refs ──────────────────────────────────────────────
+    const alphaTabModuleRef = useRef<any>(null);
+    const activeProfileRef = useRef<LayoutProfileName | null>(null);
+    const baseTrackProfileRef = useRef<LayoutProfileName | null>(null); // 🔒 sparse vs dense — read by ResizeObserver
+    const isApplyingProfileRef = useRef(false);
 
     const [isLoading, setIsLoading] = useState(true);
-    const [isRendered, setIsRendered] = useState(false);
-    const [scoreIsLoaded, setScoreIsLoaded] = useState(false);
-    const [renderCycle, setRenderCycle] = useState(0);
+    const [isSettling, setIsSettling] = useState(true);
 
-    const detectMobile = (): boolean => {
-        const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-        const mobileKeywords = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
-        const isMobileUA = mobileKeywords.test(userAgent);
-        const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
-        const isSmallScreen = typeof window !== 'undefined' && window.innerWidth <= 768;
-        return isMobileUA || (isTouchDevice && isSmallScreen);
+    const loopEnabledRef = useRef(loopEnabled);
+    const playbackRangeRef = useRef(playbackRange);
+    const isPlayingRef = useRef(isPlaying);
+    const seekInProgressRef = useRef(false);
+    const seekTokenRef = useRef(0);
+    const resumeTimerRef = useRef<number | null>(null);
+    const seekFreezeUntilRef = useRef<number>(0);
+    const seekTargetTickRef = useRef<number | null>(null);
+
+    const renderTokenRef = useRef(0);
+    const activeRendersRef = useRef(0);
+    const revealTimerRef = useRef<number | null>(null);
+    const hasRevealedRef = useRef(false);
+    const QUIET_MS = 250;
+    const isSettlingRef = useRef(true);
+    const forceRevealCancelRef = useRef(0);
+
+    const lastTickRef = useRef<number | null>(null);
+    const stableCurBeatRef = useRef<any>(null);
+    const stableExpandedBeatStartRef = useRef<number>(0);
+    const stableNextBeatRef = useRef<any>(null);
+    const stableNextExpandedBeatStartRef = useRef<number | null>(null);
+    const stableVisualKeyRef = useRef<string | null>(null);
+    const lastRegressionLogRef = useRef<string>('');
+    const reAnchorCountRef = useRef<{ beat: number; count: number }>({ beat: -1, count: 0 });
+    const lastAcceptedBeatStartRef = useRef<number>(-1);
+    const allowBacktrackUntilRef = useRef<number>(0);
+
+    const resetBeatAcceptance = () => {
+        lastAcceptedBeatStartRef.current = -1;
+        allowBacktrackUntilRef.current = Date.now() + 600;
     };
 
-    const [isMobile] = useState(detectMobile());
+    loopEnabledRef.current = loopEnabled;
+    playbackRangeRef.current = playbackRange;
+    isPlayingRef.current = isPlaying;
 
-    // ============================================
-    // 🔥 V99.1: AUTHORITY SEEK HELPER
-    // ============================================
-    const authoritySeekToTick = useCallback((api: AlphaTabApi, tick: number, beat?: any) => {
-        if (api.player?.seekTicks) api.player.seekTicks(tick);
-        api.tickPosition = tick;
-        lastUserSeekTickRef.current = tick;
-        lastUpdateTickRef.current = tick;
+    useEffect(() => { isSettlingRef.current = isSettling; }, [isSettling]);
 
-        if (beat && cursorRef.current && api.renderer?.boundsLookup) {
-            const beatBounds = api.renderer.boundsLookup.findBeat(beat);
-            if (beatBounds) {
-                cursorRef.current.requestSnap();
-                cursorRef.current.setBeat(beat, beatBounds);
-                cursorRef.current.setTick(tick, beat, beatBounds, null, null);
-            }
-        }
-
-        if (DEBUG) console.log(`🛡️ V99.1: Authority seek to tick ${tick}`);
+    const applyScrollMode = useCallback(async (enabled: boolean) => {
+        const api = apiRef.current;
+        if (!api) return;
+        const alphaTab = await import('@coderline/alphatab');
+        (api.settings.player as any).scrollMode = enabled
+            ? (alphaTab as any).ScrollMode.Continuous
+            : (alphaTab as any).ScrollMode.Off;
+        await api.updateSettings();
     }, []);
 
-    // ============================================
-    // 🔒 CRITICAL: V98.120 Loop State Sync 🔒
-    // ============================================
+    // ── Main init effect ──────────────────────────────────────────────────────
     useEffect(() => {
-        isLoopingRef.current = !!isLooping;
-        if (DEBUG) console.log(`🔄 isLoopingRef synced: ${isLoopingRef.current}`);
-    }, [isLooping]);
+        if (!containerRef.current) return;
+        if (apiRef.current) return;
+        if (!fileUrl) return;
 
-    // ========== INIT ALPHATAB ==========
-
-    useEffect(() => {
         let destroyed = false;
+        const token = ++initTokenRef.current;
 
-        const initAndLoad = async () => {
-            if (!containerRef.current) return;
-            if (apiRef.current) return;
+        const cleanUrl = fileUrl.split('?')[0];
+        const fileExt = cleanUrl.split('.').pop()?.toLowerCase() ?? '';
+        const isGP8 = fileExt === 'gp';
 
-            // 🔥 V101.1: Sync init lock — prevents two concurrent init chains
-            if (isInitializingRef.current) return;
-            isInitializingRef.current = true;
+        console.log('🎼 V106 layout check:', { fileUrl, cleanUrl, fileExt, isGP8 });
 
-            // 🔥 V101.1: Mint a token for this init attempt
-            const token = ++initTokenRef.current;
+        const init = async () => {
+            const container = containerRef.current!;
+            await waitForContainerWidth(container);
+            if (destroyed || token !== initTokenRef.current) return;
 
-            try {
-                setIsLoading(true);
-                setRenderCycle(rc => rc + 1);
+            // ── [P3] Stash module, resolve + bake layout profile ──────────────
+            const alphaTab = await import('@coderline/alphatab');
+            alphaTabModuleRef.current = alphaTab;
 
-                // 🔥 V101.1: Wait for container to have real layout dimensions
-                // Blocks on M1 + Supabase async until CSS paint gives us a width
-                await waitForContainerWidth(containerRef.current);
+            // Use container width (not window) to match ResizeObserver tier logic.
+            // < 480px = true phone → horizontal. Tablets stay in page mode.
+            const containerW = containerRef.current?.clientWidth ?? window.innerWidth;
+            const isMobile = containerW < 480;
+            const initProfile = resolveLayoutProfile(isMobile);
+            activeProfileRef.current = initProfile;
 
-                // 🔥 V101.1: Stale-token check — if StrictMode unmounted and
-                // remounted us during the await above, bail out of the stale chain
-                if (token !== initTokenRef.current || destroyed) {
-                    isInitializingRef.current = false;
-                    return;
-                }
+            const api = await initAlphaTab({
+                container,
+                playerMode: 'synthesizer',
+                soundFontPath,
+                layoutMode: 'page',
+                scrollMode: 'off',
+                scrollContainer: scrollContainer ?? undefined,
+                layoutProfile: initProfile,  // [P3] bake profile at construction
+                ...(isGP8 && { displayOverrides: GP8_DISPLAY_OVERRIDES }),
+            });
+            if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
 
-                const scrollElement = scrollContainerRef?.current || document.body;
+            apiRef.current = api;
+            if (typeof window !== 'undefined') (window as any).__atV106 = api;
 
-                const api = await initAlphaTab({
-                    container: containerRef.current,
-                    playerMode,
-                    enableCursor: true,
-                    layoutMode: 'page',
-                    soundFontPath,
-                    isMobile,
-                    enableUserInteraction: false,
-                    scrollContainer: scrollElement,
-                });
+            api.customCursorHandler = {
+                onAttach() { },
+                onDetach() { },
+                placeBeatCursor(beatCursor: any, beatBounds: any) {
+                    const b = beatBounds.barBounds.masterBarBounds.visualBounds;
+                    beatCursor.setBounds(beatBounds.onNotesX, b.y, 1, b.h);
+                },
+                placeBarCursor(barCursor: any, beatBounds: any) {
+                    const b = beatBounds.barBounds.masterBarBounds.visualBounds;
+                    barCursor.setBounds(b.x, b.y, b.w, b.h);
+                },
+                transitionBeatCursor(beatCursor: any, beatBounds: any) {
+                    this.placeBeatCursor(beatCursor, beatBounds);
+                },
+            };
 
-                if (destroyed) { api.destroy(); isInitializingRef.current = false; return; }
+            onApiReady?.(api as unknown as AlphaTabApi);
 
-                apiRef.current = api;
-                (window as any).__at = api;
+            api.scoreLoaded.on(() => {
+                const score = api.score;
+                if (!score?.tracks?.length) return;
 
-                // ============================================
-                // 🩹 TEMP FIX: AlphaTab 1.8.1 Cursor Bug (GitHub #2546)
-                // ============================================
-                api.customCursorHandler = {
-                    onAttach() { },
-                    onDetach() { },
-                    placeBeatCursor(beatCursor: any, beatBounds: any) {
-                        const barBounds = beatBounds.barBounds.masterBarBounds.visualBounds;
-                        beatCursor.setBounds(beatBounds.onNotesX, barBounds.y, 1, barBounds.h);
-                    },
-                    placeBarCursor(barCursor: any, beatBounds: any) {
-                        const barBounds = beatBounds.barBounds.masterBarBounds.visualBounds;
-                        barCursor.setBounds(barBounds.x, barBounds.y, barBounds.w, barBounds.h);
-                    },
-                    transitionBeatCursor(beatCursor: any, beatBounds: any) {
-                        this.placeBeatCursor(beatCursor, beatBounds);
-                    }
+                // ── Auto-pick best default track (Songsterr-style tone-first) ─
+                // Must run INSIDE scoreLoaded — this is the only place score.tracks
+                // is available before renderTracks fires. The trackIndices prop is
+                // always [0] at mount time; the prop update from page.tsx arrives
+                // too late to influence the first render.
+                const _norm = (s: string) =>
+                    (s ?? '').toLowerCase().trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ');
+                const _isVocal = (n: string) =>
+                    /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal)/i.test(_norm(n));
+                const _isDrum = (n: string) =>
+                    ['drum', 'perc', 'kit', 'hh', 'snare', 'kick'].some(kw => _norm(n).includes(kw));
+                const _isBass = (n: string) => _norm(n).includes('bass');
+                const _scoreTrack = (n: string): number => {
+                    const nn = _norm(n);
+                    if (_isVocal(n)) return -9999;
+                    if (_isDrum(n)) return -9999;
+                    if (_isBass(n)) return -200;
+                    let s = 0;
+                    if (nn.includes('distortion')) s += 120;
+                    if (nn.includes('overdriven') || nn.includes('overdrive')) s += 110;
+                    if (nn.includes('acoustic')) s += 105;
+                    if (nn.includes('clean')) s += 95;
+                    if (/(guit|guitar|gtr)/.test(nn)) s += 60;
+                    if (nn.includes('rhythm guitar') || nn.includes('rhythm gtr')) s += 25;
+                    if (nn.includes('lead guitar') || nn.includes('lead gtr')) s += 15;
+                    if (/(overdub|right ear|left ear|solo overdub|sitar|banjo|harmonica|tenor sax|clarinet|strings|synth|pad|orch|piano|organ|delay|fx|effect|bus|click|guide|reference)/.test(nn)) s -= 40;
+                    return s;
                 };
 
-                if (DEBUG) console.log('🩹 Applied AlphaTab 1.8.1 cursor positioning fix');
+                let winnerIdx = 0, winnerScore = -9999;
+                for (let i = 0; i < score.tracks.length; i++) {
+                    const sc = _scoreTrack(score.tracks[i]?.name ?? '');
+                    if (sc > winnerScore) { winnerScore = sc; winnerIdx = i; }
+                }
+                // Fallback: first non-vocal non-drum if no guitar found
+                if (winnerScore <= 0) {
+                    const fb = score.tracks.findIndex((t: any) =>
+                        !_isVocal(t?.name ?? '') && !_isDrum(t?.name ?? ''));
+                    if (fb >= 0) winnerIdx = fb;
+                }
 
-                api.settings.display.lastSystemPaddingBottom = 300;
-                await api.updateSettings();
+                // Update ref BEFORE profile detection — ResizeObserver reads it
+                trackIndicesRef.current = [winnerIdx];
+                console.log('🎯 V106 auto-pick (scoreLoaded)', {
+                    winnerIdx,
+                    winnerName: score.tracks[winnerIdx]?.name,
+                    winnerScore,
+                });
 
-                // ============================================================
-                // 🔥 V101: REGISTER ALL EVENTS BEFORE loadGuitarProFile
-                // On iPhone 16 Pro Max the GPU renders so fast that renderFinished
-                // fires before the listener attaches if we register after load.
-                // ============================================================
+                const tr = [score.tracks[winnerIdx]].filter(Boolean);
+                if (!tr.length) return;
 
-                // ============================================================
-                // 🔥 V101: handleRenderFinished — named function (not inline)
-                // Allows both .on() registration AND manual call for PWA race fix
-                // ============================================================
-                const handleRenderFinished = () => {
-                    console.log('🧩 renderFinished fired', {
-                        hasContainer: !!containerRef.current,
-                        hasCursor: !!cursorRef.current,
-                        ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
-                    });
+                // ── Track-aware profile detection ─────────────────────────────
+                const isMobileNow = (containerRef.current?.clientWidth ?? window.innerWidth) < 480;
+                const primaryTrackName = (tr[0] as any)?.name ?? '';
+                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isMobileNow);
+                const at = alphaTabModuleRef.current;
+                baseTrackProfileRef.current = trackProfile;
+                if (at && trackProfile !== activeProfileRef.current) {
+                    activeProfileRef.current = trackProfile;
+                    applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
+                }
 
-                    setIsRendered(true);
-                    setIsLoading(false);
-                    setRenderCycle(rc => rc + 1);
-                    onRenderFinished?.();
+                // ── [B] Wipe baked GP8 systemsLayout for sparse tracks ────────
+                if (trackProfile === 'songBookPageSparse') {
+                    const scoreAny = score as any;
+                    const renderedTrack = tr[0] as any;
+                    if (renderedTrack) {
+                        renderedTrack.systemsLayout = null;
+                        renderedTrack.defaultSystemsLayout = 0;
+                    }
+                    scoreAny.systemsLayout = null;
+                    scoreAny.defaultSystemsLayout = 0;
+                    console.log('🧨 V106: wiped baked systemsLayout for sparse track', { track: primaryTrackName });
+                }
 
-                    lastUpdateTickRef.current = -1;
+                api.renderTracks(tr);
+                console.log(`✅ V106: scoreLoaded → renderTracks([${winnerIdx}]) profile="${trackProfile}"`);
 
-                    if (!containerRef.current) return;
+                if (onScoreLoaded && api.score) {
+                    const info: SongInfo = {
+                        title: api.score.title ?? '',
+                        artist: api.score.artist ?? '',
+                        album: api.score.album ?? '',
+                    } as SongInfo;
+                    onScoreLoaded(info, (api.score.tracks ?? []) as Track[]);
+                }
+            });
+
+            api.renderStarted.on(() => {
+                activeRendersRef.current += 1;
+                renderTokenRef.current += 1;
+                forceRevealCancelRef.current += 1;
+                isSettlingRef.current = true;
+                setIsSettling(true);
+                lastAcceptedBeatStartRef.current = -1;
+                if (revealTimerRef.current !== null) {
+                    window.clearTimeout(revealTimerRef.current);
+                    revealTimerRef.current = null;
+                }
+                if (!hasRevealedRef.current) showCurtain(curtainRef.current);
+            });
+
+            const waitForPaintableSurface = (host: HTMLElement, tok: number): Promise<boolean> =>
+                new Promise(resolve => {
+                    let streak = 0, i = 0;
+                    const step = () => {
+                        if (renderTokenRef.current !== tok || activeRendersRef.current !== 0) return resolve(false);
+                        forceRevealSurface(host, forceRevealCancelRef, 'paintableCheck');
+                        if (isSurfacePaintable(host)) { streak++; if (streak >= 2) return resolve(true); }
+                        else streak = 0;
+                        if (++i < 60) requestAnimationFrame(step); else resolve(false);
+                    };
+                    requestAnimationFrame(step);
+                });
+
+            const ensureCursorAndAnchorOnce = (tok: number): Promise<boolean> =>
+                new Promise(resolve => {
                     const host = containerRef.current;
-
-                    if (host.style.position !== 'relative') host.style.position = 'relative';
-
-                    // ============================================================
-                    // 🔥 V101: DOM-AWARE CURSOR CREATION (Cipher needsCreation fix)
-                    // Checks DOM presence, not just ref — handles PWA reflow/remount
-                    // ============================================================
-                    let needsCreation = false;
-
+                    if (!host || renderTokenRef.current !== tok) return resolve(false);
                     if (!cursorRef.current) {
-                        needsCreation = true;
+                        cursorRef.current = attachMaestroCursorV2(api, host);
                     } else {
                         const el = cursorRef.current.element;
                         if (!el || !host.contains(el)) {
                             cursorRef.current.destroy();
-                            cursorRef.current = null;
-                            needsCreation = true;
+                            cursorRef.current = attachMaestroCursorV2(api, host);
                         }
                     }
-
-                    if (needsCreation) {
-                        cursorRef.current = new MaestroCursor(host);
-                        api.cursorHandler = cursorRef.current;
-                        console.log('🟣 MaestroCursor created/recreated', {
-                            hostExists: !!host,
-                            hostChildren: host.childElementCount
-                        });
-                    } else {
-                        const existingCursor = cursorRef.current;
-                        if (existingCursor) {
-                            const el = existingCursor.element;
-                            if (el && !host.contains(el)) host.appendChild(el);
-                            existingCursor.requestSnap();
-                        }
-                        console.log('🟢 MaestroCursor reused');
-                    }
-
-                    // ============================================================
-                    // 🔥 V101: MOBILE-SAFE ANCHOR — retry loop
-                    // Replaces 200ms single-shot timeout (too fast for mobile)
-                    // ============================================================
-                    const anchorCursorAtStart = (attempt = 0) => {
-                        const cursor = cursorRef.current;
-                        if (!cursor || !api.renderer?.boundsLookup) return;
-
+                    host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
+                        .forEach(n => ((n as HTMLElement).style.display = 'none'));
+                    const step = () => {
+                        if (renderTokenRef.current !== tok) return resolve(false);
+                        forceRevealSurface(host, forceRevealCancelRef, 'anchorStep');
                         const tickCache = (api as any).tickCache;
-                        if (!tickCache) {
-                            if (attempt < 10) setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
-                            return;
-                        }
-
-                        const trackIndices = cursorTrackIndicesRef.current;
-                        const targetTick = needsCreation ? 0 : (api.tickPosition ?? 0);
-                        const beatResult = tickCache.findBeat(trackIndices, targetTick);
-
-                        if (!beatResult?.beat) {
-                            if (attempt < 10) setTimeout(() => anchorCursorAtStart(attempt + 1), attempt < 3 ? 100 : 200);
-                            return;
-                        }
-
-                        const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-                        if (!beatBounds) {
-                            if (attempt < 5) setTimeout(() => anchorCursorAtStart(attempt + 1), 80);
-                            return;
-                        }
-
-                        cursor.requestSnap();
-                        cursor.setBeat(beatResult.beat, beatBounds);
-
-                        // 🔥 V101.2: Mark initial anchor as stable — unlocks track-change re-anchor
-                        hasCompletedInitialAnchorRef.current = true;
-
-                        if (DEBUG) console.log(`✅ Cursor anchored at tick ${targetTick} (attempt ${attempt + 1})`);
+                        const bounds = api.renderer?.boundsLookup;
+                        if (!tickCache || !bounds) { requestAnimationFrame(step); return; }
+                        const tick = api.tickPosition ?? 0;
+                        const r = tickCache.findBeat(getTrackSet(api), tick);
+                        if (!r?.beat) { requestAnimationFrame(step); return; }
+                        if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
+                        cursorRef.current?.requestSnap();
+                        cursorRef.current?.setBeat(r.beat);
+                        cursorRef.current?.setTick(tick);
+                        resolve(true);
                     };
+                    requestAnimationFrame(step);
+                });
 
-                    setTimeout(() => anchorCursorAtStart(0), 150);
+            api.renderFinished.on(() => {
+                activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
+                const tokenAtFinish = renderTokenRef.current;
+                if (activeRendersRef.current !== 0) return;
+                if (revealTimerRef.current !== null) window.clearTimeout(revealTimerRef.current);
 
-                    // ============================================================
-                    // 🔥 V101: Hide native cursors — MaestroCursor is the authority
-                    // ============================================================
-                    setTimeout(() => {
-                        const nativeCursors = host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor');
-                        nativeCursors.forEach((n) => ((n as HTMLElement).style.display = 'none'));
-                    }, 100);
+                revealTimerRef.current = window.setTimeout(async () => {
+                    revealTimerRef.current = null;
+                    if (activeRendersRef.current !== 0) return;
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    const h = containerRef.current;
+                    if (!h) return;
 
-                    // ============================================================
-                    // 🔍 DIAGNOSTIC (remove before production)
-                    // ============================================================
-                    setTimeout(() => {
-                        const el = cursorRef.current?.element;
-                        console.log('📍 Cursor el exists:', !!el);
-                        console.log('📍 In DOM:', el ? document.contains(el) : false);
-                        console.log('📍 Visibility:', el?.style.visibility);
-                        console.log('📍 Transform:', el?.style.transform);
-                        console.log('📍 tickCache:', !!(api as any).tickCache);
-                        console.log('📍 DOM query:', document.querySelector('#maestro-cursor-v43'));
-                    }, 1000);
+                    forceRevealSurface(h, forceRevealCancelRef, 'preWait');
+                    const okPaint = await waitForPaintableSurface(h, tokenAtFinish);
+                    if (!okPaint) return;
+
+                    await new Promise<void>(r =>
+                        requestAnimationFrame(() => requestAnimationFrame(() => r()))
+                    );
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    if (activeRendersRef.current !== 0) return;
+
+                    if (isGP8) {
+                        runGp8LayoutEngineV2(h);
+                        forceRevealSurface(h, forceRevealCancelRef, 'postGp8Patch');
+                    }
+
+                    const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
+                    if (!okCursor) return;
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    if (activeRendersRef.current !== 0) return;
+
+                    forceRevealSurface(h, forceRevealCancelRef, 'preDrop');
+                    h.getBoundingClientRect();
+                    (h.querySelector('.at-surface') as HTMLElement | null)?.getBoundingClientRect();
+
+                    hideCurtainAtomic(curtainRef.current);
+                    hasRevealedRef.current = true;
+                    console.log('🟢 V106 curtain dropped', { token: tokenAtFinish });
+
+                    requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef, 'postDrop'));
+                    isSettlingRef.current = false;
+                    setIsLoading(false);
+                    setIsSettling(false);
+                    onRendered?.();
+                    onBoundsReady?.();
+                    isApplyingProfileRef.current = false; // [P3b] release resize guard
+                }, QUIET_MS);
+            });
+
+            const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
+            api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
+            api.soundFontLoaded?.on(() => { console.log('✅ V106: Soundfont loaded'); notifyPlayerReady(); });
+
+            let stateDebounce: ReturnType<typeof setTimeout>;
+            api.playerStateChanged.on((e: any) => {
+                if (seekInProgressRef.current) return;
+                clearTimeout(stateDebounce);
+                stateDebounce = setTimeout(() => {
+                    const playing = (e.state ?? 0) === 1;
+                    if (playing !== isPlayingRef.current) onPlayStateChange(playing);
+                }, 50);
+            });
+
+            // 🔒🔒🔒 CURSOR ENGINE LOCK — V106 + SRV Layers 1a / 2a / 2b / 2c 🔒🔒🔒
+            api.playerPositionChanged.on((e: any) => {
+                if (isSettlingRef.current) return;
+                if (!cursorRef.current) return;
+
+                const tickRaw = e.currentTick ?? e.tickPosition;
+                if (tickRaw == null) return;
+
+                const FAR_TICKS = 240;
+                if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
+                    if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) return;
+                }
+
+                const range = playbackRangeRef.current;
+                if (loopEnabledRef.current && range) {
+                    const SAFETY_MARGIN = 120;
+                    if (tickRaw >= range.endTick - SAFETY_MARGIN) {
+                        cursorRef.current.requestSnap();
+                        api.tickPosition = range.startTick;
+                        return;
+                    }
+                }
+
+                const tick = tickRaw;
+                const lastTick = lastTickRef.current;
+                const jumped = lastTick != null && Math.abs(tick - lastTick) > 2000;
+                lastTickRef.current = tick;
+
+                if (jumped) {
+                    cursorRef.current.requestSnap();
+                    resetBeatAcceptance();
+                    stableCurBeatRef.current = null;
+                    stableExpandedBeatStartRef.current = 0;
+                    stableNextBeatRef.current = null;
+                    stableNextExpandedBeatStartRef.current = null;
+                    stableVisualKeyRef.current = null;
+                }
+
+                const trackSet = getTrackSet(api);
+                const tickCache = (api as any).tickCache;
+                if (!tickCache) return;
+
+                let curBeat: any = null;
+                const masterBarsArr = (tickCache as any).masterBars as any[];
+
+                if (masterBarsArr?.length) {
+                    const occurrenceMap = new Map<number, number>();
+                    let ownerMbIdx: number | null = null;
+                    let ownerOccurrence = 0;
+                    let ownerExpandedStart = 0;
+
+                    for (const mb of masterBarsArr) {
+                        const mbIdx = mb?.masterBar?.index;
+                        if (mbIdx == null) continue;
+                        const occ = occurrenceMap.get(mbIdx) ?? 0;
+                        occurrenceMap.set(mbIdx, occ + 1);
+                        const dur = mb.masterBar?.calculateDuration?.() ?? 0;
+                        if (tick >= mb.start && tick < mb.start + dur) {
+                            ownerMbIdx = mbIdx;
+                            ownerOccurrence = occ;
+                            ownerExpandedStart = mb.start;
+                        }
+                    }
+
+                    if (ownerMbIdx != null) {
+                        const systems = api.renderer?.boundsLookup?.staffSystems ?? [];
+                        const visualOccMap = new Map<number, number>();
+                        let targetMbb: any = null;
+
+                        outer2: for (const sys of systems) {
+                            for (const mbb of ((sys as any)?.bars ?? [])) {
+                                const vbIdx = (mbb as any)?.masterBar?.index ?? (mbb as any)?.index;
+                                if (vbIdx == null) continue;
+                                const vOcc = visualOccMap.get(vbIdx) ?? 0;
+                                visualOccMap.set(vbIdx, vOcc + 1);
+                                if (vbIdx === ownerMbIdx && vOcc === ownerOccurrence) {
+                                    targetMbb = mbb;
+                                    break outer2;
+                                }
+                            }
+                        }
+
+                        if (targetMbb) {
+                            outer3: for (const barBounds of ((targetMbb as any)?.bars ?? [])) {
+                                for (const voiceBounds of ((barBounds as any)?.voices ?? [])) {
+                                    for (const beatBounds of ((voiceBounds as any)?.beats ?? [])) {
+                                        const beat = (beatBounds as any)?.beat;
+                                        if (!beat) continue;
+                                        const bOffset = beat.playbackStart ?? 0;
+                                        const bDur = beat.playbackDuration ?? beat.duration ?? 0;
+                                        const beatExpandedStart = ownerExpandedStart + bOffset;
+                                        if (beatExpandedStart <= tick && tick < beatExpandedStart + bDur) {
+                                            curBeat = beat;
+                                            break outer3;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!curBeat) {
+                    const r = tickCache.findBeat(trackSet, tick);
+                    if (!r?.beat) return;
+                    curBeat = r.beat;
+                }
+
+                const isSameBeat = (a: any, b: any): boolean => {
+                    if (!a || !b) return false;
+                    return (
+                        a.absolutePlaybackStart === b.absolutePlaybackStart &&
+                        a.voice?.bar?.masterBar?.index === b.voice?.bar?.masterBar?.index
+                    );
                 };
 
-                // ✅ Register listener BEFORE file load
-                api.renderFinished.on(handleRenderFinished);
+                const sameStructural = isSameBeat(curBeat, stableCurBeatRef.current);
+                const curVisualKey = getVisualKeyForBeat(api, curBeat);
+                const sameVisual = curVisualKey !== null
+                    && stableVisualKeyRef.current !== null
+                    && curVisualKey === stableVisualKeyRef.current;
+                const shouldReAnchor = !sameStructural || !sameVisual || jumped;
 
-                // 🔍 DIAGNOSTIC: Manual trigger for iPhone console testing
-                // Test with: window.__maestroInitCursor?.()
-                (window as any).__maestroInitCursor = handleRenderFinished;
-
-                // ============================================================
-                // scoreLoaded — registered before file load
-                // ============================================================
-                api.scoreLoaded.on((score: any) => {
-                    const tracks: Track[] = score.tracks.map((t: any) => ({
-                        index: t.index,
-                        name: t.name,
-                        shortName: t.shortName,
-                    }));
-
-                    const songInfo: SongInfo = {
-                        title: score.title,
-                        artist: score.artist,
-                        album: score.album,
-                        tempo: score.tempo,
-                    };
-
-                    setScoreIsLoaded(true);
-                    onScoreLoaded?.(songInfo, tracks);
-
-                    allTrackIndicesRef.current = new Set(score.tracks.map((t: any) => t.index));
-                    cursorTrackIndicesRef.current = new Set([selectedTrackIndex ?? 0]);
-
-                    if (api && !destroyed) {
-                        // 🔒 V99.0: AUDIO HARD RESET
-                        const allTracks = score.tracks;
-                        api.changeTrackSolo(allTracks, false);
-                        api.changeTrackMute(allTracks, false);
-                        allTracks.forEach((track: any) => {
-                            if (!track.playbackInfo?.volume || track.playbackInfo.volume === 0) {
-                                track.playbackInfo.volume = 16;
-                            }
-                        });
-                        api.updateSettings();
-                        api.render();
-
-                        if (DEBUG) console.log('🛡️ V99.0: Audio Engine Hard-Reset. All tracks active, Solo/Mute cleared.');
-                        lastThemeRef.current = '';
-                    }
-                });
-
-                // ============================================
-                // 🔒 CRITICAL: V98.115 FIX #1 - Playing State Tracking 🔒
-                // ============================================
-                api.playerStateChanged.on((e: any) => {
-                    const stopped = !!e?.stopped;
-                    const state = e?.state ?? e?.playerState ?? (stopped ? 'stopped' : 'unknown');
-                    const stateNames: Record<number, string> = { 0: 'PAUSED', 1: 'PLAYING', 2: 'STOPPED' };
-                    const stateName = typeof state === 'number' ? (stateNames[state] || `UNKNOWN(${state})`) : String(state);
-
-                    const wasPlaying = isPlayingRef.current;
-                    isPlayingRef.current = (state === 1 || state === 'playing') && !stopped;
-
-                    // 🔥 V99.1: AUTHORITY RE-SYNC ON PLAY
-                    if (!wasPlaying && isPlayingRef.current) {
-                        const pendingSeek = lastUserSeekTickRef.current;
-                        if (pendingSeek != null && api.player?.seekTicks) {
-                            api.player.seekTicks(pendingSeek);
-                            api.tickPosition = pendingSeek;
-                            if (DEBUG) console.log(`🛡️ V99.1: Authority re-sync on PLAY → tick ${pendingSeek}`);
-                        }
-                    }
-
-                    if (DEBUG_PLAYER_STATE) {
-                        console.log(`🎵 Player state: ${stateName}`, { state, stopped, tick: api.tickPosition, wasPlaying, nowPlaying: isPlayingRef.current });
-                        if (state === 2 && isLooping && playbackRangeRef.current) {
-                            console.error('🚨 UNEXPECTED STOP during loop playback');
-                        }
-                    }
-                });
-
-                // ============================================
-                // 🔥 V99.3: playedBeatChanged with SNAP-BACK GUARD
-                // ============================================
-                api.playedBeatChanged.on((eventBeat: any) => {
-                    const cursor = cursorRef.current;
-                    if (!cursor || !api.renderer?.boundsLookup) return;
-
-                    const audioTick = api.player?.tickPosition ?? api.tickPosition ?? 0;
-                    const eventTick = eventBeat?.absolutePlaybackStart ?? 0;
-                    const isSnapBack = isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000;
-
-                    if (isSnapBack) {
-                        const tickCache = (api as any).tickCache;
-                        if (!tickCache) return;
-
-                        const tryTicks = [audioTick, audioTick - 1, audioTick - 10].filter(t => t >= 0);
-                        let resolved: any = null;
-                        for (const t of tryTicks) {
-                            const r = tickCache.findBeat(allTrackIndicesRef.current, t);
-                            if (r?.beat) { resolved = r; break; }
-                        }
-                        if (!resolved?.beat) return;
-
-                        const beatBounds = api.renderer.boundsLookup.findBeat(resolved.beat);
-                        if (!beatBounds) return;
-
-                        cursor.setBeat(resolved.beat, beatBounds);
-                        if (DEBUG) console.log(`⚖️ V99.3 Timeline Correction (beatChanged)`, { audioTick, eventTick });
-                    } else {
-                        const beatBounds = api.renderer.boundsLookup.findBeat(eventBeat);
-                        cursor.setBeat(eventBeat, beatBounds);
-                    }
-
-                    if (DEBUG) {
-                        const tick = isSnapBack ? audioTick : eventTick;
-                        console.log(`🎵 Beat changed: M${Math.floor(tick / 1920) + 1}, tick ${tick}${isSnapBack ? ' (corrected)' : ''}`);
-                    }
-                });
-
-                // ============================================
-                // 🔥 V98.125/V99.3: playerPositionChanged
-                // ============================================
-                api.playerPositionChanged.on((e: any) => {
-                    const cursor = cursorRef.current;
-                    if (!cursor || !api.renderer?.boundsLookup) return;
-
-                    const eventTick = e.currentTick;
-                    const audioTick = api.player?.tickPosition ?? api.tickPosition ?? eventTick;
-                    const isSnapBack = isPlayingRef.current && Math.abs(audioTick - eventTick) > 1000;
-                    const newTick = isSnapBack ? audioTick : eventTick;
-
-                    if (isSnapBack && DEBUG) {
-                        console.log(`⚖️ V99.3 AUTHORITY OVERRIDE (snap-back)`, { audioTick, eventTick, delta: audioTick - eventTick });
-                    }
-
-                    const now = Date.now();
-
-                    const timeSinceManualPosition = now - manualPositioningLockRef.current;
-                    if (timeSinceManualPosition < 150) {
-                        if (DEBUG_MANUAL_POSITION) console.log(`🔒 Ignoring position update (${timeSinceManualPosition}ms since manual lock)`);
-                        return;
-                    }
-
-                    const loopActive = isLoopingRef.current;
-                    const playing = isPlayingRef.current;
-                    const activeRange = loopActive
-                        ? (playbackRangeRef.current || lastStableRangeRef.current)
-                        : null;
-
-                    const isDraggingLoop = (window as any).__maestroIsDraggingLoop;
-                    const isManualSeek = (window as any).__maestroManualSeek || (api as any)._isTeleporting || isDraggingLoop;
-
-                    if (isDraggingLoop) {
-                        console.log('🔒 V99.23: Blocking cursor update - drag in progress');
-                        return;
-                    }
-
-                    const effectiveTick = (activeRange && activeRange.endTick > activeRange.startTick)
-                        ? Math.min(newTick, activeRange.endTick - 1)
-                        : newTick;
-
-                    if (DEBUG_LOOP_BOUNDARY && activeRange && Math.abs(newTick - activeRange.endTick) < 50) {
-                        console.log(`🧱 Near loop end: raw=${newTick} clamped=${effectiveTick} end=${activeRange.endTick}`);
-                    }
-
-                    const lastTick = lastUpdateTickRef.current;
-
-                    // ============================================
-                    // 🔒 V98.122/V98.124/V98.125: IRONCLAD ENFORCER 🔒
-                    // ============================================
-                    if (loopActive && activeRange && !isManualSeek) {
-                        const { startTick, endTick } = activeRange;
-                        const PREEMPTIVE_MARGIN = 250;
-
-                        if (playing && effectiveTick >= (endTick - PREEMPTIVE_MARGIN)) {
-                            const COOLDOWN_MS = 300;
-                            if (now - lastEnforcerTriggerRef.current > COOLDOWN_MS) {
-                                if (DEBUG_BOUNDARY_ENFORCER) console.log("🔄 V99.17: Pre-emptive Loop Reset");
-
-                                try {
-                                    cursor.requestSnap();
-                                    api.tickPosition = startTick;
-                                    if (api.player && typeof (api.player as any).seekTicks === 'function') {
-                                        (api.player as any).seekTicks(startTick);
-                                    }
-                                    setTimeout(() => {
-                                        if (api.isLooping && !api.player?.isPlaying) {
-                                            api.player?.play();
-                                            if (DEBUG_BOUNDARY_ENFORCER) console.log("▶️ Forced play after loop reset");
-                                        }
-                                    }, 20);
-                                } catch (err) {
-                                    console.error("🚨 Enforcer Error:", err);
-                                }
-
-                                lastEnforcerTriggerRef.current = now;
-                                return;
-                            }
-                        }
-                    }
-
-                    // ============================================
-                    // 🔒 V99.17: SMART PAUSE GUARD 🔒
-                    // ============================================
-                    const isTeleport = Math.abs(effectiveTick - lastTick) > 100;
-                    const isLoopStartTeleport = activeRange && Math.abs(effectiveTick - activeRange.startTick) < 20;
-                    const isNaturalWraparound = activeRange &&
-                        Math.abs(lastTick - activeRange.endTick) < 100 &&
-                        Math.abs(effectiveTick - activeRange.startTick) < 100;
-                    const manualSeekTimestamp = (window as any).__maestroManualSeek;
-                    const isRecentManualSeek = manualSeekTimestamp && (Date.now() - manualSeekTimestamp) < 500;
-
-                    if (!playing) {
-                        if (effectiveTick === 0 && lastTick > 1000 && !isTeleport && !isRecentManualSeek) {
-                            if (DEBUG) console.log('🛑 V99.17: Blocking transient M1 reset');
+                if (shouldReAnchor) {
+                    const inSeekFreeze = seekFreezeUntilRef.current > Date.now() &&
+                        seekTargetTickRef.current != null;
+                    if (inSeekFreeze) {
+                        const beatAbsForGate = curBeat.absolutePlaybackStart ?? tick;
+                        if (beatAbsForGate < (seekTargetTickRef.current! - 120)) {
                             return;
                         }
-                        if (isTeleport || isLoopStartTeleport || isNaturalWraparound || isRecentManualSeek || isDraggingLoop) {
-                            if (DEBUG) console.log(`🚀 V99.17: Position allowed (${lastTick} → ${effectiveTick})`);
-                        } else {
-                            if (lastTick > 0 && lastTick !== effectiveTick) return;
-                        }
                     }
 
-                    if (isRecentManualSeek && (isTeleport || isNaturalWraparound)) {
-                        delete (window as any).__maestroManualSeek;
-                    }
+                    const MIN_BACKTRACK_TICKS = 120;
+                    const incomingStart = curBeat.absolutePlaybackStart ?? tick;
+                    const isActuallyPlaying = (api.playerState ?? 0) === 1;
+                    const inBypassWindow = Date.now() < allowBacktrackUntilRef.current;
 
-                    lastUpdateTickRef.current = effectiveTick;
-
-                    // ============================================
-                    // 🔒 V98.115 FIX #2 - Drag Selection Lock 🔒
-                    // ============================================
-                    if (loopActive && isDraggingRef.current) {
-                        if (!activeRange) { if (DEBUG) console.log('🛑 Ignoring frame: range disappeared during drag'); return; }
-                        if (activeRange.startTick === 0 && lastTick > 1000) { if (DEBUG) console.log('🛑 Ignoring transient startTick=0 during drag'); return; }
-                    }
-
-                    // ============================================
-                    // 🔥 V99.1: LOOP RESET DETECTION
-                    // ============================================
-                    const prevTick = lastUpdateTickRef.current;
-                    const currTick = effectiveTick;
-                    const isValidRange = !!activeRange && activeRange.endTick > activeRange.startTick;
-                    const isLoopReset = loopActive && playing && isValidRange && prevTick >= 0 && currTick < prevTick && Math.abs(currTick - prevTick) > 100;
-
-                    if (isLoopReset) {
-                        if (DEBUG) console.log(`🔄 Loop reset detected - tick jumped from ${prevTick} to ${currTick}`);
-                        cursor.requestSnap();
-                    }
-
-                    lastUpdateTickRef.current = effectiveTick;
-
-                    const tickCache = (api as any).tickCache;
-                    if (!tickCache) return;
-
-                    // ============================================
-                    // 🔥 V99.3: BEAT LOOKUP SCOPE SWITCH
-                    // ============================================
-                    const indicesForBeatLookup = isSnapBack
-                        ? allTrackIndicesRef.current
-                        : cursorTrackIndicesRef.current;
-
-                    const beatResult = tickCache.findBeat(indicesForBeatLookup, effectiveTick);
-
-                    if (!beatResult?.beat) {
-                        const isNearSongEnd = effectiveTick > 0 && api.score?.masterBars
-                            && effectiveTick >= (api.score.masterBars[api.score.masterBars.length - 1]?.start ?? Infinity);
-                        if (DEBUG && !(isNearSongEnd && !loopActive)) console.warn(`⚠️ No beat found for tick ${effectiveTick}`);
-                        return;
-                    }
-
-                    const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-                    if (!beatBounds) {
-                        if (DEBUG) console.warn(`⚠️ No bounds for beat at tick ${effectiveTick}`);
-                        return;
-                    }
-
-                    const rangeForLookahead = (activeRange && activeRange.endTick > activeRange.startTick) ? activeRange : null;
-                    const rangeEnd = rangeForLookahead?.endTick ?? null;
-
-                    let nextBeatCenterX: number | null = null;
-                    const nb = beatResult.beat.nextBeat;
-                    if (nb) {
-                        const nbStart = nb.absolutePlaybackStart;
-                        if (rangeEnd === null || nbStart < (rangeEnd - 1)) {
-                            try {
-                                const nbBounds = api.renderer.boundsLookup.findBeat(nb);
-                                if (nbBounds?.visualBounds) {
-                                    nextBeatCenterX = nbBounds.visualBounds.x + (nbBounds.visualBounds.w / 2);
-                                }
-                            } catch (err) {
-                                if (DEBUG) console.warn('⚠️ Failed to get next beat bounds:', err);
+                    // [V105.2] Structural regression guard — unconditional.
+                    if (stableCurBeatRef.current) {
+                        const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
+                        if (incomingStart >= 0 && prevAbs >= 0 && incomingStart < prevAbs) {
+                            const regKey = `${incomingStart}:${prevAbs}`;
+                            if (lastRegressionLogRef.current !== regKey) {
+                                lastRegressionLogRef.current = regKey;
+                                console.warn('[V106] structural regression discarded', {
+                                    incomingStart, prevAbs, tick,
+                                });
                             }
-                        } else {
-                            if (DEBUG) console.log(`🛑 Next beat ${nbStart} past range end ${rangeEnd}`);
+                            return;
                         }
                     }
 
-                    try {
-                        cursor.setTick(effectiveTick, beatResult.beat, beatBounds, nextBeatCenterX, rangeForLookahead);
-                    } catch (err) {
-                        console.error('🚨 [MaestroCursor] setTick crashed - playback continues:', err);
+                    if (!isActuallyPlaying || inBypassWindow) {
+                        lastAcceptedBeatStartRef.current = incomingStart;
+                    } else if (
+                        lastAcceptedBeatStartRef.current >= 0 &&
+                        incomingStart < lastAcceptedBeatStartRef.current - MIN_BACKTRACK_TICKS
+                    ) {
+                        console.warn('[V106] dropped out-of-order beat', {
+                            incomingStart, lastAccepted: lastAcceptedBeatStartRef.current,
+                        });
+                        return;
+                    } else {
+                        lastAcceptedBeatStartRef.current = incomingStart;
+                    }
+                    stableCurBeatRef.current = curBeat;
+                    stableVisualKeyRef.current = curVisualKey;
+
+                    const beatId = curBeat.absolutePlaybackStart ?? 0;
+                    if (beatId === reAnchorCountRef.current.beat) {
+                        reAnchorCountRef.current.count++;
+                        if (reAnchorCountRef.current.count > 1)
+                            console.warn(`[V106] ⚠️ Re-anchor ${reAnchorCountRef.current.count}x on beat ${beatId}`);
+                    } else {
+                        reAnchorCountRef.current = { beat: beatId, count: 1 };
+                    }
+
+                    // ── [Patch A] expandedBeatStart: default to beatAbsStart, extended window ──
+                    const beatAbsStart = curBeat.absolutePlaybackStart ?? tick;
+                    const structuralDur = (curBeat.playbackDuration ?? curBeat.duration ?? 480) || 480;
+                    let expandedBeatStart = beatAbsStart;
+                    for (let t = tick - 1; t >= Math.max(tick - 8192, beatAbsStart - 1); t--) {
+                        const r2 = tickCache.findBeat(trackSet, t);
+                        if (!r2?.beat || !isSameBeat(r2.beat, curBeat)) { expandedBeatStart = t + 1; break; }
+                    }
+
+                    // ── [Patch B] resolveNextBeatExpanded — expanded clock ────
+                    const { nextBeat: resolvedNextBeat, nextStart: nextExpandedStart } =
+                        resolveNextBeatExpanded(api, trackSet, expandedBeatStart, curBeat);
+
+                    // 🔍 DUR_CHECK — diagnostic, remove once stable
+                    const _structuralDur = structuralDur;
+                    const _expandedDur = typeof nextExpandedStart === 'number' && nextExpandedStart > expandedBeatStart
+                        ? nextExpandedStart - expandedBeatStart
+                        : _structuralDur;
+                    console.log('🧪 DUR_CHECK', {
+                        beatStart: beatAbsStart,
+                        structuralDur: _structuralDur,
+                        expandedStart: expandedBeatStart,
+                        expandedDur: _expandedDur,
+                        ratio: _structuralDur > 0 ? (_expandedDur / _structuralDur).toFixed(2) : 'n/a',
+                        nextStart: nextExpandedStart ?? null,
+                        nextBeatExists: !!resolvedNextBeat,
+                    });
+
+                    // ── guardedStart: both sides in expanded time ────
+                    let guardedStart = Math.max(beatAbsStart, expandedBeatStart);
+                    if (typeof nextExpandedStart === 'number' && nextExpandedStart > guardedStart) {
+                        guardedStart = Math.min(guardedStart, nextExpandedStart - 1);
+                    }
+
+                    let computedDur = structuralDur;
+                    if (typeof nextExpandedStart === 'number' && nextExpandedStart > guardedStart) {
+                        computedDur = nextExpandedStart - guardedStart;
+                    }
+                    const minDur = Math.max(60, Math.round(structuralDur * 0.75));
+                    const maxDur = Math.round(structuralDur * 2.5);
+                    computedDur = Math.max(minDur, Math.min(maxDur, computedDur));
+                    const ratio = computedDur / structuralDur;
+                    if (ratio < 0.5 || ratio > 2.5 || !Number.isFinite(ratio)) {
+                        guardedStart = beatAbsStart;
+                        computedDur = structuralDur;
+                    }
+
+                    const MIN_EXPANDED = 30;
+                    if (!Number.isFinite(computedDur) || computedDur < MIN_EXPANDED) {
+                        guardedStart = beatAbsStart;
+                        computedDur = structuralDur;
+                    }
+                    if (typeof nextExpandedStart === 'number' && nextExpandedStart <= beatAbsStart) {
+                        stableNextBeatRef.current = null;
+                        stableNextExpandedBeatStartRef.current = null;
+                    }
+
+                    stableExpandedBeatStartRef.current = guardedStart;
+                    stableNextBeatRef.current = resolvedNextBeat;
+                    stableNextExpandedBeatStartRef.current = typeof nextExpandedStart === 'number' ? nextExpandedStart : null;
+
+                    console.log('[V106→Cursor] setBeat args', {
+                        beatAbs: beatAbsStart,
+                        expandedBeatStart: guardedStart,
+                        nextExpandedBeatStart: nextExpandedStart ?? null,
+                        hasPreScannedNextBeat: !!resolvedNextBeat,
+                    });
+                    cursorRef.current.setBeat(
+                        curBeat,
+                        resolvedNextBeat,
+                        nextExpandedStart ?? null,
+                        guardedStart,
+                    );
+                }
+
+                cursorRef.current.setTick(tick, stableNextBeatRef.current, stableExpandedBeatStartRef.current);
+            });
+            // 🔒🔒🔒 END CURSOR ENGINE LOCK 🔒🔒🔒
+
+            await loadGuitarProFile(api, fileUrl);
+
+            if (container.clientWidth === 0) {
+                requestAnimationFrame(() => {
+                    if (container.clientWidth > 0 && apiRef.current) {
+                        console.warn('⚠️ V106: Post-paint fallback — re-rendering');
+                        apiRef.current.render();
                     }
                 });
-
-                // ============================================================
-                // 🔥 V101: NOW load the file — all listeners are registered
-                // ============================================================
-                await loadGuitarProFile(api, fileUrl);
-                initialFileLoadedRef.current = true;
-                lastLoadedFileRef.current = fileUrl;
-
-                // ============================================================
-                // ⚡ V101: PWA RACE SAFETY NET
-                // If renderFinished fired during the await above (unlikely but
-                // possible on very fast devices), manually trigger now.
-                // ============================================================
-                const alreadyRendered = !!containerRef.current?.querySelector('.at-surface svg, .at-viewport svg');
-                if (alreadyRendered && !cursorRef.current) {
-                    console.log('⚡ PWA: AlphaTab already rendered before listener check — manually triggering cursor init');
-                    handleRenderFinished();
-                }
-
-                // ============================================================
-                // 🔥 V101.1: POST-PAINT FALLBACK
-                // If container width is still 0 after init (e.g. CSS not flushed
-                // yet on M1 cold boot), wait one paint frame and force a re-render.
-                // ============================================================
-                if (containerRef.current && containerRef.current.clientWidth === 0) {
-                    console.warn('⚠️ V101.1: Container width still 0 after init — scheduling post-paint re-render');
-                    requestAnimationFrame(() => {
-                        if (containerRef.current && containerRef.current.clientWidth > 0 && apiRef.current) {
-                            console.log('⚡ V101.1: Post-paint fallback triggered — re-rendering');
-                            apiRef.current.render();
-                        }
-                    });
-                }
-
-                onApiReady?.(api);
-
-            } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                setIsLoading(false);
-                onError?.(errorMsg);
-            } finally {
-                // 🔥 V101.1: Always release the init lock
-                isInitializingRef.current = false;
             }
         };
 
-        initAndLoad();
+        init().catch(console.error);
 
         return () => {
             destroyed = true;
-            // 🔥 V101.1: Invalidate any in-flight init chain + release lock
             ++initTokenRef.current;
-            isInitializingRef.current = false;
+            activeRendersRef.current = 0;
+            renderTokenRef.current = 0;
+            hasRevealedRef.current = false;
+            if (revealTimerRef.current !== null) { window.clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
+            if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
+            setIsLoading(true);
+            setIsSettling(true);
+            showCurtain(curtainRef.current);
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
-            if (apiRef.current) {
-                try { apiRef.current.destroy(); } catch (e) { /* Silent */ }
-                apiRef.current = null;
-            }
-            delete (window as any).__at;
+            if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
+            lastAcceptedBeatStartRef.current = -1;
+            lastRegressionLogRef.current = '';
+            lastTickRef.current = null;
+            stableCurBeatRef.current = null;
+            stableExpandedBeatStartRef.current = 0;
+            stableNextBeatRef.current = null;
+            stableNextExpandedBeatStartRef.current = null;
+            stableVisualKeyRef.current = null;
         };
-    }, [fileUrl, soundFontPath, scrollContainerRef, isMobile, playerMode]);
+    }, [fileUrl]);
 
-    // ========== PLAYER MODE ==========
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api?.score?.tracks?.length) return;
+        const tr = trackIndices.map((i: number) => api.score.tracks[i]).filter(Boolean);
+        if (!tr.length) return;
+
+        // ── [V102.2] Re-apply track-aware profile on track switch ─────────────
+        const primaryTrackName = (tr[0] as any)?.name ?? '';
+        const isMobileNow = (containerRef.current?.clientWidth ?? window.innerWidth) < 480;
+        const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isMobileNow);
+        const at = alphaTabModuleRef.current;
+        // Store base track profile so ResizeObserver has sparse/dense context.
+        baseTrackProfileRef.current = trackProfile;
+        if (at && trackProfile !== activeProfileRef.current) {
+            activeProfileRef.current = trackProfile;
+            applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
+            console.log(`🎸 V106: track switch → profile="${trackProfile}" [${trackIndices.join(', ')}]`);
+        }
+
+        hasRevealedRef.current = false;
+        showCurtain(curtainRef.current);
+        api.renderTracks(tr);
+        console.log(`🎸 V106: renderTracks → [${trackIndices.join(', ')}]`);
+    }, [trackIndices]);
+
+    useEffect(() => {
+        if (isSettling) return;
+        const api = apiRef.current;
+        if (!api?.isReadyForPlayback) return;
+        let cancelled = false;
+        const run = async () => {
+            if (isPlaying) {
+                await applyScrollMode(true);
+                if (cancelled) return;
+                api.play();
+            } else {
+                api.pause();
+                applyScrollMode(false);
+            }
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [isPlaying, isSettling, applyScrollMode]);
 
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
-        (api.settings.player as any).playerMode = playerMode;
-        api.updateSettings();
-    }, [playerMode]);
+        api.playbackRange = (loopEnabled && playbackRange) ? playbackRange : null;
+    }, [loopEnabled, playbackRange]);
 
-    // ========== EXTERNAL MEDIA HANDLER ==========
-
+    // ── [P4] ResizeObserver — width-tier profile switching ────────────────────
+    // Replaces window.addEventListener('resize') which misses devtools dock/undock.
+    // ResizeObserver fires on the actual container — matches Songsterr's behavior
+    // where opening devtools docked-right drops bars per row.
+    //
+    // Width tiers (dense tracks only):
+    //   ≥ 900px → songBookPageDense      (5 bars/row, full desktop)
+    //   768–900px → songBookPageDenseNarrow (3 bars/row, devtools open)
+    //   < 768px → songBookHorizontal     (mobile)
+    //
+    // Sparse tracks: no narrow tier — barsPerRow:8 handles any desktop width.
+    // Guard resets via isApplyingProfileRef.current = false in renderFinished.
     useEffect(() => {
-        const api = apiRef.current;
-        if (!api || !api.player?.output) return;
+        const el = containerRef.current;
+        if (!el) return;
 
-        const output = api.player.output as any;
-        if (externalMediaHandler) {
-            output.handler = externalMediaHandler;
-            return () => { if (api.player?.output) (api.player.output as any).handler = null; };
-        } else {
-            if (output.handler) output.handler = null;
-        }
-    }, [externalMediaHandler]);
+        const ro = new ResizeObserver(() => {
+            if (isApplyingProfileRef.current) return; // render in flight — skip
 
-    // ========== FILE LOADING ==========
+            const api = apiRef.current;
+            const at = alphaTabModuleRef.current;
+            if (!api || !at) return;
 
+            const w = el.clientWidth;
+            const base = baseTrackProfileRef.current ?? 'songBookPageDense';
+            const nextProfile = resolveProfileByWidth(w, base);
+
+            if (nextProfile === activeProfileRef.current) return; // no-op if tier unchanged
+
+            isApplyingProfileRef.current = true;
+            activeProfileRef.current = nextProfile;
+
+            applyAlphaTabLayoutProfile(api, at, nextProfile);
+            console.log(`📐 V106 ResizeObserver → profile="${nextProfile}" w=${w}px`);
+            // Guard reset handled by existing renderFinished handler.
+        });
+
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []); // intentional empty deps — all reads via refs
+
+    // 🔒🔒🔒 CLICK-TO-SEEK — LOCKED CONTRACT (unchanged from V104.10) 🔒🔒🔒
     useEffect(() => {
-        const api = apiRef.current;
-        if (!api || !initialFileLoadedRef.current) return;
-        if (lastLoadedFileRef.current === fileUrl) return;
-
-        const loadNewFile = async () => {
-            try {
-                lastThemeRef.current = '';
-                await loadGuitarProFile(api, fileUrl);
-                lastLoadedFileRef.current = fileUrl;
-            } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                onError?.(errorMsg);
-            }
-        };
-
-        loadNewFile();
-    }, [fileUrl, onError]);
-
-    // ========== ORIENTATION ==========
-
-    useEffect(() => {
-        if (!apiRef.current || !isRendered || !scoreIsLoaded || !containerRef.current) return;
-
-        const api = apiRef.current;
         const container = containerRef.current;
+        if (!container) return;
 
-        const isLandscape = isMobileLandscape || (isMobile && window.innerWidth > window.innerHeight);
-        const targetLayoutMode = isLandscape ? 'horizontal' : 'page';
+        let cancelled = false;
+        let detach: (() => void) | undefined;
 
-        if (lastLayoutModeRef.current === targetLayoutMode) return;
-        lastLayoutModeRef.current = targetLayoutMode;
-
-        const applyLayoutMode = async () => {
-            const alphaTab = await import('@coderline/alphatab');
-
-            if (isLandscape) {
-                const scrollElement = scrollContainerRef?.current || container;
-                api.settings.player.scrollElement = scrollElement;
-                api.settings.display.layoutMode = alphaTab.LayoutMode.Horizontal;
-                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                (api.settings.player as any).scrollOffset = scrollElement.clientWidth * 0.25;
-                await api.updateSettings();
-                await new Promise((r) => setTimeout(r, 200));
-                api.render();
-            } else {
-                const scrollElement = scrollContainerRef?.current || document.documentElement;
-                api.settings.player.scrollElement = scrollElement;
-                api.settings.display.layoutMode = alphaTab.LayoutMode.Page;
-                api.settings.player.scrollMode = alphaTab.ScrollMode.Continuous;
-                (api.settings.player as any).scrollOffset = 100;
-                await api.updateSettings();
-                await new Promise((r) => setTimeout(r, 100));
-                api.render();
-            }
-        };
-
-        applyLayoutMode();
-    }, [isMobileLandscape, isRendered, scoreIsLoaded, scrollContainerRef, isMobile]);
-
-    // ========== THEME ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api || !isRendered || lastThemeRef.current === theme) return;
-
-        const applyTheme = async () => {
-            const alphaTab = await import('@coderline/alphatab');
-            lastThemeRef.current = theme;
-            const resources = api.settings.display.resources as any;
-
-            if (theme === 'dark') {
-                resources.staffLineColor = new alphaTab.model.Color(85, 85, 85, 255);
-                resources.barSeparatorColor = new alphaTab.model.Color(136, 136, 136, 255);
-                resources.mainGlyphColor = new alphaTab.model.Color(255, 255, 255, 255);
-                resources.secondaryGlyphColor = new alphaTab.model.Color(224, 224, 224, 255);
-                resources.scoreInfoColor = new alphaTab.model.Color(255, 255, 255, 255);
-                resources.barNumberColor = new alphaTab.model.Color(153, 153, 153, 255);
-            } else {
-                resources.staffLineColor = new alphaTab.model.Color(153, 153, 153, 255);
-                resources.barSeparatorColor = new alphaTab.model.Color(102, 102, 102, 255);
-                resources.mainGlyphColor = new alphaTab.model.Color(0, 0, 0, 255);
-                resources.secondaryGlyphColor = new alphaTab.model.Color(0, 0, 0, 255);
-                resources.scoreInfoColor = new alphaTab.model.Color(0, 0, 0, 255);
-                resources.barNumberColor = new alphaTab.model.Color(102, 102, 102, 255);
-            }
-
-            await api.updateSettings();
-            api.render();
-        };
-
-        applyTheme();
-    }, [theme, isRendered, renderCycle]);
-
-    // ========== LOOP MODE CONTROL ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api) return;
-        (api.settings.player as any).enableLoop = !!isLooping;
-        api.updateSettings();
-        setLoopCursorMode(api, isLooping);
-        return () => { if (api) setLoopCursorMode(api, false); };
-    }, [isLooping]);
-
-    // ============================================
-    // 🔒 CRITICAL: V98.123 LISTENER ATTACHMENT FIX 🔒
-    // ============================================
-    useEffect(() => {
-        const api = apiRef.current;
-
-        if (!api || !scoreIsLoaded) {
-            if (DEBUG_RANGE_LISTENER) console.log('🔌 Range listener NOT attached - API not ready', { hasApi: !!api, scoreIsLoaded });
-            return;
-        }
-
-        if (DEBUG_RANGE_LISTENER) console.log('🔌 V98.123: Attaching playbackRangeChanged listener');
-
-        if (api.playbackRange) {
-            playbackRangeRef.current = api.playbackRange;
-            lastStableRangeRef.current = api.playbackRange;
-        }
-
-        const handleRangeChange = (e: any) => {
-            const fromEvent = e?.playbackRange ?? null;
-            const fromApi = api.playbackRange ?? null;
-            const next = fromEvent || fromApi;
-
-            if (next) {
-                lastStableRangeRef.current = next;
-                if (DEBUG_RANGE_LISTENER) console.log(`🧷 Stable Range Memory Locked: ${next.startTick} - ${next.endTick}`);
-            }
-
-            if (!next && isLoopingRef.current && isPlayingRef.current) {
-                if (DEBUG_RANGE_LISTENER) console.log('🧷 Ignoring transient playbackRange=null while playing');
+        const tryAttach = (attempt = 0) => {
+            if (cancelled) return;
+            const surface = container.querySelector('.at-surface') as HTMLElement | null;
+            if (!surface) {
+                if (attempt < 20) setTimeout(() => tryAttach(attempt + 1), 150);
                 return;
             }
 
-            if (!next && !isLoopingRef.current) {
-                lastStableRangeRef.current = null;
-                if (DEBUG_RANGE_LISTENER) console.log('🧹 Cleared stable range (loop OFF, range null)');
-            }
+            const findClosestBeatAtPos = (x: number, y: number, anchorBeat?: any): any | null => {
+                const api = apiRef.current;
+                const tickCache = (api as any)?.tickCache;
+                const bounds = api?.renderer?.boundsLookup;
+                if (!tickCache || !bounds) return null;
 
-            playbackRangeRef.current = next;
-            next ? onLoopRangeChange?.(next.startTick, next.endTick) : onLoopRangeChange?.(null, null);
-        };
+                const trackSet = getTrackSet(api);
+                const mbIdx = anchorBeat?.voice?.bar?.masterBar?.index ?? null;
+                const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
+                const currentTick = api?.tickPosition ?? 0;
 
-        api.playbackRangeChanged.on(handleRangeChange);
-        if (DEBUG_RANGE_LISTENER) console.log('🔌 ✅ Listener attached successfully');
-
-        return () => {
-            if (DEBUG_RANGE_LISTENER) console.log('🔌 Detaching playbackRangeChanged listener');
-            api.playbackRangeChanged.off(handleRangeChange);
-        };
-    }, [onLoopRangeChange, scoreIsLoaded]);
-
-    // ========== LOOP AUTO-INIT ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api || !containerRef.current || !isRendered || !isLooping) return;
-
-        if (!api.playbackRange && api.tickPosition !== undefined) {
-            const tickCache = (api as any).tickCache;
-            if (!tickCache) return;
-
-            const beatResult = tickCache.findBeat(cursorTrackIndicesRef.current, api.tickPosition);
-            if (!beatResult?.beat) return;
-
-            const firstBeat = getFirstBeatInBar(api, beatResult.beat);
-            const boundaries = getBarBoundariesFromMaster(api, firstBeat) || getBarBoundaries(firstBeat);
-
-            if (boundaries) {
-                const snapped = getSnappedBarBoundaries(api, boundaries.startTick, boundaries.endTick);
-                if (snapped) api.playbackRange = { startTick: snapped.startTick, endTick: snapped.endTick };
-            }
-        }
-    }, [isLooping, isRendered]);
-
-    // ========== SINGLE CLICK SEEK ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        const container = containerRef.current;
-        if (!api || !container || !isRendered || isLooping) return;
-
-        const target = (container.querySelector('.at-surface') as HTMLElement) || container;
-
-        const handleClick = (e: MouseEvent) => {
-            if (isSeeking && isPlaying) return;
-            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-            if (beat?.absolutePlaybackStart !== undefined) {
-                if (DEBUG) console.log(`🎯 SEEK TO: tick ${beat.absolutePlaybackStart} (M${Math.floor(beat.absolutePlaybackStart / 1920) + 1})`);
-                authoritySeekToTick(api, beat.absolutePlaybackStart, beat);
-            }
-        };
-
-        target.addEventListener('click', handleClick);
-        return () => target.removeEventListener('click', handleClick);
-    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, renderCycle, authoritySeekToTick]);
-
-    // ========== DOUBLE CLICK PLAY ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        const container = containerRef.current;
-        if (!api || !container || !isRendered || isLooping) return;
-
-        const target = (container.querySelector('.at-surface') as HTMLElement) || container;
-
-        const handleDoubleClick = (e: MouseEvent) => {
-            if (isSeeking && isPlaying) return;
-            const beat = getBeatAtPosition(api, container, e.clientX, e.clientY);
-            if (beat?.absolutePlaybackStart !== undefined) {
-                const tickPosition = beat.absolutePlaybackStart;
-                if (audioSource === 'synth') {
-                    api.tickPosition = tickPosition;
-                    api.play?.();
-                } else {
-                    const output = api.player?.output as any;
-                    if (output?.handler) {
-                        api.tickPosition = tickPosition;
-                        output.handler.play?.();
-                        api.play();
-                    }
-                }
-            }
-        };
-
-        target.addEventListener('dblclick', handleDoubleClick);
-        return () => target.removeEventListener('dblclick', handleDoubleClick);
-    }, [isRendered, isLooping, audioSource, isSeeking, isPlaying, fileUrl, renderCycle]);
-
-    // ========== CLEAR LOOP WHEN DISABLED ==========
-
-    useEffect(() => {
-        const api = apiRef.current;
-        if (!api || isLooping) return;
-        if (api.playbackRange) api.playbackRange = null;
-        playbackRangeRef.current = null;
-        lastStableRangeRef.current = null;
-    }, [isLooping]);
-
-    // ============================================
-    // 🔥 V101.2: TRACK CHANGE CURSOR RE-ANCHOR
-    // Falls back to allTrackIndices if selected track has no beat bounds.
-    // Explicitly restores cursor visibility after any successful anchor.
-    // ============================================
-    useEffect(() => {
-        const api = apiRef.current;
-        const cursor = cursorRef.current;
-        if (!api || !cursor || !isRendered || !scoreIsLoaded) return;
-
-        cursorTrackIndicesRef.current = new Set([selectedTrackIndex ?? 0]);
-
-        const tickCache = (api as any).tickCache;
-        if (!tickCache || !api.renderer?.boundsLookup) return;
-
-        const attemptReAnchor = (retryCount: number = 0) => {
-            // 🔥 V101.2: Skip re-anchor entirely until initial load cycle is stable.
-            // User-driven track changes after first load are allowed through normally.
-            if (!hasCompletedInitialAnchorRef.current) {
-                if (DEBUG) console.log('🔒 V101.2: Track re-anchor suppressed — initial load not yet stable');
-                return;
-            }
-            const targetTick = api.tickPosition ?? 0;
-            const tryTicks = [targetTick, targetTick - 1, targetTick - 10, targetTick - 120].filter(t => t >= 0);
-            let beatResult: any = null;
-
-            // ── Step 1: Try selected track first ──────────────────────────
-            for (const t of tryTicks) {
-                const res = tickCache.findBeat(cursorTrackIndicesRef.current, t);
-                if (res?.beat) { beatResult = { ...res, resolvedTick: t }; break; }
-            }
-
-            if (!beatResult?.beat) {
-                const res0 = tickCache.findBeat(cursorTrackIndicesRef.current, 0);
-                if (res0?.beat) beatResult = { ...res0, resolvedTick: 0 };
-            }
-
-            const isNearSongEnd = targetTick > 0 && api.score?.masterBars
-                && targetTick >= (api.score.masterBars[api.score.masterBars.length - 1]?.start ?? Infinity);
-
-            if (!beatResult?.beat) {
-                if (DEBUG && !isNearSongEnd && retryCount === 0)
-                    console.warn('⚠️ Track change: no beat found', { selectedTrackIndex, targetTick });
-                return;
-            }
-
-            const beatBounds = api.renderer.boundsLookup.findBeat(beatResult.beat);
-
-            if (!beatBounds) {
-                if (retryCount < 3) {
-                    retryCount === 0
-                        ? requestAnimationFrame(() => attemptReAnchor(retryCount + 1))
-                        : setTimeout(() => attemptReAnchor(retryCount + 1), 80);
-                    return;
-                }
-
-                // ── Step 2: Selected track exhausted — fall back to all tracks ──
-                // Certain GP tracks don't yield usable beat bounds.
-                // allTrackIndices is guaranteed to have rendered geometry.
-                if (DEBUG) console.warn(
-                    `⚠️ Track ${selectedTrackIndex} has no beat bounds after retries — falling back to allTrackIndices`
-                );
-
-                let fallbackBeat: any = null;
-                let fallbackBounds: any = null;
-
-                for (const t of [0, ...tryTicks]) {
-                    const res = tickCache.findBeat(allTrackIndicesRef.current, t);
-                    if (res?.beat) {
-                        const bounds = api.renderer.boundsLookup.findBeat(res.beat);
-                        if (bounds) { fallbackBeat = res.beat; fallbackBounds = bounds; break; }
+                let mbStart = 0, mbDuration = 3840;
+                if (mbIdx != null) {
+                    let bestDist = Infinity;
+                    for (const mb of masterBarsArr) {
+                        if (mb?.masterBar?.index !== mbIdx) continue;
+                        const dur = mb.masterBar?.calculateDuration?.() ?? 3840;
+                        const dist = Math.abs(mb.start - currentTick);
+                        if (dist < bestDist) { bestDist = dist; mbStart = mb.start; mbDuration = dur; }
                     }
                 }
 
-                if (!fallbackBeat || !fallbackBounds) {
-                    if (DEBUG) console.warn('⚠️ Track change: fallback anchor also failed — cursor remains at last position');
-                    return;
+                const STEPS = 32;
+                const stepSize = Math.max(1, Math.floor(mbDuration / STEPS));
+                const seenAbs = new Set<number>();
+                const rowBeats: Array<{ beat: any; onX: number }> = [];
+                let sampledTotal = 0, resolvedBounds = 0, sameRow = 0;
+
+                for (let t = mbStart; t < mbStart + mbDuration; t += stepSize) {
+                    const r = tickCache.findBeat(trackSet, t);
+                    const b = r?.beat;
+                    if (!b) continue;
+                    const abs = b.absolutePlaybackStart ?? -1;
+                    if (seenAbs.has(abs)) continue;
+                    seenAbs.add(abs);
+                    sampledTotal++;
+                    const bb = bounds.findBeat?.(b);
+                    const vb = bb?.visualBounds;
+                    if (!vb) continue;
+                    resolvedBounds++;
+                    if (Math.abs(vb.y - y) > 20) continue;
+                    sameRow++;
+                    rowBeats.push({ beat: b, onX: vb.x + vb.w / 2 });
                 }
 
-                const fallbackTick = fallbackBeat.absolutePlaybackStart ?? 0;
-
-                // ── 🔍 DIAGNOSTIC: Scroll container before/after fallback anchor ──
-                const scrollEl =
-                    scrollContainerRef?.current ||
-                    (api?.settings?.display as any)?.scrollElement as HTMLElement | null ||
-                    null;
-
-                console.log('🔍 FALLBACK A before anchor', {
-                    scrollTop: scrollEl?.scrollTop ?? null,
-                    selectedTrackIndex,
-                    fallbackTick,
+                console.log('🧭 findClosestBeatAtPos stats', {
+                    mbIdx, mbStart, mbDuration, sampledTotal, resolvedBounds, sameRow,
+                    clickX: +x.toFixed(1), clickY: +y.toFixed(1),
+                    rowBeats: rowBeats.map(rb => ({
+                        abs: rb.beat.absolutePlaybackStart,
+                        onX: +rb.onX.toFixed(1),
+                        dx: +(Math.abs(rb.onX - x)).toFixed(1),
+                    })),
                 });
 
-                // ── 🔒 Preserve scroll position across fallback anchor ─────────
-                // Cipher: setTick() is suspected to be yanking the viewport.
-                // Snapshot scrollTop before and restore after (+ one RAF frame).
-                const prevScrollTop = scrollEl?.scrollTop ?? 0;
+                if (!rowBeats.length) return null;
+                rowBeats.sort((a, b) => a.onX - b.onX);
+                const EPS = 8;
+                const forward = rowBeats.find(rb => rb.onX >= x - EPS);
+                const chosen = forward ?? rowBeats[rowBeats.length - 1];
+                const chosenBb = bounds.findBeat?.(chosen.beat);
+                const chosenVbW = chosenBb?.visualBounds?.w ?? 8;
+                const maxDx = chosenVbW <= 16
+                    ? Math.max(12, chosenVbW * 1.6)
+                    : 24;
+                return Math.abs(chosen.onX - x) <= maxDx ? chosen.beat : null;
+            };
+
+            const publishCursorAtTick = (expandedTick: number) => {
+                const api = apiRef.current;
+                const cursor = cursorRef.current;
+                if (!api || !cursor) return;
+                const tickCache = (api as any).tickCache;
+                const bounds = api.renderer?.boundsLookup;
+                if (!tickCache || !bounds) return;
+                const trackSet = getTrackSet(api);
+
+                const r = tickCache.findBeat(trackSet, expandedTick);
+                if (!r?.beat || !bounds.findBeat(r.beat)) return;
+
+                const isSameBeatLocal = (a: any, b: any) =>
+                    a && b &&
+                    a.absolutePlaybackStart === b.absolutePlaybackStart &&
+                    a.voice?.bar?.masterBar?.index === b.voice?.bar?.masterBar?.index;
+
+                let expandedStart = expandedTick;
+                for (let t = expandedTick - 1; t >= expandedTick - 8192; t--) {
+                    const rr = tickCache.findBeat(trackSet, t);
+                    if (!rr?.beat || !isSameBeatLocal(rr.beat, r.beat)) { expandedStart = t + 1; break; }
+                }
+
+                const { nextBeat: nextBeatForCursor, nextStart: nextStartForCursor } =
+                    resolveNextBeatExpanded(api, trackSet, expandedStart, r.beat);
+
+                // [V105.3] Sync stable refs immediately after click publish.
+                stableExpandedBeatStartRef.current = expandedStart;
+                stableNextBeatRef.current = nextBeatForCursor;
+                stableNextExpandedBeatStartRef.current = nextStartForCursor;
+                stableCurBeatRef.current = r.beat;
 
                 cursor.requestSnap();
-                cursor.setBeat(fallbackBeat, fallbackBounds);
+                cursor.setBeat(r.beat, nextBeatForCursor, nextStartForCursor, expandedStart);
+                cursor.setTick(expandedTick, nextBeatForCursor, expandedStart);
+            };
 
-                console.log('🔍 FALLBACK B after setBeat', {
-                    scrollTop: scrollEl?.scrollTop ?? null,
+            const handleClick = (ev: MouseEvent) => {
+                if (ev.detail > 1) return;
+                const api = apiRef.current;
+                if (!api || loopEnabledRef.current) return;
+
+                const rect = surface.getBoundingClientRect();
+                const scrollEl = api.renderer?.framer?.scrollElement as HTMLElement | undefined;
+                const sx = scrollEl?.scrollLeft ?? surface.scrollLeft ?? 0;
+                const sy = scrollEl?.scrollTop ?? surface.scrollTop ?? 0;
+                const x = (ev.clientX - rect.left) + sx;
+                const y = (ev.clientY - rect.top) + sy;
+
+                console.log('🖱️ CLICK_SEEK raw', {
+                    clientX: ev.clientX, clientY: ev.clientY,
+                    rectLeft: rect.left, rectTop: rect.top,
+                    sx, sy, x, y,
+                    playerState: api.playerState ?? null,
+                    tickPosition: api.tickPosition ?? null,
                 });
 
-                cursor.setTick(fallbackTick, fallbackBeat, fallbackBounds, null, null);
+                const bds = api.renderer?.boundsLookup;
 
-                console.log('🔍 FALLBACK C after setTick', {
-                    scrollTop: scrollEl?.scrollTop ?? null,
-                });
+                // [Patch D] reject zero-width or far-away getBeatAtPos results.
+                let beat = bds?.getBeatAtPos?.(x, y) ?? null;
+                if (beat) {
+                    const bb2 = bds?.findBeat?.(beat);
+                    const vbW2 = bb2?.visualBounds?.w ?? 1;
+                    const cx2 = bb2 ? (bb2.visualBounds.x + vbW2 / 2) : null;
+                    const dx2 = cx2 != null ? Math.abs(cx2 - x) : Infinity;
+                    const tightMax = Math.max(12, vbW2 * 1.6);
+                    const tooFar = vbW2 <= 16 ? dx2 > tightMax : dx2 > 40;
+                    if (vbW2 === 0 || tooFar) {
+                        console.warn('🖱️ CLICK_SEEK getBeatAtPos rejected (degenerate/far)', {
+                            dx: +dx2.toFixed(1), vbW: vbW2, tightMax: +tightMax.toFixed(1),
+                            beatAbs: beat.absolutePlaybackStart,
+                        });
+                        beat = null;
+                    }
+                }
+                const tickCache = (api as any).tickCache;
+                if (!beat) console.warn('🖱️ CLICK_SEEK no beat at pos', { x, y });
 
-                if (scrollEl) {
-                    scrollEl.scrollTop = prevScrollTop;
-                    requestAnimationFrame(() => { scrollEl.scrollTop = prevScrollTop; });
+                // E2: same-masterBar sticky override only
+                const e2Beat = findClosestBeatAtPos(x, y, beat ?? undefined);
+                if (e2Beat) {
+                    if (!beat) {
+                        beat = e2Beat;
+                        console.log('🖱️ CLICK_SEEK E2 fallback (null)', { to: e2Beat.absolutePlaybackStart });
+                    } else {
+                        const sameMb =
+                            (e2Beat?.voice?.bar?.masterBar?.index) ===
+                            (beat?.voice?.bar?.masterBar?.index);
+                        if (sameMb) {
+                            const bb = bds?.findBeat?.(beat);
+                            const cx = bb ? (bb.visualBounds.x + bb.visualBounds.w / 2) : null;
+                            const dxB = cx != null ? Math.abs(cx - x) : Infinity;
+                            if (dxB > 24) {
+                                console.log('🖱️ CLICK_SEEK E2 sticky override (same bar)', {
+                                    from: beat.absolutePlaybackStart, to: e2Beat.absolutePlaybackStart,
+                                    dxB: +dxB.toFixed(1),
+                                });
+                                beat = e2Beat;
+                            }
+                        }
+                    }
                 }
 
-                setTimeout(() => {
-                    console.log('🔍 FALLBACK D +50ms', { scrollTop: scrollEl?.scrollTop ?? null });
-                }, 50);
-                setTimeout(() => {
-                    console.log('🔍 FALLBACK E +150ms', { scrollTop: scrollEl?.scrollTop ?? null });
-                }, 150);
+                if (!beat) { console.warn('🖱️ CLICK_SEEK no beat after fallback', { x, y }); return; }
+                if (!tickCache?.masterBars) return;
 
-                // ── Step 3: Force cursor visible after fallback ───────────
-                const el = cursor.element;
-                if (el) { el.style.visibility = 'visible'; el.style.opacity = '1'; }
+                if (bds) {
+                    const pickedBb = bds.findBeat?.(beat);
+                    console.log('🖱️ CLICK_SEEK beat metrics', {
+                        onNotesX: pickedBb?.onNotesX ?? null,
+                        vbX: pickedBb?.visualBounds?.x ?? null,
+                        vbW: pickedBb?.visualBounds?.w ?? null,
+                        clickX: x,
+                        dx: pickedBb && typeof pickedBb.onNotesX === 'number'
+                            ? +(Math.abs(pickedBb.onNotesX - x)).toFixed(1) : null,
+                    });
+                }
 
-                if (DEBUG) console.log(
-                    `✅ Track change: cursor anchored via fallback (allTracks)`,
-                    { selectedTrackIndex, fallbackTick }
+                console.log('🖱️ CLICK_SEEK beat', {
+                    beatAbs: beat.absolutePlaybackStart,
+                    beatStart: beat.playbackStart,
+                    beatDur: beat.playbackDuration ?? beat.duration ?? null,
+                    mbIdx: beat.voice?.bar?.masterBar?.index ?? null,
+                    barIdx: beat.voice?.bar?.index ?? null,
+                });
+
+                const mbIdx = beat.voice?.bar?.masterBar?.index;
+                const offset = beat.playbackStart ?? 0;
+                if (mbIdx == null) return;
+
+                const currentTick = api.tickPosition ?? 0;
+                const candidates: number[] = tickCache.masterBars
+                    .filter((mb: any) => mb.masterBar?.index === mbIdx)
+                    .map((mb: any) => mb.start + offset);
+                if (!candidates.length) return;
+
+                const target = candidates.reduce((prev: number, curr: number) =>
+                    Math.abs(curr - currentTick) < Math.abs(prev - currentTick) ? curr : prev
                 );
-                return;
-            }
 
-            // ── Normal path: selected track has valid bounds ───────────────
-            const anchorTick = beatResult.beat.absolutePlaybackStart ?? beatResult.resolvedTick;
-            const loopActive = isLoopingRef.current;
-            const activeRange = loopActive ? (playbackRangeRef.current || lastStableRangeRef.current) : null;
-            const rangeForCursor = (activeRange && activeRange.endTick > activeRange.startTick) ? activeRange : null;
+                console.log('🖱️ CLICK_SEEK candidates', {
+                    mbIdx, offset, currentTick,
+                    candidates: candidates.slice(0, 6), target,
+                });
 
-            // ── 🔍 DIAGNOSTIC: Scroll container across normal anchor calls ──
-            const scrollElNormal =
-                scrollContainerRef?.current ||
-                (api?.settings?.display as any)?.scrollElement as HTMLElement | null ||
-                null;
+                const EPS_IN = 2;
+                const beatDurForClamp = beat.playbackDuration ?? beat.duration ?? 480;
+                const safeTarget = Math.min(
+                    target + EPS_IN,
+                    target + Math.max(0, beatDurForClamp - 1),
+                );
+                seekTargetTickRef.current = safeTarget;
+                seekFreezeUntilRef.current = Date.now() + 250;
 
-            console.log('🔍 NORMAL A before anchor', {
-                scrollTop: scrollElNormal?.scrollTop ?? null,
-                anchorTick,
-                selectedTrackIndex,
-            });
+                const playerStateNow = api.playerState ?? 0;
+                const wasPlaying = playerStateNow === 1;
 
-            cursor.requestSnap();
+                const tok = ++seekTokenRef.current;
+                if (resumeTimerRef.current !== null) {
+                    window.clearTimeout(resumeTimerRef.current);
+                    resumeTimerRef.current = null;
+                }
 
-            console.log('🔍 NORMAL B after requestSnap', {
-                scrollTop: scrollElNormal?.scrollTop ?? null,
-            });
+                if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
 
-            cursor.setBeat(beatResult.beat, beatBounds);
+                const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                if (seekTicks) seekTicks(safeTarget);
+                api.tickPosition = safeTarget;
 
-            console.log('🔍 NORMAL C after setBeat', {
-                scrollTop: scrollElNormal?.scrollTop ?? null,
-            });
+                resetBeatAcceptance();
+                publishCursorAtTick(safeTarget);
 
-            cursor.setTick(anchorTick, beatResult.beat, beatBounds, null, rangeForCursor);
+                if (wasPlaying) {
+                    resumeTimerRef.current = window.setTimeout(() => {
+                        resumeTimerRef.current = null;
+                        if (seekTokenRef.current !== tok) return;
+                        api.tickPosition = safeTarget;
+                        resetBeatAcceptance();
+                        if ((api.playerState ?? 0) === 0) api.play();
+                        requestAnimationFrame(() => { seekInProgressRef.current = false; });
+                    }, 30);
+                }
+            };
 
-            console.log('🔍 NORMAL D after setTick', {
-                scrollTop: scrollElNormal?.scrollTop ?? null,
-            });
+            const handleDblClick = () => {
+                const api = apiRef.current;
+                if (!api?.isReadyForPlayback) return;
+                if (api.playerState !== 0) { api.pause(); onPlayStateChange(false); }
+                else { api.play(); onPlayStateChange(true); }
+            };
 
-            setTimeout(() => {
-                console.log('🔍 NORMAL E +50ms', { scrollTop: scrollElNormal?.scrollTop ?? null });
-            }, 50);
-            setTimeout(() => {
-                console.log('🔍 NORMAL F +150ms', { scrollTop: scrollElNormal?.scrollTop ?? null });
-            }, 150);
-
-            // ── Step 3: Force cursor visible after successful anchor ───────
-            const el = cursor.element;
-            if (el) { el.style.visibility = 'visible'; el.style.opacity = '1'; }
-
-            if (DEBUG) console.log(
-                '✅ Track change: cursor re-anchored',
-                { selectedTrackIndex, anchorTick, retriesNeeded: retryCount }
-            );
+            surface.addEventListener('click', handleClick);
+            surface.addEventListener('dblclick', handleDblClick);
+            detach = () => {
+                surface.removeEventListener('click', handleClick);
+                surface.removeEventListener('dblclick', handleDblClick);
+            };
         };
 
-        attemptReAnchor(0);
-    }, [selectedTrackIndex, isRendered, scoreIsLoaded, renderCycle]);
+        tryAttach();
+        return () => {
+            cancelled = true;
+            detach?.();
+            if (resumeTimerRef.current !== null) {
+                window.clearTimeout(resumeTimerRef.current);
+                resumeTimerRef.current = null;
+            }
+        };
+    }, [fileUrl]);
 
-
-    // ========== RENDER ==========
-
-    const backgroundColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
-    const loadingBgColor = theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100';
-    const loadingTextColor = theme === 'dark' ? 'text-gray-200' : 'text-gray-700';
+    const bgColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
 
     return (
-        <div className={`relative ${className}`}>
+        <div className={`relative ${className ?? ''}`}>
             {isLoading && (
-                <div className={`absolute inset-0 flex items-center justify-center ${loadingBgColor} rounded-xl z-10`}>
+                <div className={`absolute inset-0 flex items-center justify-center z-40 ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'} rounded-xl`}>
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4" />
-                        <p className={`${loadingTextColor} font-medium`}>
-                            {playerMode === 'synthesizer'
-                                ? 'Loading tab & initializing synthesizer...'
-                                : 'Loading tab...'}
+                        <p className={`font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>
+                            Loading tab &amp; initializing synthesizer…
                         </p>
                     </div>
                 </div>
             )}
 
             <div
-                ref={containerRef}
-                className="alphatab-container"
-                style={{
-                    position: 'relative',
-                    width: '100%',
-                    minHeight,
-                    overflow: 'auto',
-                    WebkitOverflowScrolling: 'touch',
-                    backgroundColor,
-                    paddingLeft: 'env(safe-area-inset-left, 0px)',
-                    paddingRight: 'env(safe-area-inset-right, 0px)',
-                    zIndex: 10,
-                }}
+                ref={curtainRef}
+                className="absolute inset-0 pointer-events-none"
+                style={{ background: bgColor, display: 'block', zIndex: 30 }}
             />
 
-            <CustomLoopOverlay
-                api={apiRef.current}
-                isLooping={isLooping}
-                theme={theme}
-            />
+            <div style={{ position: 'relative', zIndex: 10, isolation: 'isolate' as any }}>
+                <div
+                    ref={containerRef}
+                    className="alphatab-container"
+                    style={{
+                        position: 'relative',
+                        width: '100%',
+                        minHeight: '600px',
+                        overflow: 'auto',
+                        WebkitOverflowScrolling: 'touch' as any,
+                        background: bgColor,
+                        paddingLeft: 'env(safe-area-inset-left, 0px)',
+                        paddingRight: 'env(safe-area-inset-right, 0px)',
+                    }}
+                />
+                {apiRef.current && !isSettling && (
+                    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 900 }}>
+                        <BeatCustomLoopOverlay
+                            api={apiRef.current}
+                            container={containerRef.current}
+                            loopEnabled={loopEnabled}
+                            onLoopToggle={onLoopToggle}
+                            onLoopChange={onLoopChange}
+                            onLoopClear={onLoopClear}
+                        />
+                    </div>
+                )}
+            </div>
         </div>
     );
-};
+});// Stable entrypoint aliases (deploy-safe)
+// - Pages import AlphaTabRendererV102
+// - Older code can import AlphaTabRenderer
+export const AlphaTabRenderer = AlphaTabRendererV102;
