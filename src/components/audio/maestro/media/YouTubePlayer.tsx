@@ -1,25 +1,16 @@
 'use client';
 
 /**
- * YouTube Player Component - December 15th, 2025 - V98.2: CORRECT ASPECT RATIO
- * 
- * 🎨 V98.2 ASPECT RATIO FIX:
- * ✅ Mobile portrait: 52vw width × 58vw height (~9:11 ratio like Songsterr)
- * ✅ Songsterr's player is TALLER than wide, not 16:9
- * ✅ Landscape stays fixed at 180×100px (already correct)
- * 
- * 🎨 V98.1 MOBILE SIZE UPDATES:
- * ✅ Mobile portrait: 52vw width (half screen)
- * ✅ Flush with screen edge (right-0, no gap)
- * 
- * 🎨 V98 UI UPDATES (Songsterr-style):
- * ✅ Square corners (removed rounded-lg)
- * ✅ Fixed landscape positioning - sits on top of bottom tray
- * ✅ Dropdown menu moved ABOVE video in white tray
- * 
- * 🔒 PRESERVED FROM V97.16:
- * ✅ Deferred seek pattern for auto-play prevention
- * ✅ React.memo, onStateChange, onPlayerReady, heartbeat
+ * YouTube Player Component - March 14th, 2026 - V99: Dynamic slot awareness
+ *
+ * 🔥 V99 CHANGES:
+ * ✅ videoVariants expanded to all 6 tab_youtube slots (main, backing, solo,
+ *    playthrough, live, lesson) — matches SongItem.youtubeVariants + queries.ts
+ * ✅ Dropdown renders all 6 slots dynamically — only shows slots with a real video ID
+ * ✅ selectedVariant type updated to include 'live' | 'lesson'
+ * ✅ lesson maps to "Tutorial" in the player UI
+ *
+ * 🔒 V98.2 FEATURES (PRESERVED):
  */
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
@@ -49,6 +40,8 @@ interface YouTubePlayerProps {
         backing?: string;
         solo?: string;
         playthrough?: string;
+        live?: string;
+        lesson?: string;
     };
     onVariantChange?: (videoId: string) => void;
     videoStartOffset?: number;
@@ -75,7 +68,8 @@ export const YouTubePlayer = React.memo(
         const playerRef = useRef<any>(null);
         const containerRef = useRef<HTMLDivElement>(null);
         const [isAPIReady, setIsAPIReady] = useState(false);
-        const [selectedVariant, setSelectedVariant] = useState<'main' | 'backing' | 'solo' | 'playthrough'>('main');
+        // All 6 tab_youtube slot types — dropdown surfaces whichever have a real video ID
+        const [selectedVariant, setSelectedVariant] = useState<'main' | 'backing' | 'solo' | 'playthrough' | 'live' | 'lesson'>('main');
 
         // Track initial seek to prevent auto-play
         const initialSeekRef = useRef<number>(-1);
@@ -142,7 +136,7 @@ export const YouTubePlayer = React.memo(
             };
 
             return () => {
-                window.onYouTubeIframeAPIReady = () => {};
+                window.onYouTubeIframeAPIReady = () => { };
             };
         }, []);
 
@@ -177,7 +171,6 @@ export const YouTubePlayer = React.memo(
                 events: {
                     onReady: (event: any) => {
                         console.log('✅ V98: YouTube player ready (no auto-seek)');
-
                         if (onPlayerReady) {
                             console.log('📢 V98: Notifying parent - YouTube player is ready');
                             onPlayerReady();
@@ -241,20 +234,17 @@ export const YouTubePlayer = React.memo(
         }, [onClose]);
 
         const handleVariantChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
-            const variant = event.target.value as 'main' | 'backing' | 'solo' | 'playthrough';
+            const variant = event.target.value as 'main' | 'backing' | 'solo' | 'playthrough' | 'live' | 'lesson';
             setSelectedVariant(variant);
 
-            console.log(`🔄 V98: Variant selected: ${variant}`);
+            console.log(`🔄 V99: Variant selected: ${variant}`);
 
-            if (videoVariants && videoVariants[variant]) {
-                const newVideoId = videoVariants[variant];
-                console.log(`🔄 V98: Switching to ${variant} video: ${newVideoId}`);
-
-                if (onVariantChange && newVideoId) {
-                    onVariantChange(newVideoId);
-                }
+            const newVideoId = videoVariants?.[variant];
+            if (newVideoId) {
+                console.log(`🔄 V99: Switching to ${variant} video: ${newVideoId}`);
+                onVariantChange?.(newVideoId);
             } else {
-                console.warn(`⚠️ V98: No video ID found for variant: ${variant}`);
+                console.warn(`⚠️ V99: No video ID found for variant: ${variant}`);
             }
         }, [videoVariants, onVariantChange]);
 
@@ -269,13 +259,14 @@ export const YouTubePlayer = React.memo(
                     shadow-2xl border border-gray-300
                     flex flex-col
                     ${isMobileLandscape
-                        ? 'bottom-[80px] right-0 w-[180px]'  /* Landscape: above 80px bottom tray, flush right */
+                        ? 'bottom-[80px] right-0 w-[180px]'
                         : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[320px]'
                     }
                 `}
-                /* V98.1: Larger mobile portrait (52vw = ~half screen), flush with edge */
             >
-                {/* 🆕 V98: Menu bar ABOVE video - Songsterr style */}
+                {/* Menu bar — all 6 slots rendered dynamically.
+                    Only options with a real youtube_id from tab_youtube are shown.
+                    Compact playback labels (lesson → "Tutorial"). */}
                 <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between">
                     <label className="flex items-center gap-1.5 text-xs text-gray-700">
                         <span className="text-gray-500 text-[10px] md:text-xs">Synced video:</span>
@@ -289,27 +280,23 @@ export const YouTubePlayer = React.memo(
                                 cursor-pointer
                             "
                         >
-                            <option value="main" disabled={!videoVariants?.main}>
-                                Full mix
-                            </option>
-                            <option value="backing" disabled={!videoVariants?.backing}>
-                                Backing track
-                            </option>
-                            <option value="solo" disabled={!videoVariants?.solo}>
-                                Solo
-                            </option>
-                            <option value="playthrough" disabled={!videoVariants?.playthrough}>
-                                Playthrough
-                            </option>
+                            {videoVariants?.main && <option value="main">Full mix</option>}
+                            {videoVariants?.backing && <option value="backing">Backing track</option>}
+                            {videoVariants?.solo && <option value="solo">Solo</option>}
+                            {videoVariants?.playthrough && <option value="playthrough">Playthrough</option>}
+                            {videoVariants?.live && <option value="live">Live</option>}
+                            {videoVariants?.lesson && <option value="lesson">Tutorial</option>}
+                            {/* Fallback: no variants available */}
+                            {!videoVariants?.main && !videoVariants?.backing && !videoVariants?.solo &&
+                                !videoVariants?.playthrough && !videoVariants?.live && !videoVariants?.lesson && (
+                                    <option value="main" disabled>Full mix</option>
+                                )}
                         </select>
                     </label>
 
                     <button
                         onClick={handleClose}
-                        className="
-                            p-1 text-gray-500 hover:text-gray-800
-                            transition-colors
-                        "
+                        className="p-1 text-gray-500 hover:text-gray-800 transition-colors"
                         title="Close video"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -318,14 +305,13 @@ export const YouTubePlayer = React.memo(
                     </button>
                 </div>
 
-                {/* Video container - square corners, taller aspect ratio like Songsterr */}
-                <div 
-                    ref={containerRef} 
+                {/* Video container */}
+                <div
+                    ref={containerRef}
                     className={`
                         w-full bg-black
                         ${isMobileLandscape ? 'h-[100px]' : 'h-[58vw] md:h-[180px]'}
                     `}
-                    /* V98.2: Mobile portrait uses 58vw height (~9:11 ratio with 52vw width, matches Songsterr) */
                 />
             </div>
         );

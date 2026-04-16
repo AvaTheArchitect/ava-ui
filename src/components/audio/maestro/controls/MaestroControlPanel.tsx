@@ -230,6 +230,8 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             onMetronomeAccentToggle={props.onMetronomeAccentToggle}
             onArmMetronome={props.onArmMetronome}
             currentBPM={currentBPM}
+            masterVolume={props.masterVolume}
+            onMasterVolumeChange={props.onMasterVolumeChange}
           />
         </div>
       )}

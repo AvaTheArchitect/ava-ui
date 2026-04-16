@@ -97,3 +97,37 @@ src/styles/alphaTab.css.Feb2026
 src/components/alphaTab/MaestroCursor.v*.tsx
 src/components/audio/maestro/tabs/*.tsx.v*
 src/lib/song-data/*.ts.v*
+# ── Maestro local backups / locked snapshots ────────────────────────────────
+*.LOCKED
+*.NOSCROLL
+
+# Your "ts.V101.2.LOCKED" style snapshots
+*.ts.*.LOCKED
+*.tsx.*.LOCKED
+
+# AlphaTab renderer version files you keep locally
+src/components/alphaTab/AlphaTabRenderer_V*.tsx
+src/components/alphaTab/AlphaTabRenderer*.tsx.v*
+
+# GP8 engine / lane map version files you keep locally
+src/lib/alphaTab/*V*.ts
+src/lib/alphaTab/*.ts.V*
+
+# General "v*" suffix snapshots (covers page.tsx.v102.6.LOCKED etc.)
+src/**/*.ts.v*
+src/**/*.tsx.v*
+
+# Cursor versions and scratch variants
+src/components/alphaTab/MaestroCursor*.tsx.v*
+src/components/alphaTab/MaestroCursor*.v*.tsx
+# ── Maestro local-only (do not commit) ───────────────────────────────────────
+*.Phase*
+*.PHASE*
+*.GP8PHASE*
+src/lib/alphaTab/useAlphaTabLayoutProfile.ts
+src/components/alphaTab/MaestroCursor2.tsx
+src/components/alphaTab/AlphaTabRenderer_V102.tsx*
+src/components/alphaTab/AlphaTabRenderer_V104.tsx*
+src/components/alphaTab/AlphaTabRenderer_V105.tsx*
+src/components/alphaTab/AlphaTabRenderer_V106.tsx*
+src/lib/alphaTab/TempoClusterManager.ts.Phase1

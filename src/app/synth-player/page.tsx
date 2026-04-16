@@ -1,74 +1,52 @@
 'use client';
 
 /**
- * STAGE 4 - Synth + YouTube + Pitch Shift + Count-In + Headless Metronome
- * V99.3 — MetadataEditorPanel wired as in-app overlay
+ * Synth Player Page — Phase 4 V102.7
+ * Date: April 15th, 2026
+ * Cloned from V102.6 — awaiting next patch set.
  *
- * 🔥 V99.3 CHANGES:
- * ✅ MetadataEditorPanel import added
- * ✅ metaEditorState: { tabId, source } drives open/close
- * ✅ MyTabsPanel.onEditMetadata → opens MetadataEditorPanel, closes MyTabs
- * ✅ MetadataEditorPanel.onClose → returns to MyTabs if source === 'mytabs'
- * ✅ /meta-editor route kept as dev/testing fallback (unchanged)
+ * V102.7 CHANGES:
+ * ✅ [Pending] isVocalTrack() — vocal supreme override in track classifier
+ *    Fixes: "Lead Vocals" → isGuitar: true (caused by 'lead' keyword in isAnyGuitarTrack)
+ *    Fix A: isVocalTrack() added and applied to isPrimaryGuitarTrack + isAnyGuitarTrack guards
+ *    Fix B: 'lead' removed from isAnyGuitarTrack keyword list (full phrase 'lead guitar'
+ *            already handled by isPrimaryGuitarTrack)
+ *    Side effect resolved: default track selection now correctly skips vocal tracks,
+ *    and V106's resolveTrackLayoutProfile() routes vocals to songBookPageSparse correctly.
  *
- * 🔒 V99.2.1 PRESERVED:
- * ✅ NewTabPanel wired
- * ✅ Batch signed URLs + search RPC
- * ✅ All existing features preserved
- *
- * ✅ STEP 1:  Imports — SongSelector removed, MyTabsPanel + NewTabPanel added
- * ✅ STEP 2:  New state — isNewTabOpen
- * ✅ STEP 3:  Supabase batch signed URL loader (replaces loadInitialSongData seed)
- * ✅ STEP 4:  Supabase signed URL resolver per song
- * ✅ STEP 5:  searchTabs RPC callback
- * ✅ STEP 6:  AlphaTabRenderer gated on signedUrl, key={signedUrl}, fileUrl={signedUrl}
- * ✅ STEP 7:  handleDeletePlaylist added
- * ✅ STEP 8:  TopMenuTray gets onNewTabOpen prop
- * ✅ STEP 9:  SongSelector replaced with MyTabsPanel + NewTabPanel
- *
- * 🔒 V98.67 BASE PRESERVED:
- * ✅ Canvas reload bug fix (key no longer includes audioSource)
- * ✅ Master volume ref pattern
- * ✅ Pitch shift with tuning detection
- * ✅ Count-in with 3-beat and 4-beat modes
- * ✅ Headless metronome
- * ✅ AudioContext state logging
- * ✅ Track isolation with selectedTrackIndex
+ * V102.6 PRESERVED EXACTLY:
+ * ✅ CURSOR_V2_ACTIVE = true (MaestroCursorV2)
+ * ✅ All transport/loop/mixer behavior
+ * ✅ Song switching, signed URL cache
+ * ✅ AlphaTabRendererV102 from AlphaTabRenderer_V106
  */
 
 import React, {
-    useState,
-    useCallback,
-    useRef,
-    useEffect,
-    useMemo,
+    useState, useCallback, useRef, useEffect, useMemo,
 } from 'react';
-// ✅ STEP 1: Supabase client
 import { supabase } from '@/lib/alphaTab/supabase';
-import { AlphaTabRenderer } from '@/components/alphaTab/AlphaTabRenderer';
+import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer_V106';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
 import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/layout';
-// ✅ STEP 1: SongSelector removed, MyTabsPanel + NewTabPanel added
 import { MyTabsPanel } from '@/components/audio/maestro/tabs/MyTabsPanel';
 import { NewTabPanel } from '@/components/audio/maestro/tabs/NewTabPanel';
-// ✅ V99.3: MetadataEditorPanel in-app overlay
 import { MetadataEditorPanel } from '@/components/audio/maestro/tabs/MetadataEditorPanel';
-import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import {
     CountInOverlay,
     useSmartMetronome,
     type MetronomeSoundType,
-    type SubdivisionMode
+    type SubdivisionMode,
 } from '@/components/audio/maestro/controls';
 import { fetchSongs } from '@/lib/song-data/queries';
-import {
-    getSongById,
-    type SongState,
-} from '@/lib/song-data';
+import { getSongById, type SongState } from '@/lib/song-data';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
 const SCROLL_THRESHOLD = 50;
+
+// ── V102.6: Cursor A/B toggle ─────────────────────────────────────────────────
+const CURSOR_V2_ACTIVE = true;
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -81,45 +59,37 @@ export default function SynthPlayerPage() {
     // ==================== PLAYBACK STATE ====================
     const [isPlaying, setIsPlaying] = useState<boolean>(false);
     const isPlayingRef = useRef<boolean>(false);
-    const [isSeeking, setIsSeeking] = useState(false);
-    const isSeekingRef = useRef<boolean>(false);
-    const seekStabilizeTimeoutRef = useRef<any>(null);
     const [playerReady, setPlayerReady] = useState<boolean>(false);
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-    const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
-    // ==================== MASTER VOLUME STATE ====================
+    const audioSource = 'synth' as const;
+
+    // ==================== MASTER VOLUME ====================
     const [masterVolume, setMasterVolume] = useState<number>(1.0);
     const masterVolumeRef = useRef<number>(1.0);
+    useEffect(() => { masterVolumeRef.current = masterVolume; }, [masterVolume]);
 
-    useEffect(() => {
-        masterVolumeRef.current = masterVolume;
-    }, [masterVolume]);
-
-    const pauseTransitionRef = useRef<boolean>(false);
-
-    // ==================== COUNT IN STATE ====================
+    // ==================== COUNT IN ====================
     const [isCountInEnabled, setIsCountInEnabled] = useState<boolean>(false);
     const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
     const [countdownValue, setCountdownValue] = useState<number>(0);
+    const [countInMode, setCountInMode] = useState<'three-beat' | 'four-beat'>('three-beat');
 
-    // ==================== METRONOME STATE ====================
+    // ==================== METRONOME ====================
     const [isMetronomeEnabled, setIsMetronomeEnabled] = useState<boolean>(false);
     const [metronomeVolume, setMetronomeVolume] = useState<number>(0.7);
     const [metronomeBalance, setMetronomeBalance] = useState<number>(0);
     const [metronomeSoundType, setMetronomeSoundType] = useState<MetronomeSoundType>('woodblock');
     const [metronomeSubdivision, setMetronomeSubdivision] = useState<SubdivisionMode>(1);
     const [metronomeAccentEnabled, setMetronomeAccentEnabled] = useState<boolean>(true);
-    const [countInMode, setCountInMode] = useState<'three-beat' | 'four-beat'>('three-beat');
     const [currentBPM, setCurrentBPM] = useState<number>(120);
 
-    // ==================== METRONOME HOOK ====================
     const { effectiveBPM, armMetronome } = useSmartMetronome({
         isEnabled: isMetronomeEnabled,
-        currentBPM: currentBPM,
-        audioSource: audioSource,
-        isPlaying: isPlaying,
-        isCountingDown: isCountingDown,
+        currentBPM,
+        audioSource,
+        isPlaying,
+        isCountingDown,
         volume: metronomeVolume,
         balance: metronomeBalance,
         soundType: metronomeSoundType,
@@ -127,7 +97,7 @@ export default function SynthPlayerPage() {
         accentEnabled: metronomeAccentEnabled,
     });
 
-    // ==================== PITCH SHIFT STATE ====================
+    // ==================== PITCH SHIFT ====================
     const [pitchShift, setPitchShift] = useState<number>(0);
     const [tuningData, setTuningData] = useState<number[]>([64, 59, 55, 50, 45, 40]);
     const [isPitchPopoverOpen, setIsPitchPopoverOpen] = useState<boolean>(false);
@@ -136,62 +106,52 @@ export default function SynthPlayerPage() {
     // ==================== LOOP STATE ====================
     const [isLooping, setIsLooping] = useState<boolean>(false);
     const [hasLoopSelection, setHasLoopSelection] = useState<boolean>(false);
+    const [playbackRange, setPlaybackRange] = useState<{ startTick: number; endTick: number } | null>(null);
 
-    // ==================== TRACK MIXER STATE ====================
+    // ==================== TRACK MIXER ====================
     const [trackMuteState, setTrackMuteState] = useState<Map<number, boolean>>(new Map());
     const [trackSoloState, setTrackSoloState] = useState<Map<number, boolean>>(new Map());
+    const originalTrackVolsRef = useRef<Map<number, number>>(new Map());
 
-    // ==================== THEME STATE ====================
+    // ==================== THEME ====================
     const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-    // ── Empty shell — fetchSongs() fills it on mount ──
-    const [songState, setSongState] = useState<SongState>({
-        songs: [],
-        playlists: [],
-        currentSongId: null,
-    });
+    // ==================== SONG STATE ====================
+    const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
-    // ✅ STEP 2: New state
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
+    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | null }>
+        ({ tabId: null, source: null });
 
-    // ✅ V99.3: Meta editor overlay state — null tabId = closed
-    const [metaEditorState, setMetaEditorState] = useState<{
-        tabId: string | null;
-        source: 'mytabs' | 'newtab' | null;
-    }>({ tabId: null, source: null });
-
-    // ✅ STEP 3: Signed URL state — gates AlphaTabRenderer mount
+    // ==================== SIGNED URL CACHE ====================
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
-    // Batch URL cache — keyed by "file_name.file_extension"
-    const signedUrlCacheRef = useRef<Map<string, string>>(new Map());
+    const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
+    const signedUrlRetryRef = useRef<Set<string>>(new Set());
 
-    // ✅ Phase 3B: fetchSongs() replaces inline mapper
+    // ==================== FETCH SONGS + BATCH SIGN ====================
     useEffect(() => {
         async function load() {
             const songs = await fetchSongs();
             if (!songs.length) return;
-
-            // Batch sign all Storage URLs — 1 request, 1hr expiry
             const paths = songs
-                .filter(s => s.file_name && s.file_extension)
-                .map(s => `${s.file_name}.${s.file_extension}`);
-
-            const { data: urlData } = await supabase.storage
-                .from('tabs')
-                .createSignedUrls(paths, 60 * 60);
-
+                .map(s => s.file_path || (s.file_name && s.file_extension ? `${s.file_name}.${s.file_extension}` : null))
+                .filter(Boolean) as string[];
+            const { data: urlData } = await supabase.storage.from('tabs').createSignedUrls(paths, 3600);
             if (urlData) {
+                const expiresAt = Date.now() + 55 * 60 * 1000;
                 urlData.forEach(entry => {
                     if (entry.path && entry.signedUrl)
-                        signedUrlCacheRef.current.set(entry.path, entry.signedUrl);
+                        signedUrlCacheRef.current.set(entry.path, { url: entry.signedUrl, expiresAt });
                 });
-                console.log(`✅ Phase 3B: Batch signed ${urlData.length} URLs (1hr expiry)`);
+                console.log(`✅ Phase 3: Batch signed ${urlData.length} URLs`);
             }
-
+            const sortedSongs = songs
+                .slice()
+                .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' }));
             setSongState(prev => ({
                 ...prev,
-                songs,
-                currentSongId: songs[0]?.id ?? null,
+                songs: sortedSongs,
+                currentSongId: sortedSongs[0]?.id ?? null,
             }));
         }
         load();
@@ -202,59 +162,33 @@ export default function SynthPlayerPage() {
         [songState.songs, songState.currentSongId],
     );
 
-    // ✅ STEP 4: Supabase — resolve signed URL from cache per song
+    // ==================== SIGNED URL RESOLVER ====================
     useEffect(() => {
         if (!currentSong?.file_name || !currentSong?.file_extension) return;
-        const path = `${currentSong.file_name}.${currentSong.file_extension}`;
+        setSignedUrl(null);
+        setSongInfo(null);
+        setTracks([]);
+        setSelectedTrack(0);
+        setError(null);
+        const path =
+            currentSong.file_path ||
+            `${currentSong.file_name}.${currentSong.file_extension}`;
+        signedUrlRetryRef.current.delete(path);
         const cached = signedUrlCacheRef.current.get(path);
-        if (cached) {
-            setSignedUrl(cached);
+        if (cached && cached.expiresAt > Date.now()) {
+            setSignedUrl(cached.url);
         } else {
-            // Fallback — should rarely fire after batch sign
-            supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data }) => {
-                if (data?.signedUrl) setSignedUrl(data.signedUrl);
+            supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
+                if (error || !data?.signedUrl) {
+                    setError(`Failed to load tab for "${currentSong.title}"`);
+                    return;
+                }
+                const expiresAt = Date.now() + 55 * 60 * 1000;
+                signedUrlCacheRef.current.set(path, { url: data.signedUrl, expiresAt });
+                setSignedUrl(data.signedUrl);
             });
         }
     }, [currentSong]);
-
-    // ✅ STEP 5: Supabase search RPC
-    const searchTabs = useCallback(async (query: string) => {
-        if (!query.trim()) return [];
-        const { data, error } = await supabase.rpc('search_tabs', { q: query });
-        if (error) return [];
-        return data ?? [];
-    }, []);
-
-    // ==================== YOUTUBE PLAYER STATE ====================
-    const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
-    const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
-    const [isYouTubeReady, setIsYouTubeReady] = useState(false);
-    const youtubePlayerRef = useRef<any>(null);
-
-    const initialSeekRef = useRef<number>(-1);
-    const postSeekLockUntilRef = useRef<number>(0);
-
-    const defaultYouTubeId = useMemo(() => {
-        const videoId = currentSong?.youtubeVideoId || null;
-        console.log(`🎬 V98.67: Current song: ${currentSong?.title} by ${currentSong?.artist}`);
-        console.log(`🎬 V98.67: YouTube ID: ${videoId}`);
-        return videoId;
-    }, [currentSong]);
-
-    const activeVideoId = currentVideoId || defaultYouTubeId;
-
-    useEffect(() => {
-        setCurrentVideoId(null);
-        setIsYouTubeReady(false);
-        initialSeekRef.current = -1;
-    }, [defaultYouTubeId]);
-
-    // ==================== AUTO-HIDE HEADER STATE ====================
-    const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
-    const lastScrollY = useRef<number>(0);
-
-    // ==================== MOBILE LANDSCAPE DETECTION ====================
-    const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
     // ==================== TIME TRACKING ====================
     const currentTimeRef = useRef<number>(0);
@@ -262,468 +196,190 @@ export default function SynthPlayerPage() {
     const [displayTime, setDisplayTime] = useState<number>(0);
     const [displayDuration, setDisplayDuration] = useState<number>(0);
 
-    // ==================== SCROLL CONTAINER REF ====================
-    const mainScrollContainerRef = useRef<HTMLElement>(null);
-
-    // ==================== PANEL COORDINATION ====================
-    const slideoutCloseRef = useRef<(() => void) | null>(null);
-    const closeControlPanelsRef = useRef<(() => void) | null>(null);
-
-    // Sync refs
-    useEffect(() => {
-        isPlayingRef.current = isPlaying;
-    }, [isPlaying]);
-
-    useEffect(() => {
-        isSeekingRef.current = isSeeking;
-    }, [isSeeking]);
-
-    // ==================== BPM TRACKING ====================
-    useEffect(() => {
-        if (api?.score?.masterBars?.[0]) {
-            const tempo = api.score.masterBars[0].tempoAutomation?.value || 120;
-            setCurrentBPM(tempo);
-            console.log('🎵 Current BPM:', tempo);
-        }
-    }, [api, songInfo]);
-
-    // ==================== PITCH SHIFT HANDLER ====================
-    const handlePitchShiftChange = useCallback((semitones: number) => {
-        console.log(`🎵 V98.67: handlePitchShiftChange called with ${semitones} semitones`);
-        setPitchShift(semitones);
-
-        if (api) {
-            console.log(`🎵 V98.67: API exists, checking score...`);
-            if (api.score?.tracks) {
-                try {
-                    const allTracks = api.score.tracks;
-                    console.log(`🎵 V98.67: Calling changeTrackTranspositionPitch on ${allTracks.length} tracks`);
-                    api.changeTrackTranspositionPitch(allTracks, semitones);
-                    console.log(`✅ V98.67: Audio pitch shifted by ${semitones} semitones`);
-                } catch (err) {
-                    console.error('❌ V98.67: changeTrackTranspositionPitch error:', err);
-                }
-            } else {
-                console.warn('⚠️ V98.67: No score or tracks available');
-            }
-        } else {
-            console.warn('⚠️ V98.67: API not available');
-        }
-    }, [api]);
-
-    const handlePitchShiftToggle = useCallback((anchorRect?: { top: number; left: number }) => {
-        if (audioSource !== 'synth') {
-            console.log('⚠️ V98.67: Pitch shift only available in Synth mode');
-            return;
-        }
-
-        setIsPitchPopoverOpen(prev => {
-            if (!prev && anchorRect) {
-                setPitchPopoverAnchor(anchorRect);
-            }
-            return !prev;
-        });
-    }, [audioSource]);
-
-    // ==================== MASTER VOLUME HANDLER ====================
-    const handleMasterVolumeChange = useCallback((volume: number) => {
-        setMasterVolume(volume);
-        if (api) {
-            api.masterVolume = volume;
-            console.log(`🔊 V98.67: Master volume → ${Math.round(volume * 100)}%`);
-        }
-    }, [api]);
-
-    // ==================== COUNT IN TOGGLE ====================
-    const handleCountInToggle = useCallback(() => {
-        setIsCountInEnabled(prev => !prev);
-        console.log('🔔 Count In toggled:', !isCountInEnabled);
-    }, [isCountInEnabled]);
-
-    // ==================== METRONOME HANDLERS ====================
-    const handleMetronomeToggle = useCallback(() => {
-        if (audioSource === 'original') {
-            console.log('⚠️ Metronome only works in Synth mode');
-            return;
-        }
-        setIsMetronomeEnabled(prev => !prev);
-    }, [audioSource]);
-
-    // ==================== RESET PITCH ON SONG CHANGE ====================
-    useEffect(() => {
-        if (pitchShift !== 0) {
-            setPitchShift(0);
-            if (api?.score?.tracks) {
-                try {
-                    api.changeTrackTranspositionPitch(api.score.tracks, 0);
-                } catch (err) {
-                    // API may not be ready
-                }
-            }
-            console.log('🔄 V98.67: Pitch reset on song change');
-        }
-    }, [signedUrl]);
-
-    // ==================== EXTERNAL MEDIA HANDLER ====================
-    const youTubeMediaHandlerInstance = useMemo(() => {
-        console.log('🎬 V98.67: Creating YouTube handler instance');
-
-        return {
-            play: () => {
-                console.log('▶️ V98.67: Handler.play() called');
-
-                if (initialSeekRef.current >= 0 && youtubePlayerRef.current?.seekTo) {
-                    console.log(`⏱️ V98.67: Applying deferred seek to ${initialSeekRef.current.toFixed(2)}s on play`);
-                    youtubePlayerRef.current.seekTo(initialSeekRef.current, true);
-                    initialSeekRef.current = -1;
-                    postSeekLockUntilRef.current = performance.now() + 200;
-                }
-
-                if (youtubePlayerRef.current?.playVideo) {
-                    youtubePlayerRef.current.playVideo();
-                }
-            },
-
-            pause: () => {
-                console.log('⏸️ V98.67: Handler.pause() called');
-                youtubePlayerRef.current?.pauseVideo?.();
-            },
-
-            seekTo: (milliseconds: number) => {
-                if (pauseTransitionRef.current) return;
-
-                isSeekingRef.current = true;
-                setIsSeeking(true);
-
-                const offset = currentSong?.videoStartOffset || 0;
-                const seconds = milliseconds / 1000 + offset;
-
-                const player = youtubePlayerRef.current;
-                if (!player) return;
-
-                const YT = (typeof window !== 'undefined' && (window as any).YT) || null;
-                if (!YT || !YT.PlayerState) {
-                    initialSeekRef.current = seconds;
-                    return;
-                }
-
-                const state = player.getPlayerState?.();
-                const isSeekableState = state === YT.PlayerState.PAUSED || state === YT.PlayerState.PLAYING;
-
-                if (!isSeekableState || !isYouTubeReady) {
-                    initialSeekRef.current = seconds;
-                    setTimeout(() => {
-                        setIsSeeking(false);
-                        isSeekingRef.current = false;
-                    }, 100);
-                    return;
-                }
-
-                if (state === YT.PlayerState.PAUSED) {
-                    player.seekTo(seconds, false);
-                    initialSeekRef.current = seconds;
-                } else {
-                    player.seekTo(seconds, true);
-                    initialSeekRef.current = -1;
-                }
-
-                postSeekLockUntilRef.current = performance.now() + 200;
-                setTimeout(() => {
-                    setIsSeeking(false);
-                    isSeekingRef.current = false;
-                }, 300);
-            },
-
-            get currentTime() {
-                const player = youtubePlayerRef.current;
-                if (player?.getCurrentTime) {
-                    const ytTime = player.getCurrentTime();
-                    const offset = currentSong?.videoStartOffset || 0;
-                    return Math.max(0, ytTime - offset) * 1000;
-                }
-                return 0;
-            },
-
-            get duration() {
-                return youtubePlayerRef.current?.getDuration ? youtubePlayerRef.current.getDuration() * 1000 : 0;
-            },
-        };
-    }, [currentSong?.videoStartOffset, isYouTubeReady]);
-
     useEffect(() => {
         if (!isPlaying) return;
-        const interval = setInterval(() => {
+        const id = setInterval(() => {
             setDisplayTime(currentTimeRef.current);
             setDisplayDuration(durationRef.current);
         }, 500);
-        return () => clearInterval(interval);
+        return () => clearInterval(id);
     }, [isPlaying]);
 
-    // ==================== SCROLL HANDLER ====================
-    const handleScroll = useCallback(() => {
-        if (!mainScrollContainerRef.current) return;
-
-        if (isPlaying) {
-            setIsHeaderVisible(false);
-            lastScrollY.current = mainScrollContainerRef.current.scrollTop;
-            return;
-        }
-
-        const currentScrollY = mainScrollContainerRef.current.scrollTop;
-        const scrollDirection = currentScrollY > lastScrollY.current ? 'down' : 'up';
-
-        if (scrollDirection === 'down' && currentScrollY > SCROLL_THRESHOLD) {
-            setIsHeaderVisible(false);
-        } else if (scrollDirection === 'up' || currentScrollY <= SCROLL_THRESHOLD) {
-            setIsHeaderVisible(true);
-        }
-
-        lastScrollY.current = currentScrollY;
-    }, [isPlaying]);
+    // ==================== SCROLL / LAYOUT ====================
+    const mainScrollContainerRef = useRef<HTMLElement>(null);
+    const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
+    const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
     useEffect(() => {
-        const scrollElement = mainScrollContainerRef.current;
-        if (scrollElement) {
-            scrollElement.addEventListener('scroll', handleScroll, { passive: true });
-        }
-        return () => {
-            if (scrollElement) {
-                scrollElement.removeEventListener('scroll', handleScroll);
-            }
-        };
-    }, [handleScroll]);
-
-    // ==================== ORIENTATION DETECTION ====================
-    useEffect(() => {
-        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-        let lastValue: boolean | null = null;
-
-        const checkOrientation = () => {
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-
-            debounceTimer = setTimeout(() => {
-                const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-                const isLandscape = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
-                const isCompactHeight = typeof window !== 'undefined' && window.innerHeight < 600;
-                const newValue = isTouchDevice && isLandscape && isCompactHeight;
-
-                if (lastValue !== newValue) {
-                    lastValue = newValue;
-                    console.log(`📱 V98.67: Orientation changed to ${newValue ? 'LANDSCAPE' : 'PORTRAIT'}`);
-                    setIsMobileLandscape(newValue);
-                }
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let last: boolean | null = null;
+        const check = () => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                const touch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+                const land = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
+                const compact = typeof window !== 'undefined' && window.innerHeight < 600;
+                const v = touch && land && compact;
+                if (last !== v) { last = v; setIsMobileLandscape(v); }
             }, 150);
         };
-
-        checkOrientation();
-        if (typeof window !== 'undefined') {
-            window.addEventListener('resize', checkOrientation);
-            window.addEventListener('orientationchange', checkOrientation);
-        }
-
-        return () => {
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('resize', checkOrientation);
-                window.removeEventListener('orientationchange', checkOrientation);
-            }
-        };
+        check();
+        window.addEventListener('resize', check);
+        window.addEventListener('orientationchange', check);
+        return () => { if (timer) clearTimeout(timer); window.removeEventListener('resize', check); window.removeEventListener('orientationchange', check); };
     }, []);
 
+    // ==================== AUTH DIAGNOSTICS ====================
     useEffect(() => {
-        if (isMobileLandscape && mainScrollContainerRef.current) {
-            mainScrollContainerRef.current.scrollLeft = 0;
+        supabase.auth.getSession().then(({ data, error }) => {
+            console.log('APP SESSION', data, error);
+        });
+        supabase.auth.getUser().then(({ data, error }) => {
+            console.log('APP USER', data, error);
+        });
+    }, []);
 
-            setTimeout(() => {
-                if (mainScrollContainerRef.current) {
-                    mainScrollContainerRef.current.scrollLeft = 0;
-                }
-            }, 100);
-
-            setTimeout(() => {
-                if (mainScrollContainerRef.current) {
-                    mainScrollContainerRef.current.scrollLeft = 0;
-                }
-            }, 300);
-
-            setTimeout(() => {
-                if (mainScrollContainerRef.current) {
-                    mainScrollContainerRef.current.scrollLeft = 0;
-                }
-            }, 500);
+    // ==================== BPM ====================
+    useEffect(() => {
+        if (api?.score?.masterBars?.[0]) {
+            setCurrentBPM(api.score.masterBars[0].tempoAutomation?.value || 120);
         }
-    }, [isMobileLandscape]);
+    }, [api, songInfo]);
 
-    // ==================== EVENT HANDLERS ====================
-    const handleApiReady = useCallback(
-        (alphaTabApi: AlphaTabApi) => {
-            console.log('✅ V98.67: API Ready');
-            setApi(alphaTabApi);
+    // ==================== PANEL REFS ====================
+    const slideoutCloseRef = useRef<(() => void) | null>(null);
+    const closeControlPanelsRef = useRef<(() => void) | null>(null);
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
-            alphaTabApi.masterVolume = masterVolumeRef.current;
-            console.log(`🔊 V98.67: Initialized api.masterVolume = ${masterVolumeRef.current}`);
+    // ==================== SHELL CALLBACKS ====================
 
-            if (alphaTabApi.playerReady) {
-                alphaTabApi.playerReady.on(() => {
-                    console.log('✅ V98.67: Player Ready');
-                    setPlayerReady(true);
+    const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
+        console.log('✅ Phase 3: API ready');
+        setApi(alphaTabApi);
+        alphaTabApi.masterVolume = masterVolumeRef.current;
+        if (alphaTabApi.playerPositionChanged) {
+            alphaTabApi.playerPositionChanged.on((e: any) => {
+                currentTimeRef.current = e.currentTime;
+                durationRef.current = e.endTime;
+            });
+        }
+    }, []);
 
-                    if (alphaTabApi.player?.output) {
-                        const output = alphaTabApi.player.output as any;
+    /** onScoreLoaded — V102.7: Songsterr-style tone-first track scoring. */
+    const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
+        console.log(`✅ Phase 3 V102.7: Score loaded — ${info.title}`);
+        setSongInfo(info);
+        setTracks(trackList);
+        setError(null);
+        setTrackMuteState(new Map(trackList.map((_, i) => [i, false])));
+        setTrackSoloState(new Map(trackList.map((_, i) => [i, false])));
+        if (api?.score?.tracks) {
+            const vols = new Map<number, number>();
+            api.score.tracks.forEach((t: any, i: number) => {
+                vols.set(i, (t.playbackInfo?.volume ?? 15) / 16);
+            });
+            originalTrackVolsRef.current = vols;
+        }
+        setPitchShift(0);
 
-                        if (output.context) {
-                            console.log('🔊 V98.67: AudioContext state:', output.context.state);
+        // ── Track classifier helpers ──────────────────────────────────────────
+        const normalize = (s: string) =>
+            s.toLowerCase().trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ');
 
-                            if (output.context.state === 'suspended') {
-                                console.warn('⚠️ V98.67: AudioContext SUSPENDED - needs play button click');
-                            } else if (output.context.state === 'running') {
-                                console.log('✅ V98.67: AudioContext RUNNING - audio ready!');
-                            }
-                        }
-                    }
+        const isDrumTrack = (t: Track) => {
+            const n = normalize(t.name ?? '');
+            return ['drum', 'perc', 'kit', 'hh', 'snare', 'kick'].some(kw => n.includes(kw));
+        };
 
-                    if (alphaTabApi.player?.output && youTubeMediaHandlerInstance) {
-                        const output = alphaTabApi.player.output as any;
-                        output.handler = youTubeMediaHandlerInstance;
-                    }
-                });
+        const isBassTrack = (t: Track) => normalize(t.name ?? '').includes('bass');
+
+        // [V102.7] Vocal supreme override — must win before any guitar check.
+        // Expanded regex catches: Lead Vocals, Backing Vocals, Vox, Choir, etc.
+        const isVocalTrack = (t: Track) =>
+            /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal|chorus\s*vocal)/i
+                .test(normalize(t.name ?? ''));
+
+        const isAnyGuitarTrack = (t: Track) => {
+            const n = normalize(t.name ?? '');
+            if (isDrumTrack(t) || isBassTrack(t) || isVocalTrack(t)) return false;
+            // NOTE: bare 'lead' intentionally excluded — catches "Lead Vocals" as false positive.
+            // "lead guitar" is handled as an explicit phrase in guitarDefaultScore.
+            return ['guit', 'guitar', 'gtr', 'rhythm', 'acoustic', 'clean', 'dist', 'overdrive']
+                .some(kw => n.includes(kw));
+        };
+
+        // ── [V102.7] Songsterr-style tone-first scoring ───────────────────────
+        // Mirrors observed Songsterr defaults across all tested songs:
+        //   GnR / Van Halen / Ozzy / Def Leppard → Distortion Guitar
+        //   Poison / SRV / Cinderella           → Overdriven Guitar
+        //   Warrant / She Talks to Angels        → Acoustic Guitar
+        // "Lead Guitar" is a secondary signal — Songsterr rarely defaults to it
+        // when a tone-style track exists.
+        const guitarDefaultScore = (t: Track): number => {
+            const n = normalize(t.name ?? '');
+            if (isVocalTrack(t)) return -9999;
+            if (isDrumTrack(t)) return -9999;
+            if (isBassTrack(t)) return -200;  // last resort if no guitar exists
+            let s = 0;
+            // Tone-style guitar tracks (strongest signal — matches Songsterr defaults)
+            if (n.includes('distortion')) s += 120;
+            if (n.includes('overdriven') || n.includes('overdrive')) s += 110;
+            if (n.includes('acoustic')) s += 105;
+            if (n.includes('clean')) s += 95;
+            // Generic guitar presence
+            if (/(guit|guitar|gtr)/.test(n)) s += 60;
+            // Role phrases — only as full phrases, never bare 'lead'
+            if (n.includes('rhythm guitar') || n.includes('rhythm gtr')) s += 25;
+            if (n.includes('lead guitar') || n.includes('lead gtr')) s += 15;
+            // Penalize specialty / overdub / non-standard instrument tracks
+            if (/(overdub|right ear|left ear|solo overdub|sitar|banjo|harmonica|tenor sax|clarinet|strings|synth|pad|orch|piano|organ|delay|fx|effect|bus|click|guide|reference)/.test(n)) s -= 40;
+            return s;
+        };
+
+        const pickDefaultTrackIndex = (tl: Track[]): number => {
+            // 1) Best guitar by tone-first score
+            let bestIdx = -1, bestScore = -9999;
+            for (let i = 0; i < tl.length; i++) {
+                const sc = guitarDefaultScore(tl[i]);
+                if (sc > bestScore) { bestScore = sc; bestIdx = i; }
             }
+            if (bestIdx >= 0 && bestScore > 0) return bestIdx;
+            // 2) Any guitar-ish track (still excludes vocals)
+            const anyG = tl.findIndex(isAnyGuitarTrack);
+            if (anyG >= 0) return anyG;
+            // 3) First non-vocal, non-drum track
+            const nonVocal = tl.findIndex(t => !isVocalTrack(t) && !isDrumTrack(t));
+            return nonVocal >= 0 ? nonVocal : 0;
+        };
 
-            if (alphaTabApi.playerStateChanged) {
-                alphaTabApi.playerStateChanged.on((e: any) => {
-                    if (audioSource === 'synth') {
-                        setIsPlaying(e.state === 1);
-                    }
-                });
-            }
+        // Diagnostics — one line per track, all flags visible.
+        trackList.forEach((t, i) => {
+            const raw = t.name ?? '';
+            console.log(`🎯 Track[${i}] raw="${raw}"`, {
+                isDrum: isDrumTrack(t),
+                isBass: isBassTrack(t),
+                isVocal: isVocalTrack(t),
+                isGuitar: isAnyGuitarTrack(t),
+                score: guitarDefaultScore(t),
+            });
+        });
 
-            if (alphaTabApi.playerPositionChanged) {
-                alphaTabApi.playerPositionChanged.on((e: any) => {
-                    currentTimeRef.current = e.currentTime;
-                    durationRef.current = e.endTime;
-                });
-            }
-        },
-        [youTubeMediaHandlerInstance, audioSource],
-    );
-
-    const handleScoreLoaded = useCallback(
-        (info: SongInfo, trackList: Track[]) => {
-            console.log(`✅ V98.67: Score loaded - ${info.title}`);
-            setSongInfo(info);
-            setTracks(trackList);
-            setSelectedTrack(0);
-            setError(null);
-            setTrackMuteState(new Map(trackList.map((_, index) => [index, false])));
-            setTrackSoloState(new Map(trackList.map((_, index) => [index, false])));
-
-            if (api?.score?.tracks) {
-                console.log('🔊 V98.67: TRACK VOLUME CHECK:');
-                api.score.tracks.forEach((track: any, idx: number) => {
-                    const volume = track.playbackInfo?.volume;
-                    console.log(`  Track ${idx} (${track.name}):`, {
-                        volume: volume,
-                        volumeNormalized: volume ? volume / 16 : 'undefined',
-                        isMuted: track.playbackInfo?.isMute,
-                        isSolo: track.playbackInfo?.isSolo,
-                    });
-
-                    if (volume === undefined || volume === 0) {
-                        console.warn(`⚠️ V98.67: Track ${idx} has invalid volume! Setting to 16`);
-                        track.playbackInfo.volume = 16;
-                        api.changeTrackVolume([track], 1.0);
-                    }
-                });
-            }
-
-            if (api?.score?.tracks?.[0]?.staves?.[0]) {
-                const staff = api.score.tracks[0].staves[0];
-                if (staff.stringTuning && staff.stringTuning.tunings) {
-                    setTuningData(staff.stringTuning.tunings);
-                    console.log('🎸 V98.67: Tuning extracted:', staff.stringTuning.tunings);
-                }
-            }
-
-            setPitchShift(0);
-        },
-        [api],
-    );
+        const trackIndex = pickDefaultTrackIndex(trackList);
+        console.log(`🎸 V102.7: Default track → ${trackIndex} (raw="${trackList[trackIndex]?.name ?? 'Unnamed'}")`);
+        setSelectedTrack(trackIndex);
+    }, []);
 
     const handleRenderFinished = useCallback(() => {
-        console.log('✅ V98.67: Rendering Complete');
-        // ── Delay scroll reset to fire AFTER AlphaTab's internal post-render
-        // scroll positioning, which overrides an immediate scrollTop=0 ──
+        console.log('✅ Phase 3: Render finished');
         setTimeout(() => {
-            if (mainScrollContainerRef.current) {
-                mainScrollContainerRef.current.scrollTop = 0;
-            }
+            if (mainScrollContainerRef.current) mainScrollContainerRef.current.scrollTop = 0;
         }, 150);
     }, []);
 
-    const handleError = useCallback((errorMsg: string) => {
-        console.error(`❌ V98.67 ERROR: ${errorMsg}`);
-        setError(errorMsg);
+    // ==================== PLAY / PAUSE ====================
+    const handlePlayPause = useCallback(() => {
+        setIsPlaying(p => !p);
     }, []);
-
-    // ==================== PLAY/PAUSE WITH COUNT-IN ====================
-    const handlePlayPause = useCallback(async () => {
-        if (!api) return;
-
-        if (audioSource === 'synth' && api.player?.output) {
-            const output = api.player.output as any;
-            if (output.context && output.context.state === 'suspended') {
-                console.log('🔊 V98.67: Resuming AudioContext...');
-                try {
-                    await output.context.resume();
-                    console.log('✅ V98.67: AudioContext resumed!');
-                } catch (err) {
-                    console.error('❌ V98.67: Failed to resume AudioContext:', err);
-                }
-            }
-        }
-
-        if (!isPlaying && isCountInEnabled) {
-            const maxCount = countInMode === 'four-beat' ? 4 : 3;
-            console.log(`🔔 Starting ${maxCount}-beat countdown...`);
-            setIsCountingDown(true);
-
-            for (let i = maxCount; i > 0; i--) {
-                setCountdownValue(i);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-
-            setCountdownValue(0);
-            setIsCountingDown(false);
-            setIsCountInEnabled(false);
-            console.log('✅ Countdown complete, Count In auto-disabled');
-        }
-
-        if (audioSource === 'original') {
-            const output = api.player?.output as any;
-            if (output?.handler) {
-                if (isPlaying) {
-                    pauseTransitionRef.current = true;
-                    output.handler.pause();
-                    api.pause();
-                    setTimeout(() => { pauseTransitionRef.current = false; }, 300);
-                } else {
-                    output.handler.play();
-                    api.play();
-                    initialSeekRef.current = -1;
-                }
-            }
-        } else {
-            if (isPlaying) {
-                api.pause();
-            } else {
-                api.play();
-            }
-        }
-    }, [api, audioSource, isPlaying, isCountInEnabled, countInMode]);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -733,319 +389,165 @@ export default function SynthPlayerPage() {
         setIsPlaying(false);
     }, [api]);
 
-    const handleTrackChange = useCallback(
-        (trackIndex: number) => {
-            if (api?.score?.tracks) {
-                if (isLooping && api.playbackRange) {
-                    api.playbackRange = null;
-                    setHasLoopSelection(false);
-                }
-
-                // 🎸 V98.89: Change VISUAL track only, preserve audio state
-                api.renderTracks([api.score.tracks[trackIndex]]);
-
-                // 🔊 V98.89: CRITICAL - Ensure all backing tracks remain audible
-                // Only mute/solo if explicitly requested via UI
-                api.score.tracks.forEach((track: any, idx: number) => {
-                    const shouldBeMuted = trackMuteState.get(idx) || false;
-                    const shouldBeSolo = trackSoloState.get(idx) || false;
-
-                    api.changeTrackMute([track], shouldBeMuted);
-                    api.changeTrackSolo([track], shouldBeSolo);
-                });
-
-                console.log(`🎸 V98.89: Switched to Track ${trackIndex}, backing tracks preserved`);
-                setSelectedTrack(trackIndex);
-            }
-        },
-        [api, isLooping, trackMuteState, trackSoloState],
-    );
-
-    const handleLoopToggle = useCallback(() => {
-        if (!api) return;
-        const newLoopState = !isLooping;
-        setIsLooping(newLoopState);
-        if (!newLoopState) {
-            setHasLoopSelection(false);
-            if (api.playbackRange) api.playbackRange = null;
+    // ==================== TRACK CHANGE ====================
+    const DRUM_GUARD_KEYWORDS = ['drum', 'perc', 'kit', 'hh', 'snare', 'kick'];
+    const handleTrackChange = useCallback((trackIndex: number) => {
+        const trackName = (tracks[trackIndex]?.name ?? '').toLowerCase();
+        if (DRUM_GUARD_KEYWORDS.some(kw => trackName.includes(kw))) {
+            console.warn(`🥁 Phase 3: Drum track selection ignored (index ${trackIndex} — "${tracks[trackIndex]?.name}"). Restore in Phase 4.`);
+            return;
         }
-    }, [api, isLooping]);
+        setSelectedTrack(trackIndex);
+    }, [tracks]);
 
-    const handleLoopRangeChange = useCallback((start: number | null, end: number | null) => {
-        setHasLoopSelection(start !== null && end !== null);
-    }, []);
-
-    const handleSpeedChange = useCallback(
-        (speed: number) => {
-            setPlaybackSpeed(speed);
-            if (api) api.playbackSpeed = speed;
-        },
-        [api],
-    );
-
-    // 🔥 V98.67: FIXED AUDIO SOURCE CHANGE (NO MORE CANVAS RELOAD BUG)
-    const handleAudioSourceChange = useCallback(
-        (source: 'synth' | 'original') => {
-            console.log(`🎵 V98.67: Audio source changing to: ${source}`);
-            setAudioSource(source);
-
-            // Reset pitch shift when switching to YouTube mode
-            if (source === 'original' && pitchShift !== 0) {
-                setPitchShift(0);
-                if (api?.score?.tracks) {
-                    try {
-                        api.changeTrackTranspositionPitch(api.score.tracks, 0);
-                    } catch (err) {
-                        console.error('❌ V98.67: Reset pitch error:', err);
-                    }
-                }
-            }
-
-            // 🔥 V98.67: KEY FIX - Mute/unmute like v98.6 working version
-            if (api) {
-                if (source === 'original') {
-                    api.masterVolume = 0;
-                    console.log('🔇 V98.67: AlphaTab synth MUTED');
-                } else {
-                    api.masterVolume = masterVolume; // Restore user's volume
-                    console.log(`🔊 V98.67: AlphaTab synth UNMUTED (${Math.round(masterVolume * 100)}%)`);
-                }
-            }
-
-            if (source === 'original' && activeVideoId) {
-                setIsYouTubePlayerVisible(true);
-            }
-
-            if (source === 'synth') {
-                setIsYouTubePlayerVisible(false);
-                setIsYouTubeReady(false);
-            }
-        },
-        [api, activeVideoId, pitchShift, masterVolume],
-    );
-
-    const handleVideoVariantChange = useCallback((newVideoId: string) => {
-        setCurrentVideoId(newVideoId);
-        initialSeekRef.current = -1;
-    }, []);
-
-    const handleYouTubeClose = useCallback(() => {
-        setIsYouTubePlayerVisible(false);
-        setIsYouTubeReady(false);
-    }, []);
-
-    const handleYouTubeTimeUpdate = useCallback((time: number) => {
-        currentTimeRef.current = time;
-        setDisplayTime(time);
-    }, []);
-
-    const handleYouTubePlayerReady = useCallback(() => {
-        console.log('✅ V98.67: YouTube player ready');
-        setIsYouTubeReady(true);
-        setIsSeeking(false);
-        isSeekingRef.current = false;
-    }, []);
-
-    const handleYouTubeStateChange = useCallback(
-        (event: any) => {
-            if (event.data === 1) {
-                setIsPlaying(true);
-            } else if (event.data === 2 || event.data === 0) {
-                setIsPlaying(false);
-            }
-
-            if (isSeekingRef.current) {
-                if (!seekStabilizeTimeoutRef.current && (event.data === 1 || event.data === 2)) {
-                    seekStabilizeTimeoutRef.current = setTimeout(() => {
-                        setIsSeeking(false);
-                        isSeekingRef.current = false;
-                        seekStabilizeTimeoutRef.current = null;
-                    }, 500);
-                }
-                return;
-            }
-
-            if (pauseTransitionRef.current) return;
-
-            if (api) {
-                if (event.data === 1) {
-                    api.play();
-                } else if (event.data === 2) {
-                    pauseTransitionRef.current = true;
-                    api.pause();
-                    setTimeout(() => { pauseTransitionRef.current = false; }, 200);
-                } else if (event.data === 0) {
-                    api.stop();
-                }
-            }
-        },
-        [api],
-    );
-
-    useEffect(() => {
-        if (!api || audioSource !== 'original' || !isYouTubeReady) return;
-        if (!api.player?.output) return;
-
-        const output = api.player.output as any;
-        if (typeof output.updatePosition !== 'function') return;
-
-        const syncInterval = setInterval(() => {
-            const now = performance.now();
-            if (now < postSeekLockUntilRef.current) return;
-            if (isSeekingRef.current || !isPlayingRef.current) return;
-            if (pauseTransitionRef.current) return;
-            if (!youtubePlayerRef.current?.getCurrentTime) return;
-
-            const ytTime = youtubePlayerRef.current.getCurrentTime();
-            const offset = currentSong?.videoStartOffset || 0;
-            const timeMs = Math.max(0, ytTime - offset) * 1000;
-
-            try {
-                output.updatePosition(timeMs);
-            } catch (err) {
-                console.error('❌ V98.67: updatePosition error:', err);
-            }
-            currentTimeRef.current = timeMs;
-        }, 50);
-
-        return () => clearInterval(syncInterval);
-    }, [api, audioSource, isYouTubeReady, currentSong?.videoStartOffset]);
-
-    useEffect(() => {
-        if (!api || !playerReady || !api.player?.output) return;
-        const output = api.player.output as any;
-        if (youTubeMediaHandlerInstance) {
-            output.handler = youTubeMediaHandlerInstance;
-        }
-        return () => {
-            if (api.player?.output) {
-                const out = api.player.output as any;
-                if (out.handler) out.handler = null;
-            }
-        };
-    }, [api, playerReady, youTubeMediaHandlerInstance]);
-
-    useEffect(() => {
-        if (!api) return;
-        (api.settings.player as any).enableUserInteraction = isLooping;
-        api.updateSettings();
-    }, [api, isLooping]);
-
-    // ==================== SONG LIBRARY ====================
-    const handleSongSelect = useCallback((songId: string) => {
+    // ==================== LOOP ====================
+    const clearLoopFully = useCallback(() => {
         setIsLooping(false);
         setHasLoopSelection(false);
-        if (api?.playbackRange) {
+        setPlaybackRange(null);
+        if (api) {
+            api.isLooping = false;
             api.playbackRange = null;
-        }
-        setSongState(prev => ({ ...prev, currentSongId: songId }));
-        setIsSongSelectorOpen(false);
-        // ── Reset scroll so header is fully visible on song change ──
-        if (mainScrollContainerRef.current) {
-            mainScrollContainerRef.current.scrollTop = 0;
         }
     }, [api]);
 
-    const handleToggleFavorite = useCallback((songId: string) => {
+    const handleLoopToggle = useCallback(() => {
+        if (isLooping) {
+            clearLoopFully();
+        } else {
+            setIsLooping(true);
+        }
+    }, [isLooping, clearLoopFully]);
+
+    // ==================== SPEED / VOLUME ====================
+    const handleSpeedChange = useCallback((speed: number) => {
+        setPlaybackSpeed(speed);
+        if (api) api.playbackSpeed = speed;
+    }, [api]);
+
+    const handleMasterVolumeChange = useCallback((volume: number) => {
+        setMasterVolume(volume);
+        if (api) api.masterVolume = volume;
+    }, [api]);
+
+    // ==================== MUTE / SOLO ====================
+    const handleTrackMuteToggle = useCallback((idx: number) => {
+        if (!api?.score) return;
+        const isMuted = trackMuteState.get(idx) || false;
+        api.changeTrackMute([api.score.tracks[idx]], !isMuted);
+        setTrackMuteState(prev => { const m = new Map(prev); m.set(idx, !isMuted); return m; });
+    }, [api, trackMuteState]);
+
+    const handleTrackSoloToggle = useCallback((idx: number) => {
+        if (!api?.score?.tracks) return;
+        const isSoloed = trackSoloState.get(idx) || false;
+        const nextSoloed = !isSoloed;
+
+        console.group(`🔴 ENTER handleTrackSoloToggle idx=${idx} "${api.score.tracks[idx]?.name}" isSoloed=${isSoloed} → nextSoloed=${nextSoloed}`);
+        console.log('trackSoloState:', [...trackSoloState.entries()].map(([k, v]) => `[${k}]=${v}`));
+        console.log('trackMuteState:', [...trackMuteState.entries()].map(([k, v]) => `[${k}]=${v}`));
+        console.log('api.tracks (rendered):', api.tracks?.map((t: any) => `[${t.index}] ${t.name}`));
+        console.log('api.score.tracks:', api.score.tracks.map((t: any, i: number) => `[${i}] ${t.name}`));
+
+        api.score.tracks.forEach((track: any, i: number) => {
+            if (nextSoloed) {
+                const finalMute = i !== idx;
+                console.log(`🟢 SOLO ON — applyMute([${i}] "${track.name}") → finalMute=${finalMute}`);
+                api.changeTrackMute([track], finalMute);
+            } else {
+                const restoredMute = trackMuteState.get(i) || false;
+                console.log(`  restoreTrackMute([${i}] "${track.name}") → ${restoredMute}`);
+                api.changeTrackMute([track], restoredMute);
+            }
+        });
+        console.groupEnd();
+
+        setTrackSoloState(prev => {
+            const m = new Map(prev);
+            if (nextSoloed) { prev.forEach((_, k) => m.set(k, k === idx)); }
+            else m.set(idx, false);
+            return m;
+        });
+    }, [api, trackSoloState, trackMuteState]);
+
+    // ==================== SONG LIBRARY ====================
+    const handleSongSelect = useCallback((songId: string) => {
+        if (songId === songState.currentSongId) {
+            setIsSongSelectorOpen(false);
+            return;
+        }
+        setIsPlaying(false);
+        setPlayerReady(false);
+        if (api) {
+            api.isLooping = false;
+            api.playbackRange = null;
+        }
+        setApi(null);
+        setIsLooping(false);
+        setHasLoopSelection(false);
+        setPlaybackRange(null);
+        setSongState(prev => ({ ...prev, currentSongId: songId }));
+        setIsSongSelectorOpen(false);
+        if (mainScrollContainerRef.current) mainScrollContainerRef.current.scrollTop = 0;
+    }, [songState.currentSongId, api]);
+
+    const handleMetadataSave = useCallback((
+        savedTabId: string,
+        patch: { title: string; artist: string; album?: string }
+    ) => {
         setSongState(prev => ({
             ...prev,
-            songs: prev.songs.map(song =>
-                song.id === songId ? { ...song, isFavorite: !song.isFavorite } : song,
+            songs: prev.songs.map(s =>
+                s.id === savedTabId ? { ...s, ...patch } : s
             ),
         }));
     }, []);
 
+    const handleToggleFavorite = useCallback((songId: string) => {
+        setSongState(prev => ({
+            ...prev,
+            songs: prev.songs.map(s => s.id === songId ? { ...s, isFavorite: !s.isFavorite } : s),
+        }));
+    }, []);
+
     const handleCreatePlaylist = useCallback((name: string) => {
-        const newPlaylist = {
-            id: `playlist-${Date.now()}`,
-            name,
-            songIds: [],
-            createdAt: Date.now(),
-        };
         setSongState(prev => ({
             ...prev,
-            playlists: [...prev.playlists, newPlaylist],
+            playlists: [...prev.playlists, { id: `playlist-${Date.now()}`, name, songIds: [], createdAt: Date.now() }],
         }));
     }, []);
 
-    const handlePlaylistAction = useCallback(
-        (type: 'add' | 'remove', songId: string, playlistId: string) => {
-            setSongState(prev => ({
-                ...prev,
-                playlists: prev.playlists.map(playlist => {
-                    if (playlist.id === playlistId) {
-                        const songExists = playlist.songIds.includes(songId);
-                        if (type === 'add' && !songExists) {
-                            return { ...playlist, songIds: [...playlist.songIds, songId] };
-                        }
-                        if (type === 'remove' && songExists) {
-                            return { ...playlist, songIds: playlist.songIds.filter(id => id !== songId) };
-                        }
-                    }
-                    return playlist;
-                }),
-            }));
-        },
-        [],
-    );
+    const handlePlaylistAction = useCallback((type: 'add' | 'remove', songId: string, playlistId: string) => {
+        setSongState(prev => ({
+            ...prev,
+            playlists: prev.playlists.map(pl => {
+                if (pl.id !== playlistId) return pl;
+                const exists = pl.songIds.includes(songId);
+                if (type === 'add' && !exists) return { ...pl, songIds: [...pl.songIds, songId] };
+                if (type === 'remove' && exists) return { ...pl, songIds: pl.songIds.filter(id => id !== songId) };
+                return pl;
+            }),
+        }));
+    }, []);
 
-    // ✅ STEP 7: handleDeletePlaylist
     const handleDeletePlaylist = useCallback((playlistId: string) => {
-        setSongState(prev => ({
-            ...prev,
-            playlists: prev.playlists.filter(p => p.id !== playlistId),
-        }));
+        setSongState(prev => ({ ...prev, playlists: prev.playlists.filter(p => p.id !== playlistId) }));
     }, []);
 
-    const handleThemeToggle = useCallback(() => {
-        setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    // ==================== MISC ====================
+    const handleThemeToggle = useCallback(() => setTheme(p => p === 'dark' ? 'light' : 'dark'), []);
+    const handleCountInToggle = useCallback(() => setIsCountInEnabled(p => !p), []);
+    const handleMetronomeToggle = useCallback(() => setIsMetronomeEnabled(p => !p), []);
+    const handlePitchShiftToggle = useCallback((anchor?: { top: number; left: number }) => {
+        setIsPitchPopoverOpen(p => { if (!p && anchor) setPitchPopoverAnchor(anchor); return !p; });
     }, []);
 
-    const handleTrackMuteToggle = useCallback(
-        (trackIndex: number) => {
-            if (!api || !api.score) return;
-            const track = api.score.tracks[trackIndex];
-            const isMuted = trackMuteState.get(trackIndex) || false;
-            api.changeTrackMute([track], !isMuted);
-            setTrackMuteState(prev => {
-                const newMap = new Map(prev);
-                newMap.set(trackIndex, !isMuted);
-                return newMap;
-            });
-        },
-        [api, trackMuteState],
-    );
+    const trackIndices = useMemo(() => [selectedTrack], [selectedTrack]);
 
-    const handleTrackSoloToggle = useCallback(
-        (trackIndex: number) => {
-            if (!api || !api.score) return;
-            const track = api.score.tracks[trackIndex];
-            const isSoloed = trackSoloState.get(trackIndex) || false;
-            api.changeTrackSolo([track], !isSoloed);
-            setTrackSoloState(prev => {
-                const newMap = new Map(prev);
-                if (!isSoloed) {
-                    prev.forEach((_, key) => newMap.set(key, key === trackIndex));
-                } else {
-                    newMap.set(trackIndex, false);
-                }
-                return newMap;
-            });
-        },
-        [api, trackSoloState],
-    );
-
-    // ==================== RENDER ====================
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
-            <div
-                className={`
-                    fixed top-0 inset-x-0 w-full z-50
-                    transform transition-transform duration-300 ease-in-out
-                    ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
-                `}
-            >
-                {/* ✅ STEP 8: onNewTabOpen added */}
+
+            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
@@ -1053,7 +555,6 @@ export default function SynthPlayerPage() {
                 />
             </div>
 
-            {/* ✅ STEP 9: MyTabsPanel — pencil triggers MetadataEditorPanel overlay */}
             <MyTabsPanel
                 isOpen={isSongSelectorOpen}
                 onClose={() => setIsSongSelectorOpen(false)}
@@ -1062,31 +563,23 @@ export default function SynthPlayerPage() {
                 currentSong={songState.songs.find(s => s.id === songState.currentSongId) ?? null}
                 onSongSelect={handleSongSelect}
                 onToggleFavorite={handleToggleFavorite}
-                onPlaylistAction={(type, songId, playlistId) => handlePlaylistAction(type, songId, playlistId)}
+                onPlaylistAction={handlePlaylistAction}
                 onCreatePlaylist={handleCreatePlaylist}
                 onDeletePlaylist={handleDeletePlaylist}
                 isDarkMode={theme === 'dark'}
-                onEditMetadata={(songId) =>
-                    setMetaEditorState({ tabId: songId, source: 'mytabs' })
-                }
+                onEditMetadata={(songId) => setMetaEditorState({ tabId: songId, source: 'mytabs' })}
             />
 
-            {/* NewTabPanel */}
-            <NewTabPanel
-                isOpen={isNewTabOpen}
-                onClose={() => setIsNewTabOpen(false)}
-                theme={theme}
-            />
+            <NewTabPanel isOpen={isNewTabOpen} onClose={() => setIsNewTabOpen(false)} theme={theme} />
 
-            {/* ✅ V99.3: MetadataEditorPanel — in-app overlay, peer to MyTabsPanel */}
             {metaEditorState.tabId && (
                 <MetadataEditorPanel
                     tabId={metaEditorState.tabId}
+                    onSave={handleMetadataSave}
                     onClose={() => {
                         const src = metaEditorState.source;
                         setMetaEditorState({ tabId: null, source: null });
                         if (src === 'mytabs') setIsSongSelectorOpen(true);
-                        // src === 'newtab' → add setIsNewTabOpen(true) when wiring NewTabPanel
                     }}
                 />
             )}
@@ -1097,20 +590,15 @@ export default function SynthPlayerPage() {
                     w-full overscroll-y-contain
                     ${isMobileLandscape
                         ? 'h-[calc(100vh-80px)] overflow-x-auto overflow-y-hidden relative'
-                        : 'pb-32 overflow-y-auto overflow-x-hidden'
-                    }
+                        : 'pb-32 overflow-y-auto overflow-x-hidden'}
                     ${!isMobileLandscape && isHeaderVisible ? 'pt-[79px]' : 'pt-0'}
-                    transition-[padding] duration-300 ease-in-out
+                    transition-[padding] duration-300
                 `}
-                style={isMobileLandscape ? {
-                    maxWidth: '100vw',
-                    width: '100vw'
-                } : undefined}
+                style={isMobileLandscape ? { maxWidth: '100vw', width: '100vw' } : undefined}
             >
                 {error && (
                     <div className="px-4 mb-4">
                         <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
-                            <h3 className="text-red-400 font-bold mb-2">Error</h3>
                             <p className="text-red-300">{error}</p>
                         </div>
                     </div>
@@ -1118,67 +606,45 @@ export default function SynthPlayerPage() {
 
                 <div
                     id="maestro-player"
-                    className={`
-                        relative bg-white
-                        ${isMobileLandscape
-                            ? 'h-full'
-                            : 'w-full'
-                        }
-                    `}
+                    className={`relative bg-white ${isMobileLandscape ? 'h-full' : 'w-full'}`}
                     style={isMobileLandscape ? {
-                        paddingTop: '50px',
-                        paddingBottom: '450px',
-                        display: 'inline-block',
-                        minWidth: '100%',
-                        width: 'max-content',
+                        paddingTop: '50px', paddingBottom: '450px',
+                        display: 'inline-block', minWidth: '100%', width: 'max-content',
                     } : undefined}
                 >
-                    {/* ✅ STEP 6: AlphaTabRenderer gated on signedUrl.
-                        key={signedUrl} forces clean remount on song change —
-                        this is the fix for the blank canvas rendering bug. */}
                     {signedUrl && (
-                        <AlphaTabRenderer
+                        <AlphaTabRendererV102
                             key={signedUrl}
                             fileUrl={signedUrl}
-                            playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
-                            externalMediaHandler={youTubeMediaHandlerInstance}
-                            soundFontPath="/soundfont/sonivox.sf2"
-                            scrollContainerRef={mainScrollContainerRef}
-                            isMobileLandscape={isMobileLandscape}
-                            isSeeking={isSeeking}
+                            trackIndices={trackIndices}
+                            scrollContainer={mainScrollContainerRef.current}
                             isPlaying={isPlaying}
-                            selectedTrackIndex={selectedTrack}
+                            onPlayStateChange={setIsPlaying}
                             onApiReady={handleApiReady}
                             onScoreLoaded={handleScoreLoaded}
-                            onRenderFinished={handleRenderFinished}
-                            onError={handleError}
-                            minHeight="600px"
-                            isLooping={isLooping}
-                            onLoopRangeChange={handleLoopRangeChange}
-                            audioSource={audioSource}
-                            theme={theme}
+                            onRendered={handleRenderFinished}
+                            onBoundsReady={() => { }}
+                            onPlayerReady={() => setPlayerReady(true)}
+                            loopEnabled={isLooping}
+                            playbackRange={playbackRange}
+                            onLoopToggle={(enabled) => {
+                                if (!enabled) clearLoopFully();
+                                else setIsLooping(true);
+                            }}
+                            onLoopChange={(start, end) => {
+                                setPlaybackRange({ startTick: start, endTick: end });
+                                setHasLoopSelection(true);
+                            }}
+                            onLoopClear={clearLoopFully}
                         />
                     )}
                 </div>
 
-                {!isMobileLandscape && (
-                    <div className="px-4 mt-8">
-                        <div className="max-w-4xl mx-auto bg-gray-800/50 border border-purple-500/30 rounded-lg p-6">
-                            <h3 className="text-lg font-bold text-purple-300 mb-4">📝 Practice Notes</h3>
-                            <div className="space-y-3 text-gray-300">
-                                <p className="text-sm"><strong className="text-white">Strumming Pattern:</strong> Down, Down-Up, Up-Down-Up</p>
-                                <p className="text-sm"><strong className="text-white">Key Points:</strong> Focus on clean transitions between chords.</p>
-                                <p className="text-sm"><strong className="text-white">Practice Tip:</strong> Start at 75% speed and gradually increase tempo.</p>
-                                <p className="text-sm text-gray-400 italic">💡 Use the Loop button to repeat difficult sections</p>
-                            </div>
-                        </div>
+                {false && (
+                    <div className="hidden lg:block px-4 mt-4">
+                        <DebugPanel api={api} currentTime={displayTime} isPlaying={isPlaying} />
                     </div>
                 )}
-
-                <div className="hidden lg:block px-4 mt-4">
-                    <DebugPanel api={api} currentTime={displayTime} isPlaying={isPlaying} />
-                </div>
-
                 <div className="h-24 px-4" />
             </main>
 
@@ -1205,10 +671,10 @@ export default function SynthPlayerPage() {
                         onPlayPause={handlePlayPause}
                         onStop={handleStop}
                         onLoopToggle={handleLoopToggle}
-                        onLoopRangeChange={handleLoopRangeChange}
+                        onLoopRangeChange={(start, end) => setHasLoopSelection(start !== null && end !== null)}
                         onSpeedChange={handleSpeedChange}
                         onTrackChange={handleTrackChange}
-                        onAudioSourceChange={handleAudioSourceChange}
+                        onAudioSourceChange={() => { }}
                         onTrackMuteToggle={handleTrackMuteToggle}
                         onTrackSoloToggle={handleTrackSoloToggle}
                         onThemeToggle={handleThemeToggle}
@@ -1225,17 +691,15 @@ export default function SynthPlayerPage() {
                         metronomeBalance={metronomeBalance}
                         onMetronomeBalanceChange={setMetronomeBalance}
                         metronomeSubdivision={metronomeSubdivision}
-                        onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
+                        onMetronomeSubdivisionChange={(s: number) => setMetronomeSubdivision(s as SubdivisionMode)}
                         metronomeSoundType={metronomeSoundType}
-                        onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
+                        onMetronomeSoundTypeChange={(s: string) => setMetronomeSoundType(s as MetronomeSoundType)}
                         metronomeAccentEnabled={metronomeAccentEnabled}
-                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(p => !p)}
                         onArmMetronome={armMetronome}
                         currentBPM={currentBPM}
                         onSlideoutShouldClose={() => slideoutCloseRef.current?.()}
-                        registerCloseAllPanels={(closeFunc) => {
-                            closeControlPanelsRef.current = closeFunc;
-                        }}
+                        registerCloseAllPanels={(fn) => { closeControlPanelsRef.current = fn; }}
                     />
                 )}
             </footer>
@@ -1244,7 +708,7 @@ export default function SynthPlayerPage() {
                 count={countdownValue}
                 isVisible={isCountingDown}
                 mode={countInMode}
-                onComplete={() => console.log('🎵 Countdown complete')}
+                onComplete={() => { }}
             />
 
             {!isMobileLandscape && (
@@ -1263,52 +727,15 @@ export default function SynthPlayerPage() {
                         metronomeBalance={metronomeBalance}
                         onMetronomeBalanceChange={setMetronomeBalance}
                         metronomeSubdivision={metronomeSubdivision}
-                        onMetronomeSubdivisionChange={(subdivision: number) => setMetronomeSubdivision(subdivision as SubdivisionMode)}
+                        onMetronomeSubdivisionChange={(s: number) => setMetronomeSubdivision(s as SubdivisionMode)}
                         metronomeSoundType={metronomeSoundType}
-                        onMetronomeSoundTypeChange={(sound: string) => setMetronomeSoundType(sound as MetronomeSoundType)}
+                        onMetronomeSoundTypeChange={(s: string) => setMetronomeSoundType(s as MetronomeSoundType)}
                         metronomeAccentEnabled={metronomeAccentEnabled}
-                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(prev => !prev)}
+                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(p => !p)}
                         showEdgeTab={true}
                         onArmMetronome={armMetronome}
                         isMobileLandscape={isMobileLandscape}
-                        onOtherPanelOpened={() => {
-                            closeControlPanelsRef.current?.();
-                        }}
-                    />
-                </div>
-            )}
-
-            {audioSource === 'original' && isYouTubePlayerVisible && activeVideoId && (
-                <div
-                    className="youtube-player-container"
-                    style={{
-                        position: 'fixed',
-                        bottom: isMobileLandscape ? 0 : 80,
-                        right: isMobileLandscape ? 0 : 16,
-                        zIndex: 40,
-                        width: '240px',
-                        height: '427px',
-                        maxWidth: '240px',
-                        maxHeight: '427px',
-                        flexShrink: 0,
-                        overflow: 'hidden',
-                        borderRadius: '8px',
-                    }}
-                >
-                    <YouTubePlayer
-                        ref={youtubePlayerRef}
-                        videoId={activeVideoId}
-                        isVisible={isYouTubePlayerVisible}
-                        onClose={handleYouTubeClose}
-                        currentTime={displayTime}
-                        isPlaying={isPlaying}
-                        onTimeUpdate={handleYouTubeTimeUpdate}
-                        onStateChange={handleYouTubeStateChange}
-                        onPlayerReady={handleYouTubePlayerReady}
-                        isMobileLandscape={isMobileLandscape}
-                        videoVariants={currentSong?.youtubeVariants}
-                        onVariantChange={handleVideoVariantChange}
-                        videoStartOffset={currentSong?.videoStartOffset}
+                        onOtherPanelOpened={() => { closeControlPanelsRef.current?.(); }}
                     />
                 </div>
             )}

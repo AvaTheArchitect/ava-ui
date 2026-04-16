@@ -1,76 +1,95 @@
-/**
- * MaestroCursor v4.3 - onNotesX Fix for Double-Digit Centering
- *
- * ✅ Based on v4.2b + AlphaTab 1.8.1 cursor bug fix
- * ✅ Uses beatBounds.onNotesX (actual note position) instead of calculating from visualBounds
- * ✅ Fixes off-center cursor on double-digit frets (10-25) in GP3 files
- * ✅ Aligns with native cursor fix (GitHub #2546)
- *
- * Changes from v4.2b:
- * - extractVisualBounds() → extractBeatPosition() (returns bounds + noteX)
- * - setBeat() uses pos.noteX for positioning
- * - setTick() uses pos.noteX as currentCenterX
- */
-
 'use client';
 
-
-// ========== TYPES & INTERFACES ==========
+/**
+ * MaestroCursor v4.6
+ * File: components/alphaTab/MaestroCursor.tsx
+ * Date: April 12th, 2026
+ * Cloned from v4.5.2 — backward re-anchor guard added.
+ *
+ * v4.6 CHANGES (minimum delta from v4.5.2):
+ * ✅ lastAcceptedBeatStart + snapArmed — protect against stale post-seek re-anchors.
+ *    Mirrors the protection CursorV2 already proved effective. requestSnap() rearms
+ *    so legitimate backward seeks (loopback, click-back) are always accepted.
+ * ✅ requestSnap() resets both fields — gate is open after every snap.
+ *
+ * ROOT CAUSE this fixes: after a click-to-seek with a large tick delta (jumped=true),
+ * playerPositionChanged calls requestSnap() then immediately calls setBeat() with the
+ * beat at safeTarget (which may be 1-2 ticks before the clicked beat, i.e. prev bar).
+ * v4.5.2 accepted this and overwrote the correctly-published click position.
+ * v4.6 discards any setBeat whose scanStart is meaningfully behind lastAcceptedBeatStart
+ * unless snapArmed is true (i.e. a requestSnap just fired).
+ *
+ * NOTE: With V105's clickedExpandedStart clamp applied to handleClick,
+ * safeTarget no longer lands in the previous beat, so this guard becomes
+ * "belt and suspenders" — it protects against any remaining edge cases.
+ *
+ * 🔒 v4.5.2 PRESERVED EXACTLY (all other behavior byte-for-byte):
+ *   ✅ expandedBeatDuration denominator (FixA)
+ *   ✅ PAUSE CLAMP: progress >= 0.999 + stopped → parks at note head
+ *   ✅ Two-mode walk (MODE A / MODE B)
+ *   ✅ nextBeatCenterX frozen at setBeat(), filled-only (never cleared) in setTick()
+ *   ✅ No RAF in setTick() — direct rendering
+ *   ✅ 3-arg setTick() contract unchanged
+ *   ✅ Purple teardrop SVG — same geometry (cursorWidth=12)
+ */
 
 interface Beat {
-    absolutePlaybackStart: number;
+    absolutePlaybackStart?: number;
+    playbackStart?: number;
     playbackDuration?: number;
+    duration?: number;
     nextBeat?: Beat | null;
+    voice?: any;
     [key: string]: any;
 }
-
-interface VisualBounds {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-}
-
-interface BeatBounds {
-    visualBounds?: VisualBounds;
-    realBounds?: VisualBounds;
-    [key: string]: any;
-}
-
-interface PlaybackRange {
-    startTick: number;
-    endTick: number;
-}
-
-// ========== CONFIGURATION ==========
-
-const DEBUG = false; // 👈 Set true to enable console logs for debugging
-
-// ========== MAESTRO CURSOR CLASS ==========
 
 export class MaestroCursor {
     public element: HTMLElement;
+    private api: any;
 
-    private cursorWidth = 12;
-    private topOverhang = 26;
-    private bottomOverhang = 12;
-    private bottomPointBaseShift = 2;
+    private readonly cursorWidth = 12;
+    private readonly topOverhang = 26;
+    private readonly bottomOverhang = 12;
+    private readonly bottomPointBaseShift = 2;
+    // Max px difference between onNotesX and visual center before we prefer center.
+    // alphaTab's onNotesX drifts left on shuffle down-strums and right on chord stacks.
+    // 6px keeps normal beats unchanged while correcting biased anchors.
+    private readonly ANCHOR_BIAS_PX = 6;
 
-    private hasInitialPosition = false;
-    private svgRendered = false;
-    private pendingSnap = false;
-
-    // Ratchet Protection (prevents clock jitter & handles loop resets)
-    private maxTicksSeenForCurrentBeat: number = 0;
-    private lastBeatStart: number = -1;
     private currentBeat: Beat | null = null;
-    private currentBeatBounds: BeatBounds | null = null;
+    private currentNoteX = 0;
+    private currentY = 0;
+    private currentHeight = 0;
+    private currentVbW = 0;
+    private nextBeatCenterX: number | null = null;
 
-    constructor(container: HTMLElement) {
+    private beatStart = 0;
+    private beatDuration = 0;
+    private beatStartToUse = 0;
+    private expandedBeatDuration = 0;
+
+    private svgRendered = false;
+    private lastSvgHeight = 0;
+    private lastFinalX = -1;
+    private lastFinalY = -1;
+    private hasInitialPosition = false;
+
+    // ── [v4.6] Backward re-anchor guard ─────────────────────────────────────
+    // Prevents stale post-seek playerPositionChanged from overwriting a
+    // correctly-published click position.
+    // snapArmed=true after requestSnap() — allows any beat unconditionally.
+    // Once a beat is accepted, snapArmed=false and the backtrack gate activates.
+    private lastAcceptedBeatStart = -1;
+    private snapArmed = true;
+    // ────────────────────────────────────────────────────────────────────────
+
+    private lastLogBeat = -1;
+
+    constructor(api: any, container: HTMLElement) {
+        this.api = api;
         this.element = document.createElement('div');
-        this.element.id = 'maestro-cursor-v43';
+        this.element.id = 'maestro-cursor-v4';
         this.element.className = 'maestro-cursor-icursor';
-
         Object.assign(this.element.style, {
             position: 'absolute',
             top: '0',
@@ -82,326 +101,256 @@ export class MaestroCursor {
             overflow: 'visible',
             visibility: 'hidden',
             opacity: '0',
-            transform: 'translate3d(-100vw, 0px, 0px)', // Park offscreen
-            transition: 'none'
+            transform: 'translate3d(-100vw, 0px, 0px)',
         });
-
         container.appendChild(this.element);
+        console.log('✅ MaestroCursor v4.6: Ready');
     }
 
-    /**
-     * setBeat() - Discrete jump on beat changes
-     * Called by playedBeatChanged or user clicks
-     */
-    setBeat(beat: Beat | null, beatBounds: BeatBounds | null): void {
-        if (!beat) {
-            this.element.style.visibility = 'hidden';
-            return;
-        }
+    get domElement(): HTMLElement { return this.element; }
 
-        const isSameBeat = beat.absolutePlaybackStart === this.lastBeatStart;
-        this.currentBeat = beat;
-        this.currentBeatBounds = beatBounds;
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public API
+    // ─────────────────────────────────────────────────────────────────────────
 
-        // ✅ V4.3: Use extractBeatPosition to get onNotesX
-        const pos = this.extractBeatPosition(beatBounds);
-        if (!pos) return;
-
-        const vb = pos.bounds;
-
-        // ✅ V4.3: Use pos.noteX (actual note position) instead of calculated center
-        const finalX = pos.noteX - (this.cursorWidth / 2);
-
-        const totalHeight = vb.h + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
-        const finalY = vb.y - this.topOverhang;
-
-        // Always reset ratchet in setBeat (handles seeks correctly)
-        this.lastBeatStart = beat.absolutePlaybackStart;
-        this.maxTicksSeenForCurrentBeat = beat.absolutePlaybackStart;
-
-        // First position or resize - teleport instantly
-        if (!this.hasInitialPosition || this.pendingSnap) {
-            this.snapTo(finalX, finalY, totalHeight);
-            this.hasInitialPosition = true;
-            this.pendingSnap = false;
-        } else if (!isSameBeat) {
-            // Normal beat change - update position
-            this.draw(finalX, finalY, totalHeight);
-        }
-
-        this.ensureSVG(totalHeight, vb.h);
-        this.element.style.visibility = 'visible';
-        this.element.style.opacity = '1';
-    }
-
-    /**
-     * setTick() - 60fps smooth interpolation
-     * Called by playerPositionChanged for frame-by-frame cursor movement
-     */
-    setTick(
-        currentTick: number,
+    setBeat(
         beat: Beat | null,
-        beatBounds: BeatBounds | null,
-        nextBeatCenterX: number | null,
-        playbackRange: PlaybackRange | null = null,
-        isDragging: boolean = false
+        preScannedNextBeat: Beat | null = null,
+        nextExpandedBeatStart: number | null = null,
+        expandedBeatStart: number | null = null,
     ): void {
-        if (!beat || this.pendingSnap) return;
+        if (!beat) { this.hide(); return; }
 
-        // ✅ V4.3: Use extractBeatPosition to get onNotesX
-        const pos = this.extractBeatPosition(beatBounds);
-        if (!pos) {
-            if (DEBUG) console.warn('⚠️ MaestroCursor: No beat position available');
-            return;
+        // ── Compute scanStart for the guard (before any state mutation) ──────
+        const structuralStart = beat.absolutePlaybackStart ?? beat.playbackStart ?? 0;
+        const scanStart = expandedBeatStart ?? structuralStart;
+
+        // ── [v4.6] Backward re-anchor guard ─────────────────────────────────
+        // After a click-to-seek, playerPositionChanged may fire with a stale beat
+        // (from safeTarget landing 1-2 ticks before the clicked beat).
+        // jumped=true → requestSnap() was called → snapArmed=true → that beat is accepted.
+        // With V105's clickedExpandedStart clamp, safeTarget no longer lands in the
+        // previous beat, but this guard remains as belt-and-suspenders protection.
+        //
+        // Gate logic: discard only if ALL of these are true:
+        //   1. hasInitialPosition — not the very first beat placement
+        //   2. !snapArmed — a requestSnap has NOT just fired (which would legitimately allow any beat)
+        //   3. scanStart is meaningfully behind lastAcceptedBeatStart (> BACKTRACK_TICKS)
+        if (this.hasInitialPosition && !this.snapArmed) {
+            const BACKTRACK_TICKS = 60; // tuned: covers 1-2 ticks of EPS drift, not real backward seeks
+            if (this.lastAcceptedBeatStart >= 0 &&
+                scanStart < this.lastAcceptedBeatStart - BACKTRACK_TICKS) {
+                console.log('[Maestro v4.6] out-of-order beat discarded', {
+                    scanStart, lastAccepted: this.lastAcceptedBeatStart,
+                });
+                return;
+            }
         }
+        // Accept this beat — update guard state
+        this.lastAcceptedBeatStart = scanStart;
+        this.snapArmed = false;
+        // ────────────────────────────────────────────────────────────────────
 
-        const vb = pos.bounds;
+        this.currentBeat = beat;
+        this.beatStart = scanStart;
+        this.beatDuration = beat.playbackDuration ?? beat.duration ?? 0;
+        this.beatStartToUse = this.beatStart;
 
-        const beatStart = beat.absolutePlaybackStart;
-        const loopEnd = (playbackRange && playbackRange.endTick > 0)
-            ? playbackRange.endTick
-            : Infinity;
+        this.expandedBeatDuration = nextExpandedBeatStart != null
+            ? Math.max(0, nextExpandedBeatStart - this.beatStart)
+            : this.beatDuration;
 
-        // ============================================
-        // 0️⃣ INPUT VALIDATION & DOUBLE CLAMP (V4.2)
-        // ============================================
-        let effectiveTick = currentTick;
+        const bb = this.api?.renderer?.boundsLookup?.findBeat(beat);
+        if (!bb?.visualBounds) { this.hide(); return; }
 
-        if (playbackRange && playbackRange.endTick > 0) {
-            effectiveTick = Math.min(currentTick, playbackRange.endTick - 1);
-            if (currentTick !== effectiveTick && DEBUG) {
-                console.log(`🛡️ Cursor-level clamp: ${currentTick} → ${effectiveTick}`);
+        const vb = bb.visualBounds;
+        // [v4.6] Guarded anchor selection — prefer onNotesX when close to visual center.
+        // Use this.ANCHOR_BIAS_PX throughout (class field, no local shadow).
+        //
+        // Three-way logic:
+        //   1. onNotesX within ANCHOR_BIAS_PX of center → use onNotesX (they agree)
+        //   2. onNotesX biased BUT vb.w > VBW_INFLATION_GUARD → use onNotesX anyway.
+        //      Bend/pitch-helper annotations (<24>, <17>) inflate vb.w, so centerX
+        //      drifts into the label region rather than the notehead. onNotesX is
+        //      more reliable here. This is the regression vs v4.5 on bend notes.
+        //   3. onNotesX biased AND vb.w normal → use centerX.
+        //      Catches shuffle down-strum (left bias) and chord dyads (right bias).
+        const centerX = vb.x + vb.w / 2;
+        const VBW_INFLATION_GUARD = 16; // px; normal noteheads ~8px, bend annotations push wider
+        const onNotesXValid = typeof bb.onNotesX === 'number';
+        const withinBias = onNotesXValid && Math.abs(bb.onNotesX - centerX) <= this.ANCHOR_BIAS_PX;
+        const boundsInflated = vb.w > VBW_INFLATION_GUARD;
+        this.currentNoteX = (onNotesXValid && (withinBias || boundsInflated))
+            ? bb.onNotesX
+            : centerX;
+        this.currentY = vb.y;
+        this.currentHeight = vb.h;
+        this.currentVbW = vb.w;
+
+        // ── Resolve nextBeatCenterX and FREEZE ────────────────────────────────
+        this.nextBeatCenterX = null;
+        const nextCandidate = preScannedNextBeat ?? null; // structural beat.nextBeat intentionally removed — renderer contract only
+        if (nextCandidate) {
+            const nb = this.api?.renderer?.boundsLookup?.findBeat(nextCandidate);
+            if (nb?.visualBounds) {
+                const nbCenter = nb.visualBounds.x + nb.visualBounds.w / 2;
+                const nbInflated = nb.visualBounds.w > VBW_INFLATION_GUARD;
+                const nbOnNotesOk = typeof nb.onNotesX === 'number';
+                const nbWithin = nbOnNotesOk && Math.abs(nb.onNotesX - nbCenter) <= this.ANCHOR_BIAS_PX;
+                const nx = (nbOnNotesOk && (nbWithin || nbInflated)) ? nb.onNotesX : nbCenter;
+                const sameRow = Math.abs(nb.visualBounds.y - this.currentY) < 5;
+                const curBarIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+                const nextBarIdx = nextCandidate?.voice?.bar?.index ?? nextCandidate?.voice?.bar?.masterBar?.index;
+                if (sameRow && curBarIdx === nextBarIdx) this.nextBeatCenterX = nx;
             }
         }
 
-        // ============================================
-        // 1️⃣ RATCHET & BOUNDARY CLAMP
-        // ============================================
-        effectiveTick = Math.min(effectiveTick, loopEnd);
-
-        if (isDragging) {
-            // 🔓 LOCK REMOVED: Allow free movement during drag
-            this.maxTicksSeenForCurrentBeat = effectiveTick;
-        } else {
-            const backwardJump = this.maxTicksSeenForCurrentBeat - effectiveTick;
-            if (backwardJump > 500) {
-                this.maxTicksSeenForCurrentBeat = effectiveTick;
-            } else {
-                effectiveTick = Math.max(effectiveTick, this.maxTicksSeenForCurrentBeat);
-                this.maxTicksSeenForCurrentBeat = effectiveTick;
-            }
-        }
-        // ============================================
-        // 2️⃣ TARGET X (Real Position Logic)
-        // ============================================
-        // ✅ V4.3: Use pos.noteX (actual note position) as starting point
-        const currentCenterX = pos.noteX;
-
-        let rangeEndTargetX: number | null = null;
-        const nextStart = beat.nextBeat?.absolutePlaybackStart ?? null;
-
-        if (nextStart === null || nextStart > loopEnd) {
-            const rb = (beatBounds as any)?.realBounds;
-            rangeEndTargetX = (rb && typeof rb.x === 'number' && typeof rb.w === 'number')
-                ? (rb.x + rb.w)
-                : (vb.x + vb.w);
-
-            if (DEBUG) console.log(`🎯 Range end target: ${rangeEndTargetX}`);
-        }
-
-        // ============================================
-        // 3️⃣ PROGRESS & DURATION CLAMP
-        // ============================================
-        const beatDuration = beat.playbackDuration || 480;
-        let effectiveDuration = beatDuration;
-
-        if (loopEnd < (beatStart + beatDuration)) {
-            effectiveDuration = Math.max(1, loopEnd - beatStart);
-            if (DEBUG) console.log(`📐 Duration clamped: ${beatDuration} → ${effectiveDuration}`);
-        }
-
-        const safeDuration = Math.max(1, effectiveDuration);
-        const progress = Math.min(
-            Math.max((effectiveTick - beatStart) / safeDuration, 0),
-            1
-        );
-
-        // ============================================
-        // 4️⃣ MOVEMENT CALCULATION
-        // ============================================
-        let walkDistance = 0;
-        const atLoopEnd = effectiveTick >= loopEnd;
-
-        if (atLoopEnd && rangeEndTargetX !== null) {
-            walkDistance = rangeEndTargetX - currentCenterX;
-        } else if (nextBeatCenterX !== null && nextBeatCenterX > currentCenterX) {
-            walkDistance = nextBeatCenterX - currentCenterX;
-        } else {
-            const barBounds = (beatBounds as any)?.barBounds?.visualBounds;
-            const rightEdge = barBounds
-                ? (barBounds.x + barBounds.w - 2)
-                : (vb.x + vb.w);
-            walkDistance = Math.max(rightEdge - currentCenterX, 0);
-        }
-
-        let interpolatedX = currentCenterX + (walkDistance * progress);
-
-        // ============================================
-        // 5️⃣ TRIPLE OVERSHOOT GUARD (V4.2)
-        // ============================================
-        if (playbackRange && rangeEndTargetX !== null) {
-            interpolatedX = Math.min(interpolatedX, rangeEndTargetX);
-
-            if (DEBUG && interpolatedX === rangeEndTargetX) {
-                console.log(`🛑 Cursor clamped at loop boundary ${rangeEndTargetX}`);
-            }
-        }
-
-        if (!atLoopEnd && nextBeatCenterX !== null && nextBeatCenterX > currentCenterX) {
-            interpolatedX = Math.min(interpolatedX, nextBeatCenterX);
-        }
-
-        if (interpolatedX < currentCenterX - 5 && !atLoopEnd) {
-            if (DEBUG) console.warn(`⚠️ Prevented backward movement: ${currentCenterX} → ${interpolatedX}`);
-            interpolatedX = currentCenterX;
-        }
-
-        // ============================================
-        // 6️⃣ RENDER
-        // ============================================
-        const finalX = interpolatedX - (this.cursorWidth / 2);
-        const totalHeight = vb.h + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
+        const finalX = this.currentNoteX - this.cursorWidth / 2;
+        const totalH = vb.h + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
         const finalY = vb.y - this.topOverhang;
-
-        this.draw(finalX, finalY, totalHeight);
+        this.applyTransform(finalX, finalY, totalH, !this.hasInitialPosition);
+        this.hasInitialPosition = true;
+        this.show();
     }
 
-    requestSnap(): void {
-        this.pendingSnap = true;
+    // ── [v4.6] requestSnap: rearm the guard ──────────────────────────────────
+    public requestSnap(): void {
+        this.nextBeatCenterX = null;
+        this.beatStartToUse = this.beatStart;
+        this.lastFinalX = -1;
+        this.lastFinalY = -1;
+        this.snapArmed = true;   // [v4.6] allow next beat unconditionally
+        this.lastAcceptedBeatStart = -1;     // [v4.6] reset accepted baseline
+        console.log('[Maestro v4.6] requestSnap — gate reset');
     }
 
     /**
-        * 🆕 V99.23: Set dragging visual state
-        * Adds/removes .is-dragging class and prevents movement
-        */
-    public setDragging(isDragging: boolean): void {
-        if (isDragging) {
-            this.element.classList.add('is-dragging');
-            console.log('🔒 V99.23: Cursor frozen for drag');
+     * Called on every playerPositionChanged. Direct render — NO RAF.
+     * [FixA] Uses expandedBeatDuration as denominator when available.
+     */
+    setTick(tick: number, nextBeat: Beat | null = null, overrideBeatStart: number | null = null): void {
+        if (!this.currentBeat || this.beatDuration <= 0) return;
+
+        this.beatStartToUse = overrideBeatStart ?? this.beatStart;
+
+        // Fill nextBeatCenterX if setBeat() didn't find one — NEVER clear. [v4.3.5]
+        if (nextBeat && this.nextBeatCenterX === null) {
+            const nb = this.api?.renderer?.boundsLookup?.findBeat(nextBeat);
+            if (nb?.visualBounds) {
+                const nbCenter = nb.visualBounds.x + nb.visualBounds.w / 2;
+                const nbInflated2 = nb.visualBounds.w > this.ANCHOR_BIAS_PX * 2.5; // reuse field; ~16px
+                const nbOnOk2 = typeof nb.onNotesX === 'number';
+                const nbWithin2 = nbOnOk2 && Math.abs(nb.onNotesX - nbCenter) <= this.ANCHOR_BIAS_PX;
+                const nx = (nbOnOk2 && (nbWithin2 || nbInflated2)) ? nb.onNotesX : nbCenter;
+                const sameRow = Math.abs(nb.visualBounds.y - this.currentY) < 5;
+                const curBarIdx = this.currentBeat?.voice?.bar?.index ?? this.currentBeat?.voice?.bar?.masterBar?.index;
+                const nextBarIdx = nextBeat?.voice?.bar?.index ?? nextBeat?.voice?.bar?.masterBar?.index;
+                if (sameRow && curBarIdx === nextBarIdx) this.nextBeatCenterX = nx;
+            }
+        }
+
+        // ── Progress ── [FixA] expanded denominator ───────────────────────────
+        const denom = Math.max(1, this.expandedBeatDuration > 0 ? this.expandedBeatDuration : this.beatDuration);
+        let progress = (tick - this.beatStartToUse) / denom;
+        progress = Math.max(0, Math.min(1, progress));
+
+        // ── Walk distance ─────────────────────────────────────────────────────
+        let walkDistance: number;
+        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
+            walkDistance = this.nextBeatCenterX - this.currentNoteX;        // MODE A
         } else {
-            this.element.classList.remove('is-dragging');
-            console.log('🔓 V99.23: Cursor unfrozen');
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar);
+            walkDistance = mbBounds?.visualBounds
+                ? (mbBounds.visualBounds.x + mbBounds.visualBounds.w) - this.currentNoteX
+                : this.currentVbW;                                          // MODE B
+        }
+
+        let interpolatedX = this.currentNoteX + walkDistance * progress;
+        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
+            interpolatedX = Math.min(interpolatedX, this.nextBeatCenterX);  // MODE A overshoot guard
+        }
+
+        // ✅ Pause clamp — must stay below interpolatedX calculation
+        const isPlaying = this.api?.player?.isPlaying ?? false;
+        if (!isPlaying && progress >= 0.999) interpolatedX = this.currentNoteX;
+
+        const finalX = interpolatedX - this.cursorWidth / 2;
+        const totalH = this.currentHeight + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
+        const finalY = this.currentY - this.topOverhang;
+        this.applyTransform(finalX, finalY, totalH, false);
+
+        if (this.beatStartToUse !== this.lastLogBeat) {
+            this.lastLogBeat = this.beatStartToUse;
+            const mode = this.nextBeatCenterX !== null ? 'A→nextBeat' : 'B→barline';
+            console.log(`[Maestro v4.6] Beat ${this.beatStartToUse} | ${mode}`, {
+                tick,
+                progress: progress.toFixed(3),
+                denom,
+                expandedDur: this.expandedBeatDuration,
+                structuralDur: this.beatDuration,
+                ratio: this.beatDuration > 0 ? (this.expandedBeatDuration / this.beatDuration).toFixed(2) : 'n/a',
+                nextBeatCenterX: this.nextBeatCenterX?.toFixed(1) ?? null,
+            });
         }
     }
 
-    // ========== PRIVATE METHODS ==========
+    destroy(): void {
+        if (this.element.parentElement) this.element.parentElement.removeChild(this.element);
+        console.log('🧹 MaestroCursor v4.6: Destroyed');
+    }
 
-    private draw(x: number, y: number, h: number): void {
+    // ── Helpers (unchanged from v4.5.2) ──────────────────────────────────────
+
+    private applyTransform(x: number, y: number, h: number, snap: boolean): void {
+        if (Math.abs(x - this.lastFinalX) < 0.5 && Math.abs(y - this.lastFinalY) < 0.5) return;
+        this.lastFinalX = x;
+        this.lastFinalY = y;
+        if (snap) this.element.style.transition = 'none';
         this.element.style.transform = `translate3d(${x}px, ${y}px, 0px)`;
         this.element.style.height = `${h}px`;
-    }
-
-    private snapTo(x: number, y: number, h: number): void {
-        this.element.style.transition = 'none';
-        this.draw(x, y, h);
-        void this.element.offsetHeight;
-    }
-
-    /**
-     * ✅ V4.3: NEW METHOD - Extracts beat position using onNotesX
-     * Returns both visualBounds and the actual note X coordinate
-     * Fixes off-center cursor on double-digit frets (GP3 files)
-     */
-    private extractBeatPosition(bb: BeatBounds | null): { bounds: VisualBounds; noteX: number } | null {
-        if (!bb) return null;
-
-        const bounds = bb.visualBounds || bb.realBounds;
-        if (!bounds || typeof bounds.x !== 'number') return null;
-
-        // ✅ Use onNotesX (actual note position from AlphaTab renderer)
-        // Falls back to center calculation if onNotesX unavailable (shouldn't happen in 1.8.1+)
-        const noteX = typeof (bb as any).onNotesX === 'number'
-            ? (bb as any).onNotesX
-            : (bounds.x + bounds.w / 2);
-
-        if (DEBUG && (bb as any).onNotesX === undefined) {
-            console.warn('⚠️ onNotesX unavailable, using fallback calculation');
+        if (!this.svgRendered || Math.abs(h - this.lastSvgHeight) > 5) {
+            this.renderSVG(h, this.currentHeight);
+            this.svgRendered = true;
+            this.lastSvgHeight = h;
         }
-
-        return {
-            bounds: bounds as VisualBounds,
-            noteX
-        };
     }
 
-    private ensureSVG(totalHeight: number, beatHeight: number): void {
-        if (this.svgRendered) return;
-        this.renderSVG(totalHeight, beatHeight);
-        this.svgRendered = true;
-    }
+    private show(): void { this.element.style.visibility = 'visible'; this.element.style.opacity = '1'; }
+    private hide(): void { this.element.style.visibility = 'hidden'; this.element.style.opacity = '0'; }
 
     private renderSVG(totalHeight: number, beatHeight: number): void {
         const w = this.cursorWidth;
         const mid = w / 2;
-
         const baseY = beatHeight + this.topOverhang + this.bottomPointBaseShift;
         const tipY = totalHeight + 2;
         const topR = Math.min(6, mid);
-
-        const dotScale = 1.18;
         const dotCenterX = mid;
         const dotCenterY = 7.5;
+        const dotScale = 1.18;
 
         this.element.innerHTML = `
-        <svg width="${w}" height="${totalHeight}"
-             viewBox="0 0 ${w} ${totalHeight}"
-             style="display:block;overflow:visible;filter:drop-shadow(0px 2px 4px rgba(0,0,0,0.5));">
-            <defs>
-                <filter id="maestroCursorShadow">
-                    <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
-                    <feOffset dx="0" dy="2" />
-                    <feComponentTransfer>
-                        <feFuncA type="linear" slope="0.5" />
-                    </feComponentTransfer>
-                    <feMerge>
-                        <feMergeNode />
-                        <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                </filter>
-            </defs>
-
-            <path d="
-                M 0,${topR}
-                Q 0,0 ${topR},0
-                Q ${w},0 ${w},${topR}
-                V ${baseY}
-                L ${mid} ${tipY}
-                L 0 ${baseY}
-                Z"
-                fill="rgba(168, 85, 247, 0.45)"
-                filter="url(#maestroCursorShadow)" />
-
-            <path d="
-                M ${mid - 3.5} 6
-                C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
-                C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
-                C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
-                C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6
-                Z"
-                fill="white"
-                transform="
-                    translate(${dotCenterX} ${dotCenterY})
-                    scale(${dotScale})
-                    translate(${-dotCenterX} ${-dotCenterY})
-                "
-            />
-        </svg>
-        `;
+            <svg width="${w}" height="${totalHeight}"
+                 viewBox="0 0 ${w} ${totalHeight}"
+                 style="display:block;overflow:visible;filter:drop-shadow(0px 2px 4px rgba(0,0,0,0.5));">
+                <defs>
+                    <filter id="maestroCursorShadow">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+                        <feOffset dx="0" dy="2"/>
+                        <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+                        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+                <path d="M 0,${topR} Q 0,0 ${topR},0 Q ${w},0 ${w},${topR} V ${baseY} L ${mid} ${tipY} L 0 ${baseY} Z"
+                    fill="rgba(168, 85, 247, 0.45)" filter="url(#maestroCursorShadow)"/>
+                <path d="M ${mid - 3.5} 6 C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3 C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
+                    C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12 C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z"
+                    fill="white"
+                    transform="translate(${dotCenterX} ${dotCenterY}) scale(${dotScale}) translate(${-dotCenterX} ${-dotCenterY})"/>
+            </svg>`;
     }
+}
 
-    destroy(): void {
-        if (this.element.parentElement) {
-            this.element.parentElement.removeChild(this.element);
-        }
-    }
+export function attachMaestroCursor(api: any, container: HTMLElement): MaestroCursor {
+    return new MaestroCursor(api, container);
 }

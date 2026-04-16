@@ -261,6 +261,11 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     const initTokenRef = useRef<number>(0);
     const isInitializingRef = useRef<boolean>(false);
 
+    // 🔥 V101.2: Gate track-change re-anchor until first stable load cycle completes.
+    // Prevents the selectedTrackIndex effect from firing during AlphaTab's late
+    // geometry passes — which is the real source of the delayed scroll jump.
+    const hasCompletedInitialAnchorRef = useRef<boolean>(false);
+
     // ============================================
     // 🔥 V99.3: DUAL TRACK INDEX REFS
     // ============================================
@@ -490,6 +495,10 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
 
                         cursor.requestSnap();
                         cursor.setBeat(beatResult.beat, beatBounds);
+
+                        // 🔥 V101.2: Mark initial anchor as stable — unlocks track-change re-anchor
+                        hasCompletedInitialAnchorRef.current = true;
+
                         if (DEBUG) console.log(`✅ Cursor anchored at tick ${targetTick} (attempt ${attempt + 1})`);
                     };
 
@@ -1152,7 +1161,9 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
     }, [isLooping]);
 
     // ============================================
-    // 🔥 V99.0/V99.3: TRACK CHANGE CURSOR RE-ANCHOR
+    // 🔥 V101.2: TRACK CHANGE CURSOR RE-ANCHOR
+    // Falls back to allTrackIndices if selected track has no beat bounds.
+    // Explicitly restores cursor visibility after any successful anchor.
     // ============================================
     useEffect(() => {
         const api = apiRef.current;
@@ -1165,10 +1176,17 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
         if (!tickCache || !api.renderer?.boundsLookup) return;
 
         const attemptReAnchor = (retryCount: number = 0) => {
+            // 🔥 V101.2: Skip re-anchor entirely until initial load cycle is stable.
+            // User-driven track changes after first load are allowed through normally.
+            if (!hasCompletedInitialAnchorRef.current) {
+                if (DEBUG) console.log('🔒 V101.2: Track re-anchor suppressed — initial load not yet stable');
+                return;
+            }
             const targetTick = api.tickPosition ?? 0;
             const tryTicks = [targetTick, targetTick - 1, targetTick - 10, targetTick - 120].filter(t => t >= 0);
             let beatResult: any = null;
 
+            // ── Step 1: Try selected track first ──────────────────────────
             for (const t of tryTicks) {
                 const res = tickCache.findBeat(cursorTrackIndicesRef.current, t);
                 if (res?.beat) { beatResult = { ...res, resolvedTick: t }; break; }
@@ -1183,7 +1201,8 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                 && targetTick >= (api.score.masterBars[api.score.masterBars.length - 1]?.start ?? Infinity);
 
             if (!beatResult?.beat) {
-                if (DEBUG && !isNearSongEnd && retryCount === 0) console.warn('⚠️ Track change: no beat found', { selectedTrackIndex, targetTick });
+                if (DEBUG && !isNearSongEnd && retryCount === 0)
+                    console.warn('⚠️ Track change: no beat found', { selectedTrackIndex, targetTick });
                 return;
             }
 
@@ -1194,26 +1213,143 @@ export const AlphaTabRenderer: React.FC<AlphaTabRendererProps> = ({
                     retryCount === 0
                         ? requestAnimationFrame(() => attemptReAnchor(retryCount + 1))
                         : setTimeout(() => attemptReAnchor(retryCount + 1), 80);
-                } else if (DEBUG) {
-                    console.warn('⚠️ Track change: beat has no bounds after retries', { selectedTrackIndex });
+                    return;
                 }
+
+                // ── Step 2: Selected track exhausted — fall back to all tracks ──
+                // Certain GP tracks don't yield usable beat bounds.
+                // allTrackIndices is guaranteed to have rendered geometry.
+                if (DEBUG) console.warn(
+                    `⚠️ Track ${selectedTrackIndex} has no beat bounds after retries — falling back to allTrackIndices`
+                );
+
+                let fallbackBeat: any = null;
+                let fallbackBounds: any = null;
+
+                for (const t of [0, ...tryTicks]) {
+                    const res = tickCache.findBeat(allTrackIndicesRef.current, t);
+                    if (res?.beat) {
+                        const bounds = api.renderer.boundsLookup.findBeat(res.beat);
+                        if (bounds) { fallbackBeat = res.beat; fallbackBounds = bounds; break; }
+                    }
+                }
+
+                if (!fallbackBeat || !fallbackBounds) {
+                    if (DEBUG) console.warn('⚠️ Track change: fallback anchor also failed — cursor remains at last position');
+                    return;
+                }
+
+                const fallbackTick = fallbackBeat.absolutePlaybackStart ?? 0;
+
+                // ── 🔍 DIAGNOSTIC: Scroll container before/after fallback anchor ──
+                const scrollEl =
+                    scrollContainerRef?.current ||
+                    (api?.settings?.display as any)?.scrollElement as HTMLElement | null ||
+                    null;
+
+                console.log('🔍 FALLBACK A before anchor', {
+                    scrollTop: scrollEl?.scrollTop ?? null,
+                    selectedTrackIndex,
+                    fallbackTick,
+                });
+
+                // ── 🔒 Preserve scroll position across fallback anchor ─────────
+                // Cipher: setTick() is suspected to be yanking the viewport.
+                // Snapshot scrollTop before and restore after (+ one RAF frame).
+                const prevScrollTop = scrollEl?.scrollTop ?? 0;
+
+                cursor.requestSnap();
+                cursor.setBeat(fallbackBeat, fallbackBounds);
+
+                console.log('🔍 FALLBACK B after setBeat', {
+                    scrollTop: scrollEl?.scrollTop ?? null,
+                });
+
+                cursor.setTick(fallbackTick, fallbackBeat, fallbackBounds, null, null);
+
+                console.log('🔍 FALLBACK C after setTick', {
+                    scrollTop: scrollEl?.scrollTop ?? null,
+                });
+
+                if (scrollEl) {
+                    scrollEl.scrollTop = prevScrollTop;
+                    requestAnimationFrame(() => { scrollEl.scrollTop = prevScrollTop; });
+                }
+
+                setTimeout(() => {
+                    console.log('🔍 FALLBACK D +50ms', { scrollTop: scrollEl?.scrollTop ?? null });
+                }, 50);
+                setTimeout(() => {
+                    console.log('🔍 FALLBACK E +150ms', { scrollTop: scrollEl?.scrollTop ?? null });
+                }, 150);
+
+                // ── Step 3: Force cursor visible after fallback ───────────
+                const el = cursor.element;
+                if (el) { el.style.visibility = 'visible'; el.style.opacity = '1'; }
+
+                if (DEBUG) console.log(
+                    `✅ Track change: cursor anchored via fallback (allTracks)`,
+                    { selectedTrackIndex, fallbackTick }
+                );
                 return;
             }
 
+            // ── Normal path: selected track has valid bounds ───────────────
             const anchorTick = beatResult.beat.absolutePlaybackStart ?? beatResult.resolvedTick;
             const loopActive = isLoopingRef.current;
             const activeRange = loopActive ? (playbackRangeRef.current || lastStableRangeRef.current) : null;
             const rangeForCursor = (activeRange && activeRange.endTick > activeRange.startTick) ? activeRange : null;
 
+            // ── 🔍 DIAGNOSTIC: Scroll container across normal anchor calls ──
+            const scrollElNormal =
+                scrollContainerRef?.current ||
+                (api?.settings?.display as any)?.scrollElement as HTMLElement | null ||
+                null;
+
+            console.log('🔍 NORMAL A before anchor', {
+                scrollTop: scrollElNormal?.scrollTop ?? null,
+                anchorTick,
+                selectedTrackIndex,
+            });
+
             cursor.requestSnap();
+
+            console.log('🔍 NORMAL B after requestSnap', {
+                scrollTop: scrollElNormal?.scrollTop ?? null,
+            });
+
             cursor.setBeat(beatResult.beat, beatBounds);
+
+            console.log('🔍 NORMAL C after setBeat', {
+                scrollTop: scrollElNormal?.scrollTop ?? null,
+            });
+
             cursor.setTick(anchorTick, beatResult.beat, beatBounds, null, rangeForCursor);
 
-            if (DEBUG) console.log('✅ Track change: cursor re-anchored', { selectedTrackIndex, anchorTick, retriesNeeded: retryCount });
+            console.log('🔍 NORMAL D after setTick', {
+                scrollTop: scrollElNormal?.scrollTop ?? null,
+            });
+
+            setTimeout(() => {
+                console.log('🔍 NORMAL E +50ms', { scrollTop: scrollElNormal?.scrollTop ?? null });
+            }, 50);
+            setTimeout(() => {
+                console.log('🔍 NORMAL F +150ms', { scrollTop: scrollElNormal?.scrollTop ?? null });
+            }, 150);
+
+            // ── Step 3: Force cursor visible after successful anchor ───────
+            const el = cursor.element;
+            if (el) { el.style.visibility = 'visible'; el.style.opacity = '1'; }
+
+            if (DEBUG) console.log(
+                '✅ Track change: cursor re-anchored',
+                { selectedTrackIndex, anchorTick, retriesNeeded: retryCount }
+            );
         };
 
         attemptReAnchor(0);
     }, [selectedTrackIndex, isRendered, scoreIsLoaded, renderCycle]);
+
 
     // ========== RENDER ==========
 

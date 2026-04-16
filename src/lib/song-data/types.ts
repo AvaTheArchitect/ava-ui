@@ -2,9 +2,15 @@
  * src/lib/song-data/types.ts
  *
  * Maestro Tabs Platform — Core Data Models
- * V2.3 — March 14th, 2026
+ * V2.4 — March 24th, 2026
  *
- * 🔥 V2.3 CHANGES:
+ * 🔥 V2.4 CHANGES:
+ * ✅ SongItem.file_path added — nested storage path for replaced GP files
+ *    (user_id/tab_id/filename). page.tsx uses file_path first, falling back
+ *    to file_name.file_extension for legacy root-level files.
+ * ✅ Tab.file_path added — mirrors tabs.file_path DB column (text, nullable)
+ *
+ * 🔒 V2.3 PRESERVED:
  * ✅ Genre + GenreLabels removed — now canonical in src/lib/song-data/genres.ts
  *    Re-exported here via './genres' so all existing imports remain unbroken.
  *
@@ -173,6 +179,13 @@ export interface SongItem {
    */
   file_extension?: string;
 
+  /**
+   * Full nested Storage path for replaced files (e.g. "user_id/tab_id/filename.gp5").
+   * Takes priority over file_name + file_extension in signed URL resolution.
+   * Legacy root-level files will have this as undefined — fallback applies.
+   */
+  file_path?: string; // ← ADD V2.4
+
   difficulty?: Difficulty;
   coverUrl?: string;
 
@@ -202,6 +215,8 @@ export interface SongItem {
     backing?: string;
     solo?: string;
     playthrough?: string;
+    live?: string;
+    lesson?: string;
   };
 
   /**
@@ -242,6 +257,7 @@ export interface SongItem {
  *   tabs.thumbnail_url     → SongItem.thumbnailUrl
  *   tabs.thumbnail_path    → SongItem.thumbnailPath
  *   tabs.updated_at        → SongItem.updatedAt
+ *   tabs.file_path         → SongItem.file_path
  */
 export type Tab = {
   id: string;
@@ -261,6 +277,7 @@ export type Tab = {
 
   file_name?: string;
   file_extension?: string;
+  file_path?: string; // ← ADD V2.4
   slug?: string;
   version?: string;
   source?: string;

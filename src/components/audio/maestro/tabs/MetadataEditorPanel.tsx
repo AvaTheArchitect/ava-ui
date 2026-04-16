@@ -3,35 +3,21 @@
 /**
  * MetadataEditorPanel.tsx
  * src/components/audio/maestro/tabs/MetadataEditorPanel.tsx
- * V3.8 — Import GENRE_OPTIONS, TUNINGS, TUNING_MIDI_MAP, detectTuningSlug,
- *         detectInstrumentFromMidi from @/lib/song-data (canonical source)
- * Date: March 14th, 2026
+ * V3.9 — time_signature + source persisted on file replacement
+ * Date: March 24th, 2026
  *
- * 🔥 V3.8 CHANGES (pure import refactor — no UI or logic changes):
- * ✅ Removed inline GENRE_OPTIONS — now imported from @/lib/song-data
- * ✅ Removed inline TUNINGS — now imported from @/lib/song-data
- * ✅ Removed inline TUNING_MIDI_MAP — now imported from @/lib/song-data
- * ✅ Removed inline detectTuningSlug — now imported from @/lib/song-data
- * ✅ Removed inline detectInstrumentFromMidi — now imported from @/lib/song-data
+ * 🔥 V3.9 CHANGES:
+ * ✅ ExtractedMeta: source field added
+ * ✅ handleTabFile: source defaults to 'songsterr' on file stage
+ * ✅ handleSave section C: time_signature + source written to tabs row
+ *    — only when pendingFile is staged (safe: never wipes on metadata-only saves)
  *
- * 🔒 V3.7 FEATURES (PRESERVED):
- * ✅ AUDIO_ROWS defined: full_mix · backing · stem_source
+ * 🔒 V3.8 PRESERVED:
+ * ✅ Import GENRE_OPTIONS, TUNINGS, detectTuningSlug, detectInstrumentFromMidi from @/lib/song-data
+ * ✅ AUDIO_ROWS: full_mix · backing
  * ✅ AudioSlotState per slot: existingId, loadedName, loadedPath, pendingFile, clearPending
- * ✅ Load: tab_audio rows mapped by audio_type into slot state
- * ✅ Save: per-slot upload → insert/update; clearPending → delete
- * ✅ UI: one labeled drop zone per slot with quality hint + loaded filename bar + X clear
- * ✅ stem_source slot shows FLAC/WAV quality recommendation
- * ✅ Legacy compat on load: single 'reference' row mapped to full_mix slot
- *
- * ─── AUDIO SLOTS ─────────────────────────────────────────────────────────────
- *   full_mix    → complete song for real audio playback mode
- *   backing     → no lead guitar, practice mode
- *   stem_source → high-quality source for AI stem/tab separation (FLAC/WAV)
- *
- * ─── FUTURE SQL (when labels are finalized) ──────────────────────────────────
- *   ALTER TABLE tab_audio
- *     ADD CONSTRAINT tab_audio_audio_type_check
- *     CHECK (audio_type IN ('reference', 'full_mix', 'backing', 'stem_source'));
+ * ✅ All save sections A/B/D — UNTOUCHED
+ * ✅ All UI — UNTOUCHED
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -57,7 +43,6 @@ interface VideoRowData {
 
 type VideoState = Record<VideoKey, VideoRowData>;
 
-// 🔥 V3.7: Per-slot audio state
 interface AudioSlotState {
     existingId: string | null;
     loadedName: string;
@@ -70,16 +55,23 @@ type AudioSlotMap = Record<AudioType, AudioSlotState>;
 
 interface FormState {
     title: string; artist: string; album: string; year: string;
-    genre: string; difficulty: string; instrument: string; tuning: string; tempo: string;
+    genre: string; difficulty: string; instrument: string; tuning: string;
+    source: string; tempo: string;                              // ← V3.9.1: source added
 }
 
+// V3.9: source added — set to 'songsterr' when a file is staged
 interface ExtractedMeta {
-    tempo?: number; tuning?: string; instrument?: string; timeSignature?: string;
+    tempo?: number;
+    tuning?: string;
+    instrument?: string;
+    timeSignature?: string;
+    source?: string;            // ← V3.9
 }
 
 export interface MetadataEditorPanelProps {
     tabId: string | null;
     onClose?: () => void;
+    onSave?: (tabId: string, patch: { title: string; artist: string; album?: string }) => void;
 }
 
 // ─── Video row definitions ────────────────────────────────────────────────────
@@ -93,9 +85,6 @@ const VIDEO_ROWS: { key: VideoKey; label: string }[] = [
 ];
 const VIDEO_KEYS: VideoKey[] = ['main', 'backing', 'solo', 'playthrough', 'live', 'lesson'];
 
-// 🔥 V3.7: Audio slot definitions
-// Note: stem_source slot lives in NewTabPanel.tsx (AI pipeline entry point),
-// not here. The MetadataEditor only manages playback-oriented audio tracks.
 const AUDIO_ROWS: {
     key: AudioType;
     label: string;
@@ -117,11 +106,7 @@ const AUDIO_ROWS: {
 const AUDIO_KEYS: AudioType[] = ['full_mix', 'backing'];
 
 const EMPTY_AUDIO_SLOT = (): AudioSlotState => ({
-    existingId: null,
-    loadedName: '',
-    loadedPath: '',
-    pendingFile: null,
-    clearPending: false,
+    existingId: null, loadedName: '', loadedPath: '', pendingFile: null, clearPending: false,
 });
 
 const EMPTY_AUDIO_STATE = (): AudioSlotMap => ({
@@ -197,6 +182,18 @@ const INSTRUMENT_OPTIONS = [
 
 const DIFFICULTY_OPTIONS = [
     { label: 'Beginner', value: '1' }, { label: 'Intermediate', value: '2' }, { label: 'Advanced', value: '3' },
+];
+
+// V3.9.1: Source vocabulary — normalized slugs stored in tabs.source
+const SOURCE_OPTIONS = [
+    { label: 'Songsterr', value: 'songsterr' },
+    { label: 'Ultimate Guitar', value: 'ultimate_guitar' },
+    { label: 'GProTab', value: 'gprotab' },
+    { label: 'MuseScore', value: 'musescore' },
+    { label: '911Tabs', value: '911tabs' },
+    { label: 'User Upload', value: 'user_upload' },
+    { label: 'AI Generated', value: 'ai_generated' },
+    { label: 'Other', value: 'other' },
 ];
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -568,15 +565,10 @@ const VideoRow: React.FC<{
 
 // ─── AudioSlotRow ─────────────────────────────────────────────────────────────
 const AudioSlotRow: React.FC<{
-    label: string;
-    hint: string;
-    qualityNote?: string;
-    slot: AudioSlotState;
-    onFile: (file: File) => void;
-    onClear: () => void;
-    onUndoClear: () => void;
-    dark: boolean;
-    audioKey: AudioType;
+    label: string; hint: string; qualityNote?: string;
+    slot: AudioSlotState; onFile: (file: File) => void;
+    onClear: () => void; onUndoClear: () => void;
+    dark: boolean; audioKey: AudioType;
 }> = ({ label, hint, qualityNote, slot, onFile, onClear, onUndoClear, dark, audioKey }) => {
     const [dragOver, setDragOver] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -637,11 +629,7 @@ const AudioSlotRow: React.FC<{
                 style={{ border: `2px dashed ${dragOver ? PURPLE : hasPending ? GREEN : 'var(--upload-border)'}`, borderRadius: 7, padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'pointer', background: dragOver ? 'rgba(147,51,234,0.04)' : 'transparent', transition: 'border-color 0.15s ease' }}>
                 <span style={{ fontSize: 18 }}>{hasPending ? '✓' : '🎵'}</span>
                 <span style={{ fontSize: 12, color: hasPending ? GREEN : 'var(--text-secondary)', fontWeight: hasPending ? 500 : 300, fontFamily: 'inherit', textAlign: 'center' }}>
-                    {hasPending
-                        ? `Staged: ${slot.pendingFile!.name}`
-                        : hasLoaded
-                            ? 'Drop a replacement file to swap'
-                            : 'Drop file here, or click to select'}
+                    {hasPending ? `Staged: ${slot.pendingFile!.name}` : hasLoaded ? 'Drop a replacement file to swap' : 'Drop file here, or click to select'}
                 </span>
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'inherit' }}>MP3 · WAV · OGG · FLAC</span>
             </div>
@@ -672,7 +660,7 @@ const SectionNav: React.FC<{ active: SectionKey; onChange: (s: SectionKey) => vo
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId, onClose }) => {
+export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId, onClose, onSave, }) => {
     const router = useRouter();
     const dark = useDark();
 
@@ -682,7 +670,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
     const [originalUserId, setOriginalUserId] = useState('');
     const [showHelp, setShowHelp] = useState(false);
 
-    const [form, setFormState] = useState<FormState>({ title: '', artist: '', album: '', year: '', genre: '', difficulty: '', instrument: '', tuning: '', tempo: '' });
+    const [form, setFormState] = useState<FormState>({ title: '', artist: '', album: '', year: '', genre: '', difficulty: '', instrument: '', tuning: '', source: '', tempo: '' });
     const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'general' | VideoKey, string>>>({});
     const [dupWarning, setDupWarning] = useState('');
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -691,7 +679,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
 
     const [videos, setVideos] = useState<VideoState>(EMPTY_VIDEO_STATE());
     const [syncOpenRows, setSyncOpenRows] = useState<Set<VideoKey>>(new Set());
-
     const [audioSlots, setAudioSlots] = useState<AudioSlotMap>(EMPTY_AUDIO_STATE());
 
     const set = useCallback(<K extends keyof FormState>(k: K, v: string) => {
@@ -733,6 +720,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
     }, []);
 
     const [pendingFile, setPendingFile] = useState<File | null>(null);
+    const [pendingTimeSignature, setPendingTimeSignature] = useState<string | null>(null); // ← V3.9.2: survives applyExtractedToForm
     const [fileError, setFileError] = useState('');
     const [extractedMeta, setExtractedMeta] = useState<ExtractedMeta | null>(null);
     const [applyExtracted, setApplyExtracted] = useState<Set<string>>(new Set());
@@ -740,31 +728,25 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
     const fileInputRef = useRef<HTMLInputElement>(null);
     const alphaTabRef = useRef<any>(null);
 
-    // ── Load — parallel fetch tabs + tab_youtube + tab_audio ─────────────────
+    // ── Load ──────────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!tabId) { setLoadStatus('missing-id'); return; }
-
         Promise.all([
             supabase.from('tabs').select('*').eq('id', tabId).single(),
             supabase.from('tab_youtube').select('*').eq('tab_id', tabId),
             supabase.from('tab_audio').select('*').eq('tab_id', tabId),
         ]).then(([{ data, error }, { data: ytRows }, { data: audioRowsData }]) => {
             if (error || !data) { setLoadStatus('not-found'); return; }
-
-            setOriginalFileName(
-                data.file_name && data.file_extension
-                    ? `${data.file_name}.${data.file_extension}` : ''
-            );
+            setOriginalFileName(data.file_name && data.file_extension ? `${data.file_name}.${data.file_extension}` : '');
             setOriginalUserId(data.user_id ?? '');
-
             setFormState({
                 title: data.title ?? '', artist: data.artist ?? '', album: data.album ?? '',
                 year: data.year != null ? String(data.year) : '',
                 genre: data.genre ?? '', difficulty: data.difficulty != null ? String(data.difficulty) : '',
                 instrument: data.instrument ?? '', tuning: data.tuning ?? '',
+                source: data.source ?? '',                      // ← V3.9.1
                 tempo: data.tempo != null ? String(data.tempo) : '',
             });
-
             const newVideos = EMPTY_VIDEO_STATE();
             (ytRows ?? []).forEach((row: any) => {
                 const key = row.video_type as VideoKey;
@@ -773,29 +755,18 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                     url: row.youtube_id ?? row.video_id ?? '',
                     syncMode: (row.sync_mode ?? row.sync_method ?? 'simple') === 'advanced' ? 'advanced' : 'simple',
                     startOffset: String(row.start_offset ?? row.simple_sync ?? 0),
-                    advancedPoints: Array.isArray(row.sync_points) ? row.sync_points
-                        : Array.isArray(row.advanced_sync) ? row.advanced_sync : [],
+                    advancedPoints: Array.isArray(row.sync_points) ? row.sync_points : Array.isArray(row.advanced_sync) ? row.advanced_sync : [],
                 };
             });
             setVideos(newVideos);
-
-            // Map tab_audio rows by audio_type into slots
-            // Legacy compat: 'reference' row maps to full_mix slot
             const newAudio = EMPTY_AUDIO_STATE();
             (audioRowsData ?? []).forEach((row: any) => {
                 let key = row.audio_type as AudioType;
                 if ((key as string) === 'reference') key = 'full_mix';
                 if (!key || !(key in newAudio)) return;
-                newAudio[key] = {
-                    existingId: row.id,
-                    loadedName: row.filename ?? '',
-                    loadedPath: row.file_path ?? '',
-                    pendingFile: null,
-                    clearPending: false,
-                };
+                newAudio[key] = { existingId: row.id, loadedName: row.filename ?? '', loadedPath: row.file_path ?? '', pendingFile: null, clearPending: false };
             });
             setAudioSlots(newAudio);
-
             setLoadStatus('ready');
             setIsDirty(false);
         });
@@ -813,11 +784,19 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
         try {
             const at = await getAlphaTab();
             const score = at.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(await file.arrayBuffer()), new at.Settings());
-            const extracted: ExtractedMeta = {};
+
+            // V3.9: source defaults to 'songsterr' on file stage — update to
+            // 'ultimate_guitar' or 'manual_upload' as needed for other sources.
+            const extracted: ExtractedMeta = {
+                source: 'songsterr',
+            };
+
             const tempoVal = score.masterBars?.[0]?.tempoAutomation?.value;
             if (tempoVal) extracted.tempo = Math.round(tempoVal);
+
             const mb0 = score.masterBars?.[0];
             if (mb0) extracted.timeSignature = `${mb0.timeSignatureNumerator}/${mb0.timeSignatureDenominator}`;
+
             const track = score.tracks?.[0];
             if (track) {
                 const isPerc = track.isPercussion ?? false;
@@ -829,12 +808,19 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                     extracted.instrument = detectInstrumentFromMidi(midiArr, isPerc) ?? undefined;
                 } else if (isPerc) extracted.instrument = 'drums';
             }
+
             setExtractedMeta(extracted);
+            setPendingTimeSignature(extracted.timeSignature ?? null);
+            // V3.9.3: auto-fill Source dropdown from extracted metadata so the
+            // user sees and can edit it before saving — no silent background writes.
+            if (extracted.source) set('source', extracted.source);
             const auto = new Set<string>();
             if (extracted.tempo) auto.add('tempo');
             if (extracted.tuning) auto.add('tuning');
             if (extracted.instrument) auto.add('instrument');
-            setApplyExtracted(auto); setPendingFile(file); setIsDirty(true);
+            setApplyExtracted(auto);
+            setPendingFile(file);
+            setIsDirty(true);
         } catch { setFileError('Could not parse file — is this a valid Guitar Pro or MusicXML file?'); }
     }, [getAlphaTab]);
 
@@ -858,6 +844,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
         if (!form.instrument) e.instrument = 'Instrument is required';
         if (!form.tuning) e.tuning = 'Tuning is required';
         if (form.year) { const y = Number(form.year); if (isNaN(y) || y < 1900 || y > new Date().getFullYear() + 1) e.year = 'Enter a valid year (1900–present)'; }
+        // Tempo is optional — only validate range if the user typed something
         if (form.tempo) { const t = Number(form.tempo); if (isNaN(t) || t < 30 || t > 300) e.tempo = 'Tempo must be 30–300 BPM'; }
         for (const { key } of VIDEO_ROWS) {
             if (videos[key].url.trim() && !isValidYouTubeInput(videos[key].url))
@@ -879,55 +866,41 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
         await checkDuplicate();
         try {
             // ── A. Tab file replacement ────────────────────────────────────────
-            if (pendingFile && originalUserId) {
+            // V+1 fix: originalUserId is '' for legacy seeded songs (user_id = null in DB).
+            // Fall back to public/tabId/filename for legacy rows without a user_id.
+            if (pendingFile) {
                 const ext = pendingFile.name.split('.').pop()!;
                 const base = pendingFile.name.replace(/\.[^.]+$/, '');
-                const path = `${originalUserId}/${tabId}/${pendingFile.name}`;
-                const { error: upErr } = await supabase.storage.from('tabs').upload(path, pendingFile, { upsert: true });
+                const storagePath = originalUserId
+                    ? `${originalUserId}/${tabId}/${pendingFile.name}`
+                    : `public/${tabId}/${pendingFile.name}`;
+                const { error: upErr } = await supabase.storage.from('tabs').upload(storagePath, pendingFile, { upsert: true });
                 if (upErr) throw upErr;
-                const { error: fpErr } = await supabase.from('tabs').update({ file_name: base, file_extension: ext, file_path: path }).eq('id', tabId);
+                const { error: fpErr } = await supabase.from('tabs').update({
+                    file_name: base, file_extension: ext, file_path: storagePath,
+                }).eq('id', tabId);
                 if (fpErr) throw fpErr;
-                setOriginalFileName(`${base}.${ext}`); setPendingFile(null);
+                setOriginalFileName(`${base}.${ext}`);
+                setPendingFile(null);
             }
 
             // ── B. Per-slot tab_audio upsert / delete ─────────────────────────
             for (const key of AUDIO_KEYS) {
                 const slot = audioSlots[key];
-
                 if (slot.pendingFile && originalUserId) {
                     const audioPath = `${originalUserId}/${tabId}/audio/${key}/${slot.pendingFile.name}`;
                     const { error: auErr } = await supabase.storage.from('tabs').upload(audioPath, slot.pendingFile, { upsert: true });
                     if (auErr) throw auErr;
-
-                    const payload = {
-                        tab_id: tabId,
-                        audio_type: key,
-                        filename: slot.pendingFile.name,
-                        file_path: audioPath,
-                        sync_mode: 'simple',
-                        simple_sync: 0,
-                        advanced_sync: [],
-                    };
-
+                    const payload = { tab_id: tabId, audio_type: key, filename: slot.pendingFile.name, file_path: audioPath, sync_mode: 'simple', simple_sync: 0, advanced_sync: [] };
                     if (slot.existingId) {
                         const { error: updErr } = await supabase.from('tab_audio').update(payload).eq('id', slot.existingId);
                         if (updErr) throw updErr;
                     } else {
                         const { data: inserted, error: insErr } = await supabase.from('tab_audio').insert(payload).select('id').single();
                         if (insErr) throw insErr;
-                        if (inserted) {
-                            setAudioSlots(p => ({
-                                ...p,
-                                [key]: { ...p[key], existingId: inserted.id, loadedName: slot.pendingFile!.name, loadedPath: audioPath, pendingFile: null },
-                            }));
-                        }
+                        if (inserted) setAudioSlots(p => ({ ...p, [key]: { ...p[key], existingId: inserted.id, loadedName: slot.pendingFile!.name, loadedPath: audioPath, pendingFile: null } }));
                     }
-                    if (slot.existingId) {
-                        setAudioSlots(p => ({
-                            ...p,
-                            [key]: { ...p[key], loadedName: slot.pendingFile!.name, loadedPath: audioPath, pendingFile: null },
-                        }));
-                    }
+                    if (slot.existingId) setAudioSlots(p => ({ ...p, [key]: { ...p[key], loadedName: slot.pendingFile!.name, loadedPath: audioPath, pendingFile: null } }));
                 } else if (slot.clearPending && slot.existingId) {
                     const { error: delErr } = await supabase.from('tab_audio').delete().eq('id', slot.existingId);
                     if (delErr) throw delErr;
@@ -936,20 +909,34 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
             }
 
             // ── C. Core metadata ───────────────────────────────────────────────
-            const { error: metaErr } = await supabase.from('tabs').update({
-                title: form.title.trim(), artist: form.artist.trim(),
-                album: form.album.trim() || null, year: form.year ? parseInt(form.year) : null,
-                genre: form.genre || null, difficulty: form.difficulty ? parseInt(form.difficulty) : null,
-                instrument: form.instrument || null, tuning: form.tuning || null,
+            // V3.9: time_signature + source written only when a file is staged —
+            // prevents wiping these fields on metadata-only saves.
+            const metadataPatch: any = {
+                title: form.title.trim(),
+                artist: form.artist.trim(),
+                album: form.album.trim() || null,
+                year: form.year ? parseInt(form.year) : null,
+                genre: form.genre || null,
+                difficulty: form.difficulty ? parseInt(form.difficulty) : null,
+                instrument: form.instrument || null,
+                tuning: form.tuning || null,
                 tempo: form.tempo ? parseInt(form.tempo) : null,
-            }).eq('id', tabId);
+                source: form.source || null,                    // ← V3.9.1: always from form
+            };
+
+            if (pendingFile && pendingTimeSignature) {
+                metadataPatch.time_signature = pendingTimeSignature; // ← V3.9.2: survives Apply button
+            }
+            // source is now form-driven — remove the extractedMeta fallback
+
+
+            const { error: metaErr } = await supabase.from('tabs').update(metadataPatch).eq('id', tabId);
             if (metaErr) throw metaErr;
 
             // ── D. tab_youtube upsert / delete ─────────────────────────────────
             const { data: existingYt, error: ytFetchErr } = await supabase.from('tab_youtube').select('id, video_type').eq('tab_id', tabId);
             if (ytFetchErr) throw ytFetchErr;
             const existingMap = new Map<string, string>((existingYt ?? []).map((r: any) => [r.video_type as string, r.id as string]));
-
             for (const key of VIDEO_KEYS) {
                 const v = videos[key];
                 const ytId = extractYouTubeId(v.url);
@@ -968,7 +955,14 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                 }
             }
 
-            setSaveStatus('success'); setIsDirty(false);
+            const wasFileReplacement = !!pendingFile;
+            setSaveStatus('success');
+            setIsDirty(false);
+            setPendingTimeSignature(null);
+            if (tabId) onSave?.(tabId, { title: form.title.trim(), artist: form.artist.trim(), album: form.album.trim() || undefined });
+            // V3.9.3: after file replacement, jump to Song Info so user can verify
+            // extracted metadata. Metadata-only saves stay on current section.
+            if (wasFileReplacement) setSection('info');
             setTimeout(() => setSaveStatus('idle'), 3000);
 
         } catch (err) {
@@ -980,7 +974,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
             setErrors(p => ({ ...p, general: msg }));
             setSaveStatus('error');
         }
-    }, [form, videos, audioSlots, validate, checkDuplicate, pendingFile, originalUserId, tabId]);
+    }, [form, videos, audioSlots, validate, checkDuplicate, pendingFile, extractedMeta, originalUserId, tabId]);
 
     const handleBack = useCallback(() => {
         if (onClose) { onClose(); return; }
@@ -995,7 +989,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
     return (
         <>
             <div onClick={handleBack} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 109 }} />
-
             <div style={{ position: 'fixed', top: 102, left: '50%', transform: 'translateX(-50%)', width: 846, maxWidth: 'calc(100vw - 32px)', height: 750, maxHeight: 'calc(100vh - 120px)', background: panelBg, borderRadius: 4, boxShadow: 'rgba(0,0,0,0.18) 0px 20px 40px -8px, rgba(0,0,0,0.12) 0px 10px 16px -6px', zIndex: 110, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif', fontWeight: 300, color: 'var(--text-primary)' }}>
 
                 {/* ── Sticky header ── */}
@@ -1023,7 +1016,13 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                         <main style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', padding: '28px 28px 48px' }}>
                             {errors.general && <Banner type="error">{errors.general}</Banner>}
                             {dupWarning && <Banner type="warning">⚠️ {dupWarning}</Banner>}
-                            {saveStatus === 'success' && !errors.general && <Banner type="success">✓ Changes saved successfully</Banner>}
+                            {saveStatus === 'success' && !errors.general && (
+                                <Banner type="success">
+                                    {section === 'info'
+                                        ? '✓ File replaced successfully. Review extracted metadata below.'
+                                        : '✓ Changes saved successfully'}
+                                </Banner>
+                            )}
 
                             {/* ════════ SONG INFO ════════ */}
                             {section === 'info' && (
@@ -1043,9 +1042,15 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                         <Field label="Instrument" required error={errors.instrument}><SelectInput value={form.instrument} onChange={v => set('instrument', v)} options={INSTRUMENT_OPTIONS} placeholder="Select instrument" dark={dark} hasError={!!errors.instrument} /></Field>
                                         <Field label="Tuning" required error={errors.tuning}><SelectInput value={form.tuning} onChange={v => set('tuning', v)} options={TUNINGS} placeholder="Select tuning" dark={dark} hasError={!!errors.tuning} /></Field>
                                     </div>
-                                    <Field label="Tempo (BPM)" error={errors.tempo} style={{ maxWidth: 160 }}>
-                                        <TextInput value={form.tempo} onChange={v => set('tempo', v)} placeholder="e.g. 120" dark={dark} type="number" hasError={!!errors.tempo} />
-                                    </Field>
+                                    {/* Source | Tempo — technical metadata row */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                                        <Field label="Source">
+                                            <SelectInput value={form.source} onChange={v => set('source', v)} options={SOURCE_OPTIONS} placeholder="Select source" dark={dark} />
+                                        </Field>
+                                        <Field label="Tempo (BPM)" error={errors.tempo}>
+                                            <TextInput value={form.tempo} onChange={v => set('tempo', v)} placeholder="e.g. 120" dark={dark} type="number" hasError={!!errors.tempo} style={{ maxWidth: 180 }} />
+                                        </Field>
+                                    </div>
                                 </div>
                             )}
 
@@ -1066,7 +1071,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                             </button>
                                         </div>
                                     </div>
-
                                     <Divider label="YouTube Videos" />
                                     {VIDEO_ROWS.map(({ key, label }) => (
                                         <VideoRow key={key} label={label} data={videos[key]}
@@ -1081,7 +1085,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                             error={(errors as any)[key]}
                                         />
                                     ))}
-
                                     <Divider label="Audio Tracks" />
                                     <div style={{ marginBottom: 16, borderRadius: 6, border: '1px solid rgba(6,182,212,0.3)', fontSize: 13, fontFamily: 'inherit' }}>
                                         <div style={{ padding: '7px 12px', background: 'rgba(6,182,212,0.04)', color: 'rgb(8,145,178)', lineHeight: '1.6' }}>
@@ -1089,12 +1092,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                         </div>
                                     </div>
                                     {AUDIO_ROWS.map(({ key, label, hint, qualityNote }) => (
-                                        <AudioSlotRow
-                                            key={key}
-                                            audioKey={key}
-                                            label={label}
-                                            hint={hint}
-                                            qualityNote={qualityNote}
+                                        <AudioSlotRow key={key} audioKey={key} label={label} hint={hint} qualityNote={qualityNote}
                                             slot={audioSlots[key]}
                                             onFile={file => setAudioFile(key, file)}
                                             onClear={() => clearAudioSlot(key)}
@@ -1141,7 +1139,13 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                             {extractedMeta.timeSignature && (
                                                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
                                                     Time signature: <strong style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{extractedMeta.timeSignature}</strong>
-                                                    <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>(informational)</span>
+                                                    <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>(will be saved)</span>
+                                                </div>
+                                            )}
+                                            {extractedMeta.source && (
+                                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                                    Source: <strong style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{extractedMeta.source}</strong>
+                                                    <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>(will be saved)</span>
                                                 </div>
                                             )}
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1174,7 +1178,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                 </div>
                             )}
                         </main>
-
                         {showHelp && <HelpModal section={section} dark={dark} onClose={() => setShowHelp(false)} />}
                     </>
                 )}
