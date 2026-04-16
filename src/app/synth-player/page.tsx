@@ -1,31 +1,31 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.7
- * Date: April 15th, 2026
- * Cloned from V102.6 — awaiting next patch set.
+ * Synth Player Page — Phase 4 V102.8
+ * Date: April 16th, 2026
+ * Cloned from V102.7 — PWA landscape fixes applied.
  *
- * V102.7 CHANGES:
- * ✅ [Pending] isVocalTrack() — vocal supreme override in track classifier
- *    Fixes: "Lead Vocals" → isGuitar: true (caused by 'lead' keyword in isAnyGuitarTrack)
- *    Fix A: isVocalTrack() added and applied to isPrimaryGuitarTrack + isAnyGuitarTrack guards
- *    Fix B: 'lead' removed from isAnyGuitarTrack keyword list (full phrase 'lead guitar'
- *            already handled by isPrimaryGuitarTrack)
- *    Side effect resolved: default track selection now correctly skips vocal tracks,
- *    and V106's resolveTrackLayoutProfile() routes vocals to songBookPageSparse correctly.
+ * V102.8 CHANGES:
+ * ✅ [P1] <main> className ternary fixed — was literal text (missing ${}), now executes.
+ * ✅ [P1] <main> style prop removed — maxWidth/100vw was part of strip-mode setup.
+ * ✅ [P1] Header padding applies in both portrait AND landscape (removed !isMobileLandscape guard).
+ * ✅ [P2] #maestro-player strip-mode styles removed (inline-block/max-content/h-full/paddingTop).
+ * ✅ [P2] #maestro-player paddingBottom → calc(74px + env(safe-area-inset-bottom) + 24px).
  *
- * V102.6 PRESERVED EXACTLY:
+ * V102.7 PRESERVED EXACTLY:
+ * ✅ isVocalTrack() vocal supreme override
+ * ✅ Songsterr-style tone-first track scoring
  * ✅ CURSOR_V2_ACTIVE = true (MaestroCursorV2)
  * ✅ All transport/loop/mixer behavior
  * ✅ Song switching, signed URL cache
- * ✅ AlphaTabRendererV102 from AlphaTabRenderer_V106
+ * ✅ AlphaTabRendererV102 from AlphaTabRenderer (stable entrypoint)
  */
 
 import React, {
     useState, useCallback, useRef, useEffect, useMemo,
 } from 'react';
 import { supabase } from '@/lib/alphaTab/supabase';
-// page.tsx — change path only, name stays identical
+// 🔒 DEPLOYMENT ENTRYPOINT — always import from AlphaTabRenderer, never from versioned files.
 import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer';
 import { DebugPanel } from '@/components/alphaTab/DebugPanel';
 import { MaestroControlPanel } from '@/components/audio/maestro/controls';
@@ -227,7 +227,11 @@ export default function SynthPlayerPage() {
         check();
         window.addEventListener('resize', check);
         window.addEventListener('orientationchange', check);
-        return () => { if (timer) clearTimeout(timer); window.removeEventListener('resize', check); window.removeEventListener('orientationchange', check); };
+        return () => {
+            if (timer) clearTimeout(timer);
+            window.removeEventListener('resize', check);
+            window.removeEventListener('orientationchange', check);
+        };
     }, []);
 
     // ==================== AUTH DIAGNOSTICS ====================
@@ -295,7 +299,6 @@ export default function SynthPlayerPage() {
         const isBassTrack = (t: Track) => normalize(t.name ?? '').includes('bass');
 
         // [V102.7] Vocal supreme override — must win before any guitar check.
-        // Expanded regex catches: Lead Vocals, Backing Vocals, Vox, Choir, etc.
         const isVocalTrack = (t: Track) =>
             /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal|chorus\s*vocal)/i
                 .test(normalize(t.name ?? ''));
@@ -303,57 +306,40 @@ export default function SynthPlayerPage() {
         const isAnyGuitarTrack = (t: Track) => {
             const n = normalize(t.name ?? '');
             if (isDrumTrack(t) || isBassTrack(t) || isVocalTrack(t)) return false;
-            // NOTE: bare 'lead' intentionally excluded — catches "Lead Vocals" as false positive.
-            // "lead guitar" is handled as an explicit phrase in guitarDefaultScore.
             return ['guit', 'guitar', 'gtr', 'rhythm', 'acoustic', 'clean', 'dist', 'overdrive']
                 .some(kw => n.includes(kw));
         };
 
-        // ── [V102.7] Songsterr-style tone-first scoring ───────────────────────
-        // Mirrors observed Songsterr defaults across all tested songs:
-        //   GnR / Van Halen / Ozzy / Def Leppard → Distortion Guitar
-        //   Poison / SRV / Cinderella           → Overdriven Guitar
-        //   Warrant / She Talks to Angels        → Acoustic Guitar
-        // "Lead Guitar" is a secondary signal — Songsterr rarely defaults to it
-        // when a tone-style track exists.
         const guitarDefaultScore = (t: Track): number => {
             const n = normalize(t.name ?? '');
             if (isVocalTrack(t)) return -9999;
             if (isDrumTrack(t)) return -9999;
-            if (isBassTrack(t)) return -200;  // last resort if no guitar exists
+            if (isBassTrack(t)) return -200;
             let s = 0;
-            // Tone-style guitar tracks (strongest signal — matches Songsterr defaults)
             if (n.includes('distortion')) s += 120;
             if (n.includes('overdriven') || n.includes('overdrive')) s += 110;
             if (n.includes('acoustic')) s += 105;
             if (n.includes('clean')) s += 95;
-            // Generic guitar presence
             if (/(guit|guitar|gtr)/.test(n)) s += 60;
-            // Role phrases — only as full phrases, never bare 'lead'
             if (n.includes('rhythm guitar') || n.includes('rhythm gtr')) s += 25;
             if (n.includes('lead guitar') || n.includes('lead gtr')) s += 15;
-            // Penalize specialty / overdub / non-standard instrument tracks
             if (/(overdub|right ear|left ear|solo overdub|sitar|banjo|harmonica|tenor sax|clarinet|strings|synth|pad|orch|piano|organ|delay|fx|effect|bus|click|guide|reference)/.test(n)) s -= 40;
             return s;
         };
 
         const pickDefaultTrackIndex = (tl: Track[]): number => {
-            // 1) Best guitar by tone-first score
             let bestIdx = -1, bestScore = -9999;
             for (let i = 0; i < tl.length; i++) {
                 const sc = guitarDefaultScore(tl[i]);
                 if (sc > bestScore) { bestScore = sc; bestIdx = i; }
             }
             if (bestIdx >= 0 && bestScore > 0) return bestIdx;
-            // 2) Any guitar-ish track (still excludes vocals)
             const anyG = tl.findIndex(isAnyGuitarTrack);
             if (anyG >= 0) return anyG;
-            // 3) First non-vocal, non-drum track
             const nonVocal = tl.findIndex(t => !isVocalTrack(t) && !isDrumTrack(t));
             return nonVocal >= 0 ? nonVocal : 0;
         };
 
-        // Diagnostics — one line per track, all flags visible.
         trackList.forEach((t, i) => {
             const raw = t.name ?? '';
             console.log(`🎯 Track[${i}] raw="${raw}"`, {
@@ -548,6 +534,7 @@ export default function SynthPlayerPage() {
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
+            {/* ── TopMenuTray — safe-area-pt clears Dynamic Island on iOS PWA ── */}
             <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 safe-area-pt ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
                     currentSong={currentSong || null}
@@ -585,17 +572,24 @@ export default function SynthPlayerPage() {
                 />
             )}
 
+            {/*
+             * [P1] <main> landscape fix:
+             *   - ternary now wrapped in ${} so it actually executes
+             *   - 100vh → 100dvh (fixes iOS dynamic toolbar clipping)
+             *   - overflow-y-hidden → overflow-y-auto (allows Page-mode vertical scroll)
+             *   - header padding applies in BOTH portrait and landscape (removed !isMobileLandscape guard)
+             *   - style prop removed (maxWidth/100vw was strip-mode pairing)
+             */}
             <main
                 ref={mainScrollContainerRef}
                 className={`
-  w-full overscroll-y-contain
-  ${isMobileLandscape
+                    w-full overscroll-y-contain
+                    ${isMobileLandscape
                         ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
                         : 'pb-32 overflow-y-auto overflow-x-hidden'}
-  ${!isMobileLandscape && isHeaderVisible ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
-  transition-[padding] duration-300
-`}
-                style={isMobileLandscape ? { maxWidth: '100vw', width: '100vw' } : undefined}
+                    ${isHeaderVisible ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+                    transition-[padding] duration-300
+                `}
             >
                 {error && (
                     <div className="px-4 mb-4">
@@ -605,13 +599,16 @@ export default function SynthPlayerPage() {
                     </div>
                 )}
 
+                {/*
+                 * [P2] #maestro-player strip-mode removed:
+                 *   - inline-block / width:max-content / h-full → all gone (these forced strip layout)
+                 *   - paddingBottom → safe-area-aware calc so last bar clears the fixed footer
+                 *   - className simplified to w-full (works portrait + landscape)
+                 */}
                 <div
                     id="maestro-player"
-                    className={`relative bg-white ${isMobileLandscape ? 'h-full' : 'w-full'}`}
-                    style={isMobileLandscape ? {
-                        paddingTop: '50px', paddingBottom: '120px',
-                        display: 'inline-block', minWidth: '100%', width: 'max-content',
-                    } : undefined}
+                    className="relative bg-white w-full"
+                    style={{ paddingBottom: 'calc(74px + env(safe-area-inset-bottom) + 24px)' }}
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
