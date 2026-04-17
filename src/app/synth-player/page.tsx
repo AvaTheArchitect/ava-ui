@@ -607,10 +607,8 @@ export default function SynthPlayerPage() {
                  */}
                 <div
                     id="maestro-player"
-                    className={`
-                        bg-white
-                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
-                    `}
+                    className="relative bg-white w-full"
+                    style={{ paddingBottom: 'calc(74px + env(safe-area-inset-bottom) + 24px)' }}
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
@@ -636,6 +634,7 @@ export default function SynthPlayerPage() {
                                 setHasLoopSelection(true);
                             }}
                             onLoopClear={clearLoopFully}
+                            forceHorizontal={isMobileLandscape}
                         />
                     )}
                 </div>

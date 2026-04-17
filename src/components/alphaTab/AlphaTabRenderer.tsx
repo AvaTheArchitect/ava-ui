@@ -77,6 +77,7 @@ export interface AlphaTabRendererV102Props {
     theme?: 'light' | 'dark';
     className?: string;
     scrollContainer?: HTMLElement | null;
+    forceHorizontal?: boolean; // 🔒 explicit strip mode — passed from page.tsx isMobileLandscape
 }
 
 // ─── Auto-scroll contract ─────────────────────────────────────────────────────
@@ -285,6 +286,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     theme = 'light',
     className,
     scrollContainer,
+    forceHorizontal = false,
 }: AlphaTabRendererV102Props) {
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -384,15 +386,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // Use container width (not window) to match ResizeObserver tier logic.
             // < 480px = true phone → horizontal. Tablets stay in page mode.
             const containerW = containerRef.current?.clientWidth ?? window.innerWidth;
-            const isMobile = containerW < 370;
-            console.log('[V106 init width]', {
-                containerW,
-                innerWidth: window.innerWidth,
-                innerHeight: window.innerHeight,
-                rect: container.getBoundingClientRect(),
-            });
-            const initProfile = resolveLayoutProfile(isMobile);
-            activeProfileRef.current = initProfile;
+
+            const vvW = window.visualViewport?.width ?? window.innerWidth;
+            const vvH = window.visualViewport?.height ?? window.innerHeight;
+
+            // iOS PWA sometimes lies about matchMedia; vvW>vvH is a reliable fallback.
+            const isLandscape =
+                vvW > vvH || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+
+            // Horizontal ONLY when explicitly forced OR when landscape+phone-ish width
+            const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
+
+            // Feed the renderer the actual desired mode:
+            const initProfile = resolveLayoutProfile(useHorizontal);
 
             const api = await initAlphaTab({
                 container,
@@ -484,9 +490,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!tr.length) return;
 
                 // ── Track-aware profile detection ─────────────────────────────
-                const isMobileNow = (containerRef.current?.clientWidth ?? window.innerWidth) < 480;
+                const vvW = window.visualViewport?.width ?? window.innerWidth;
+                const vvH = window.visualViewport?.height ?? window.innerHeight;
+                const isLandscape = vvW > vvH && window.matchMedia('(orientation: landscape)').matches;
+                const isPhonePortrait = !isLandscape && (containerRef.current?.clientWidth ?? vvW) < 480;
                 const primaryTrackName = (tr[0] as any)?.name ?? '';
-                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isMobileNow);
+                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isPhonePortrait);
                 const at = alphaTabModuleRef.current;
                 baseTrackProfileRef.current = trackProfile;
                 if (at && trackProfile !== activeProfileRef.current) {
@@ -948,8 +957,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         // ── [V102.2] Re-apply track-aware profile on track switch ─────────────
         const primaryTrackName = (tr[0] as any)?.name ?? '';
-        const isMobileNow = (containerRef.current?.clientWidth ?? window.innerWidth) < 480;
-        const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isMobileNow);
+        const w = containerRef.current?.clientWidth ?? window.innerWidth;
+        const vvW = window.visualViewport?.width ?? window.innerWidth;
+        const vvH = window.visualViewport?.height ?? window.innerHeight;
+        const isLandscape = vvW > vvH || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+
+        const useHorizontalNow = forceHorizontal || (isLandscape && w < 480);
+        const trackProfile = resolveTrackLayoutProfile(primaryTrackName, useHorizontalNow);
         const at = alphaTabModuleRef.current;
         // Store base track profile so ResizeObserver has sparse/dense context.
         baseTrackProfileRef.current = trackProfile;
