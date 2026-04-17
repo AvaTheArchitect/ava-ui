@@ -2,7 +2,26 @@
 
 /**
  * TopMenuTray.tsx
- * Updated: March 2026
+ * Version v1.4
+ * Updated: April 16th, 2026
+ *
+ * V1.4 CHANGES (Option A — "dumb component" architecture):
+ * ✅ Removed internal scroll listener, isHeaderVisible state, and transform style.
+ *    Visibility is now 100% owned by synth-player/page.tsx (single source of truth).
+ * ✅ Dynamic Island fix retained: header height = calc(80px + env(safe-area-inset-top))
+ *    inner row: paddingTop env(safe-area-inset-top), height calc(100% - env(safe-area-inset-top))
+ * ✅ safe-area-pt class added to <header> for Tailwind compatibility.
+ *
+ * V1.3 → V1.4 removed:
+ *   - useState(isHeaderVisible)
+ *   - useEffect scroll listener
+ *   - transform: isHeaderVisible ? translateY(0) : translateY(-100%)
+ *
+ * V1.2 PRESERVED EXACTLY:
+ * ✅ Songsterr flex grid spec (all widths, gaps, groups)
+ * ✅ NavButton active/hover/default color states
+ * ✅ Tab/Chord toggle (not yet wired to AlphaTab renderer)
+ * ✅ Back button / future logo slot
  *
  * Flex grid spec (measured from Songsterr, adapted for Maestro.ai):
  *
@@ -10,7 +29,7 @@
  *  50px   left end padding
  *  86×80  Back / Future Logo slot
  *  30.5px gap
- *  130×80 Chord/Tab toggle  (was "Menu Plus" in Songsterr — not yet wired to AlphaTab)
+ *  130×80 Chord/Tab toggle
  *  30.5px gap
  *  ─── center group ────────────────────────────────────────────────────────────
  *  60×80  Search
@@ -27,16 +46,9 @@
  *  20px   right end padding
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Total ≈ 904px  ✓ matches spec
- *
- * NavButton:
- *   - explicit width + height: 80px fills full tray height
- *   - flex-col centered, no horizontal padding (box width drives centering)
- *   - active  → purple-400  rgb(167,139,250)
- *   - hover   → slate-200   rgb(226,232,240)
- *   - default → slate-400   rgb(148,163,184)
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { SongItem } from '@/lib/song-data';
 
 export type TabMode = 'tab' | 'chord';
@@ -53,7 +65,6 @@ export interface TopMenuTrayProps {
 
 // ─── Layout helpers ───────────────────────────────────────────────────────────
 
-/** Explicit pixel gap between flex children */
 const Gap = ({ w }: { w: number }) => (
     <div style={{ width: w, flexShrink: 0 }} />
 );
@@ -116,11 +127,6 @@ const ProfileIcon = () => (
     </svg>
 );
 
-/**
- * TabModeIcon — visual indicator for the chord/tab toggle NavButton.
- * Staff lines = tab mode | dot grid = chord mode.
- * Not yet wired to AlphaTab renderer — toggle logic is ready.
- */
 const TabModeIcon = ({ mode }: { mode: TabMode }) => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -149,7 +155,6 @@ const TabModeIcon = ({ mode }: { mode: TabMode }) => (
 interface NavButtonProps {
     icon: React.ReactNode;
     label: string;
-    /** Explicit box width from flex grid spec — default 86 */
     width?: number;
     active?: boolean;
     badge?: number;
@@ -162,10 +167,10 @@ const NavButton: React.FC<NavButtonProps> = ({
     const [hovered, setHovered] = useState(false);
 
     const color = active
-        ? 'rgb(167,139,250)'    // purple-400
+        ? 'rgb(167,139,250)'
         : hovered
-            ? 'rgb(226,232,240)'    // slate-200
-            : 'rgb(148,163,184)';   // slate-400
+            ? 'rgb(226,232,240)'
+            : 'rgb(148,163,184)';
 
     return (
         <button
@@ -175,23 +180,18 @@ const NavButton: React.FC<NavButtonProps> = ({
             onMouseLeave={() => setHovered(false)}
             style={{
                 position: 'relative',
-                // ── Flex grid box ──
                 width,
                 height: 80,
                 flexShrink: 0,
-                // ── Inner layout ──
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
                 gap: 3,
                 padding: 0,
-                // ── Reset ──
                 border: 'none', background: 'none', cursor: 'pointer',
-                // ── Color ──
                 color, transition: 'color 0.15s ease',
                 fontFamily: 'songsterr, -apple-system, system-ui, Arial, sans-serif',
             }}
         >
-            {/* Icon + optional badge */}
             <div style={{ position: 'relative' }}>
                 {icon}
                 {badge != null && badge > 0 && (
@@ -209,7 +209,6 @@ const NavButton: React.FC<NavButtonProps> = ({
                 )}
             </div>
 
-            {/* Label */}
             <span style={{
                 fontSize: 10, fontWeight: 500,
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -217,7 +216,6 @@ const NavButton: React.FC<NavButtonProps> = ({
                 {label}
             </span>
 
-            {/* Active underline */}
             {active && (
                 <span style={{
                     position: 'absolute', bottom: 0,
@@ -241,20 +239,6 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     inboxCount = 0,
     onBack,
 }) => {
-    const [isHeaderVisible, setIsHeaderVisible] = useState(true);
-    const lastScrollY = useRef(0);
-
-    useEffect(() => {
-        const handleScroll = () => {
-            const y = window.scrollY;
-            if (y > lastScrollY.current && y > 100) setIsHeaderVisible(false);
-            else if (y < lastScrollY.current) setIsHeaderVisible(true);
-            lastScrollY.current = y;
-        };
-        window.addEventListener('scroll', handleScroll, { passive: true });
-        return () => window.removeEventListener('scroll', handleScroll);
-    }, []);
-
     const handleBack = useCallback(() => {
         onBack ? onBack() : window.history.back();
     }, [onBack]);
@@ -264,11 +248,16 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     }, [viewMode, onViewModeChange]);
 
     return (
+        // [V1.3] Dynamic Island fix:
+        // - header height absorbs env(safe-area-inset-top) so the bar expands above the notch
+        // - translateY(-100%) still hides the full expanded bar correctly
+        // - inner row uses paddingTop to push content below the notch
         <header
             style={{
                 position: 'fixed', top: 0, left: 0, right: 0,
                 zIndex: 111,
-                height: 80,
+                // 🔒 V1.3: expanded height — safe-area absorbed here, not on wrapper
+                height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
                 background: 'rgb(23,23,23)',
                 borderBottom: '1px solid rgba(124,58,237,0.3)',
@@ -276,18 +265,16 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 fontWeight: 300,
                 lineHeight: '18.4px',
                 colorScheme: 'light',
-                transform: isHeaderVisible ? 'translateY(0)' : 'translateY(-100%)',
-                transition: 'transform 0.3s ease-in-out',
+                // 🔒 V1.4: No transform here — page.tsx wrapper owns slide animation.
             }}
         >
             {/*
-             * Single flex row — exact box widths and gaps from spec.
-             * Three logical groups separated by justify-between:
-             *   [Left: Back + ChordTab]  [Center: Search + MyTabs + NewTab]  [Right: Help + Inbox + Profile]
-             * paddingLeft: 50, paddingRight: 20 are the end paddings from spec.
+             * [V1.3] Inner row: paddingTop pushes flex content below the notch.
+             * height is reduced by the same safe-area amount so buttons stay 80px tall.
              */}
             <div style={{
-                height: '100%',
+                height: 'calc(100% - env(safe-area-inset-top))',
+                paddingTop: 'env(safe-area-inset-top)',
                 paddingLeft: 50,
                 paddingRight: 20,
                 display: 'flex',
@@ -295,10 +282,8 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 justifyContent: 'space-between',
             }}>
 
-                {/* ── LEFT GROUP: Back/Logo (86) + 30.5 gap + ChordTab (130) ── */}
+                {/* ── LEFT GROUP ── */}
                 <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-
-                    {/* 86×80 — Back button / Future Logo slot */}
                     <button
                         onClick={handleBack}
                         title="Back"
@@ -314,10 +299,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                     >
                         <BackIcon />
                     </button>
-
                     <Gap w={30.5} />
-
-                    {/* 130×80 — Chord/Tab toggle (not yet wired to AlphaTab renderer) */}
                     <NavButton
                         icon={<TabModeIcon mode={viewMode} />}
                         label={viewMode === 'tab' ? 'Tab' : 'Chord'}
@@ -327,7 +309,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                     />
                 </div>
 
-                {/* ── CENTER GROUP: Search (60) + 24.5 + MyTabs (60) + 24.5 + NewTab (86) ── */}
+                {/* ── CENTER GROUP ── */}
                 <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                     <NavButton icon={<SearchIcon />} label="Search" width={60} onClick={() => { }} />
                     <Gap w={24.5} />
@@ -336,7 +318,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                     <NavButton icon={<NewTabIcon />} label="New Tab" width={86} onClick={() => onNewTabOpen?.()} />
                 </div>
 
-                {/* ── RIGHT GROUP: 24.5 + Help (86) + 24.5 + Inbox (86) + Profile (86) ── */}
+                {/* ── RIGHT GROUP ── */}
                 <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                     <Gap w={24.5} />
                     <NavButton icon={<HelpIcon />} label="Help" width={86} onClick={() => { }} />

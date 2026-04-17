@@ -531,11 +531,15 @@ export default function SynthPlayerPage() {
 
     const trackIndices = useMemo(() => [selectedTrack], [selectedTrack]);
 
+    // 🔒 Single source of truth for header visibility.
+    // Landscape always shows header (Songsterr behavior — controls reachable when sideways).
+    const isHeaderShown = isMobileLandscape || isHeaderVisible;
+
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
-            {/* ── TopMenuTray — safe-area-pt clears Dynamic Island on iOS PWA ── */}
-            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 safe-area-pt ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+            {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
+            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 ${isHeaderShown ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
@@ -587,7 +591,7 @@ export default function SynthPlayerPage() {
                     ${isMobileLandscape
                         ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
                         : 'pb-32 overflow-y-auto overflow-x-hidden'}
-                    ${isHeaderVisible ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+                    ${isHeaderShown ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
                     transition-[padding] duration-300
                 `}
             >
