@@ -7,14 +7,14 @@
  * Cloned from V106 — awaiting patch spec.
  *
  * V107 CHANGES:
- * ✅ [Q1] Init block: reordered vvW/vvH before containerW (uses vvW as fallback, not window.innerWidth);
- *         added initProfile console.log.
- * ✅ [M4] Init block: initProfile now via resolveProfileByWidth(containerW, base, useHorizontal) —
- *         iPhone portrait (<520px) seeds songBookPageMobile immediately, not Dense.
- * ✅ [Q2] scoreLoaded: already correct in V106 (isLandscapeSL / useHorizontalNow pattern) — no change.
- * ✅ [Q3] ResizeObserver: added orientation block (vvW/vvH/isLandscape/useHorizontal) matching init +
- *         scoreLoaded; passes useHorizontal as 3rd arg to resolveProfileByWidth — fixes TS error and
- *         removes hard < 480px gate that locked horizontal on landscape iPad.
+ * ✅ [Q1] Init block: uses forceHorizontalRef (not stale closure); seeds via resolveProfileByWidth.
+ * ✅ [Q2] scoreLoaded: two-step resolution — resolveTrackLayoutProfile(name, false) → resolveProfileByWidth.
+ *         baseTrackProfileRef stores sparse/dense only (never mobile/horizontal) for ResizeObserver.
+ * ✅ [Q3] ResizeObserver: reads forceHorizontalRef (not captured prop); drives profile via ref.
+ * ✅ [Q4] trackIndices useEffect: same two-step pattern as scoreLoaded.
+ * ✅ [Q5] forceHorizontalRef: new ref + sync effect — all closures read ref, not stale prop.
+ * ✅ [Q6] forceHorizontal reactive effect: profile switches instantly on landscape toggle without
+ *         waiting for ResizeObserver timing.
  *
  * 🔒 V106 PRESERVED EXACTLY (all behavior unchanged):
  *   ✅ [P1–P4] Layout profile system (resolveLayoutProfile, applyAlphaTabLayoutProfile,
@@ -300,6 +300,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const trackIndicesRef = useRef(trackIndices);
     useEffect(() => { trackIndicesRef.current = trackIndices; }, [trackIndices]);
 
+    // ── [Q5] forceHorizontalRef — stable ref so all [] closures read current value, not stale prop.
+    // Without this, ResizeObserver + init closures capture the mount-time prop and never update.
+    const forceHorizontalRef = useRef<boolean>(!!forceHorizontal);
+    useEffect(() => { forceHorizontalRef.current = !!forceHorizontal; }, [forceHorizontal]);
+
     // ── [P2] Layout profile refs ──────────────────────────────────────────────
     const alphaTabModuleRef = useRef<any>(null);
     const activeProfileRef = useRef<LayoutProfileName | null>(null);
@@ -488,15 +493,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const primaryTrackName = (tr[0] as any)?.name ?? ''; // [V107] fix: was undefined in scoreLoaded scope
 
-                // ── Track-aware profile detection ─────────────────────────────
-                const vvW = window.visualViewport?.width ?? window.innerWidth;
-                const vvH = window.visualViewport?.height ?? window.innerHeight;
-                const isLandscapeSL = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-                const w2 = containerRef.current?.clientWidth ?? vvW;
-                const useHorizontalNow = forceHorizontal || (isLandscapeSL && w2 < 480);
-                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, useHorizontalNow);
+                // ── [Q2] Track-aware profile detection (two-step, width-tiered) ──────────────
+                // Step 1: classify sparse vs dense ONLY — never pass mobile=true here.
+                //         baseProfile stores the track-type context for ResizeObserver.
+                // Step 2: width-tier via resolveProfileByWidth → portrait phone gets songBookPageMobile.
+                const w2 = containerRef.current?.clientWidth ?? window.innerWidth;
+                const useHorizontalNow = forceHorizontalRef.current;
+                const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
+                const trackProfile = resolveProfileByWidth(w2, baseProfile, useHorizontalNow);
                 const at = alphaTabModuleRef.current;
-                baseTrackProfileRef.current = trackProfile;
+                baseTrackProfileRef.current = baseProfile; // 🔒 sparse/dense only — ResizeObserver reads this
                 if (at && trackProfile !== activeProfileRef.current) {
                     activeProfileRef.current = trackProfile;
                     applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
@@ -954,22 +960,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const tr = trackIndices.map((i: number) => api.score.tracks[i]).filter(Boolean);
         if (!tr.length) return;
 
-        // ── [V102.2] Re-apply track-aware profile on track switch ─────────────
+        // ── [Q4] Track switch: same two-step pattern as scoreLoaded ──────────────
         const primaryTrackName = (tr[0] as any)?.name ?? '';
         const w = containerRef.current?.clientWidth ?? window.innerWidth;
-        const vvW = window.visualViewport?.width ?? window.innerWidth;
-        const vvH = window.visualViewport?.height ?? window.innerHeight;
-        const isLandscape = vvW > vvH || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-
-        const useHorizontalNow = forceHorizontal || (isLandscape && w < 480);
-        const trackProfile = resolveTrackLayoutProfile(primaryTrackName, useHorizontalNow);
+        const useHorizontalNow = forceHorizontalRef.current;
+        const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
+        const trackProfile = resolveProfileByWidth(w, baseProfile, useHorizontalNow);
         const at = alphaTabModuleRef.current;
-        // Store base track profile so ResizeObserver has sparse/dense context.
-        baseTrackProfileRef.current = trackProfile;
+        baseTrackProfileRef.current = baseProfile; // 🔒 sparse/dense only for ResizeObserver
         if (at && trackProfile !== activeProfileRef.current) {
             activeProfileRef.current = trackProfile;
             applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-            console.log(`🎸 V107: track switch → profile="${trackProfile}" [${trackIndices.join(', ')}]`);
+            console.log(`🎸 V107: track switch → profile="${trackProfile}" base="${baseProfile}" [${trackIndices.join(', ')}]`);
         }
 
         hasRevealedRef.current = false;
@@ -1020,36 +1022,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (!el) return;
 
         const ro = new ResizeObserver(() => {
-            if (isApplyingProfileRef.current) return; // render in flight — skip
-
+            if (isApplyingProfileRef.current) return;
             const api = apiRef.current;
             const at = alphaTabModuleRef.current;
             if (!api || !at) return;
-
             const w = el.clientWidth;
             const base = baseTrackProfileRef.current ?? 'songBookPageDense';
-
-            // 🔒 [Q3] Same orientation logic as init + scoreLoaded — no hard < 480px gate.
-            const vvW = window.visualViewport?.width ?? window.innerWidth;
-            const vvH = window.visualViewport?.height ?? window.innerHeight;
-            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-            const useHorizontal = forceHorizontal || (isLandscape && w < 480);
-
-            const nextProfile = resolveProfileByWidth(w, base, useHorizontal); // ✅ 3rd arg
-
-            if (nextProfile === activeProfileRef.current) return; // no-op if tier unchanged
-
+            // [Q3] Read ref — not captured prop. Stale closure bug fixed.
+            const useHorizontal = forceHorizontalRef.current;
+            const nextProfile = resolveProfileByWidth(w, base, useHorizontal);
+            if (nextProfile === activeProfileRef.current) return;
             isApplyingProfileRef.current = true;
             activeProfileRef.current = nextProfile;
-
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             console.log(`📐 V107 ResizeObserver → profile="${nextProfile}" w=${w}px useHorizontal=${useHorizontal}`);
-            // Guard reset handled by existing renderFinished handler.
         });
 
         ro.observe(el);
         return () => ro.disconnect();
     }, []); // intentional empty deps — all reads via refs
+
+    // ── [Q6] forceHorizontal reactive effect ─────────────────────────────────
+    // Fires immediately when page.tsx toggles isMobileLandscape — no ResizeObserver delay.
+    // This is the authoritative landscape switch; ResizeObserver is a fallback for width tiers.
+    useEffect(() => {
+        const api = apiRef.current;
+        const at = alphaTabModuleRef.current;
+        const el = containerRef.current;
+        if (!api || !at || !el) return;
+        const w = el.clientWidth;
+        const base = baseTrackProfileRef.current ?? 'songBookPageDense';
+        const nextProfile = resolveProfileByWidth(w, base, forceHorizontalRef.current);
+        if (nextProfile === activeProfileRef.current) return;
+        isApplyingProfileRef.current = true;
+        activeProfileRef.current = nextProfile;
+        applyAlphaTabLayoutProfile(api, at, nextProfile);
+        console.log(`🔄 V107 forceHorizontal → profile="${nextProfile}" forceH=${forceHorizontal}`);
+    }, [forceHorizontal]);
 
     // 🔒🔒🔒 CLICK-TO-SEEK — LOCKED CONTRACT (unchanged from V104.10) 🔒🔒🔒
     useEffect(() => {
