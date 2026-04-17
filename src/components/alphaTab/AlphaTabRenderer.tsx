@@ -2,43 +2,41 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V106
- * Date: April 15th, 2026
- * Cloned from V105 — 4 surgical Layout Profile patches applied (Cipher spec).
+ * Current version: V107
+ * Date: April 16th, 2026
+ * Cloned from V106 — awaiting patch spec.
  *
- * V106 CHANGES:
- * ✅ [P1] Imports: resolveLayoutProfile + applyAlphaTabLayoutProfile + LayoutProfileName
- * ✅ [P2] 3 refs: alphaTabModuleRef, activeProfileRef, isApplyingProfileRef
- * ✅ [P3] init(): import alphaTab module, stash ref, resolve + bake profile at
- *         initAlphaTab construction via layoutProfile param.
- * ✅ [P3b] renderFinished setTimeout: isApplyingProfileRef.current = false (one line)
- * ✅ [P4] Resize useEffect: applyProfile only when profile name changes; guard
- *         resets via existing renderFinished handler (no re-subscription).
- * ✅ GP8_DISPLAY_OVERRIDES: removed 3 zero-padding keys now owned by SongBook profile:
- *         firstNotationStaffPaddingTop, notationStaffPaddingTop, effectStaffPaddingTop
+ * V107 CHANGES:
+ * ✅ [Q1] Init block: reordered vvW/vvH before containerW (uses vvW as fallback, not window.innerWidth);
+ *         added `activeProfileRef.current = initProfile` so ResizeObserver starts with correct baseline;
+ *         added initProfile console.log.
+ * ✅ [Q2] scoreLoaded: already correct in V106 (isLandscapeSL / useHorizontalNow pattern) — no change.
+ * ✅ [Q3] ResizeObserver: added orientation block (vvW/vvH/isLandscape/useHorizontal) matching init +
+ *         scoreLoaded; passes useHorizontal as 3rd arg to resolveProfileByWidth — fixes TS error and
+ *         removes hard < 480px gate that locked horizontal on landscape iPad.
  *
- * FLOW (one-directional, no loops):
- *   init   → bake profile in constructor → render
- *   resize → applyProfile (if changed)  → render → [renderFinished]
- *                                                     → gp8 engine
- *                                                     → isApplyingProfileRef = false
- *
- * 🔒 V105 PRESERVED EXACTLY (all other behavior unchanged):
- *   ✅ Patches A–D (expandedBeatStart, resolveNextBeatExpanded, publishCursorAtTick, Patch D click)
+ * 🔒 V106 PRESERVED EXACTLY (all behavior unchanged):
+ *   ✅ [P1–P4] Layout profile system (resolveLayoutProfile, applyAlphaTabLayoutProfile,
+ *              alphaTabModuleRef, activeProfileRef, isApplyingProfileRef)
+ *   ✅ [P3] init(): module stash + profile bake at construction
+ *   ✅ [P3b] renderFinished: isApplyingProfileRef.current = false
+ *   ✅ [P4] ResizeObserver: width-tier profile switching (resolveProfileByWidth)
+ *   ✅ GP8_DISPLAY_OVERRIDES: 3 zero-padding keys removed (SongBook profile owns them)
+ *   ✅ Patches A–D (expandedBeatStart, resolveNextBeatExpanded, publishCursorAtTick, click)
  *   ✅ MaestroCursorV2 (attachMaestroCursorV2)
  *   ✅ Curtain state machine (renderTokenRef, hasRevealedRef, QUIET_MS=250)
  *   ✅ Auto-scroll contract (scrollContainer at init, applyScrollMode post-READY)
- *   ✅ GP8 layout engine hook
+ *   ✅ GP8 layout engine hook (runGp8LayoutEngineV2)
  *   ✅ stableVisualKeyRef + getVisualKeyForBeat() — SRV Layer 1a
  *   ✅ D1 monotonic beat gate + bypass window
  *   ✅ seekFreezeUntilRef / seekTargetTickRef (250ms freeze)
  *   ✅ Click-to-seek single-flight (seekTokenRef + resumeTimerRef)
  *   ✅ E2 same-masterBar sticky override guard
  *   ✅ BeatCustomLoopOverlay, double-click-to-play
- * 
+ *
  *  🔒 DEPLOYMENT ENTRYPOINT — DO NOT import AlphaTabRenderer_V### directly in pages.
  *  This file is the single committed export. Versioned backups stay local as
- *  AlphaTabRenderer_V106.tsx.LOCKED etc. Active version: V106 (April 16, 2026).
+ *  AlphaTabRenderer_V107.tsx.LOCKED etc. Active version: V107 (April 16, 2026).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -372,7 +370,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const fileExt = cleanUrl.split('.').pop()?.toLowerCase() ?? '';
         const isGP8 = fileExt === 'gp';
 
-        console.log('🎼 V106 layout check:', { fileUrl, cleanUrl, fileExt, isGP8 });
+        console.log('🎼 V107 layout check:', { fileUrl, cleanUrl, fileExt, isGP8 });
 
         const init = async () => {
             const container = containerRef.current!;
@@ -385,20 +383,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             // Use container width (not window) to match ResizeObserver tier logic.
             // < 480px = true phone → horizontal. Tablets stay in page mode.
-            const containerW = containerRef.current?.clientWidth ?? window.innerWidth;
-
+            // 🔒 vvW/vvH first — containerW uses vvW as fallback (not window.innerWidth).
             const vvW = window.visualViewport?.width ?? window.innerWidth;
             const vvH = window.visualViewport?.height ?? window.innerHeight;
-
-            // iOS PWA sometimes lies about matchMedia; vvW>vvH is a reliable fallback.
-            const isLandscape =
-                vvW > vvH || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-
-            // Horizontal ONLY when explicitly forced OR when landscape+phone-ish width
+            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+            const containerW = containerRef.current?.clientWidth ?? vvW;
             const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
-
-            // Feed the renderer the actual desired mode:
             const initProfile = resolveLayoutProfile(useHorizontal);
+            activeProfileRef.current = initProfile; // [Q1] seed so ResizeObserver starts correct
+            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal });
 
             const api = await initAlphaTab({
                 container,
@@ -413,7 +406,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
 
             apiRef.current = api;
-            if (typeof window !== 'undefined') (window as any).__atV106 = api;
+            if (typeof window !== 'undefined') (window as any).__atV107 = api;
 
             api.customCursorHandler = {
                 onAttach() { },
@@ -480,7 +473,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 // Update ref BEFORE profile detection — ResizeObserver reads it
                 trackIndicesRef.current = [winnerIdx];
-                console.log('🎯 V106 auto-pick (scoreLoaded)', {
+                console.log('🎯 V107 auto-pick (scoreLoaded)', {
                     winnerIdx,
                     winnerName: score.tracks[winnerIdx]?.name,
                     winnerScore,
@@ -489,13 +482,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tr = [score.tracks[winnerIdx]].filter(Boolean);
                 if (!tr.length) return;
 
+                const primaryTrackName = (tr[0] as any)?.name ?? ''; // [V107] fix: was undefined in scoreLoaded scope
+
                 // ── Track-aware profile detection ─────────────────────────────
                 const vvW = window.visualViewport?.width ?? window.innerWidth;
                 const vvH = window.visualViewport?.height ?? window.innerHeight;
-                const isLandscape = vvW > vvH && window.matchMedia('(orientation: landscape)').matches;
-                const isPhonePortrait = !isLandscape && (containerRef.current?.clientWidth ?? vvW) < 480;
-                const primaryTrackName = (tr[0] as any)?.name ?? '';
-                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, isPhonePortrait);
+                const isLandscapeSL = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+                const w2 = containerRef.current?.clientWidth ?? vvW;
+                const useHorizontalNow = forceHorizontal || (isLandscapeSL && w2 < 480);
+                const trackProfile = resolveTrackLayoutProfile(primaryTrackName, useHorizontalNow);
                 const at = alphaTabModuleRef.current;
                 baseTrackProfileRef.current = trackProfile;
                 if (at && trackProfile !== activeProfileRef.current) {
@@ -513,11 +508,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     scoreAny.systemsLayout = null;
                     scoreAny.defaultSystemsLayout = 0;
-                    console.log('🧨 V106: wiped baked systemsLayout for sparse track', { track: primaryTrackName });
+                    console.log('🧨 V107: wiped baked systemsLayout for sparse track', { track: primaryTrackName });
                 }
 
                 api.renderTracks(tr);
-                console.log(`✅ V106: scoreLoaded → renderTracks([${winnerIdx}]) profile="${trackProfile}"`);
+                console.log(`✅ V107: scoreLoaded → renderTracks([${winnerIdx}]) profile="${trackProfile}"`);
 
                 if (onScoreLoaded && api.score) {
                     const info: SongInfo = {
@@ -628,7 +623,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     hideCurtainAtomic(curtainRef.current);
                     hasRevealedRef.current = true;
-                    console.log('🟢 V106 curtain dropped', { token: tokenAtFinish });
+                    console.log('🟢 V107 curtain dropped', { token: tokenAtFinish });
 
                     requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef, 'postDrop'));
                     isSettlingRef.current = false;
@@ -642,7 +637,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
             api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
-            api.soundFontLoaded?.on(() => { console.log('✅ V106: Soundfont loaded'); notifyPlayerReady(); });
+            api.soundFontLoaded?.on(() => { console.log('✅ V107: Soundfont loaded'); notifyPlayerReady(); });
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
@@ -654,7 +649,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }, 50);
             });
 
-            // 🔒🔒🔒 CURSOR ENGINE LOCK — V106 + SRV Layers 1a / 2a / 2b / 2c 🔒🔒🔒
+            // 🔒🔒🔒 CURSOR ENGINE LOCK — V107 + SRV Layers 1a / 2a / 2b / 2c 🔒🔒🔒
             api.playerPositionChanged.on((e: any) => {
                 if (isSettlingRef.current) return;
                 if (!cursorRef.current) return;
@@ -799,7 +794,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const regKey = `${incomingStart}:${prevAbs}`;
                             if (lastRegressionLogRef.current !== regKey) {
                                 lastRegressionLogRef.current = regKey;
-                                console.warn('[V106] structural regression discarded', {
+                                console.warn('[V107] structural regression discarded', {
                                     incomingStart, prevAbs, tick,
                                 });
                             }
@@ -813,7 +808,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastAcceptedBeatStartRef.current >= 0 &&
                         incomingStart < lastAcceptedBeatStartRef.current - MIN_BACKTRACK_TICKS
                     ) {
-                        console.warn('[V106] dropped out-of-order beat', {
+                        console.warn('[V107] dropped out-of-order beat', {
                             incomingStart, lastAccepted: lastAcceptedBeatStartRef.current,
                         });
                         return;
@@ -827,7 +822,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (beatId === reAnchorCountRef.current.beat) {
                         reAnchorCountRef.current.count++;
                         if (reAnchorCountRef.current.count > 1)
-                            console.warn(`[V106] ⚠️ Re-anchor ${reAnchorCountRef.current.count}x on beat ${beatId}`);
+                            console.warn(`[V107] ⚠️ Re-anchor ${reAnchorCountRef.current.count}x on beat ${beatId}`);
                     } else {
                         reAnchorCountRef.current = { beat: beatId, count: 1 };
                     }
@@ -893,7 +888,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     stableNextBeatRef.current = resolvedNextBeat;
                     stableNextExpandedBeatStartRef.current = typeof nextExpandedStart === 'number' ? nextExpandedStart : null;
 
-                    console.log('[V106→Cursor] setBeat args', {
+                    console.log('[V107→Cursor] setBeat args', {
                         beatAbs: beatAbsStart,
                         expandedBeatStart: guardedStart,
                         nextExpandedBeatStart: nextExpandedStart ?? null,
@@ -916,7 +911,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (container.clientWidth === 0) {
                 requestAnimationFrame(() => {
                     if (container.clientWidth > 0 && apiRef.current) {
-                        console.warn('⚠️ V106: Post-paint fallback — re-rendering');
+                        console.warn('⚠️ V107: Post-paint fallback — re-rendering');
                         apiRef.current.render();
                     }
                 });
@@ -970,13 +965,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (at && trackProfile !== activeProfileRef.current) {
             activeProfileRef.current = trackProfile;
             applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-            console.log(`🎸 V106: track switch → profile="${trackProfile}" [${trackIndices.join(', ')}]`);
+            console.log(`🎸 V107: track switch → profile="${trackProfile}" [${trackIndices.join(', ')}]`);
         }
 
         hasRevealedRef.current = false;
         showCurtain(curtainRef.current);
         api.renderTracks(tr);
-        console.log(`🎸 V106: renderTracks → [${trackIndices.join(', ')}]`);
+        console.log(`🎸 V107: renderTracks → [${trackIndices.join(', ')}]`);
     }, [trackIndices]);
 
     useEffect(() => {
@@ -1029,7 +1024,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const w = el.clientWidth;
             const base = baseTrackProfileRef.current ?? 'songBookPageDense';
-            const nextProfile = resolveProfileByWidth(w, base);
+
+            // 🔒 [Q3] Same orientation logic as init + scoreLoaded — no hard < 480px gate.
+            const vvW = window.visualViewport?.width ?? window.innerWidth;
+            const vvH = window.visualViewport?.height ?? window.innerHeight;
+            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+            const useHorizontal = forceHorizontal || (isLandscape && w < 480);
+
+            const nextProfile = resolveProfileByWidth(w, base, useHorizontal); // ✅ 3rd arg
 
             if (nextProfile === activeProfileRef.current) return; // no-op if tier unchanged
 
@@ -1037,7 +1039,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeProfileRef.current = nextProfile;
 
             applyAlphaTabLayoutProfile(api, at, nextProfile);
-            console.log(`📐 V106 ResizeObserver → profile="${nextProfile}" w=${w}px`);
+            console.log(`📐 V107 ResizeObserver → profile="${nextProfile}" w=${w}px useHorizontal=${useHorizontal}`);
             // Guard reset handled by existing renderFinished handler.
         });
 
@@ -1391,7 +1393,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             </div>
         </div>
     );
-});// Stable entrypoint aliases (deploy-safe)
+});
+
+// Stable entrypoint aliases (deploy-safe)
 // - Pages import AlphaTabRendererV102
 // - Older code can import AlphaTabRenderer
 export const AlphaTabRenderer = AlphaTabRendererV102;

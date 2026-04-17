@@ -209,9 +209,9 @@ const SPARSE_TRACK_RE = /voc|voice|singer|lead\s*vocal|backing\s*vocal|lyric/i;
 export function resolveProfileByWidth(
   containerWidth: number,
   baseTrackProfile: LayoutProfileName,
+  useHorizontal: boolean,
 ): LayoutProfileName {
-  // < 480px — true phone width only → horizontal scroll layout
-  if (containerWidth < 480) return "songBookHorizontal";
+  if (useHorizontal) return "songBookHorizontal"; 
   // Sparse tracks: barsPerRow:8 handles any desktop/tablet width — no narrow tier
   if (baseTrackProfile === "songBookPageSparse") return "songBookPageSparse";
   // 480–900px — tablet or devtools-narrowed desktop → fewer bars per row, still page

@@ -269,11 +269,13 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
             }}
         >
             {/*
-             * [V1.3] Inner row: paddingTop pushes flex content below the notch.
-             * height is reduced by the same safe-area amount so buttons stay 80px tall.
+             * [V1.4] Pattern 1: boxSizing + paddingTop keeps height:'100%' intact.
+             * paddingTop pushes content below the notch without shrinking the row.
+             * This eliminates the "dead black area under buttons" regression from V1.3.
              */}
             <div style={{
-                height: 'calc(100% - env(safe-area-inset-top))',
+                height: '100%',
+                boxSizing: 'border-box',
                 paddingTop: 'env(safe-area-inset-top)',
                 paddingLeft: 50,
                 paddingRight: 20,
