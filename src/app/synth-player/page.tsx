@@ -607,8 +607,10 @@ export default function SynthPlayerPage() {
                  */}
                 <div
                     id="maestro-player"
-                    className="relative bg-white w-full"
-                    style={{ paddingBottom: 'calc(74px + env(safe-area-inset-bottom) + 24px)' }}
+                    className={`
+                        bg-white
+                        ${isMobileLandscape ? 'min-w-[200vw] inline-block' : 'w-full'}
+                    `}
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
