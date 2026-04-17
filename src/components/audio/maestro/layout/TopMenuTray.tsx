@@ -2,50 +2,22 @@
 
 /**
  * TopMenuTray.tsx
- * Version v1.4
- * Updated: April 16th, 2026
+ * Version v1.5
+ * Updated: April 17th, 2026
  *
- * V1.4 CHANGES (Option A — "dumb component" architecture):
- * ✅ Removed internal scroll listener, isHeaderVisible state, and transform style.
- *    Visibility is now 100% owned by synth-player/page.tsx (single source of truth).
- * ✅ Dynamic Island fix retained: header height = calc(80px + env(safe-area-inset-top))
- *    inner row: paddingTop env(safe-area-inset-top), height calc(100% - env(safe-area-inset-top))
- * ✅ safe-area-pt class added to <header> for Tailwind compatibility.
+ * V1.5 CHANGES (Cipher section C — mobile scrollable tray):
+ * ✅ <header> gains overflowX:'auto' + overflowY:'hidden' + WebkitOverflowScrolling:'touch'
+ *    → tray scrolls horizontally on narrow viewports (iPhone portrait) like Songsterr
+ * ✅ Inner <div> gains minWidth:904 → preserves full spec layout as a scrollable strip
+ *    paddingLeft reduced from 50 → 16, paddingRight 20 → 16 (edge breathing room)
  *
- * V1.3 → V1.4 removed:
- *   - useState(isHeaderVisible)
- *   - useEffect scroll listener
- *   - transform: isHeaderVisible ? translateY(0) : translateY(-100%)
- *
- * V1.2 PRESERVED EXACTLY:
- * ✅ Songsterr flex grid spec (all widths, gaps, groups)
- * ✅ NavButton active/hover/default color states
- * ✅ Tab/Chord toggle (not yet wired to AlphaTab renderer)
- * ✅ Back button / future logo slot
- *
- * Flex grid spec (measured from Songsterr, adapted for Maestro.ai):
- *
- *  ← Left-to-Right ────────────────────────────────────────────────────────────
- *  50px   left end padding
- *  86×80  Back / Future Logo slot
- *  30.5px gap
- *  130×80 Chord/Tab toggle
- *  30.5px gap
- *  ─── center group ────────────────────────────────────────────────────────────
- *  60×80  Search
- *  24.5px gap
- *  60×80  My Tabs
- *  24.5px gap
- *  86×80  New Tab
- *  ─── right group ─────────────────────────────────────────────────────────────
- *  24.5px gap
- *  86×80  Help
- *  24.5px gap
- *  86×80  Inbox
- *  86×80  Profile
- *  20px   right end padding
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Total ≈ 904px  ✓ matches spec
+ * 🔒 V1.4 PRESERVED EXACTLY (all other behavior unchanged):
+ *   ✅ Dumb component — no internal scroll listener, no transform
+ *   ✅ Dynamic Island fix: header height = calc(80px + env(safe-area-inset-top))
+ *   ✅ boxSizing + paddingTop pattern (no dead black area under buttons)
+ *   ✅ Songsterr flex grid spec (all widths, gaps, groups)
+ *   ✅ NavButton active/hover/default color states
+ *   ✅ Tab/Chord toggle, Back button, badge support
  */
 
 import React, { useState, useCallback } from 'react';
@@ -248,15 +220,14 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     }, [viewMode, onViewModeChange]);
 
     return (
-        // [V1.3] Dynamic Island fix:
-        // - header height absorbs env(safe-area-inset-top) so the bar expands above the notch
-        // - translateY(-100%) still hides the full expanded bar correctly
-        // - inner row uses paddingTop to push content below the notch
+        // 🔒 V1.3: header absorbs safe-area-inset-top so bar expands above notch.
+        // 🔒 V1.4: No transform here — page.tsx wrapper owns slide animation.
+        // ✅ V1.5: position:relative — wrapper in page.tsx is the fixed anchor.
+        //          Double-fixed caused safe-area + transform conflicts.
+        // ✅ V1.5: overflowX scroll → Songsterr-style mobile tray.
         <header
             style={{
-                position: 'fixed', top: 0, left: 0, right: 0,
-                zIndex: 111,
-                // 🔒 V1.3: expanded height — safe-area absorbed here, not on wrapper
+                position: 'relative',
                 height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
                 background: 'rgb(23,23,23)',
@@ -265,20 +236,24 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 fontWeight: 300,
                 lineHeight: '18.4px',
                 colorScheme: 'light',
-                // 🔒 V1.4: No transform here — page.tsx wrapper owns slide animation.
+                // ✅ [V1.5] Scrollable strip — stops buttons from being clipped on iPhone portrait
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                WebkitOverflowScrolling: 'touch' as any, // iOS momentum scroll
             }}
         >
             {/*
-             * [V1.4] Pattern 1: boxSizing + paddingTop keeps height:'100%' intact.
-             * paddingTop pushes content below the notch without shrinking the row.
-             * This eliminates the "dead black area under buttons" regression from V1.3.
+             * ✅ [V1.5] minWidth:904 preserves full Songsterr spec as scrollable strip.
+             * paddingLeft/Right tightened to 16px — spec outer padding moves to minWidth budget.
+             * 🔒 V1.4 pattern retained: boxSizing + paddingTop keeps height:'100%' intact.
              */}
             <div style={{
+                minWidth: 904,
                 height: '100%',
                 boxSizing: 'border-box',
                 paddingTop: 'env(safe-area-inset-top)',
-                paddingLeft: 50,
-                paddingRight: 20,
+                paddingLeft: 16,
+                paddingRight: 16,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',

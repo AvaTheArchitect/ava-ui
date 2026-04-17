@@ -8,8 +8,9 @@
  *
  * V107 CHANGES:
  * ✅ [Q1] Init block: reordered vvW/vvH before containerW (uses vvW as fallback, not window.innerWidth);
- *         added `activeProfileRef.current = initProfile` so ResizeObserver starts with correct baseline;
  *         added initProfile console.log.
+ * ✅ [M4] Init block: initProfile now via resolveProfileByWidth(containerW, base, useHorizontal) —
+ *         iPhone portrait (<520px) seeds songBookPageMobile immediately, not Dense.
  * ✅ [Q2] scoreLoaded: already correct in V106 (isLandscapeSL / useHorizontalNow pattern) — no change.
  * ✅ [Q3] ResizeObserver: added orientation block (vvW/vvH/isLandscape/useHorizontal) matching init +
  *         scoreLoaded; passes useHorizontal as 3rd arg to resolveProfileByWidth — fixes TS error and
@@ -389,9 +390,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
             const containerW = containerRef.current?.clientWidth ?? vvW;
             const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
-            const initProfile = resolveLayoutProfile(useHorizontal);
-            activeProfileRef.current = initProfile; // [Q1] seed so ResizeObserver starts correct
-            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal });
+            // [M4] Seed via resolveProfileByWidth — iPhone portrait gets songBookPageMobile
+            // immediately instead of waiting for ResizeObserver to correct from Dense.
+            const base = 'songBookPageDense' as LayoutProfileName;
+            const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
+            activeProfileRef.current = initProfile;
+            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal, containerW });
 
             const api = await initAlphaTab({
                 container,
