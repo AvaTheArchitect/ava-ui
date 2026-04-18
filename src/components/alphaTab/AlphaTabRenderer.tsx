@@ -114,6 +114,35 @@ async function waitForContainerWidth(el: HTMLElement, maxWait = 3000): Promise<v
     });
 }
 
+// ── [H1] Imperative axis lock — called after every profile apply + renderFinished.
+// React conditional styles on apiRef.current don't trigger re-renders, so the
+// overflow axis was never actually flipping in horizontal mode.
+function applyAxisLock(container: HTMLElement, api: any): void {
+    const isH = api?.settings?.display?.layoutMode === 1;
+    container.style.overflowX = isH ? 'auto' : 'hidden';
+    container.style.overflowY = isH ? 'hidden' : 'auto';
+    (container.style as any).webkitOverflowScrolling = 'touch';
+    // Also lock the framer scroll element if AlphaTab is using a different one.
+    const scrollEl = api?.renderer?.framer?.scrollElement as HTMLElement | undefined;
+    if (scrollEl && scrollEl !== container) {
+        scrollEl.style.overflowX = isH ? 'auto' : 'hidden';
+        scrollEl.style.overflowY = isH ? 'hidden' : 'auto';
+    }
+}
+
+// ── [H2] Center horizontal strip — called in renderFinished when layoutMode===1.
+// AlphaTab does not anchor scrollLeft in strip mode; without this the surface
+// starts at x=0 and the clef is the first thing visible after curtain drop.
+function centerHorizontalStrip(container: HTMLElement, api: any): void {
+    if (api?.settings?.display?.layoutMode !== 1) return;
+    const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | undefined) ?? container;
+    const surface = container.querySelector('.at-surface') as HTMLElement | null;
+    if (!surface) return;
+    const cw = scrollEl.clientWidth;
+    const sw = surface.scrollWidth || surface.getBoundingClientRect().width;
+    scrollEl.scrollLeft = Math.max(0, (sw - cw) / 2);
+}
+
 function getTrackSet(api: any): Set<number> {
     return api.tracks
         ? new Set<number>(api.tracks.map((t: any) => t.index as number))
@@ -417,6 +446,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             apiRef.current = api;
             if (typeof window !== 'undefined') (window as any).__atV107 = api;
 
+            // [H1] Axis lock immediately after init — before any render fires.
+            if (containerRef.current) applyAxisLock(containerRef.current, api);
+
             api.customCursorHandler = {
                 onAttach() { },
                 onDetach() { },
@@ -506,6 +538,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (at && trackProfile !== activeProfileRef.current) {
                     activeProfileRef.current = trackProfile;
                     applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
+                    // [H1] Axis lock after profile apply (scoreLoaded path)
+                    if (containerRef.current) applyAxisLock(containerRef.current, api);
                 }
 
                 // ── [B] Wipe baked GP8 systemsLayout for sparse tracks ────────
@@ -545,7 +579,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     window.clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                 }
-                if (!hasRevealedRef.current) showCurtain(curtainRef.current);
+                // 🔒 [Curtain fix] Always raise curtain on every render — unconditional.
+                // Old: if (!hasRevealedRef.current) showCurtain(...)
+                // Problem: after first reveal, hasRevealedRef stays true → curtain never
+                // re-raises on profile switches / rotation / track changes → user sees
+                // unpatched AlphaTab layout + cursor animating into place.
+                hasRevealedRef.current = false;
+                showCurtain(curtainRef.current);
             });
 
             const waitForPaintableSurface = (host: HTMLElement, tok: number): Promise<boolean> =>
@@ -634,6 +674,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     hideCurtainAtomic(curtainRef.current);
                     hasRevealedRef.current = true;
                     console.log('🟢 V107 curtain dropped', { token: tokenAtFinish });
+
+                    // [H1] Final axis lock enforcement after render settles.
+                    // [H2] Center strip mode — anchors scrollLeft so clef isn't first visible.
+                    const hContainer = containerRef.current;
+                    if (hContainer) {
+                        applyAxisLock(hContainer, api);
+                        requestAnimationFrame(() =>
+                            requestAnimationFrame(() => centerHorizontalStrip(hContainer, api))
+                        );
+                    }
 
                     requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef, 'postDrop'));
                     isSettlingRef.current = false;
@@ -1032,10 +1082,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const useHorizontal = forceHorizontalRef.current;
             const nextProfile = resolveProfileByWidth(w, base, useHorizontal);
             if (nextProfile === activeProfileRef.current) return;
+            // [Curtain fix] Raise before ResizeObserver-driven render.
+            hasRevealedRef.current = false;
+            showCurtain(curtainRef.current);
             isApplyingProfileRef.current = true;
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             console.log(`📐 V107 ResizeObserver → profile="${nextProfile}" w=${w}px useHorizontal=${useHorizontal}`);
+            applyAxisLock(el, api); // [H1]
         });
 
         ro.observe(el);
@@ -1054,10 +1108,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const base = baseTrackProfileRef.current ?? 'songBookPageDense';
         const nextProfile = resolveProfileByWidth(w, base, forceHorizontalRef.current);
         if (nextProfile === activeProfileRef.current) return;
+        // [Curtain fix] Raise before profile-driven render — renderStarted may fire
+        // after some DOM churn is already visible without this guard.
+        hasRevealedRef.current = false;
+        showCurtain(curtainRef.current);
         isApplyingProfileRef.current = true;
         activeProfileRef.current = nextProfile;
         applyAlphaTabLayoutProfile(api, at, nextProfile);
         console.log(`🔄 V107 forceHorizontal → profile="${nextProfile}" forceH=${forceHorizontal}`);
+        applyAxisLock(el, api); // [H1]
     }, [forceHorizontal]);
 
     // 🔒🔒🔒 CLICK-TO-SEEK — LOCKED CONTRACT (unchanged from V104.10) 🔒🔒🔒
@@ -1187,6 +1246,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!api || loopEnabledRef.current) return;
 
                 const rect = surface.getBoundingClientRect();
+                // [H3] Always derive scroll offset from AlphaTab's actual scroll element.
+                // In strip mode framer.scrollElement owns scrollLeft — surface.scrollLeft is 0.
                 const scrollEl = api.renderer?.framer?.scrollElement as HTMLElement | undefined;
                 const sx = scrollEl?.scrollLeft ?? surface.scrollLeft ?? 0;
                 const sy = scrollEl?.scrollTop ?? surface.scrollTop ?? 0;
@@ -1197,6 +1258,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     clientX: ev.clientX, clientY: ev.clientY,
                     rectLeft: rect.left, rectTop: rect.top,
                     sx, sy, x, y,
+                    layoutMode: api.settings?.display?.layoutMode ?? null,
+                    scrollElIs: scrollEl === surface ? 'surface' : scrollEl === container ? 'container' : scrollEl ? 'framer' : 'none',
                     playerState: api.playerState ?? null,
                     tickPosition: api.tickPosition ?? null,
                 });
@@ -1393,9 +1456,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     }, [fileUrl]);
 
     const bgColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
-    // [Phase 3] Overflow axis lock — prevents vertical drift in horizontal strip mode.
-    // Page mode: scroll vertically, hide horizontal. Horizontal mode: inverse.
-    const isHorizontalMode = apiRef.current?.settings?.display?.layoutMode === 1;
 
     return (
         <div className={`relative ${className ?? ''}`}>
@@ -1424,8 +1484,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         position: 'relative',
                         width: '100%',
                         minHeight: '600px',
-                        overflowX: isHorizontalMode ? 'auto' : 'hidden',
-                        overflowY: isHorizontalMode ? 'hidden' : 'auto',
+                        overflow: 'auto', // [H1] applyAxisLock() overrides this imperatively
                         WebkitOverflowScrolling: 'touch' as any,
                         background: bgColor,
                         paddingLeft: 'env(safe-area-inset-left, 0px)',
