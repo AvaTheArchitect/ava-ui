@@ -446,20 +446,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const alphaTab = await import('@coderline/alphatab');
             alphaTabModuleRef.current = alphaTab;
 
-            // Use container width (not window) to match ResizeObserver tier logic.
-            // < 480px = true phone → horizontal. Tablets stay in page mode.
-            // 🔒 vvW/vvH first — containerW uses vvW as fallback (not window.innerWidth).
-            const vvW = window.visualViewport?.width ?? window.innerWidth;
-            const vvH = window.visualViewport?.height ?? window.innerHeight;
-            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-            const containerW = containerRef.current?.clientWidth ?? vvW;
-            const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
-            // [M4] Seed via resolveProfileByWidth — iPhone portrait gets songBookPageMobile
-            // immediately instead of waiting for ResizeObserver to correct from Dense.
+
+            // ── [Q1] Seed profile via ref — no stale closure, no orientation re-computation. ──
+            // forceHorizontalRef.current is the single source of truth; page.tsx owns the decision.
+            const containerW = containerRef.current?.clientWidth ?? window.innerWidth;
             const base = 'songBookPageDense' as LayoutProfileName;
+            const useHorizontal = forceHorizontalRef.current;
             const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
             activeProfileRef.current = initProfile;
-            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal, containerW });
+            console.log('🎼 V107 initProfile:', initProfile, { containerW, useHorizontal, forceHorizontal });
+
 
             const api = await initAlphaTab({
                 container,
