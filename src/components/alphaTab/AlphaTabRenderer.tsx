@@ -122,25 +122,55 @@ function applyAxisLock(container: HTMLElement, api: any): void {
     container.style.overflowX = isH ? 'auto' : 'hidden';
     container.style.overflowY = isH ? 'hidden' : 'auto';
     (container.style as any).webkitOverflowScrolling = 'touch';
-    // Also lock the framer scroll element if AlphaTab is using a different one.
-    const scrollEl = api?.renderer?.framer?.scrollElement as HTMLElement | undefined;
+    // Also lock framer scroll element if AlphaTab is using a different one.
+    const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined);
     if (scrollEl && scrollEl !== container) {
         scrollEl.style.overflowX = isH ? 'auto' : 'hidden';
         scrollEl.style.overflowY = isH ? 'hidden' : 'auto';
     }
 }
 
-// ── [H2] Center horizontal strip — called in renderFinished when layoutMode===1.
-// AlphaTab does not anchor scrollLeft in strip mode; without this the surface
-// starts at x=0 and the clef is the first thing visible after curtain drop.
+// ── [H2] Center horizontal strip on current playback position ────────────────
+// NOT on surface midpoint — that lands at bar ~56 on long songs.
+// If tickPosition < 480 (near start), scrollLeft = 0.
+// Otherwise, center the viewport on the beat at tickPosition.
+// Guard: only runs when entering Horizontal mode (lastCenteredModeRef tracks this).
+const lastCenteredModeRef = { current: -1 }; // -1 = never centered
 function centerHorizontalStrip(container: HTMLElement, api: any): void {
     if (api?.settings?.display?.layoutMode !== 1) return;
-    const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | undefined) ?? container;
-    const surface = container.querySelector('.at-surface') as HTMLElement | null;
-    if (!surface) return;
-    const cw = scrollEl.clientWidth;
-    const sw = surface.scrollWidth || surface.getBoundingClientRect().width;
-    scrollEl.scrollLeft = Math.max(0, (sw - cw) / 2);
+
+    // Resolve the real scroll element — framer.scrollElement is null in this build.
+    const scrollEl: HTMLElement =
+        (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ??
+        container;
+
+    const tick = api?.tickPosition ?? 0;
+
+    // Near start → anchor to bar 1 (Songsterr behavior)
+    if (tick < 480) {
+        scrollEl.scrollLeft = 0;
+        console.log('📍 V107 centerHorizontal → start (tick<480)');
+        return;
+    }
+
+    // Mid-song → center viewport on current beat
+    const tickCache = (api as any)?.tickCache;
+    const bounds = api?.renderer?.boundsLookup;
+    if (!tickCache?.findBeat || !bounds?.findBeat) {
+        scrollEl.scrollLeft = 0;
+        return;
+    }
+    const trackSet: Set<number> = api?.tracks
+        ? new Set(api.tracks.map((t: any) => t.index as number))
+        : new Set([0]);
+    const r = tickCache.findBeat(trackSet, tick);
+    const bb = r?.beat ? bounds.findBeat(r.beat) : null;
+    const vb = bb?.visualBounds;
+    if (!vb) { scrollEl.scrollLeft = 0; return; }
+    const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : vb.x + vb.w / 2;
+    const target = Math.max(0, beatX - scrollEl.clientWidth / 2);
+    scrollEl.scrollLeft = target;
+    console.log('📍 V107 centerHorizontal → beat', { tick, beatX, target, scrollElTag: scrollEl.tagName });
 }
 
 function getTrackSet(api: any): Set<number> {
