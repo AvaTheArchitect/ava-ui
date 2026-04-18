@@ -178,13 +178,13 @@ export const PROFILE_SONGBOOK_PAGE_MOBILE: LayoutProfileSettings = {
   display: {
     layoutMode: "Page",
     systemsLayoutMode: "Automatic",
-    barsPerRow: 2,
+    barsPerRow: 1, // ✅ Option A — 1 bar/row for readability (Songsterr-style)
     stretchForce: 0.6,
-    notationStaffPaddingTop: 24,
-    firstNotationStaffPaddingTop: 28,
-    effectStaffPaddingTop: 8,
+    notationStaffPaddingTop: 30,
+    firstNotationStaffPaddingTop: 35,
+    effectStaffPaddingTop: 10,
     minBarWidth: 180,
-    justifyLastSystem: false,
+    justifyLastSystem: true, // ✅ single-bar rows fill full width (no "short last row" look)
     scale: 0.9,
   },
 };

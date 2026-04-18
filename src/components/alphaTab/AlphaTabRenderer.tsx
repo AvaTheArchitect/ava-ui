@@ -1275,6 +1275,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const offset = beat.playbackStart ?? 0;
                 if (mbIdx == null) return;
 
+                // ── [Phase 2] Horizontal mode: seek directly to absolutePlaybackStart ──
+                // In Horizontal strip, the "closest candidate to currentTick" heuristic
+                // picks the wrong repeat occurrence → cursor teleports to clef + wrong playback.
+                // Fix: bypass candidate disambiguation entirely; seek to the beat's absolute tick.
+                const isHorizontal = (api.settings?.display?.layoutMode === 1);
+                if (isHorizontal) {
+                    const beatAbs = beat.absolutePlaybackStart ?? 0;
+                    const beatDurH = beat.playbackDuration ?? beat.duration ?? 480;
+                    const EPS_IN = 2;
+                    const safeTarget = Math.min(beatAbs + EPS_IN, beatAbs + Math.max(0, beatDurH - 1));
+                    seekTargetTickRef.current = safeTarget;
+                    seekFreezeUntilRef.current = Date.now() + 250;
+                    const playerStateNow = api.playerState ?? 0;
+                    const wasPlaying = playerStateNow === 1;
+                    const tok = ++seekTokenRef.current;
+                    if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
+                    if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
+                    const seekTicksH = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                    if (seekTicksH) seekTicksH(safeTarget);
+                    api.tickPosition = safeTarget;
+                    resetBeatAcceptance();
+                    publishCursorAtTick(safeTarget);
+                    if (wasPlaying) {
+                        resumeTimerRef.current = window.setTimeout(() => {
+                            resumeTimerRef.current = null;
+                            if (seekTokenRef.current !== tok) return;
+                            api.tickPosition = safeTarget;
+                            resetBeatAcceptance();
+                            if ((api.playerState ?? 0) === 0) api.play();
+                            requestAnimationFrame(() => { seekInProgressRef.current = false; });
+                        }, 30);
+                    }
+                    console.log('🖱️ CLICK_SEEK horizontal direct', { beatAbs, safeTarget });
+                    return; // skip masterBar candidate disambiguation in horizontal
+                }
+
+                // ── Page mode: candidate disambiguation (existing logic) ──────────
                 const currentTick = api.tickPosition ?? 0;
                 const candidates: number[] = tickCache.masterBars
                     .filter((mb: any) => mb.masterBar?.index === mbIdx)
@@ -1356,6 +1393,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     }, [fileUrl]);
 
     const bgColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
+    // [Phase 3] Overflow axis lock — prevents vertical drift in horizontal strip mode.
+    // Page mode: scroll vertically, hide horizontal. Horizontal mode: inverse.
+    const isHorizontalMode = apiRef.current?.settings?.display?.layoutMode === 1;
 
     return (
         <div className={`relative ${className ?? ''}`}>
@@ -1384,7 +1424,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         position: 'relative',
                         width: '100%',
                         minHeight: '600px',
-                        overflow: 'auto',
+                        overflowX: isHorizontalMode ? 'auto' : 'hidden',
+                        overflowY: isHorizontalMode ? 'hidden' : 'auto',
                         WebkitOverflowScrolling: 'touch' as any,
                         background: bgColor,
                         paddingLeft: 'env(safe-area-inset-left, 0px)',
