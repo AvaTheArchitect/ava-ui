@@ -160,13 +160,15 @@ function centerHorizontalStrip(container: HTMLElement, api: any): void {
 
     if (tick < 480) {
         // Probe to first real note past clef region — clef occupies ~0–120px.
+        // Use a small fixed left margin (40px) not a % — beat may be at x≈126
+        // and 15% of 956px viewport = 143px which would clamp to scrollLeft=0.
         for (const probe of [0, 60, 120, 240, 480]) {
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
             if (!bb?.visualBounds) continue;
             const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
             if (beatX > 120) {
-                scrollEl.scrollLeft = Math.max(0, beatX - scrollEl.clientWidth * 0.15);
+                scrollEl.scrollLeft = Math.max(0, beatX - 40); // 40px left margin
                 console.log('📍 V108 centerHorizontal → first note', { probe, beatX, scrollLeft: scrollEl.scrollLeft });
                 return;
             }
