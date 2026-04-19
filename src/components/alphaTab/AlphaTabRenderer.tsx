@@ -160,16 +160,24 @@ function centerHorizontalStrip(container: HTMLElement, api: any): void {
 
     if (tick < 480) {
         // Probe to first real note past clef region — clef occupies ~0–120px.
-        // Use a small fixed left margin (40px) not a % — beat may be at x≈126
-        // and 15% of 956px viewport = 143px which would clamp to scrollLeft=0.
+        // Only scroll if the note is NOT already comfortably visible at scrollLeft=0.
+        // (e.g. beatX=120 on a 956px viewport → naturally visible, don't scroll.)
         for (const probe of [0, 60, 120, 240, 480]) {
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
             if (!bb?.visualBounds) continue;
             const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
             if (beatX > 120) {
-                scrollEl.scrollLeft = Math.max(0, beatX - 40); // 40px left margin
-                console.log('📍 V108 centerHorizontal → first note', { probe, beatX, scrollLeft: scrollEl.scrollLeft });
+                const clientW = scrollEl.clientWidth;
+                // Already visible in left 60% of viewport → leave at 0 (natural position).
+                // Only scroll when note is deep into strip (beyond half the viewport width).
+                if (beatX < clientW * 0.6) {
+                    scrollEl.scrollLeft = 0;
+                    console.log('📍 V108 centerHorizontal → first note naturally visible, no scroll', { beatX, clientW });
+                } else {
+                    scrollEl.scrollLeft = Math.max(0, beatX - 40);
+                    console.log('📍 V108 centerHorizontal → first note scrolled', { beatX, scrollLeft: scrollEl.scrollLeft });
+                }
                 return;
             }
         }
