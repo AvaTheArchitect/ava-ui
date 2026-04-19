@@ -52,7 +52,7 @@ import {
     applyAlphaTabLayoutProfileSettings,    // [V102.2] settings-only, no render
     type LayoutProfileName,
 } from '@/lib/alphaTab/initAlphaTab';
-import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
+import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/MaestroCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngine } from '@/lib/alphaTab/gp8LayoutEngine';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
@@ -372,7 +372,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const containerRef = useRef<HTMLDivElement>(null);
     const curtainRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
-    const cursorRef = useRef<MaestroCursorV2 | null>(null);
+    const cursorRef = useRef<MaestroCursor | null>(null);
     const initTokenRef = useRef(0);
     // 🔒 trackIndicesRef — keeps scoreLoaded from reading stale closure value.
     // Without this, scoreLoaded always renders [0] because init() captures the
@@ -658,12 +658,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const host = containerRef.current;
                     if (!host || renderTokenRef.current !== tok) return resolve(false);
                     if (!cursorRef.current) {
-                        cursorRef.current = attachMaestroCursorV2(api, host);
+                        cursorRef.current = attachMaestroCursor(api, host);
                     } else {
                         const el = cursorRef.current.element;
                         if (!el || !host.contains(el)) {
                             cursorRef.current.destroy();
-                            cursorRef.current = attachMaestroCursorV2(api, host);
+                            cursorRef.current = attachMaestroCursor(api, host);
                         }
                     }
                     host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
