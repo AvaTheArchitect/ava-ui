@@ -2,19 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V107
- * Date: April 16th, 2026
- * Cloned from V106 — awaiting patch spec.
+ * Current version: V108
+ * Date: April 18th, 2026
+ * Cloned from V107 — 4 Cipher patches applied (horizontal mode stabilization).
  *
- * V107 CHANGES:
- * ✅ [Q1] Init block: uses forceHorizontalRef (not stale closure); seeds via resolveProfileByWidth.
- * ✅ [Q2] scoreLoaded: two-step resolution — resolveTrackLayoutProfile(name, false) → resolveProfileByWidth.
- *         baseTrackProfileRef stores sparse/dense only (never mobile/horizontal) for ResizeObserver.
- * ✅ [Q3] ResizeObserver: reads forceHorizontalRef (not captured prop); drives profile via ref.
- * ✅ [Q4] trackIndices useEffect: same two-step pattern as scoreLoaded.
- * ✅ [Q5] forceHorizontalRef: new ref + sync effect — all closures read ref, not stale prop.
- * ✅ [Q6] forceHorizontal reactive effect: profile switches instantly on landscape toggle without
- *         waiting for ResizeObserver timing.
+ * V108 CHANGES:
+ * ✅ [C1] JSX: removed minHeight from React style — applyAxisLock() owns it imperatively.
+ *         overflow: 'hidden' as neutral default (applyAxisLock overrides both axes).
+ * ✅ [C2] centerHorizontalStrip: tick<480 now probes for first real note past clef region
+ *         (beatX > 120) instead of blindly scrollLeft=0 which left cursor on TAB clef.
+ * ✅ [C3] Click sx/sy: containerRef used as fallback when framer.scrollElement is null —
+ *         framer.scrollElement is null in this AlphaTab build; surface.scrollLeft is always 0.
+ * ✅ [C4] Curtain z-index: 30 → 5000 — AlphaTab internal .at-cursors sits at z:1000;
+ *         curtain must be above all layers to fully hide intermediate render state.
+ * ✅ [C5] trackIndices useEffect: added missing applyAxisLock() call after profile apply.
  *
  * 🔒 V106 PRESERVED EXACTLY (all behavior unchanged):
  *   ✅ [P1–P4] Layout profile system (resolveLayoutProfile, applyAlphaTabLayoutProfile,
@@ -122,55 +123,66 @@ function applyAxisLock(container: HTMLElement, api: any): void {
     container.style.overflowX = isH ? 'auto' : 'hidden';
     container.style.overflowY = isH ? 'hidden' : 'auto';
     (container.style as any).webkitOverflowScrolling = 'touch';
+    // [H-height] In horizontal strip mode, don't let minHeight:600px create a tall
+    // empty container that pushes the strip to an odd vertical position.
+    // 'auto' lets the container shrink to the strip's natural height.
+    container.style.minHeight = isH ? 'auto' : '600px';
     // Also lock framer scroll element if AlphaTab is using a different one.
     const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined);
     if (scrollEl && scrollEl !== container) {
         scrollEl.style.overflowX = isH ? 'auto' : 'hidden';
         scrollEl.style.overflowY = isH ? 'hidden' : 'auto';
     }
+    console.log(`🔒 applyAxisLock isH=${isH}`, {
+        overflowX: container.style.overflowX,
+        overflowY: container.style.overflowY,
+        minHeight: container.style.minHeight,
+    });
 }
 
-// ── [H2] Center horizontal strip on current playback position ────────────────
-// NOT on surface midpoint — that lands at bar ~56 on long songs.
-// If tickPosition < 480 (near start), scrollLeft = 0.
-// Otherwise, center the viewport on the beat at tickPosition.
-// Guard: only runs when entering Horizontal mode (lastCenteredModeRef tracks this).
-const lastCenteredModeRef = { current: -1 }; // -1 = never centered
+// ── [C2] Center horizontal strip — improved first-note seek ──────────────────
+// tick<480: probes forward to find first beat whose onNotesX is past the clef
+// region (>120px), then positions it near the left edge with breathing room.
+// Mid-song: centers viewport on the beat at tickPosition.
 function centerHorizontalStrip(container: HTMLElement, api: any): void {
     if (api?.settings?.display?.layoutMode !== 1) return;
-
-    // Resolve the real scroll element — framer.scrollElement is null in this build.
     const scrollEl: HTMLElement =
         (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ??
         container;
+    const tickCache = (api as any)?.tickCache;
+    const bounds = api?.renderer?.boundsLookup;
+    if (!tickCache?.findBeat || !bounds?.findBeat) { scrollEl.scrollLeft = 0; return; }
+    const trackSet: Set<number> = api?.tracks
+        ? new Set(api.tracks.map((t: any) => t.index as number))
+        : new Set([0]);
 
     const tick = api?.tickPosition ?? 0;
 
-    // Near start → anchor to bar 1 (Songsterr behavior)
     if (tick < 480) {
+        // Probe to first real note past clef region — clef occupies ~0–120px.
+        for (const probe of [0, 60, 120, 240, 480]) {
+            const r = tickCache.findBeat(trackSet, probe);
+            const bb = r?.beat ? bounds.findBeat(r.beat) : null;
+            if (!bb?.visualBounds) continue;
+            const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+            if (beatX > 120) {
+                scrollEl.scrollLeft = Math.max(0, beatX - scrollEl.clientWidth * 0.15);
+                console.log('📍 V108 centerHorizontal → first note', { probe, beatX, scrollLeft: scrollEl.scrollLeft });
+                return;
+            }
+        }
         scrollEl.scrollLeft = 0;
-        console.log('📍 V107 centerHorizontal → start (tick<480)');
+        console.log('📍 V108 centerHorizontal → start fallback');
         return;
     }
 
     // Mid-song → center viewport on current beat
-    const tickCache = (api as any)?.tickCache;
-    const bounds = api?.renderer?.boundsLookup;
-    if (!tickCache?.findBeat || !bounds?.findBeat) {
-        scrollEl.scrollLeft = 0;
-        return;
-    }
-    const trackSet: Set<number> = api?.tracks
-        ? new Set(api.tracks.map((t: any) => t.index as number))
-        : new Set([0]);
     const r = tickCache.findBeat(trackSet, tick);
     const bb = r?.beat ? bounds.findBeat(r.beat) : null;
-    const vb = bb?.visualBounds;
-    if (!vb) { scrollEl.scrollLeft = 0; return; }
-    const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : vb.x + vb.w / 2;
-    const target = Math.max(0, beatX - scrollEl.clientWidth / 2);
-    scrollEl.scrollLeft = target;
-    console.log('📍 V107 centerHorizontal → beat', { tick, beatX, target, scrollElTag: scrollEl.tagName });
+    if (!bb?.visualBounds) { scrollEl.scrollLeft = 0; return; }
+    const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+    scrollEl.scrollLeft = Math.max(0, beatX - scrollEl.clientWidth / 2);
+    console.log('📍 V108 centerHorizontal → beat', { tick, beatX, scrollLeft: scrollEl.scrollLeft });
 }
 
 function getTrackSet(api: any): Set<number> {
@@ -446,16 +458,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const alphaTab = await import('@coderline/alphatab');
             alphaTabModuleRef.current = alphaTab;
 
-
-            // ── [Q1] Seed profile via ref — no stale closure, no orientation re-computation. ──
-            // forceHorizontalRef.current is the single source of truth; page.tsx owns the decision.
-            const containerW = containerRef.current?.clientWidth ?? window.innerWidth;
+            // Use container width (not window) to match ResizeObserver tier logic.
+            // < 480px = true phone → horizontal. Tablets stay in page mode.
+            // 🔒 vvW/vvH first — containerW uses vvW as fallback (not window.innerWidth).
+            const vvW = window.visualViewport?.width ?? window.innerWidth;
+            const vvH = window.visualViewport?.height ?? window.innerHeight;
+            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
+            const containerW = containerRef.current?.clientWidth ?? vvW;
+            const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
+            // [M4] Seed via resolveProfileByWidth — iPhone portrait gets songBookPageMobile
+            // immediately instead of waiting for ResizeObserver to correct from Dense.
             const base = 'songBookPageDense' as LayoutProfileName;
-            const useHorizontal = forceHorizontalRef.current;
             const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
             activeProfileRef.current = initProfile;
-            console.log('🎼 V107 initProfile:', initProfile, { containerW, useHorizontal, forceHorizontal });
-
+            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal, containerW });
 
             const api = await initAlphaTab({
                 container,
@@ -1047,7 +1063,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (at && trackProfile !== activeProfileRef.current) {
             activeProfileRef.current = trackProfile;
             applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-            console.log(`🎸 V107: track switch → profile="${trackProfile}" base="${baseProfile}" [${trackIndices.join(', ')}]`);
+            // [C5] Axis lock after track-switch profile apply (was missing call site)
+            if (containerRef.current) applyAxisLock(containerRef.current, api);
+            console.log(`🎸 V108: track switch → profile="${trackProfile}" base="${baseProfile}" [${trackIndices.join(', ')}]`);
         }
 
         hasRevealedRef.current = false;
@@ -1272,11 +1290,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!api || loopEnabledRef.current) return;
 
                 const rect = surface.getBoundingClientRect();
-                // [H3] Always derive scroll offset from AlphaTab's actual scroll element.
-                // In strip mode framer.scrollElement owns scrollLeft — surface.scrollLeft is 0.
-                const scrollEl = api.renderer?.framer?.scrollElement as HTMLElement | undefined;
-                const sx = scrollEl?.scrollLeft ?? surface.scrollLeft ?? 0;
-                const sy = scrollEl?.scrollTop ?? surface.scrollTop ?? 0;
+                // [C3] sx/sy: containerRef is the real scroll element when framer.scrollElement
+                // is null (confirmed null in this AlphaTab build — surface.scrollLeft is always 0).
+                const containerEl = containerRef.current!;
+                const scrollEl = (api.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ?? containerEl;
+                const sx = scrollEl.scrollLeft ?? 0;
+                const sy = scrollEl.scrollTop ?? 0;
                 const x = (ev.clientX - rect.left) + sx;
                 const y = (ev.clientY - rect.top) + sy;
 
@@ -1285,7 +1304,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     rectLeft: rect.left, rectTop: rect.top,
                     sx, sy, x, y,
                     layoutMode: api.settings?.display?.layoutMode ?? null,
-                    scrollElIs: scrollEl === surface ? 'surface' : scrollEl === container ? 'container' : scrollEl ? 'framer' : 'none',
+                    scrollElIs: scrollEl === surface ? 'surface' : scrollEl === containerEl ? 'container' : 'framer',
                     playerState: api.playerState ?? null,
                     tickPosition: api.tickPosition ?? null,
                 });
@@ -1499,7 +1518,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             <div
                 ref={curtainRef}
                 className="absolute inset-0 pointer-events-none"
-                style={{ background: bgColor, display: 'block', zIndex: 30 }}
+                style={{ background: bgColor, display: 'block', zIndex: 5000 }}
             />
 
             <div style={{ position: 'relative', zIndex: 10, isolation: 'isolate' as any }}>
@@ -1509,8 +1528,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     style={{
                         position: 'relative',
                         width: '100%',
-                        minHeight: '600px',
-                        overflow: 'auto', // [H1] applyAxisLock() overrides this imperatively
+                        // 🔒 [C1] minHeight absent — applyAxisLock() owns imperatively:
+                        //   horizontal → 'auto', page → '600px'
+                        // 🔒 [C1] overflow:'hidden' as neutral default — applyAxisLock()
+                        //   overrides both axes immediately after init + every profile apply.
+                        overflow: 'hidden',
                         WebkitOverflowScrolling: 'touch' as any,
                         background: bgColor,
                         paddingLeft: 'env(safe-area-inset-left, 0px)',
