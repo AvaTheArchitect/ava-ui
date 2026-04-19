@@ -587,12 +587,12 @@ export default function SynthPlayerPage() {
             <main
                 ref={mainScrollContainerRef}
                 className={`
-                    w-full overscroll-y-contain
-                    ${isMobileLandscape
-                        ? 'h-[calc(100dvh-80px)] overflow-x-auto overflow-y-auto relative'
-                        : 'pb-32 overflow-y-auto overflow-x-hidden'}
-                    ${isHeaderShown ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
-                    transition-[padding] duration-300
+        w-full
+        ${isMobileLandscape
+                        ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
+                        : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain'}
+        ${isHeaderShown && !isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+        transition-[padding] duration-300
                 `}
             >
                 {error && (
@@ -612,7 +612,11 @@ export default function SynthPlayerPage() {
                 <div
                     id="maestro-player"
                     className="relative bg-white w-full"
-                    style={{ paddingBottom: 'calc(74px + env(safe-area-inset-bottom) + 24px)' }}
+                    style={{
+                        paddingBottom: isMobileLandscape
+                            ? 'env(safe-area-inset-bottom, 0px)'  // landscape: no bottom push
+                            : 'calc(74px + env(safe-area-inset-bottom) + 24px)',  // portrait: TransportBar clearance
+                    }}
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
