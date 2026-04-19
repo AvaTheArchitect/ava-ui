@@ -182,7 +182,8 @@
     .at-cursor-beat,
     .at-selection,
     .maestro-loop-handle,
-    .maestro-loop-bubble {
+    .maestro-loop-bubble 
+        #maestro-landscape-cursor {   /* ← ADD: hide fixed overlay on print */
         display: none !important;
     }
     .at-surface { overflow: visible !important; }

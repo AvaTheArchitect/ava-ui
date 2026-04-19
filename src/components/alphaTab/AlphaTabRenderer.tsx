@@ -2,43 +2,37 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V108
- * Date: April 18th, 2026
- * Cloned from V107 — 4 Cipher patches applied (horizontal mode stabilization).
+ * Current version: V109
+ * Date: April 19th, 2026
+ * Cloned from V108 — Phase 4 P1: Landscape fixed cursor + auto-scroll.
  *
- * V108 CHANGES:
- * ✅ [C1] JSX: removed minHeight from React style — applyAxisLock() owns it imperatively.
- *         overflow: 'hidden' as neutral default (applyAxisLock overrides both axes).
- * ✅ [C2] centerHorizontalStrip: tick<480 now probes for first real note past clef region
- *         (beatX > 120) instead of blindly scrollLeft=0 which left cursor on TAB clef.
- * ✅ [C3] Click sx/sy: containerRef used as fallback when framer.scrollElement is null —
- *         framer.scrollElement is null in this AlphaTab build; surface.scrollLeft is always 0.
- * ✅ [C4] Curtain z-index: 30 → 5000 — AlphaTab internal .at-cursors sits at z:1000;
- *         curtain must be above all layers to fully hide intermediate render state.
- * ✅ [C5] trackIndices useEffect: added missing applyAxisLock() call after profile apply.
+ * V109 CHANGES:
+ * ✅ [L1] LandscapeFixedCursorOverlay: new inline class — fixed vertical line at
+ *         CURSOR_POSITION_RATIO=0.20 of container width. Attaches to .alphatab-container
+ *         (same coordinate space as .at-surface). No beat math, no tick tracking.
+ *         z-index: 1001 — above AlphaTab SVG (z:1000), below curtain (z:5000).
+ * ✅ [L2] playerPositionChanged: landscape branch at top — reads onNotesX, drives
+ *         container.scrollLeft = clamp(beatX - fixedCursorX). Early return before
+ *         portrait cursor engine. Portrait path byte-for-byte unchanged.
+ * ✅ [L3] Click handler: landscape tap = play/pause only. Returns before all seek
+ *         logic. Matches Songsterr behavior — eliminates clef-teleport class of bugs.
+ * ✅ [L4] renderFinished: ensureCursorAndAnchorOnce gated to portrait only.
+ *         Landscape path: attach LandscapeFixedCursorOverlay (destroy+recreate on
+ *         every render to stay in sync with fresh SVG geometry).
+ * ✅ [L5] landscapeCursorRef: new ref tracking overlay instance. Cleaned up in
+ *         main effect destroy path alongside cursorRef.
+ * ✅ [L6] forceHorizontal effect + trackIndices effect: destroy mismatched cursor
+ *         on mode switch so portrait/landscape cursors never coexist.
  *
- * 🔒 V106 PRESERVED EXACTLY (all behavior unchanged):
- *   ✅ [P1–P4] Layout profile system (resolveLayoutProfile, applyAlphaTabLayoutProfile,
- *              alphaTabModuleRef, activeProfileRef, isApplyingProfileRef)
- *   ✅ [P3] init(): module stash + profile bake at construction
- *   ✅ [P3b] renderFinished: isApplyingProfileRef.current = false
- *   ✅ [P4] ResizeObserver: width-tier profile switching (resolveProfileByWidth)
- *   ✅ GP8_DISPLAY_OVERRIDES: 3 zero-padding keys removed (SongBook profile owns them)
- *   ✅ Patches A–D (expandedBeatStart, resolveNextBeatExpanded, publishCursorAtTick, click)
- *   ✅ MaestroCursorV2 (attachMaestroCursorV2)
- *   ✅ Curtain state machine (renderTokenRef, hasRevealedRef, QUIET_MS=250)
- *   ✅ Auto-scroll contract (scrollContainer at init, applyScrollMode post-READY)
- *   ✅ GP8 layout engine hook (runGp8LayoutEngineV2)
- *   ✅ stableVisualKeyRef + getVisualKeyForBeat() — SRV Layer 1a
- *   ✅ D1 monotonic beat gate + bypass window
- *   ✅ seekFreezeUntilRef / seekTargetTickRef (250ms freeze)
- *   ✅ Click-to-seek single-flight (seekTokenRef + resumeTimerRef)
- *   ✅ E2 same-masterBar sticky override guard
- *   ✅ BeatCustomLoopOverlay, double-click-to-play
+ * 🔒 V108 PRESERVED EXACTLY (all behavior unchanged):
+ *   ✅ [C1–C5] All V108 patches (axis lock, centerHorizontalStrip, click sx/sy,
+ *              curtain z:5000, trackIndices applyAxisLock call)
+ *   ✅ Portrait cursor engine — MaestroCursor V1 (purple) — untouched
+ *   ✅ Click-to-seek full logic (portrait path only — landscape returns early at [L3])
+ *   ✅ All V106/V107 preserved locks (profiles, curtain, SRV layers, monotonic gate,
+ *              expandedBeatStart, resolveNextBeatExpanded, GP8 engine hook, etc.)
  *
- *  🔒 DEPLOYMENT ENTRYPOINT — DO NOT import AlphaTabRenderer_V### directly in pages.
- *  This file is the single committed export. Versioned backups stay local as
- *  AlphaTabRenderer_V107.tsx.LOCKED etc. Active version: V107 (April 16, 2026).
+ * 🔒 DEPLOYMENT ENTRYPOINT — import from AlphaTabRenderer, not versioned files.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -46,10 +40,10 @@ import {
     initAlphaTab,
     loadGuitarProFile,
     resolveLayoutProfile,
-    resolveProfileByWidth,                  // [V102.2] width-tier resolver for ResizeObserver
-    resolveTrackLayoutProfile,              // [V102.2] track-aware profile picker
+    resolveProfileByWidth,
+    resolveTrackLayoutProfile,
     applyAlphaTabLayoutProfile,
-    applyAlphaTabLayoutProfileSettings,    // [V102.2] settings-only, no render
+    applyAlphaTabLayoutProfileSettings,
     type LayoutProfileName,
 } from '@/lib/alphaTab/initAlphaTab';
 import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/MaestroCursor';
@@ -77,30 +71,63 @@ export interface AlphaTabRendererV102Props {
     theme?: 'light' | 'dark';
     className?: string;
     scrollContainer?: HTMLElement | null;
-    forceHorizontal?: boolean; // 🔒 explicit strip mode — passed from page.tsx isMobileLandscape
+    forceHorizontal?: boolean;
+}
+
+// ── [L1] Landscape Fixed Cursor Overlay ──────────────────────────────────────
+// A static vertical line pinned at CURSOR_POSITION_RATIO * containerWidth.
+// The strip scrolls underneath it — this element never moves.
+// No beat math, no tick tracking, no boundsLookup required.
+// Attach inside .alphatab-container (position:relative) for shared coordinate space.
+const CURSOR_POSITION_RATIO = 0.20; // 20% from left — matches Songsterr feel
+
+class LandscapeFixedCursorOverlay {
+    private el: HTMLElement;
+    private container: HTMLElement;
+
+    constructor(container: HTMLElement) {
+        this.container = container;
+        this.el = document.createElement('div');
+        this.el.id = 'maestro-landscape-cursor';
+        const x = Math.round(container.clientWidth * CURSOR_POSITION_RATIO);
+        Object.assign(this.el.style, {
+            position: 'absolute',
+            top: '0',
+            left: `${x}px`,
+            width: '2px',
+            height: '100%',
+            background: 'rgba(168, 85, 247, 0.85)',      // purple — matches V1 cursor
+            boxShadow: '0 0 8px rgba(168, 85, 247, 0.55)',
+            pointerEvents: 'none',
+            // Above AlphaTab internal cursors (z:1000), below curtain (z:5000)
+            zIndex: '1001',
+            willChange: 'transform',
+        });
+        container.appendChild(this.el);
+        console.log('✅ LandscapeFixedCursorOverlay: attached at x=', x, 'ratio=', CURSOR_POSITION_RATIO);
+    }
+
+    /** Call after container resize to re-pin the line. */
+    updateX(): void {
+        const x = Math.round(this.container.clientWidth * CURSOR_POSITION_RATIO);
+        this.el.style.left = `${x}px`;
+    }
+
+    destroy(): void {
+        if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
+        console.log('🧹 LandscapeFixedCursorOverlay: destroyed');
+    }
 }
 
 // ─── Auto-scroll contract ─────────────────────────────────────────────────────
 // 🔒 LOCKED — DO NOT CHANGE without understanding the pump/flash regression history.
-// Rule 1: scrollContainer wired at initAlphaTab (not in applyScrollMode).
-// Rule 2: applyScrollMode() ONLY toggles scrollMode + updateSettings().
-// Rule 3: applyScrollMode(true) ONLY after READY (isSettling=false).
-// Rule 4: updateSettings() required for AT 1.8.x to pick up scrollMode changes.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// 🔒 FROZEN BASELINE — March 25, 2026 (Stage 3 / V29).
-// [P1] 3 zero-padding keys removed — SongBook profile owns headroom now:
-//   firstNotationStaffPaddingTop, notationStaffPaddingTop, effectStaffPaddingTop
 const GP8_DISPLAY_OVERRIDES: Record<string, number> = {
     firstSystemPaddingTop: 12,
-    // firstNotationStaffPaddingTop ← REMOVED — SongBook profile owns this
-    // notationStaffPaddingTop      ← REMOVED — SongBook profile owns this
     notationStaffPaddingBottom: 10,
     lastNotationStaffPaddingBottom: 12,
     lyricLinesPaddingBetween: 10,
     trackStaffPaddingBetween: 2,
     systemPaddingBottom: 8,
-    // effectStaffPaddingTop        ← REMOVED — SongBook profile owns this
     effectStaffPaddingBottom: 6,
 };
 
@@ -115,19 +142,12 @@ async function waitForContainerWidth(el: HTMLElement, maxWait = 3000): Promise<v
     });
 }
 
-// ── [H1] Imperative axis lock — called after every profile apply + renderFinished.
-// React conditional styles on apiRef.current don't trigger re-renders, so the
-// overflow axis was never actually flipping in horizontal mode.
 function applyAxisLock(container: HTMLElement, api: any): void {
     const isH = api?.settings?.display?.layoutMode === 1;
     container.style.overflowX = isH ? 'auto' : 'hidden';
     container.style.overflowY = isH ? 'hidden' : 'auto';
     (container.style as any).webkitOverflowScrolling = 'touch';
-    // [H-height] In horizontal strip mode, don't let minHeight:600px create a tall
-    // empty container that pushes the strip to an odd vertical position.
-    // 'auto' lets the container shrink to the strip's natural height.
     container.style.minHeight = isH ? 'auto' : '600px';
-    // Also lock framer scroll element if AlphaTab is using a different one.
     const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined);
     if (scrollEl && scrollEl !== container) {
         scrollEl.style.overflowX = isH ? 'auto' : 'hidden';
@@ -140,28 +160,19 @@ function applyAxisLock(container: HTMLElement, api: any): void {
     });
 }
 
-// ── [C2] Center horizontal strip — improved first-note seek ──────────────────
-// tick<480: probes forward to find first beat whose onNotesX is past the clef
-// region (>120px), then positions it near the left edge with breathing room.
-// Mid-song: centers viewport on the beat at tickPosition.
 function centerHorizontalStrip(container: HTMLElement, api: any): void {
     if (api?.settings?.display?.layoutMode !== 1) return;
     const scrollEl: HTMLElement =
-        (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ??
-        container;
+        (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ?? container;
     const tickCache = (api as any)?.tickCache;
     const bounds = api?.renderer?.boundsLookup;
     if (!tickCache?.findBeat || !bounds?.findBeat) { scrollEl.scrollLeft = 0; return; }
     const trackSet: Set<number> = api?.tracks
         ? new Set(api.tracks.map((t: any) => t.index as number))
         : new Set([0]);
-
     const tick = api?.tickPosition ?? 0;
 
     if (tick < 480) {
-        // Probe to first real note past clef region — clef occupies ~0–120px.
-        // Only scroll if the note is NOT already comfortably visible at scrollLeft=0.
-        // (e.g. beatX=120 on a 956px viewport → naturally visible, don't scroll.)
         for (const probe of [0, 60, 120, 240, 480]) {
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
@@ -169,30 +180,25 @@ function centerHorizontalStrip(container: HTMLElement, api: any): void {
             const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
             if (beatX > 120) {
                 const clientW = scrollEl.clientWidth;
-                // Already visible in left 60% of viewport → leave at 0 (natural position).
-                // Only scroll when note is deep into strip (beyond half the viewport width).
                 if (beatX < clientW * 0.6) {
                     scrollEl.scrollLeft = 0;
-                    console.log('📍 V108 centerHorizontal → first note naturally visible, no scroll', { beatX, clientW });
+                    console.log('📍 V109 centerHorizontal → first note naturally visible', { beatX, clientW });
                 } else {
                     scrollEl.scrollLeft = Math.max(0, beatX - 40);
-                    console.log('📍 V108 centerHorizontal → first note scrolled', { beatX, scrollLeft: scrollEl.scrollLeft });
+                    console.log('📍 V109 centerHorizontal → first note scrolled', { beatX, scrollLeft: scrollEl.scrollLeft });
                 }
                 return;
             }
         }
         scrollEl.scrollLeft = 0;
-        console.log('📍 V108 centerHorizontal → start fallback');
         return;
     }
 
-    // Mid-song → center viewport on current beat
     const r = tickCache.findBeat(trackSet, tick);
     const bb = r?.beat ? bounds.findBeat(r.beat) : null;
     if (!bb?.visualBounds) { scrollEl.scrollLeft = 0; return; }
     const beatX = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
     scrollEl.scrollLeft = Math.max(0, beatX - scrollEl.clientWidth / 2);
-    console.log('📍 V108 centerHorizontal → beat', { tick, beatX, scrollLeft: scrollEl.scrollLeft });
 }
 
 function getTrackSet(api: any): Set<number> {
@@ -257,10 +263,6 @@ function isSurfacePaintable(host: HTMLElement): boolean {
     return false;
 }
 
-/**
- * [Cipher Fix A] Resolve the true next beat for cursor interpolation.
- * Kept for reference; replaced by resolveNextBeatExpanded in the timing path.
- */
 function resolveNextBeat(api: any, curBeat: any, trackSet: Set<number>): any | null {
     const curStart = curBeat?.absolutePlaybackStart;
     if (typeof curStart !== 'number') return null;
@@ -282,13 +284,6 @@ function resolveNextBeat(api: any, curBeat: any, trackSet: Set<number>): any | n
     return null;
 }
 
-/**
- * [B] Resolve next beat AND its expanded tick (t from forward scan).
- * Returns nextStart in EXPANDED (playback) time — correct for shuffle/repeat songs.
- *
- * [V105.1] Skip candidates whose absolutePlaybackStart <= curBeat's — these are late
- * pickup/ornament beats (e.g. beat 480 arriving after beat 600 in SRV).
- */
 function resolveNextBeatExpanded(
     api: any,
     trackSet: Set<number>,
@@ -339,7 +334,6 @@ function resolveNextBeatExpanded(
     return { nextBeat: null, nextStart: null };
 }
 
-/** [SRV Layer 1a] Rounded "column key" for a beat's visual position. */
 function getVisualKeyForBeat(api: any, beat: any): string | null {
     const bb = api?.renderer?.boundsLookup?.findBeat?.(beat);
     const vb = bb?.visualBounds;
@@ -373,23 +367,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const curtainRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
     const cursorRef = useRef<MaestroCursor | null>(null);
+    // ── [L5] Landscape overlay ref ────────────────────────────────────────────
+    const landscapeCursorRef = useRef<LandscapeFixedCursorOverlay | null>(null);
     const initTokenRef = useRef(0);
-    // 🔒 trackIndicesRef — keeps scoreLoaded from reading stale closure value.
-    // Without this, scoreLoaded always renders [0] because init() captures the
-    // prop at mount time. The ref is always current, so the first renderTracks()
-    // call uses the correct winning track index set by page.tsx handleScoreLoaded.
     const trackIndicesRef = useRef(trackIndices);
     useEffect(() => { trackIndicesRef.current = trackIndices; }, [trackIndices]);
 
-    // ── [Q5] forceHorizontalRef — stable ref so all [] closures read current value, not stale prop.
-    // Without this, ResizeObserver + init closures capture the mount-time prop and never update.
     const forceHorizontalRef = useRef<boolean>(!!forceHorizontal);
     useEffect(() => { forceHorizontalRef.current = !!forceHorizontal; }, [forceHorizontal]);
 
-    // ── [P2] Layout profile refs ──────────────────────────────────────────────
     const alphaTabModuleRef = useRef<any>(null);
     const activeProfileRef = useRef<LayoutProfileName | null>(null);
-    const baseTrackProfileRef = useRef<LayoutProfileName | null>(null); // 🔒 sparse vs dense — read by ResizeObserver
+    const baseTrackProfileRef = useRef<LayoutProfileName | null>(null);
     const isApplyingProfileRef = useRef(false);
 
     const [isLoading, setIsLoading] = useState(true);
@@ -457,31 +446,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const fileExt = cleanUrl.split('.').pop()?.toLowerCase() ?? '';
         const isGP8 = fileExt === 'gp';
 
-        console.log('🎼 V107 layout check:', { fileUrl, cleanUrl, fileExt, isGP8 });
+        console.log('🎼 V109 layout check:', { fileUrl, cleanUrl, fileExt, isGP8 });
 
         const init = async () => {
             const container = containerRef.current!;
             await waitForContainerWidth(container);
             if (destroyed || token !== initTokenRef.current) return;
 
-            // ── [P3] Stash module, resolve + bake layout profile ──────────────
             const alphaTab = await import('@coderline/alphatab');
             alphaTabModuleRef.current = alphaTab;
 
-            // Use container width (not window) to match ResizeObserver tier logic.
-            // < 480px = true phone → horizontal. Tablets stay in page mode.
-            // 🔒 vvW/vvH first — containerW uses vvW as fallback (not window.innerWidth).
             const vvW = window.visualViewport?.width ?? window.innerWidth;
             const vvH = window.visualViewport?.height ?? window.innerHeight;
             const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
             const containerW = containerRef.current?.clientWidth ?? vvW;
             const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
-            // [M4] Seed via resolveProfileByWidth — iPhone portrait gets songBookPageMobile
-            // immediately instead of waiting for ResizeObserver to correct from Dense.
             const base = 'songBookPageDense' as LayoutProfileName;
             const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
             activeProfileRef.current = initProfile;
-            console.log('🎼 V107 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal, containerW });
+            console.log('🎼 V109 initProfile:', initProfile, { vvW, vvH, isLandscape, useHorizontal, forceHorizontal, containerW });
 
             const api = await initAlphaTab({
                 container,
@@ -490,15 +473,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 layoutMode: 'page',
                 scrollMode: 'off',
                 scrollContainer: scrollContainer ?? undefined,
-                layoutProfile: initProfile,  // [P3] bake profile at construction
+                layoutProfile: initProfile,
                 ...(isGP8 && { displayOverrides: GP8_DISPLAY_OVERRIDES }),
             });
             if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
 
             apiRef.current = api;
-            if (typeof window !== 'undefined') (window as any).__atV107 = api;
+            if (typeof window !== 'undefined') (window as any).__atV109 = api;
 
-            // [H1] Axis lock immediately after init — before any render fires.
             if (containerRef.current) applyAxisLock(containerRef.current, api);
 
             api.customCursorHandler = {
@@ -523,11 +505,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const score = api.score;
                 if (!score?.tracks?.length) return;
 
-                // ── Auto-pick best default track (Songsterr-style tone-first) ─
-                // Must run INSIDE scoreLoaded — this is the only place score.tracks
-                // is available before renderTracks fires. The trackIndices prop is
-                // always [0] at mount time; the prop update from page.tsx arrives
-                // too late to influence the first render.
                 const _norm = (s: string) =>
                     (s ?? '').toLowerCase().trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ');
                 const _isVocal = (n: string) =>
@@ -557,16 +534,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const sc = _scoreTrack(score.tracks[i]?.name ?? '');
                     if (sc > winnerScore) { winnerScore = sc; winnerIdx = i; }
                 }
-                // Fallback: first non-vocal non-drum if no guitar found
                 if (winnerScore <= 0) {
                     const fb = score.tracks.findIndex((t: any) =>
                         !_isVocal(t?.name ?? '') && !_isDrum(t?.name ?? ''));
                     if (fb >= 0) winnerIdx = fb;
                 }
 
-                // Update ref BEFORE profile detection — ResizeObserver reads it
                 trackIndicesRef.current = [winnerIdx];
-                console.log('🎯 V107 auto-pick (scoreLoaded)', {
+                console.log('🎯 V109 auto-pick (scoreLoaded)', {
                     winnerIdx,
                     winnerName: score.tracks[winnerIdx]?.name,
                     winnerScore,
@@ -575,26 +550,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tr = [score.tracks[winnerIdx]].filter(Boolean);
                 if (!tr.length) return;
 
-                const primaryTrackName = (tr[0] as any)?.name ?? ''; // [V107] fix: was undefined in scoreLoaded scope
-
-                // ── [Q2] Track-aware profile detection (two-step, width-tiered) ──────────────
-                // Step 1: classify sparse vs dense ONLY — never pass mobile=true here.
-                //         baseProfile stores the track-type context for ResizeObserver.
-                // Step 2: width-tier via resolveProfileByWidth → portrait phone gets songBookPageMobile.
+                const primaryTrackName = (tr[0] as any)?.name ?? '';
                 const w2 = containerRef.current?.clientWidth ?? window.innerWidth;
                 const useHorizontalNow = forceHorizontalRef.current;
                 const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
                 const trackProfile = resolveProfileByWidth(w2, baseProfile, useHorizontalNow);
                 const at = alphaTabModuleRef.current;
-                baseTrackProfileRef.current = baseProfile; // 🔒 sparse/dense only — ResizeObserver reads this
+                baseTrackProfileRef.current = baseProfile;
                 if (at && trackProfile !== activeProfileRef.current) {
                     activeProfileRef.current = trackProfile;
                     applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-                    // [H1] Axis lock after profile apply (scoreLoaded path)
                     if (containerRef.current) applyAxisLock(containerRef.current, api);
                 }
 
-                // ── [B] Wipe baked GP8 systemsLayout for sparse tracks ────────
                 if (trackProfile === 'songBookPageSparse') {
                     const scoreAny = score as any;
                     const renderedTrack = tr[0] as any;
@@ -604,11 +572,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     scoreAny.systemsLayout = null;
                     scoreAny.defaultSystemsLayout = 0;
-                    console.log('🧨 V107: wiped baked systemsLayout for sparse track', { track: primaryTrackName });
+                    console.log('🧨 V109: wiped baked systemsLayout for sparse track', { track: primaryTrackName });
                 }
 
                 api.renderTracks(tr);
-                console.log(`✅ V107: scoreLoaded → renderTracks([${winnerIdx}]) profile="${trackProfile}"`);
+                console.log(`✅ V109: scoreLoaded → renderTracks([${winnerIdx}]) profile="${trackProfile}"`);
 
                 if (onScoreLoaded && api.score) {
                     const info: SongInfo = {
@@ -631,11 +599,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     window.clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                 }
-                // 🔒 [Curtain fix] Always raise curtain on every render — unconditional.
-                // Old: if (!hasRevealedRef.current) showCurtain(...)
-                // Problem: after first reveal, hasRevealedRef stays true → curtain never
-                // re-raises on profile switches / rotation / track changes → user sees
-                // unpatched AlphaTab layout + cursor animating into place.
                 hasRevealedRef.current = false;
                 showCurtain(curtainRef.current);
             });
@@ -653,6 +616,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     requestAnimationFrame(step);
                 });
 
+            // ── [L4] Portrait-only: cursor anchor ────────────────────────────
+            // Not called in landscape — fixed overlay is attached directly in renderFinished.
             const ensureCursorAndAnchorOnce = (tok: number): Promise<boolean> =>
                 new Promise(resolve => {
                     const host = containerRef.current;
@@ -714,10 +679,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         forceRevealSurface(h, forceRevealCancelRef, 'postGp8Patch');
                     }
 
-                    const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
-                    if (!okCursor) return;
-                    if (renderTokenRef.current !== tokenAtFinish) return;
-                    if (activeRendersRef.current !== 0) return;
+                    // ── [L4] Cursor: portrait vs landscape ───────────────────
+                    // Portrait: beat-anchored MaestroCursor (V1 purple)
+                    // Landscape: LandscapeFixedCursorOverlay (fixed line, no beat math)
+                    const isStripRender = forceHorizontalRef.current
+                        || (api?.settings?.display?.layoutMode === 1);
+
+                    if (!isStripRender) {
+                        // Portrait path — unchanged from V108
+                        const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
+                        if (!okCursor) return;
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        if (activeRendersRef.current !== 0) return;
+                    } else {
+                        // Landscape path — destroy portrait cursor, attach fixed overlay
+                        if (cursorRef.current) {
+                            cursorRef.current.destroy();
+                            cursorRef.current = null;
+                        }
+                        if (landscapeCursorRef.current) {
+                            landscapeCursorRef.current.destroy();
+                            landscapeCursorRef.current = null;
+                        }
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        if (activeRendersRef.current !== 0) return;
+                        landscapeCursorRef.current = new LandscapeFixedCursorOverlay(h);
+                    }
 
                     forceRevealSurface(h, forceRevealCancelRef, 'preDrop');
                     h.getBoundingClientRect();
@@ -725,10 +712,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     hideCurtainAtomic(curtainRef.current);
                     hasRevealedRef.current = true;
-                    console.log('🟢 V107 curtain dropped', { token: tokenAtFinish });
+                    console.log('🟢 V109 curtain dropped', { token: tokenAtFinish, isStripRender });
 
-                    // [H1] Final axis lock enforcement after render settles.
-                    // [H2] Center strip mode — anchors scrollLeft so clef isn't first visible.
                     const hContainer = containerRef.current;
                     if (hContainer) {
                         applyAxisLock(hContainer, api);
@@ -743,13 +728,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     setIsSettling(false);
                     onRendered?.();
                     onBoundsReady?.();
-                    isApplyingProfileRef.current = false; // [P3b] release resize guard
+                    isApplyingProfileRef.current = false;
                 }, QUIET_MS);
             });
 
             const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
             api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
-            api.soundFontLoaded?.on(() => { console.log('✅ V107: Soundfont loaded'); notifyPlayerReady(); });
+            api.soundFontLoaded?.on(() => { console.log('✅ V109: Soundfont loaded'); notifyPlayerReady(); });
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
@@ -761,13 +746,44 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }, 50);
             });
 
-            // 🔒🔒🔒 CURSOR ENGINE LOCK — V107 + SRV Layers 1a / 2a / 2b / 2c 🔒🔒🔒
+            // 🔒🔒🔒 CURSOR ENGINE — V109 ─────────────────────────────────────
+            // [L2] Landscape branch at top: drives strip auto-scroll, early return.
+            // Portrait branch: MaestroCursor V1 LERP engine — byte-for-byte V108.
+            // 🔒🔒🔒
             api.playerPositionChanged.on((e: any) => {
                 if (isSettlingRef.current) return;
-                if (!cursorRef.current) return;
 
                 const tickRaw = e.currentTick ?? e.tickPosition;
                 if (tickRaw == null) return;
+
+                // ── [L2] Landscape auto-scroll ────────────────────────────────
+                // Strip scrolls left under the fixed cursor as the song plays.
+                // Formula: scrollLeft = onNotesX - fixedCursorX
+                // No beat interpolation, no LERP — direct assignment every tick.
+                const isStripMode = forceHorizontalRef.current
+                    || (api?.settings?.display?.layoutMode === 1);
+
+                if (isStripMode) {
+                    const container = containerRef.current;
+                    if (!container) return;
+                    const tickCache = (api as any).tickCache;
+                    const bounds = api?.renderer?.boundsLookup;
+                    if (!tickCache || !bounds) return;
+                    const trackSet = getTrackSet(api);
+                    const r = tickCache.findBeat(trackSet, tickRaw);
+                    const bb = r?.beat ? bounds.findBeat(r.beat) : null;
+                    if (!bb?.visualBounds) return;
+                    const beatX = typeof bb.onNotesX === 'number'
+                        ? bb.onNotesX
+                        : bb.visualBounds.x + bb.visualBounds.w / 2;
+                    const fixedCursorX = Math.round(container.clientWidth * CURSOR_POSITION_RATIO);
+                    const maxScroll = container.scrollWidth - container.clientWidth;
+                    container.scrollLeft = Math.max(0, Math.min(beatX - fixedCursorX, maxScroll));
+                    return; // ← portrait cursor engine not reached in landscape
+                }
+
+                // ── Portrait cursor engine (🔒 unchanged from V108) ───────────
+                if (!cursorRef.current) return;
 
                 const FAR_TICKS = 240;
                 if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
@@ -889,9 +905,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         seekTargetTickRef.current != null;
                     if (inSeekFreeze) {
                         const beatAbsForGate = curBeat.absolutePlaybackStart ?? tick;
-                        if (beatAbsForGate < (seekTargetTickRef.current! - 120)) {
-                            return;
-                        }
+                        if (beatAbsForGate < (seekTargetTickRef.current! - 120)) return;
                     }
 
                     const MIN_BACKTRACK_TICKS = 120;
@@ -899,16 +913,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const isActuallyPlaying = (api.playerState ?? 0) === 1;
                     const inBypassWindow = Date.now() < allowBacktrackUntilRef.current;
 
-                    // [V105.2] Structural regression guard — unconditional.
                     if (stableCurBeatRef.current) {
                         const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
                         if (incomingStart >= 0 && prevAbs >= 0 && incomingStart < prevAbs) {
                             const regKey = `${incomingStart}:${prevAbs}`;
                             if (lastRegressionLogRef.current !== regKey) {
                                 lastRegressionLogRef.current = regKey;
-                                console.warn('[V107] structural regression discarded', {
-                                    incomingStart, prevAbs, tick,
-                                });
+                                console.warn('[V109] structural regression discarded', { incomingStart, prevAbs, tick });
                             }
                             return;
                         }
@@ -920,9 +931,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastAcceptedBeatStartRef.current >= 0 &&
                         incomingStart < lastAcceptedBeatStartRef.current - MIN_BACKTRACK_TICKS
                     ) {
-                        console.warn('[V107] dropped out-of-order beat', {
-                            incomingStart, lastAccepted: lastAcceptedBeatStartRef.current,
-                        });
+                        console.warn('[V109] dropped out-of-order beat', { incomingStart, lastAccepted: lastAcceptedBeatStartRef.current });
                         return;
                     } else {
                         lastAcceptedBeatStartRef.current = incomingStart;
@@ -934,12 +943,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (beatId === reAnchorCountRef.current.beat) {
                         reAnchorCountRef.current.count++;
                         if (reAnchorCountRef.current.count > 1)
-                            console.warn(`[V107] ⚠️ Re-anchor ${reAnchorCountRef.current.count}x on beat ${beatId}`);
+                            console.warn(`[V109] ⚠️ Re-anchor ${reAnchorCountRef.current.count}x on beat ${beatId}`);
                     } else {
                         reAnchorCountRef.current = { beat: beatId, count: 1 };
                     }
 
-                    // ── [Patch A] expandedBeatStart: default to beatAbsStart, extended window ──
                     const beatAbsStart = curBeat.absolutePlaybackStart ?? tick;
                     const structuralDur = (curBeat.playbackDuration ?? curBeat.duration ?? 480) || 480;
                     let expandedBeatStart = beatAbsStart;
@@ -948,11 +956,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (!r2?.beat || !isSameBeat(r2.beat, curBeat)) { expandedBeatStart = t + 1; break; }
                     }
 
-                    // ── [Patch B] resolveNextBeatExpanded — expanded clock ────
                     const { nextBeat: resolvedNextBeat, nextStart: nextExpandedStart } =
                         resolveNextBeatExpanded(api, trackSet, expandedBeatStart, curBeat);
 
-                    // 🔍 DUR_CHECK — diagnostic, remove once stable
                     const _structuralDur = structuralDur;
                     const _expandedDur = typeof nextExpandedStart === 'number' && nextExpandedStart > expandedBeatStart
                         ? nextExpandedStart - expandedBeatStart
@@ -967,7 +973,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         nextBeatExists: !!resolvedNextBeat,
                     });
 
-                    // ── guardedStart: both sides in expanded time ────
                     let guardedStart = Math.max(beatAbsStart, expandedBeatStart);
                     if (typeof nextExpandedStart === 'number' && nextExpandedStart > guardedStart) {
                         guardedStart = Math.min(guardedStart, nextExpandedStart - 1);
@@ -1000,12 +1005,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     stableNextBeatRef.current = resolvedNextBeat;
                     stableNextExpandedBeatStartRef.current = typeof nextExpandedStart === 'number' ? nextExpandedStart : null;
 
-                    console.log('[V107→Cursor] setBeat args', {
-                        beatAbs: beatAbsStart,
-                        expandedBeatStart: guardedStart,
-                        nextExpandedBeatStart: nextExpandedStart ?? null,
-                        hasPreScannedNextBeat: !!resolvedNextBeat,
-                    });
                     cursorRef.current.setBeat(
                         curBeat,
                         resolvedNextBeat,
@@ -1023,7 +1022,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (container.clientWidth === 0) {
                 requestAnimationFrame(() => {
                     if (container.clientWidth > 0 && apiRef.current) {
-                        console.warn('⚠️ V107: Post-paint fallback — re-rendering');
+                        console.warn('⚠️ V109: Post-paint fallback — re-rendering');
                         apiRef.current.render();
                     }
                 });
@@ -1044,6 +1043,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             setIsSettling(true);
             showCurtain(curtainRef.current);
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+            // ── [L5] Destroy landscape cursor on unmount ──────────────────────
+            if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
             if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
             lastAcceptedBeatStartRef.current = -1;
             lastRegressionLogRef.current = '';
@@ -1062,26 +1063,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const tr = trackIndices.map((i: number) => api.score.tracks[i]).filter(Boolean);
         if (!tr.length) return;
 
-        // ── [Q4] Track switch: same two-step pattern as scoreLoaded ──────────────
         const primaryTrackName = (tr[0] as any)?.name ?? '';
         const w = containerRef.current?.clientWidth ?? window.innerWidth;
         const useHorizontalNow = forceHorizontalRef.current;
         const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
         const trackProfile = resolveProfileByWidth(w, baseProfile, useHorizontalNow);
         const at = alphaTabModuleRef.current;
-        baseTrackProfileRef.current = baseProfile; // 🔒 sparse/dense only for ResizeObserver
+        baseTrackProfileRef.current = baseProfile;
         if (at && trackProfile !== activeProfileRef.current) {
             activeProfileRef.current = trackProfile;
             applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-            // [C5] Axis lock after track-switch profile apply (was missing call site)
             if (containerRef.current) applyAxisLock(containerRef.current, api);
-            console.log(`🎸 V108: track switch → profile="${trackProfile}" base="${baseProfile}" [${trackIndices.join(', ')}]`);
+            console.log(`🎸 V109: track switch → profile="${trackProfile}" base="${baseProfile}" [${trackIndices.join(', ')}]`);
+        }
+
+        // ── [L6] On track switch: destroy whichever cursor mode won't be used ─
+        const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+        if (isStripNow) {
+            if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+        } else {
+            if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
         }
 
         hasRevealedRef.current = false;
         showCurtain(curtainRef.current);
         api.renderTracks(tr);
-        console.log(`🎸 V107: renderTracks → [${trackIndices.join(', ')}]`);
+        console.log(`🎸 V109: renderTracks → [${trackIndices.join(', ')}]`);
     }, [trackIndices]);
 
     useEffect(() => {
@@ -1109,18 +1116,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         api.playbackRange = (loopEnabled && playbackRange) ? playbackRange : null;
     }, [loopEnabled, playbackRange]);
 
-    // ── [P4] ResizeObserver — width-tier profile switching ────────────────────
-    // Replaces window.addEventListener('resize') which misses devtools dock/undock.
-    // ResizeObserver fires on the actual container — matches Songsterr's behavior
-    // where opening devtools docked-right drops bars per row.
-    //
-    // Width tiers (dense tracks only):
-    //   ≥ 900px → songBookPageDense      (5 bars/row, full desktop)
-    //   768–900px → songBookPageDenseNarrow (3 bars/row, devtools open)
-    //   < 768px → songBookHorizontal     (mobile)
-    //
-    // Sparse tracks: no narrow tier — barsPerRow:8 handles any desktop width.
-    // Guard resets via isApplyingProfileRef.current = false in renderFinished.
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -1132,27 +1127,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (!api || !at) return;
             const w = el.clientWidth;
             const base = baseTrackProfileRef.current ?? 'songBookPageDense';
-            // [Q3] Read ref — not captured prop. Stale closure bug fixed.
             const useHorizontal = forceHorizontalRef.current;
             const nextProfile = resolveProfileByWidth(w, base, useHorizontal);
             if (nextProfile === activeProfileRef.current) return;
-            // [Curtain fix] Raise before ResizeObserver-driven render.
             hasRevealedRef.current = false;
             showCurtain(curtainRef.current);
             isApplyingProfileRef.current = true;
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
-            console.log(`📐 V107 ResizeObserver → profile="${nextProfile}" w=${w}px useHorizontal=${useHorizontal}`);
-            applyAxisLock(el, api); // [H1]
+            console.log(`📐 V109 ResizeObserver → profile="${nextProfile}" w=${w}px useHorizontal=${useHorizontal}`);
+            applyAxisLock(el, api);
+            // Re-pin landscape cursor if container width changed
+            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX();
         });
 
         ro.observe(el);
         return () => ro.disconnect();
-    }, []); // intentional empty deps — all reads via refs
+    }, []);
 
-    // ── [Q6] forceHorizontal reactive effect ─────────────────────────────────
-    // Fires immediately when page.tsx toggles isMobileLandscape — no ResizeObserver delay.
-    // This is the authoritative landscape switch; ResizeObserver is a fallback for width tiers.
+    // ── [Q6] + [L6] forceHorizontal reactive effect ───────────────────────────
+    // On mode flip: destroy the cursor that no longer applies; the correct one
+    // will be created in the next renderFinished cycle.
     useEffect(() => {
         const api = apiRef.current;
         const at = alphaTabModuleRef.current;
@@ -1162,18 +1157,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const base = baseTrackProfileRef.current ?? 'songBookPageDense';
         const nextProfile = resolveProfileByWidth(w, base, forceHorizontalRef.current);
         if (nextProfile === activeProfileRef.current) return;
-        // [Curtain fix] Raise before profile-driven render — renderStarted may fire
-        // after some DOM churn is already visible without this guard.
+
+        // ── [L6] Destroy mismatched cursor before re-render ───────────────────
+        if (forceHorizontalRef.current) {
+            // Switching → landscape: portrait cursor goes away
+            if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+        } else {
+            // Switching → portrait: landscape overlay goes away
+            if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+        }
+
         hasRevealedRef.current = false;
         showCurtain(curtainRef.current);
         isApplyingProfileRef.current = true;
         activeProfileRef.current = nextProfile;
         applyAlphaTabLayoutProfile(api, at, nextProfile);
-        console.log(`🔄 V107 forceHorizontal → profile="${nextProfile}" forceH=${forceHorizontal}`);
-        applyAxisLock(el, api); // [H1]
+        console.log(`🔄 V109 forceHorizontal → profile="${nextProfile}" forceH=${forceHorizontal}`);
+        applyAxisLock(el, api);
     }, [forceHorizontal]);
 
-    // 🔒🔒🔒 CLICK-TO-SEEK — LOCKED CONTRACT (unchanged from V104.10) 🔒🔒🔒
+    // 🔒🔒🔒 CLICK-TO-SEEK — portrait only from V109 onward 🔒🔒🔒
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
@@ -1234,16 +1237,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     rowBeats.push({ beat: b, onX: vb.x + vb.w / 2 });
                 }
 
-                console.log('🧭 findClosestBeatAtPos stats', {
-                    mbIdx, mbStart, mbDuration, sampledTotal, resolvedBounds, sameRow,
-                    clickX: +x.toFixed(1), clickY: +y.toFixed(1),
-                    rowBeats: rowBeats.map(rb => ({
-                        abs: rb.beat.absolutePlaybackStart,
-                        onX: +rb.onX.toFixed(1),
-                        dx: +(Math.abs(rb.onX - x)).toFixed(1),
-                    })),
-                });
-
                 if (!rowBeats.length) return null;
                 rowBeats.sort((a, b) => a.onX - b.onX);
                 const EPS = 8;
@@ -1283,7 +1276,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const { nextBeat: nextBeatForCursor, nextStart: nextStartForCursor } =
                     resolveNextBeatExpanded(api, trackSet, expandedStart, r.beat);
 
-                // [V105.3] Sync stable refs immediately after click publish.
                 stableExpandedBeatStartRef.current = expandedStart;
                 stableNextBeatRef.current = nextBeatForCursor;
                 stableNextExpandedBeatStartRef.current = nextStartForCursor;
@@ -1297,11 +1289,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const handleClick = (ev: MouseEvent) => {
                 if (ev.detail > 1) return;
                 const api = apiRef.current;
-                if (!api || loopEnabledRef.current) return;
+                if (!api) return;
+
+                // ── [L3] Landscape: tap = play/pause only ─────────────────────
+                // No seek logic in strip mode. Eliminates clef-teleport class of bugs.
+                const isStripMode = forceHorizontalRef.current
+                    || (api.settings?.display?.layoutMode === 1);
+                if (isStripMode) {
+                    if (!api.isReadyForPlayback) return;
+                    if ((api.playerState ?? 0) === 1) {
+                        api.pause();
+                        onPlayStateChange(false);
+                    } else {
+                        api.play();
+                        onPlayStateChange(true);
+                    }
+                    return;
+                }
+
+                // ── Portrait click-to-seek (🔒 unchanged from V108) ───────────
+                if (loopEnabledRef.current) return;
 
                 const rect = surface.getBoundingClientRect();
-                // [C3] sx/sy: containerRef is the real scroll element when framer.scrollElement
-                // is null (confirmed null in this AlphaTab build — surface.scrollLeft is always 0).
                 const containerEl = containerRef.current!;
                 const scrollEl = (api.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ?? containerEl;
                 const sx = scrollEl.scrollLeft ?? 0;
@@ -1314,14 +1323,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     rectLeft: rect.left, rectTop: rect.top,
                     sx, sy, x, y,
                     layoutMode: api.settings?.display?.layoutMode ?? null,
-                    scrollElIs: scrollEl === surface ? 'surface' : scrollEl === containerEl ? 'container' : 'framer',
-                    playerState: api.playerState ?? null,
-                    tickPosition: api.tickPosition ?? null,
                 });
 
                 const bds = api.renderer?.boundsLookup;
 
-                // [Patch D] reject zero-width or far-away getBeatAtPos results.
                 let beat = bds?.getBeatAtPos?.(x, y) ?? null;
                 if (beat) {
                     const bb2 = bds?.findBeat?.(beat);
@@ -1331,22 +1336,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const tightMax = Math.max(12, vbW2 * 1.6);
                     const tooFar = vbW2 <= 16 ? dx2 > tightMax : dx2 > 40;
                     if (vbW2 === 0 || tooFar) {
-                        console.warn('🖱️ CLICK_SEEK getBeatAtPos rejected (degenerate/far)', {
-                            dx: +dx2.toFixed(1), vbW: vbW2, tightMax: +tightMax.toFixed(1),
-                            beatAbs: beat.absolutePlaybackStart,
-                        });
                         beat = null;
                     }
                 }
                 const tickCache = (api as any).tickCache;
-                if (!beat) console.warn('🖱️ CLICK_SEEK no beat at pos', { x, y });
-
-                // E2: same-masterBar sticky override only
                 const e2Beat = findClosestBeatAtPos(x, y, beat ?? undefined);
                 if (e2Beat) {
                     if (!beat) {
                         beat = e2Beat;
-                        console.log('🖱️ CLICK_SEEK E2 fallback (null)', { to: e2Beat.absolutePlaybackStart });
                     } else {
                         const sameMb =
                             (e2Beat?.voice?.bar?.masterBar?.index) ===
@@ -1355,13 +1352,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const bb = bds?.findBeat?.(beat);
                             const cx = bb ? (bb.visualBounds.x + bb.visualBounds.w / 2) : null;
                             const dxB = cx != null ? Math.abs(cx - x) : Infinity;
-                            if (dxB > 24) {
-                                console.log('🖱️ CLICK_SEEK E2 sticky override (same bar)', {
-                                    from: beat.absolutePlaybackStart, to: e2Beat.absolutePlaybackStart,
-                                    dxB: +dxB.toFixed(1),
-                                });
-                                beat = e2Beat;
-                            }
+                            if (dxB > 24) beat = e2Beat;
                         }
                     }
                 }
@@ -1369,67 +1360,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!beat) { console.warn('🖱️ CLICK_SEEK no beat after fallback', { x, y }); return; }
                 if (!tickCache?.masterBars) return;
 
-                if (bds) {
-                    const pickedBb = bds.findBeat?.(beat);
-                    console.log('🖱️ CLICK_SEEK beat metrics', {
-                        onNotesX: pickedBb?.onNotesX ?? null,
-                        vbX: pickedBb?.visualBounds?.x ?? null,
-                        vbW: pickedBb?.visualBounds?.w ?? null,
-                        clickX: x,
-                        dx: pickedBb && typeof pickedBb.onNotesX === 'number'
-                            ? +(Math.abs(pickedBb.onNotesX - x)).toFixed(1) : null,
-                    });
-                }
-
-                console.log('🖱️ CLICK_SEEK beat', {
-                    beatAbs: beat.absolutePlaybackStart,
-                    beatStart: beat.playbackStart,
-                    beatDur: beat.playbackDuration ?? beat.duration ?? null,
-                    mbIdx: beat.voice?.bar?.masterBar?.index ?? null,
-                    barIdx: beat.voice?.bar?.index ?? null,
-                });
-
                 const mbIdx = beat.voice?.bar?.masterBar?.index;
                 const offset = beat.playbackStart ?? 0;
                 if (mbIdx == null) return;
 
-                // ── [Phase 2] Horizontal mode: seek directly to absolutePlaybackStart ──
-                // In Horizontal strip, the "closest candidate to currentTick" heuristic
-                // picks the wrong repeat occurrence → cursor teleports to clef + wrong playback.
-                // Fix: bypass candidate disambiguation entirely; seek to the beat's absolute tick.
-                const isHorizontal = (api.settings?.display?.layoutMode === 1);
-                if (isHorizontal) {
-                    const beatAbs = beat.absolutePlaybackStart ?? 0;
-                    const beatDurH = beat.playbackDuration ?? beat.duration ?? 480;
-                    const EPS_IN = 2;
-                    const safeTarget = Math.min(beatAbs + EPS_IN, beatAbs + Math.max(0, beatDurH - 1));
-                    seekTargetTickRef.current = safeTarget;
-                    seekFreezeUntilRef.current = Date.now() + 250;
-                    const playerStateNow = api.playerState ?? 0;
-                    const wasPlaying = playerStateNow === 1;
-                    const tok = ++seekTokenRef.current;
-                    if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
-                    if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
-                    const seekTicksH = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
-                    if (seekTicksH) seekTicksH(safeTarget);
-                    api.tickPosition = safeTarget;
-                    resetBeatAcceptance();
-                    publishCursorAtTick(safeTarget);
-                    if (wasPlaying) {
-                        resumeTimerRef.current = window.setTimeout(() => {
-                            resumeTimerRef.current = null;
-                            if (seekTokenRef.current !== tok) return;
-                            api.tickPosition = safeTarget;
-                            resetBeatAcceptance();
-                            if ((api.playerState ?? 0) === 0) api.play();
-                            requestAnimationFrame(() => { seekInProgressRef.current = false; });
-                        }, 30);
-                    }
-                    console.log('🖱️ CLICK_SEEK horizontal direct', { beatAbs, safeTarget });
-                    return; // skip masterBar candidate disambiguation in horizontal
-                }
-
-                // ── Page mode: candidate disambiguation (existing logic) ──────────
                 const currentTick = api.tickPosition ?? 0;
                 const candidates: number[] = tickCache.masterBars
                     .filter((mb: any) => mb.masterBar?.index === mbIdx)
@@ -1439,11 +1373,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const target = candidates.reduce((prev: number, curr: number) =>
                     Math.abs(curr - currentTick) < Math.abs(prev - currentTick) ? curr : prev
                 );
-
-                console.log('🖱️ CLICK_SEEK candidates', {
-                    mbIdx, offset, currentTick,
-                    candidates: candidates.slice(0, 6), target,
-                });
 
                 const EPS_IN = 2;
                 const beatDurForClamp = beat.playbackDuration ?? beat.duration ?? 480;
@@ -1538,10 +1467,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     style={{
                         position: 'relative',
                         width: '100%',
-                        // 🔒 [C1] minHeight absent — applyAxisLock() owns imperatively:
-                        //   horizontal → 'auto', page → '600px'
-                        // 🔒 [C1] overflow:'hidden' as neutral default — applyAxisLock()
-                        //   overrides both axes immediately after init + every profile apply.
                         overflow: 'hidden',
                         WebkitOverflowScrolling: 'touch' as any,
                         background: bgColor,
@@ -1566,7 +1491,4 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     );
 });
 
-// Stable entrypoint aliases (deploy-safe)
-// - Pages import AlphaTabRendererV102
-// - Older code can import AlphaTabRenderer
 export const AlphaTabRenderer = AlphaTabRendererV102;

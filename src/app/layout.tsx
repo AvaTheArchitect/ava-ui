@@ -84,12 +84,15 @@ export default function RootLayout({
             overflow-x: hidden;
             -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;          /* ← ADD: kills iOS rubber-band at doc level */
           }
           
           body {
             min-height: 100vh;
             min-height: -webkit-fill-available;
             overflow-x: hidden;
+            overflow-y: hidden;                 /* ← ADD: <main> owns all vertical scroll */
+  overscroll-behavior: none;          /* ← ADD: belt-and-suspenders rubber-band kill */
             /* Remove safe area padding from body - let individual components handle it */
             margin: 0;
             padding: 0;
