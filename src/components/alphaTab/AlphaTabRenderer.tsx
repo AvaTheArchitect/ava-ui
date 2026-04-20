@@ -383,17 +383,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
     useEffect(() => { isSettlingRef.current = isSettling; }, [isSettling]);
 
-    // ── [L7-fix + L16] LERP scroll loop — yields to drag via isDraggingRef ──
     const startLandscapeScrollLoop = useCallback((container: HTMLElement, api: any) => {
         if (landscapeScrollRafRef.current !== null) return;
         const cursorSurfaceX = getCursorSurfaceX(container);
         console.log('🎬 V113 scroll loop — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
-            // [L16] Bail entirely during drag — don't LERP, don't update target.
-            // isDraggingRef alone isn't enough: the LERP toward old target still fights the finger.
-            // The real fix is stopLandscapeScrollLoop() on touchstart (see touch handlers).
-            // This guard is a belt-and-suspenders safety net.
+            // [L16] Belt-and-suspenders: bail entirely if dragging.
+            // Primary guard is stopLandscapeScrollLoop() on touchstart.
             if (isDraggingRef.current) {
                 landscapeScrollRafRef.current = requestAnimationFrame(loop);
                 return;
@@ -410,17 +407,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     interpolatedX - cursorSurfaceX,
                     maxScroll
                 ));
-                const target = targetScrollLeftRef.current;
-                const current = container.scrollLeft;
-                const delta = target - current;
-                if (Math.abs(delta) > 0.5) {
-                    container.scrollLeft = current + delta * SCROLL_EASE;
-                }
-                landscapeScrollRafRef.current = requestAnimationFrame(loop);
-            };
+            }
+            const target = targetScrollLeftRef.current;
+            const current = container.scrollLeft;
+            const delta = target - current;
+            if (Math.abs(delta) > 0.5) {
+                container.scrollLeft = current + delta * SCROLL_EASE;
+            }
             landscapeScrollRafRef.current = requestAnimationFrame(loop);
-            if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = landscapeScrollRafRef.current;
-        }, []);
+        };
+
+        landscapeScrollRafRef.current = requestAnimationFrame(loop);
+        if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = landscapeScrollRafRef.current;
+    }, []);
 
     const stopLandscapeScrollLoop = useCallback(() => {
         if (landscapeScrollRafRef.current !== null) {
