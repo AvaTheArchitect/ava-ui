@@ -78,10 +78,10 @@ export interface AlphaTabRendererV102Props {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CURSOR_POSITION_RATIO = 0.12;   // 12% from left ≈ 115px on 956px iPad
-// Ensures beat-1 (onNotesX ≈ 120px) is reachable:
-// scrollLeft = beatX - cursorX = 120 - 115 = +5px ✅
-// (Was 0.20 = 191px → beat-1 unreachable, delta=-71)
+const CURSOR_POSITION_RATIO = 0.20;   // 20% from left — aligns with TAB/Chord toggle button in nav tray
+// Confirmed working in image 1: cursor at ~191px (956px device)
+// beat1X_absolute ≈ 190–215px (SVG group-transform offset, not raw text x)
+// "Slightly left of TAB button" → try 0.18 or 0.19
 const SCROLL_EASE = 0.18;             // LERP factor per RAF frame (0=no move, 1=instant)
 
 // ── [L1-fix] Landscape Fixed Cursor Overlay ───────────────────────────────────
@@ -150,9 +150,10 @@ function landscapeInitialAnchor(
             ? new Set(api.tracks.map((t: any) => t.index as number))
             : new Set([0]);
         const fixedCursorX = Math.round(container.clientWidth * CURSOR_POSITION_RATIO);
-        const REACH_MARGIN = 0;  // px — 0 = no breathing room needed
-        // beat1X = 115.916px, cursorX = 115px (ratio 0.12 × 956px)
-        // floor = 115 → 115.916 ≥ 115 ✅ → scrollLeft ≈ 1px → pixel-perfect
+        // V112 TODO: replace ratio-based floor with dynamic beat1X probe.
+        // beat1X=115.916 is too close to cursorX on any device to be ratio-stable.
+        // Interim: REACH_MARGIN=4 gives image-1 result (cursor just past TAB block).
+        const REACH_MARGIN = 4;
         const reachableFloor = fixedCursorX + REACH_MARGIN;
 
         const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
