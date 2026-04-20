@@ -3,48 +3,39 @@
 /**
  * AlphaTabRenderer.tsx
  * Current version: V113
- * Date: April 19th, 2026
- * Cloned from V111 — Landscape RAF loop fix + touch drag.
+ * Date: April 20th, 2026
+ * Cloned from V112 — cursor centering + touch drag rubber-band fix.
  *
- * V112 CHANGES:
- * ✅ [L9]  getFixedCursorX(container): padding-aware cursor position helper.
- *          Replaces all `container.clientWidth * CURSOR_POSITION_RATIO` calls.
- *          Formula: padL + contentW * CURSOR_POSITION_RATIO + CURSOR_BIAS_PX
- *          Confirmed probe data: padL=62, contentW=832, ratio=0.144 → 182px ✅
- *          (beat1X onNotesX = 120.001, padL + beat1X = 182 = cursor target)
- *          CURSOR_BIAS_PX = 0 is the fine-tuning knob (try -1, -2 for tiny left nudge)
- * ✅ [L10] RAF self-heal: playerPositionChanged landscape branch now restarts
- *          the scroll loop if api.playerState === 1 and loop isn't running.
- *          Root cause of "4-5 note delay / never scrolls": loop was stopping on
- *          renderStarted but not reliably restarting after curtain drop.
- * ✅ [L11] State prime: immediately after curtain drop (landscape), resolves
- *          beat at current tick → writes landscapeScrollStateRef + snaps scrollLeft.
- *          Eliminates the "scroll starts late" cold-start window.
- * ✅ [L12] Touch drag: touchstart/touchmove/touchend on .at-surface.
- *          tap (<8px) → play/pause. drag (≥8px) → manual scrollLeft with clamp.
- *          Min clamp = 0 (can't drag past bar 1). Max = scrollWidth - clientWidth.
- *          Passive-false on touchmove to preventDefault (no page bounce during drag).
+ * V113 CHANGES:
+ * ✅ [L14] CURSOR_BIAS_PX = 0: probe confirmed onNotesX = vbCenter = 120.001,
+ *          cursorSurfaceX was 117 (-3 bias was wrong direction). Bias removed.
+ * ✅ [L15] translateX(-50%) on overlay: line now visually centered on cursorBoxX.
+ *          width bumped 2px → 3px for better readability.
+ * ✅ [L16] isDraggingRef: RAF loop yields to touch drag. Without this, the loop
+ *          overwrote targetScrollLeftRef every frame → rubber-band snap on release.
+ * ✅ [L17] Touch drag minScroll: computed from beat1X - cursorSurfaceX on touchstart.
+ *          Prevents dragging clef/time-sig under the cursor line.
  *
- * 🔒 V111 PRESERVED EXACTLY:
+ * 🔒 V112 PRESERVED EXACTLY:
+ *   ✅ [L13] prime-on-play via playerStateChanged
+ *   ✅ [L11] state prime after curtain drop
+ *   ✅ [L10] RAF self-heal in playerPositionChanged
+ *   ✅ [L9]  getFixedCursorX / getCursorSurfaceX coordinate helpers
  *   ✅ [L8-fix] landscapeInitialAnchor retry-until-ready
  *   ✅ [L7-fix] within-beat interpolation (curBeatX → nextBeatX)
- *   ✅ [L2-fix] landscapeScrollStateRef shared state pattern
  *   ✅ [L1-fix] overlay on non-scrolling wrapper
- *   ✅ [L3] landscape tap = play/pause (now handled by touch; click kept as fallback)
  *   ✅ Portrait MaestroCursor V1 engine — unchanged
- *   ✅ All V110/V109/V108 preserved locks
+ *   ✅ All V111/V110/V109/V108 preserved locks
  *
- * CURSOR TUNING:
- *   CURSOR_POSITION_RATIO = 0.144 = beat1X(120) / contentW(832)
- *   → cursor lands at padL(62) + 120 = 182px regardless of safe-area padding width.
- *   CURSOR_BIAS_PX = 0 — increment by -1/-2 for sub-pixel left nudge.
+ * CURSOR MATH (confirmed probe):
+ *   padL=62, contentW=832, ratio=0.144 → cursorBoxX=182, cursorSurfaceX=120
+ *   beat1X onNotesX=120.001 → delta=0.001 ✅ pixel-perfect alignment
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     initAlphaTab,
     loadGuitarProFile,
-    resolveLayoutProfile,
     resolveProfileByWidth,
     resolveTrackLayoutProfile,
     applyAlphaTabLayoutProfile,
@@ -53,7 +44,6 @@ import {
 } from '@/lib/alphaTab/initAlphaTab';
 import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/MaestroCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
-import { runGp8LayoutEngine } from '@/lib/alphaTab/gp8LayoutEngine';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
@@ -81,40 +71,34 @@ export interface AlphaTabRendererV102Props {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 // CURSOR_POSITION_RATIO: fraction of content width (excluding safe-area padding).
-// 0.144 = beat1X(120.001) / contentW(832) from confirmed probe on Brett's device.
-// Means: cursor lands at padL + contentWidth*0.144 = 62+120 = 182px. Device-stable.
+// 0.144 = beat1X(120.001) / contentW(832). cursor lands at padL+120 = 182px.
 const CURSOR_POSITION_RATIO = 0.144;
-const CURSOR_BIAS_PX = -3;            // nudge overlay left so line bisects notehead (not right-edge)
-// scroll math is unaffected — bias only applies to overlay CSS left
-const SCROLL_EASE = 0.18;             // LERP factor per RAF frame
+const CURSOR_BIAS_PX = 0;        // probe: onNotesX=120.001, cursorSurfaceX=120 → delta≈0 ✅
+const SCROLL_EASE = 0.18;        // LERP factor per RAF frame
 
 // ── [L9] Padding-aware cursor helpers ────────────────────────────────────────
-// getFixedCursorX  → cursor position in CONTAINER box space (used for overlay left)
-// getCursorSurfaceX → cursor position in SURFACE/SVG space (used for all scroll math)
-//
-// KEY: beatX values from boundsLookup.onNotesX are in surface/SVG space (no padding).
-//      The overlay is positioned in container box space (includes padL).
-//      All scroll targets must use surface space: targetScrollLeft = beatX - cursorSurfaceX
-//      Confirmed probe: padL=62, beatX=120, cursorBoxX=182, cursorSurfaceX=120, delta=0 ✅
+// getFixedCursorX  → container box space (used for overlay CSS left)
+// getCursorSurfaceX → SVG/surface space (used for ALL scroll math)
+// beatX from onNotesX is SVG space; padding must be subtracted for scroll targets.
 function getFixedCursorX(container: HTMLElement): number {
     const cs = getComputedStyle(container);
     const padL = parseFloat(cs.paddingLeft || '0');
     const padR = parseFloat(cs.paddingRight || '0');
     const contentW = container.clientWidth - padL - padR;
-    return Math.round(padL + contentW * CURSOR_POSITION_RATIO + CURSOR_BIAS_PX); // container box space
+    return Math.round(padL + contentW * CURSOR_POSITION_RATIO + CURSOR_BIAS_PX);
 }
 
 function getCursorSurfaceX(container: HTMLElement): number {
     const cs = getComputedStyle(container);
     const padL = parseFloat(cs.paddingLeft || '0');
-    return getFixedCursorX(container) - padL; // surface/SVG space — use for all scroll math
+    return getFixedCursorX(container) - padL;
 }
 
 // ── [L1-fix] Landscape Fixed Cursor Overlay ───────────────────────────────────
-// Attaches to the NON-scrolling wrapper (containerRef.current.parentElement).
+// Attaches to the NON-scrolling wrapper. translateX(-50%) centers the bar on left.
 class LandscapeFixedCursorOverlay {
     private el: HTMLElement;
-    private container: HTMLElement; // kept for updateX recompute
+    private container: HTMLElement;
 
     constructor(wrapper: HTMLElement, container: HTMLElement) {
         this.container = container;
@@ -125,26 +109,25 @@ class LandscapeFixedCursorOverlay {
             position: 'absolute',
             top: '0',
             left: `${x}px`,
-            width: '2px',
+            width: '3px',
             height: '100%',
+            transform: 'translateX(-50%)',   // [L15] centers 3px bar on the position
             background: 'rgba(168, 85, 247, 0.85)',
             boxShadow: '0 0 8px rgba(168, 85, 247, 0.55)',
             pointerEvents: 'none',
             zIndex: '1001',
-            willChange: 'left',
+            willChange: 'transform',
         });
         wrapper.appendChild(this.el);
-        console.log('✅ LandscapeFixedCursorOverlay V112: attached at x=', x);
+        console.log('✅ LandscapeFixedCursorOverlay V113: x=', x);
     }
 
     updateX(): void {
-        const x = getFixedCursorX(this.container);
-        this.el.style.left = `${x}px`;
+        this.el.style.left = `${getFixedCursorX(this.container)}px`;
     }
 
     destroy(): void {
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-        console.log('🧹 LandscapeFixedCursorOverlay: destroyed');
     }
 }
 
@@ -161,39 +144,36 @@ function landscapeInitialAnchor(
         const bounds = api?.renderer?.boundsLookup;
         if (!tickCache?.findBeat || !bounds?.findBeat) {
             if (performance.now() < deadline) requestAnimationFrame(step);
-            else console.warn('⚠️ V112 landscapeInitialAnchor: timed out waiting for bounds');
+            else console.warn('⚠️ V113 landscapeInitialAnchor: timed out');
             return;
         }
         const trackSet: Set<number> = api?.tracks
             ? new Set(api.tracks.map((t: any) => t.index as number))
             : new Set([0]);
-        const cursorSurfaceX = getCursorSurfaceX(container); // [coord-fix] SVG space
-        const REACH_MARGIN = 4;
-        const reachableFloor = cursorSurfaceX + REACH_MARGIN; // [coord-fix] both in surface space
+        const cursorSurfaceX = getCursorSurfaceX(container);
+        const reachableFloor = cursorSurfaceX + 4;
         const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
         for (const probe of PROBE_TICKS) {
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
             if (!bb?.visualBounds) continue;
             const beatX = typeof bb.onNotesX === 'number'
-                ? bb.onNotesX
-                : bb.visualBounds.x + bb.visualBounds.w / 2;
+                ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
             if (beatX >= reachableFloor) {
-                const snap = Math.max(0, beatX - cursorSurfaceX); // [coord-fix]
+                const snap = Math.max(0, beatX - cursorSurfaceX);
                 container.scrollLeft = snap;
                 targetScrollLeftRef.current = snap;
-                console.log('📍 V112 landscapeInitialAnchor ✅', { beatX, cursorSurfaceX, snap, probe });
+                console.log('📍 V113 anchor ✅', { beatX, cursorSurfaceX, snap, probe });
                 return;
             }
         }
         container.scrollLeft = 0;
         targetScrollLeftRef.current = 0;
-        console.log('📍 V112 landscapeInitialAnchor → no reachable beat, scrollLeft=0');
     };
     requestAnimationFrame(step);
 }
 
-// ─── Locked helpers (unchanged from V111) ────────────────────────────────────
+// ─── Locked helpers ───────────────────────────────────────────────────────────
 
 const GP8_DISPLAY_OVERRIDES: Record<string, number> = {
     firstSystemPaddingTop: 12,
@@ -235,7 +215,7 @@ function getTrackSet(api: any): Set<number> {
         : new Set<number>([0]);
 }
 
-function forceRevealSurface(host: HTMLElement, cancelRef: { current: number }, label = 'forceReveal', maxMs = 3000): void {
+function forceRevealSurface(host: HTMLElement, cancelRef: { current: number }, maxMs = 3000): void {
     const start = performance.now();
     const cancelToken = cancelRef.current;
     const tick = () => {
@@ -289,10 +269,7 @@ function resolveNextBeatExpanded(api: any, trackSet: Set<number>, expandedStart:
         if (!r?.beat) continue;
         const b = r.beat;
         if (b.absolutePlaybackStart === curAbs && b?.voice?.bar?.masterBar?.index === curMbIdx) continue;
-        if (b.absolutePlaybackStart <= curAbs) {
-            if (!didLogSkip) { didLogSkip = true; }
-            continue;
-        }
+        if (b.absolutePlaybackStart <= curAbs) { if (!didLogSkip) { didLogSkip = true; } continue; }
         if (curX !== null) {
             const cBb = api?.renderer?.boundsLookup?.findBeat?.(b);
             if (cBb?.visualBounds) {
@@ -342,8 +319,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
     const targetScrollLeftRef = useRef<number>(0);
     const landscapeScrollRafRef = useRef<number | null>(null);
+    const isDraggingRef = useRef<boolean>(false); // [L16] RAF yields to touch drag
 
-    // [L2-fix] Shared scroll state: written by playerPositionChanged, read by RAF loop
     const landscapeScrollStateRef = useRef<{
         curBeatX: number;
         nextBeatX: number;
@@ -406,28 +383,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
     useEffect(() => { isSettlingRef.current = isSettling; }, [isSettling]);
 
-    // ── [L7-fix + L9] LERP scroll loop with within-beat interpolation ─────────
-    // fixedCursorX computed ONCE per loop start (captured in closure).
-    // If container resizes, loop restarts via ResizeObserver → fresh fixedCursorX.
+    // ── [L7-fix + L16] LERP scroll loop — yields to drag via isDraggingRef ──
     const startLandscapeScrollLoop = useCallback((container: HTMLElement, api: any) => {
         if (landscapeScrollRafRef.current !== null) return;
-        const cursorSurfaceX = getCursorSurfaceX(container); // [L9] SVG space — no padding offset
-        console.log('🎬 V112 landscape scroll loop started — cursorSurfaceX=', cursorSurfaceX);
+        const cursorSurfaceX = getCursorSurfaceX(container);
+        console.log('🎬 V113 scroll loop — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
-            const state = landscapeScrollStateRef.current;
-            if (state && state.beatDur > 0) {
-                const liveTick = (api as any)?.tickPosition ?? state.lastTick;
-                const progress = Math.max(0, Math.min(1,
-                    (liveTick - state.beatStart) / state.beatDur
-                ));
-                const interpolatedX = state.curBeatX + (state.nextBeatX - state.curBeatX) * progress;
-                const maxScroll = container.scrollWidth - container.clientWidth;
-                // [coord-fix] beatX is in surface space; cursorSurfaceX is also surface space ✅
-                targetScrollLeftRef.current = Math.max(0, Math.min(
-                    interpolatedX - cursorSurfaceX,
-                    maxScroll
-                ));
+            // [L16] Don't overwrite targetScrollLeft while user is dragging
+            if (!isDraggingRef.current) {
+                const state = landscapeScrollStateRef.current;
+                if (state && state.beatDur > 0) {
+                    const liveTick = (api as any)?.tickPosition ?? state.lastTick;
+                    const progress = Math.max(0, Math.min(1,
+                        (liveTick - state.beatStart) / state.beatDur
+                    ));
+                    const interpolatedX = state.curBeatX + (state.nextBeatX - state.curBeatX) * progress;
+                    const maxScroll = container.scrollWidth - container.clientWidth;
+                    targetScrollLeftRef.current = Math.max(0, Math.min(
+                        interpolatedX - cursorSurfaceX,
+                        maxScroll
+                    ));
+                }
             }
             const target = targetScrollLeftRef.current;
             const current = container.scrollLeft;
@@ -444,7 +421,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (landscapeScrollRafRef.current !== null) {
             cancelAnimationFrame(landscapeScrollRafRef.current);
             landscapeScrollRafRef.current = null;
-            console.log('⏹ V112 landscape scroll loop stopped');
+            console.log('⏹ V113 scroll loop stopped');
         }
     }, []);
 
@@ -502,7 +479,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             apiRef.current = api;
             if (typeof window !== 'undefined') {
-                (window as any).__atV112 = api;
+                (window as any).__atV113 = api;
                 (window as any).__at = api;
             }
 
@@ -567,9 +544,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const primaryTrackName = (tr[0] as any)?.name ?? '';
                 const w2 = containerRef.current?.clientWidth ?? window.innerWidth;
-                const useHorizontalNow = forceHorizontalRef.current;
                 const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
-                const trackProfile = resolveProfileByWidth(w2, baseProfile, useHorizontalNow);
+                const trackProfile = resolveProfileByWidth(w2, baseProfile, forceHorizontalRef.current);
                 const at = alphaTabModuleRef.current;
                 baseTrackProfileRef.current = baseProfile;
                 if (at && trackProfile !== activeProfileRef.current) {
@@ -589,7 +565,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 api.renderTracks(tr);
 
                 if (onScoreLoaded && api.score) {
-                    const info: SongInfo = { title: api.score.title ?? '', artist: api.score.artist ?? '', album: api.score.album ?? '' } as SongInfo;
+                    const info: SongInfo = {
+                        title: api.score.title ?? '',
+                        artist: api.score.artist ?? '',
+                        album: api.score.album ?? '',
+                    } as SongInfo;
                     onScoreLoaded(info, (api.score.tracks ?? []) as Track[]);
                 }
             });
@@ -612,7 +592,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     let streak = 0, i = 0;
                     const step = () => {
                         if (renderTokenRef.current !== tok || activeRendersRef.current !== 0) return resolve(false);
-                        forceRevealSurface(host, forceRevealCancelRef, 'paintableCheck');
+                        forceRevealSurface(host, forceRevealCancelRef);
                         if (isSurfacePaintable(host)) { streak++; if (streak >= 2) return resolve(true); }
                         else streak = 0;
                         if (++i < 60) requestAnimationFrame(step); else resolve(false);
@@ -633,7 +613,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor').forEach(n => ((n as HTMLElement).style.display = 'none'));
                     const step = () => {
                         if (renderTokenRef.current !== tok) return resolve(false);
-                        forceRevealSurface(host, forceRevealCancelRef, 'anchorStep');
+                        forceRevealSurface(host, forceRevealCancelRef);
                         const tickCache = (api as any).tickCache;
                         const bounds = api.renderer?.boundsLookup;
                         if (!tickCache || !bounds) { requestAnimationFrame(step); return; }
@@ -649,92 +629,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     requestAnimationFrame(step);
                 });
 
-            api.renderFinished.on(() => {
-                activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
-                const tokenAtFinish = renderTokenRef.current;
-                if (activeRendersRef.current !== 0) return;
-                if (revealTimerRef.current !== null) window.clearTimeout(revealTimerRef.current);
-
-                revealTimerRef.current = window.setTimeout(async () => {
-                    revealTimerRef.current = null;
-                    if (activeRendersRef.current !== 0) return;
-                    if (renderTokenRef.current !== tokenAtFinish) return;
-                    const h = containerRef.current;
-                    if (!h) return;
-
-                    forceRevealSurface(h, forceRevealCancelRef, 'preWait');
-                    const okPaint = await waitForPaintableSurface(h, tokenAtFinish);
-                    if (!okPaint) return;
-
-                    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-                    if (renderTokenRef.current !== tokenAtFinish) return;
-                    if (activeRendersRef.current !== 0) return;
-
-                    if (isGP8) {
-                        runGp8LayoutEngineV2(h);
-                        forceRevealSurface(h, forceRevealCancelRef, 'postGp8Patch');
-                    }
-
-                    const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
-
-                    if (!isStripRender) {
-                        const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
-                        if (!okCursor) return;
-                        if (renderTokenRef.current !== tokenAtFinish) return;
-                        if (activeRendersRef.current !== 0) return;
-                    } else {
-                        if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
-                        if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
-                        if (renderTokenRef.current !== tokenAtFinish) return;
-                        if (activeRendersRef.current !== 0) return;
-
-                        // [L1-fix + L9] Attach overlay to non-scrolling wrapper using getFixedCursorX
-                        const wrapper = h.parentElement;
-                        if (wrapper) {
-                            landscapeCursorRef.current = new LandscapeFixedCursorOverlay(wrapper, h);
-                        }
-
-                        landscapeInitialAnchor(h, api, targetScrollLeftRef);
-                        startLandscapeScrollLoop(h, api);
-                    }
-
-                    forceRevealSurface(h, forceRevealCancelRef, 'preDrop');
-                    h.getBoundingClientRect();
-                    (h.querySelector('.at-surface') as HTMLElement | null)?.getBoundingClientRect();
-
-                    hideCurtainAtomic(curtainRef.current);
-                    hasRevealedRef.current = true;
-                    console.log('🟢 V112 curtain dropped', { token: tokenAtFinish, isStripRender });
-
-                    const hContainer = containerRef.current;
-                    if (hContainer) applyAxisLock(hContainer, api);
-
-                    requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef, 'postDrop'));
-                    isSettlingRef.current = false;
-                    setIsLoading(false);
-                    setIsSettling(false);
-                    onRendered?.();
-                    onBoundsReady?.();
-                    isApplyingProfileRef.current = false;
-
-                    // ── [L11] State prime after curtain drop ─────────────────
-                    if (isStripRender) {
-                        requestAnimationFrame(() => {
-                            const ctr = containerRef.current;
-                            if (ctr) primeLandscapeState(ctr);
-                        });
-                    }
-                }, QUIET_MS);
-            });
-
-            const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
-            api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
-            api.soundFontLoaded?.on(() => notifyPlayerReady());
-
-            // ── Prime landscape scroll state helper ───────────────────────
-            // Called on play start AND after curtain drop. Resolves beat at
-            // current tick → writes landscapeScrollStateRef + snaps scrollLeft.
-            // Uses surface coords throughout (no padding offset in scroll math).
+            // ── [L11/L13] Prime landscape scroll state ────────────────────────
+            // Resolves beat at current tick → writes landscapeScrollStateRef + snaps scrollLeft.
+            // Called on curtain drop AND on play start (playerStateChanged).
             const primeLandscapeState = (ctr: HTMLElement) => {
                 const tickCache = (api as any).tickCache;
                 const bounds = api?.renderer?.boundsLookup;
@@ -766,12 +663,90 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     beatDur: structuralDur,
                     lastTick: tick,
                 };
-                const cursorSurfaceX = getCursorSurfaceX(ctr); // [coord-fix] SVG space
+                const cursorSurfaceX = getCursorSurfaceX(ctr);
                 const snap = Math.max(0, curBeatX - cursorSurfaceX);
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
-                console.log('🎯 V112 primeLandscapeState', { curBeatX, cursorSurfaceX, snap, tick });
+                console.log('🎯 V113 primeLandscapeState', { curBeatX, cursorSurfaceX, snap, tick });
             };
+
+            api.renderFinished.on(() => {
+                activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
+                const tokenAtFinish = renderTokenRef.current;
+                if (activeRendersRef.current !== 0) return;
+                if (revealTimerRef.current !== null) window.clearTimeout(revealTimerRef.current);
+
+                revealTimerRef.current = window.setTimeout(async () => {
+                    revealTimerRef.current = null;
+                    if (activeRendersRef.current !== 0) return;
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    const h = containerRef.current;
+                    if (!h) return;
+
+                    forceRevealSurface(h, forceRevealCancelRef);
+                    const okPaint = await waitForPaintableSurface(h, tokenAtFinish);
+                    if (!okPaint) return;
+
+                    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    if (activeRendersRef.current !== 0) return;
+
+                    if (isGP8) {
+                        runGp8LayoutEngineV2(h);
+                        forceRevealSurface(h, forceRevealCancelRef);
+                    }
+
+                    const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+
+                    if (!isStripRender) {
+                        const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
+                        if (!okCursor) return;
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        if (activeRendersRef.current !== 0) return;
+                    } else {
+                        if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+                        if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        if (activeRendersRef.current !== 0) return;
+
+                        const wrapper = h.parentElement;
+                        if (wrapper) {
+                            landscapeCursorRef.current = new LandscapeFixedCursorOverlay(wrapper, h);
+                        }
+                        landscapeInitialAnchor(h, api, targetScrollLeftRef);
+                        startLandscapeScrollLoop(h, api);
+                    }
+
+                    forceRevealSurface(h, forceRevealCancelRef);
+                    h.getBoundingClientRect();
+                    (h.querySelector('.at-surface') as HTMLElement | null)?.getBoundingClientRect();
+
+                    hideCurtainAtomic(curtainRef.current);
+                    hasRevealedRef.current = true;
+                    console.log('🟢 V113 curtain dropped', { token: tokenAtFinish, isStripRender });
+
+                    if (containerRef.current) applyAxisLock(containerRef.current, api);
+                    requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef));
+                    isSettlingRef.current = false;
+                    setIsLoading(false);
+                    setIsSettling(false);
+                    onRendered?.();
+                    onBoundsReady?.();
+                    isApplyingProfileRef.current = false;
+
+                    // [L11] Prime state immediately after curtain drop
+                    if (isStripRender) {
+                        requestAnimationFrame(() => {
+                            const ctr = containerRef.current;
+                            if (ctr) primeLandscapeState(ctr);
+                        });
+                    }
+                }, QUIET_MS);
+            });
+
+            const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
+            api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
+            api.soundFontLoaded?.on(() => notifyPlayerReady());
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
@@ -782,9 +757,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (playing !== isPlayingRef.current) onPlayStateChange(playing);
                 }, 50);
 
-                // ── [L13] Prime-on-play: seed scroll state the moment play starts ──
-                // Eliminates 5-note cold-start delay. playerStateChanged fires before
-                // the first playerPositionChanged, so this is the earliest possible hook.
+                // [L13] Prime-on-play: eliminates cold-start delay
                 const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                 if ((e.state ?? 0) === 1 && isStripNow) {
                     const ctr = containerRef.current;
@@ -798,7 +771,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             });
 
-            // 🔒🔒🔒 CURSOR / SCROLL ENGINE — V112 ────────────────────────────
+            // 🔒🔒🔒 CURSOR / SCROLL ENGINE — V113 ────────────────────────────
             api.playerPositionChanged.on((e: any) => {
                 if (isSettlingRef.current) return;
 
@@ -820,8 +793,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!bb?.visualBounds) return;
 
                     const curBeatX = typeof bb.onNotesX === 'number'
-                        ? bb.onNotesX
-                        : bb.visualBounds.x + bb.visualBounds.w / 2;
+                        ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
 
                     const beat = r.beat;
                     const beatAbsStart = beat.absolutePlaybackStart ?? tickRaw;
@@ -831,43 +803,40 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     for (let t = tickRaw - 1; t >= Math.max(tickRaw - 4096, beatAbsStart - 1); t--) {
                         const rr = tickCache.findBeat(trackSet, t);
                         if (!rr?.beat || rr.beat.absolutePlaybackStart !== beatAbsStart) {
-                            expandedStart = t + 1;
-                            break;
+                            expandedStart = t + 1; break;
                         }
                     }
 
                     const { nextBeat, nextStart } = resolveNextBeatExpanded(api, trackSet, expandedStart, beat);
                     const expandedDur = (typeof nextStart === 'number' && nextStart > expandedStart)
-                        ? nextStart - expandedStart
-                        : structuralDur;
+                        ? nextStart - expandedStart : structuralDur;
 
                     let nextBeatX = curBeatX;
                     if (nextBeat) {
                         const nbb = bounds.findBeat(nextBeat);
                         if (nbb?.visualBounds) {
                             nextBeatX = typeof nbb.onNotesX === 'number'
-                                ? nbb.onNotesX
-                                : nbb.visualBounds.x + nbb.visualBounds.w / 2;
+                                ? nbb.onNotesX : nbb.visualBounds.x + nbb.visualBounds.w / 2;
                             if (nextBeatX < curBeatX) nextBeatX = curBeatX;
                         }
                     }
 
                     landscapeScrollStateRef.current = {
-                        curBeatX,
-                        nextBeatX,
+                        curBeatX, nextBeatX,
                         beatStart: expandedStart,
                         beatDur: Math.max(structuralDur * 0.75, Math.min(expandedDur, structuralDur * 2.5)),
                         lastTick: tickRaw,
                     };
 
-                    // ── [L10] Self-heal: restart loop if playing but loop died ─
+                    // [L10] Self-heal: restart loop if playing but loop died
                     if ((api.playerState ?? 0) === 1 && landscapeScrollRafRef.current === null) {
-                        console.log('🔄 V112 RAF self-heal triggered');
+                        console.log('🔄 V113 RAF self-heal');
                         startLandscapeScrollLoop(container, api);
                     }
+                    return;
                 }
 
-                // ── Portrait cursor engine (🔒 unchanged from V111) ───────────
+                // ── Portrait cursor engine (🔒 unchanged from V112) ───────────
                 if (!cursorRef.current) return;
 
                 const FAR_TICKS = 240;
@@ -877,8 +846,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const range = playbackRangeRef.current;
                 if (loopEnabledRef.current && range) {
-                    const SAFETY_MARGIN = 120;
-                    if (tickRaw >= range.endTick - SAFETY_MARGIN) {
+                    if (tickRaw >= range.endTick - 120) {
                         cursorRef.current.requestSnap();
                         api.tickPosition = range.startTick;
                         return;
@@ -920,9 +888,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         occurrenceMap.set(mbIdx, occ + 1);
                         const dur = mb.masterBar?.calculateDuration?.() ?? 0;
                         if (tick >= mb.start && tick < mb.start + dur) {
-                            ownerMbIdx = mbIdx;
-                            ownerOccurrence = occ;
-                            ownerExpandedStart = mb.start;
+                            ownerMbIdx = mbIdx; ownerOccurrence = occ; ownerExpandedStart = mb.start;
                         }
                     }
 
@@ -989,7 +955,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
                         if (incomingStart >= 0 && prevAbs >= 0 && incomingStart < prevAbs) {
                             const regKey = `${incomingStart}:${prevAbs}`;
-                            if (lastRegressionLogRef.current !== regKey) { lastRegressionLogRef.current = regKey; console.warn('[V112] structural regression discarded'); }
+                            if (lastRegressionLogRef.current !== regKey) {
+                                lastRegressionLogRef.current = regKey;
+                                console.warn('[V113] structural regression discarded');
+                            }
                             return;
                         }
                     }
@@ -1063,6 +1032,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             hasRevealedRef.current = false;
             stopLandscapeScrollLoop();
             landscapeScrollStateRef.current = null;
+            isDraggingRef.current = false;
             if (revealTimerRef.current !== null) { window.clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
             if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
             setIsLoading(true);
@@ -1090,9 +1060,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         const primaryTrackName = (tr[0] as any)?.name ?? '';
         const w = containerRef.current?.clientWidth ?? window.innerWidth;
-        const useHorizontalNow = forceHorizontalRef.current;
         const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
-        const trackProfile = resolveProfileByWidth(w, baseProfile, useHorizontalNow);
+        const trackProfile = resolveProfileByWidth(w, baseProfile, forceHorizontalRef.current);
         const at = alphaTabModuleRef.current;
         baseTrackProfileRef.current = baseProfile;
         if (at && trackProfile !== activeProfileRef.current) {
@@ -1103,6 +1072,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         stopLandscapeScrollLoop();
         landscapeScrollStateRef.current = null;
+        isDraggingRef.current = false;
         if (forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1)) {
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
         } else {
@@ -1149,8 +1119,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (!api || !at) return;
             const w = el.clientWidth;
             const base = baseTrackProfileRef.current ?? 'songBookPageDense';
-            const useHorizontal = forceHorizontalRef.current;
-            const nextProfile = resolveProfileByWidth(w, base, useHorizontal);
+            const nextProfile = resolveProfileByWidth(w, base, forceHorizontalRef.current);
             if (nextProfile === activeProfileRef.current) return;
             hasRevealedRef.current = false;
             showCurtain(curtainRef.current);
@@ -1158,7 +1127,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             applyAxisLock(el, api);
-            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX(); // [L9] padding-aware repin
+            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX();
         });
         ro.observe(el);
         return () => ro.disconnect();
@@ -1176,6 +1145,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         stopLandscapeScrollLoop();
         landscapeScrollStateRef.current = null;
+        isDraggingRef.current = false;
         if (forceHorizontalRef.current) {
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
         } else {
@@ -1202,17 +1172,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const surface = container.querySelector('.at-surface') as HTMLElement | null;
             if (!surface) { if (attempt < 20) setTimeout(() => tryAttach(attempt + 1), 150); return; }
 
-            // ── [L12 / V113] Touch drag (landscape) + tap (play/pause) ──────
-            // tap  (<8px movement) → play/pause
-            // drag (≥8px)          → manual scrub, clamped so clef never appears under cursor
-            // touchend after drag  → no seek yet (V114). scrollLeft stays where user left it;
-            //                        RAF loop resumes from targetScrollLeftRef on next play.
-            const touchState = {
-                startX: 0,
-                startScrollLeft: 0,
-                isDragging: false,
-                minScroll: 0,   // computed on touchstart from beat1X
-            };
+            // ── [L12/L16/L17] Touch drag + tap ───────────────────────────────
+            // tap  (<8px) → play/pause
+            // drag (≥8px) → scrub scrollLeft, clamped to [beat1X-cursorSurfaceX, maxScroll]
+            // isDraggingRef pauses RAF interpolation so scroll doesn't rubber-band back
+            const touchState = { startX: 0, startScrollLeft: 0, isDragging: false, minScroll: 0 };
             const TAP_THRESHOLD = 8;
 
             const handleTouchStart = (ev: TouchEvent) => {
@@ -1221,19 +1185,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
 
-                // Compute min scroll from beat1X so clef/time-sig can't appear under cursor.
-                // beat1X is in surface space; cursorSurfaceX is also surface space → delta = 0 at M1.
+                // [L17] Compute minScroll from beat1X so clef never appears under cursor
                 const tickCache = (api as any)?.tickCache;
                 const bounds = api?.renderer?.boundsLookup;
                 if (tickCache?.findBeat && bounds?.findBeat) {
-                    const trackSet = getTrackSet(api);
-                    const r = tickCache.findBeat(trackSet, 0);
+                    const r = tickCache.findBeat(getTrackSet(api), 0);
                     const bb = r?.beat ? bounds.findBeat(r.beat) : null;
                     if (bb?.visualBounds) {
                         const beat1X = typeof bb.onNotesX === 'number'
                             ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
-                        const cursorSurfaceX = getCursorSurfaceX(container);
-                        touchState.minScroll = Math.max(0, beat1X - cursorSurfaceX);
+                        touchState.minScroll = Math.max(0, beat1X - getCursorSurfaceX(container));
                     } else {
                         touchState.minScroll = 0;
                     }
@@ -1241,21 +1202,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             };
 
             const handleTouchMove = (ev: TouchEvent) => {
-                const isStripMode = forceHorizontalRef.current ||
+                const isStrip = forceHorizontalRef.current ||
                     (apiRef.current?.settings?.display?.layoutMode === 1);
-                if (!isStripMode) return;
+                if (!isStrip) return;
 
                 const dx = touchState.startX - ev.touches[0].clientX;
                 if (Math.abs(dx) >= TAP_THRESHOLD) {
                     touchState.isDragging = true;
+                    isDraggingRef.current = true; // [L16] pause RAF
                     ev.preventDefault();
                     const maxScroll = container.scrollWidth - container.clientWidth;
-                    const next = Math.max(
+                    container.scrollLeft = Math.max(
                         touchState.minScroll,
                         Math.min(touchState.startScrollLeft + dx, maxScroll)
                     );
-                    container.scrollLeft = next;
-                    targetScrollLeftRef.current = next; // keep RAF target in sync during drag
+                    targetScrollLeftRef.current = container.scrollLeft;
                 }
             };
 
@@ -1267,13 +1228,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (wasTap) {
                     const api = apiRef.current;
                     if (!api?.isReadyForPlayback) return;
-                    const isStripMode = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
-                    if (!isStripMode) return;
+                    const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
+                    if (!isStrip) return;
                     if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
                     else { api.play(); onPlayStateChange(true); }
                 }
-                // Drag end: scrollLeft already applied in touchmove.
-                // V114 TODO: on drag end, resolve beat under cursor → seek there.
+                // V114 TODO: on drag end, seek to beat under cursor
+                isDraggingRef.current = false; // [L16] resume RAF
                 touchState.isDragging = false;
             };
 
@@ -1281,7 +1242,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             surface.addEventListener('touchmove', handleTouchMove, { passive: false });
             surface.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-            // ── Portrait click-to-seek helpers ────────────────────────────────
+            // ── Portrait click-to-seek ────────────────────────────────────────
             const findClosestBeatAtPos = (x: number, y: number, anchorBeat?: any): any | null => {
                 const api = apiRef.current;
                 const tickCache = (api as any)?.tickCache;
@@ -1301,8 +1262,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (dist < bestDist) { bestDist = dist; mbStart = mb.start; mbDuration = dur; }
                     }
                 }
-                const STEPS = 32;
-                const stepSize = Math.max(1, Math.floor(mbDuration / STEPS));
+                const stepSize = Math.max(1, Math.floor(mbDuration / 32));
                 const seenAbs = new Set<number>();
                 const rowBeats: Array<{ beat: any; onX: number }> = [];
                 for (let t = mbStart; t < mbStart + mbDuration; t += stepSize) {
@@ -1314,14 +1274,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     seenAbs.add(abs);
                     const bb = bounds.findBeat?.(b);
                     const vb = bb?.visualBounds;
-                    if (!vb) continue;
-                    if (Math.abs(vb.y - y) > 20) continue;
+                    if (!vb || Math.abs(vb.y - y) > 20) continue;
                     rowBeats.push({ beat: b, onX: vb.x + vb.w / 2 });
                 }
                 if (!rowBeats.length) return null;
                 rowBeats.sort((a, b) => a.onX - b.onX);
-                const EPS = 8;
-                const forward = rowBeats.find(rb => rb.onX >= x - EPS);
+                const forward = rowBeats.find(rb => rb.onX >= x - 8);
                 const chosen = forward ?? rowBeats[rowBeats.length - 1];
                 const chosenBb = bounds.findBeat?.(chosen.beat);
                 const chosenVbW = chosenBb?.visualBounds?.w ?? 8;
@@ -1339,43 +1297,37 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const trackSet = getTrackSet(api);
                 const r = tickCache.findBeat(trackSet, expandedTick);
                 if (!r?.beat || !bounds.findBeat(r.beat)) return;
-                const isSameBeatLocal = (a: any, b: any) =>
+                const isSame = (a: any, b: any) =>
                     a && b && a.absolutePlaybackStart === b.absolutePlaybackStart &&
                     a.voice?.bar?.masterBar?.index === b.voice?.bar?.masterBar?.index;
                 let expandedStart = expandedTick;
                 for (let t = expandedTick - 1; t >= expandedTick - 8192; t--) {
                     const rr = tickCache.findBeat(trackSet, t);
-                    if (!rr?.beat || !isSameBeatLocal(rr.beat, r.beat)) { expandedStart = t + 1; break; }
+                    if (!rr?.beat || !isSame(rr.beat, r.beat)) { expandedStart = t + 1; break; }
                 }
-                const { nextBeat: nextBeatForCursor, nextStart: nextStartForCursor } =
-                    resolveNextBeatExpanded(api, trackSet, expandedStart, r.beat);
+                const { nextBeat: nb, nextStart: ns } = resolveNextBeatExpanded(api, trackSet, expandedStart, r.beat);
                 stableExpandedBeatStartRef.current = expandedStart;
-                stableNextBeatRef.current = nextBeatForCursor;
-                stableNextExpandedBeatStartRef.current = nextStartForCursor;
+                stableNextBeatRef.current = nb;
+                stableNextExpandedBeatStartRef.current = ns;
                 stableCurBeatRef.current = r.beat;
                 cursor.requestSnap();
-                cursor.setBeat(r.beat, nextBeatForCursor, nextStartForCursor, expandedStart);
-                cursor.setTick(expandedTick, nextBeatForCursor, expandedStart);
+                cursor.setBeat(r.beat, nb, ns, expandedStart);
+                cursor.setTick(expandedTick, nb, expandedStart);
             };
 
             const handleClick = (ev: MouseEvent) => {
                 if (ev.detail > 1) return;
                 const api = apiRef.current;
                 if (!api) return;
+                const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
+                if (isStrip) return; // landscape handled by touch
 
-                // Landscape: click handled by touch handlers — skip
-                const isStripMode = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
-                if (isStripMode) return;
-
-                // Portrait click-to-seek (🔒 unchanged from V111)
                 if (loopEnabledRef.current) return;
                 const rect = surface.getBoundingClientRect();
                 const containerEl = containerRef.current!;
                 const scrollEl = (api.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ?? containerEl;
-                const sx = scrollEl.scrollLeft ?? 0;
-                const sy = scrollEl.scrollTop ?? 0;
-                const x = (ev.clientX - rect.left) + sx;
-                const y = (ev.clientY - rect.top) + sy;
+                const x = (ev.clientX - rect.left) + (scrollEl.scrollLeft ?? 0);
+                const y = (ev.clientY - rect.top) + (scrollEl.scrollTop ?? 0);
 
                 const bds = api.renderer?.boundsLookup;
                 let beat = bds?.getBeatAtPos?.(x, y) ?? null;
@@ -1384,8 +1336,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const vbW2 = bb2?.visualBounds?.w ?? 1;
                     const cx2 = bb2 ? (bb2.visualBounds.x + vbW2 / 2) : null;
                     const dx2 = cx2 != null ? Math.abs(cx2 - x) : Infinity;
-                    const tightMax = Math.max(12, vbW2 * 1.6);
-                    const tooFar = vbW2 <= 16 ? dx2 > tightMax : dx2 > 40;
+                    const tooFar = vbW2 <= 16 ? dx2 > Math.max(12, vbW2 * 1.6) : dx2 > 40;
                     if (vbW2 === 0 || tooFar) beat = null;
                 }
                 const tickCache = (api as any).tickCache;
@@ -1416,14 +1367,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const target = candidates.reduce((prev: number, curr: number) =>
                     Math.abs(curr - currentTick) < Math.abs(prev - currentTick) ? curr : prev);
-                const EPS_IN = 2;
                 const beatDurForClamp = beat.playbackDuration ?? beat.duration ?? 480;
-                const safeTarget = Math.min(target + EPS_IN, target + Math.max(0, beatDurForClamp - 1));
+                const safeTarget = Math.min(target + 2, target + Math.max(0, beatDurForClamp - 1));
                 seekTargetTickRef.current = safeTarget;
                 seekFreezeUntilRef.current = Date.now() + 250;
 
-                const playerStateNow = api.playerState ?? 0;
-                const wasPlaying = playerStateNow === 1;
+                const wasPlaying = (api.playerState ?? 0) === 1;
                 const tok = ++seekTokenRef.current;
                 if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
                 if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
