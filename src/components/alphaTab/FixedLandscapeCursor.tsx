@@ -117,52 +117,78 @@ export class FixedLandscapeCursor {
     private renderSVG(): void {
         const w = CURSOR_WIDTH;
         const mid = w / 2;
-        const r = TOP_RADIUS;
+        const topR = Math.min(TOP_RADIUS, mid);
         const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
+        const baseY = capH - 8;   // cap body end before tip
+        const dotCenterX = mid;
+        const dotCenterY = 7.5;
+        const dotScale = 1.18;
 
-        // Teardrop cap (same geometry as MaestroCursor, fixed at top):
-        //   rounded rectangle top, pointed tip at capH
-        // Spine continues below cap to bottom of overlay (100% height - capH)
+        // Two-SVG approach (Cipher's recommendation):
+        // Spine: height="100%" + viewBox so it fills the overlay without scaling the cap.
+        // Cap: fixed capH px tall, own viewBox — coordinates are always predictable.
+        // Avoids "height:100% + static path y-coords" SVG scaling ambiguity that hides the cap.
         this.el.innerHTML = `
+            <!-- Spine SVG — full height of the overlay -->
             <svg
-                width="${w}"
-                height="100%"
+                width="${w}" height="100%"
+                viewBox="0 0 ${w} 100"
                 preserveAspectRatio="none"
-                style="display:block;overflow:visible;position:absolute;top:0;left:0;"
+                style="display:block;position:absolute;top:0;left:0;overflow:visible;"
                 xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                    <filter id="${this.glowId}" x="-100%" y="-20%" width="300%" height="140%">
-                        <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+                    <filter id="${this.glowId}" x="-100%" y="-100%" width="300%" height="300%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
                         <feOffset dx="0" dy="2"/>
                         <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
                         <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
                     </filter>
                 </defs>
-
-                <!-- Full-height spine (Songsterr-style vertical line) -->
                 <rect
                     x="${spineLeft}" y="0"
-                    width="${SPINE_WIDTH}" height="100%"
+                    width="${SPINE_WIDTH}" height="100"
                     fill="${this.opts.spineColor}"
                     filter="url(#${this.glowId})"
                 />
-
-                <!-- Teardrop cap — mirrors MaestroCursor rounded-top + pointed-bottom path -->
+            </svg>
+            <!-- Cap SVG — fixed ${capH}px, pinned to top; coordinates always predictable -->
+            <svg
+                width="${w}" height="${capH}"
+                viewBox="0 0 ${w} ${capH}"
+                style="display:block;position:absolute;top:0;left:0;overflow:visible;"
+                xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <filter id="${this.glowId}_cap" x="-100%" y="-100%" width="300%" height="300%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+                        <feOffset dx="0" dy="2"/>
+                        <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+                        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+                <!-- Teardrop cap — mirrors MaestroCursor path geometry exactly -->
                 <path
-                    d="M 0,${r} Q 0,0 ${r},0 Q ${w},0 ${w},${r} V ${capH - 6} L ${mid} ${capH} L 0 ${capH - 6} Z"
+                    d="M 0,${topR}
+                       Q 0,0 ${topR},0
+                       Q ${w},0 ${w},${topR}
+                       V ${baseY}
+                       L ${mid} ${capH}
+                       L 0 ${baseY}
+                       Z"
                     fill="${this.opts.capFill}"
-                    filter="url(#${this.glowId})"
+                    filter="url(#${this.glowId}_cap)"
                 />
-
-                <!-- White teardrop dot inside cap (matches MaestroCursor inner dot) -->
+                <!-- Inner white teardrop dot — same geometry as MaestroCursor -->
                 <path
-                    d="M ${mid - 3} 5.5
-                       C ${mid - 3} 3.8 ${mid - 1.8} 2.7 ${mid} 2.7
-                       C ${mid + 1.8} 2.7 ${mid + 3} 3.8 ${mid + 3} 5.5
-                       C ${mid + 3} 7.8 ${mid + 0.8} 11 ${mid} 11
-                       C ${mid - 0.8} 11 ${mid - 3} 7.8 ${mid - 3} 5.5 Z"
+                    d="M ${mid - 3.5} 6
+                       C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
+                       C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
+                       C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
+                       C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z"
                     fill="${this.opts.dotFill}"
+                    transform="translate(${dotCenterX} ${dotCenterY})
+                               scale(${dotScale})
+                               translate(${-dotCenterX} ${-dotCenterY})"
                 />
             </svg>`;
     }
