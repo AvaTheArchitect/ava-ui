@@ -1284,13 +1284,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const cursorSurfaceX = getCursorSurfaceX(container);
                             const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
                             const trackSet = getTrackSet(api);
-
-                            // Walk masterBars to find the beat whose onNotesX is
-                            // closest to beatXUnderCursor without going past it
                             const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
                             let bestBeat: any = null;
                             let bestX = -Infinity;
                             let bestTick = 0;
+                            // +2px epsilon: beat1X=120.001 would fail bx<=120.000 at scrollLeft=0
+                            const BEAT_EPSILON = 2;
 
                             for (const mb of masterBarsArr) {
                                 const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
@@ -1304,12 +1303,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     const bx = typeof bb.onNotesX === 'number'
                                         ? bb.onNotesX
                                         : bb.visualBounds.x + bb.visualBounds.w / 2;
-                                    if (bx <= beatXUnderCursor && bx > bestX) {
+                                    if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) {
                                         bestX = bx;
                                         bestBeat = b;
                                         bestTick = mb.start + (b.playbackStart ?? 0);
                                     }
                                 }
+                            }
+
+                            // Fallback: if clamped at minScroll (M1 position), seek to tick 0
+                            if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) {
+                                bestTick = 0;
+                                bestBeat = true; // sentinel — just need the seek to fire
                             }
 
                             if (bestBeat) {
