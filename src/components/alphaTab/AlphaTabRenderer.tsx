@@ -695,13 +695,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             landscapeCursorRef.current = new FixedLandscapeCursor(
                                 wrapper, h, () => getFixedCursorX(h)
                             );
+                            // Diagnostic: confirm mount + innerHTML
+                            const mounted = wrapper.querySelector('.maestro-landscape-cursor');
+                            console.log('[strip] FixedLandscapeCursor mounted?', !!mounted, mounted?.innerHTML?.slice(0, 80));
+                        } else {
+                            console.warn('[strip] wrapper (h.parentElement) is null — cursor not mounted');
                         }
-                        // Hide AlphaTab's built-in 1px cursor line in landscape.
-                        // In portrait this is done in ensureCursorAndAnchorOnce, but
-                        // the landscape path never called it — so AlphaTab's cursor
-                        // was rendering over our FixedLandscapeCursor the whole time.
+                        // Hide AlphaTab's native 1px cursor in landscape — do this every render.
+                        // AlphaTab may re-inject .at-cursor-* elements after each renderFinished.
                         h.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
-                            .forEach(n => ((n as HTMLElement).style.display = 'none'));
+                            .forEach(n => {
+                                (n as HTMLElement).style.display = 'none';
+                                (n as HTMLElement).style.opacity = '0';
+                            });
                         landscapeInitialAnchor(h, api, targetScrollLeftRef);
                         startLandscapeScrollLoop(h, api);
                     }

@@ -1,6 +1,6 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.0
+ * Version: v1.1
  * Date: April 20th, 2026
  *
  * Landscape fixed-position cursor overlay for Maestro.ai horizontal strip mode.
@@ -9,30 +9,28 @@
  * Architecture mirrors MaestroCursor.tsx:
  *   - 12px wide container, position = desired center
  *   - translateX(-50%) centers the shape on the anchor (eliminates right-edge bias)
- *   - 2px spine down the center (Songsterr-style)
+ *   - Single SVG: spine (full height) + teardrop cap (fixed px) in one coordinate system
  *   - Dumb visual class: no beat/tick knowledge, just position + render
  *
- * Centering math (matches MaestroCursor's finalX = anchor - cursorWidth/2):
- *   left = cursorBoxX (container box space, includes padL)
- *   transform: translateX(-50%) → visual center lands on cursorBoxX
+ * v1.1 CHANGES:
+ *   - Single SVG, no viewBox: spine <rect height="100%"> fills natively;
+ *     cap <path> renders at literal pixel coords — no mobile Safari scaling distortion
+ *   - SVG Z-order: spine first (behind), cap+dot second (on top) — seamless join
+ *   - Filter tightened to 200% — prevents mobile Safari memory clipping on 12px element
+ *   - Unique glowId per instance — safe for P2 dual-mount
+ *   - overflow:visible on container — glow/shadow not clipped at 12px wall
  *
  * Coordinate spaces:
  *   cursorBoxX  → container box space (padL + contentW * ratio) — used for CSS left
  *   cursorSurfaceX → SVG/surface space (cursorBoxX - padL)       — used for scroll math
- *   These are computed externally (getFixedCursorX / getCursorSurfaceX in AlphaTabRenderer)
- *   and passed in. This class is purely visual.
- *
- * Usage:
- *   const cursor = new FixedLandscapeCursor(wrapper, container);
- *   cursor.updateX();        // call on resize
- *   cursor.destroy();        // call on unmount / mode switch
+ *   Computed externally in AlphaTabRenderer; this class is purely visual.
  */
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const CURSOR_WIDTH = 12;       // px — matches MaestroCursor.cursorWidth
-const SPINE_WIDTH = 2;        // px — vertical spine (Songsterr-style)
-const CAP_HEIGHT = 40;       // px — teardrop cap height (matches MaestroCursor topOverhang≈26 + cap)
-const TOP_RADIUS = 6;        // px — rounded top corners (matches MaestroCursor topR)
+// ── Constants ─────────────────────────────────────────────────────────────────
+const CURSOR_WIDTH = 12;    // px — matches MaestroCursor.cursorWidth
+const SPINE_WIDTH = 2;     // px — vertical spine (Songsterr-style)
+const CAP_HEIGHT = 40;    // px — teardrop cap height
+const TOP_RADIUS = 6;     // px — rounded top corners (matches MaestroCursor topR)
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
 const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
 const DOT_FILL = 'white';
@@ -46,18 +44,18 @@ export interface FixedLandscapeCursorOptions {
 export class FixedLandscapeCursor {
     private el: HTMLElement;
     private getCursorBoxX: () => number;
-    private glowId: string;               // unique per instance — avoids SVG filter id collisions
+    private glowId: string;
     private opts: Required<FixedLandscapeCursorOptions>;
 
     /**
-     * @param wrapper      — the NON-scrolling parent div (overlay's position:absolute parent)
-     * @param container    — the .alphatab-container (scrolling) — used for width computation
-     * @param getCursorBoxX — fn that returns cursorBoxX in container box space
-     *                        (pass in getFixedCursorX(container) from AlphaTabRenderer)
+     * @param wrapper       — the NON-scrolling parent div (overlay's position:absolute parent)
+     * @param container     — the .alphatab-container — kept for API symmetry
+     * @param getCursorBoxX — fn returning cursorBoxX in container box space
+     * @param options       — optional color overrides
      */
     constructor(
         wrapper: HTMLElement,
-        container: HTMLElement,       // kept for API symmetry with AlphaTabRenderer call site
+        container: HTMLElement,
         getCursorBoxX: () => number,
         options: FixedLandscapeCursorOptions = {},
     ) {
@@ -70,7 +68,6 @@ export class FixedLandscapeCursor {
         };
 
         this.el = document.createElement('div');
-        // Use className, not id — avoids collisions if mounted more than once
         this.el.className = 'maestro-landscape-cursor';
 
         const x = getCursorBoxX();
@@ -78,13 +75,11 @@ export class FixedLandscapeCursor {
         this.renderSVG();
 
         wrapper.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.0: attached at x=', x);
+        console.log('✅ FixedLandscapeCursor v1.1: attached at x=', x);
     }
 
-    /** Re-pin after container resize. Call from ResizeObserver. */
     updateX(): void {
-        const x = this.getCursorBoxX();
-        this.el.style.left = `${x}px`;
+        this.el.style.left = `${this.getCursorBoxX()}px`;
     }
 
     destroy(): void {
@@ -92,7 +87,7 @@ export class FixedLandscapeCursor {
         console.log('🧹 FixedLandscapeCursor: destroyed');
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Private ───────────────────────────────────────────────────────────────
 
     private applyStyles(x: number): void {
         Object.assign(this.el.style, {
@@ -101,15 +96,11 @@ export class FixedLandscapeCursor {
             bottom: '0',
             left: `${x}px`,
             width: `${CURSOR_WIDTH}px`,
-            // translateX(-50%) centers the 12px bar on the anchor position.
-            // This matches MaestroCursor's: finalX = anchor - cursorWidth/2
-            // Without this, `left` positions the LEFT EDGE, causing right-edge bias.
             transform: 'translateX(-50%)',
             pointerEvents: 'none',
-            zIndex: '20000',   // above AlphaTab's cursor layer (isolation:isolate on wrapper)
-            // Subtle bar background + spine via SVG (see renderSVG)
+            zIndex: '20000',
             background: 'transparent',
-            overflow: 'visible',   // cap drop-shadow must not be clipped by container bounds
+            overflow: 'visible',   // glow/shadow must not be clipped at 12px boundary
             willChange: 'left',
         });
     }
@@ -120,11 +111,13 @@ export class FixedLandscapeCursor {
         const topR = TOP_RADIUS;
         const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
-        const baseY = capH - 8;
+        const baseY = capH - 8;   // cap body ends here, then tapers to point
 
-        // Single SVG, no viewBox — spine rect uses height="100%" natively,
-        // cap path uses fixed pixel coords (0-40px) with no scaling distortion.
-        // Two-SVG approach caused coordinate space mismatch on mobile Safari.
+        // Single SVG, no viewBox:
+        //   - <rect height="100%"> fills the overlay natively (no scaling)
+        //   - cap <path> uses literal px coords (0–40px) — always renders at correct size
+        //   - SVG Z-order: spine first (behind), cap+dot group second (on top)
+        //   - filter: 200% bounds prevents mobile Safari clipping on narrow element
         this.el.innerHTML = `
             <svg
                 width="${w}" height="100%"
@@ -134,7 +127,9 @@ export class FixedLandscapeCursor {
                     <filter id="${this.glowId}" x="-50%" y="-50%" width="200%" height="200%">
                         <feGaussianBlur in="SourceAlpha" stdDeviation="1.5"/>
                         <feOffset dx="0" dy="1"/>
-                        <feComponentTransfer><feFuncA type="linear" slope="0.6"/></feComponentTransfer>
+                        <feComponentTransfer>
+                            <feFuncA type="linear" slope="0.5"/>
+                        </feComponentTransfer>
                         <feMerge>
                             <feMergeNode/>
                             <feMergeNode in="SourceGraphic"/>
@@ -142,7 +137,7 @@ export class FixedLandscapeCursor {
                     </filter>
                 </defs>
 
-                <!-- Full-height spine -->
+                <!-- Spine: behind the cap, full height -->
                 <rect
                     x="${spineLeft}" y="0"
                     width="${SPINE_WIDTH}" height="100%"
@@ -150,7 +145,7 @@ export class FixedLandscapeCursor {
                     filter="url(#${this.glowId})"
                 />
 
-                <!-- Teardrop cap + inner dot — fixed pixel coords, no viewBox scaling -->
+                <!-- Cap + dot: on top of spine, fixed pixel coords -->
                 <g filter="url(#${this.glowId})">
                     <path
                         d="M 0,${topR}
