@@ -43,6 +43,7 @@ import {
     type LayoutProfileName,
 } from '@/lib/alphaTab/initAlphaTab';
 import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/MaestroCursor';
+import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
@@ -94,42 +95,11 @@ function getCursorSurfaceX(container: HTMLElement): number {
     return getFixedCursorX(container) - padL;
 }
 
-// ── [L1-fix] Landscape Fixed Cursor Overlay ───────────────────────────────────
-// Attaches to the NON-scrolling wrapper. translateX(-50%) centers the bar on left.
-class LandscapeFixedCursorOverlay {
-    private el: HTMLElement;
-    private container: HTMLElement;
-
-    constructor(wrapper: HTMLElement, container: HTMLElement) {
-        this.container = container;
-        this.el = document.createElement('div');
-        this.el.id = 'maestro-landscape-cursor';
-        const x = getFixedCursorX(container);
-        Object.assign(this.el.style, {
-            position: 'absolute',
-            top: '0',
-            left: `${x}px`,
-            width: '3px',
-            height: '100%',
-            transform: 'translateX(-50%)',   // [L15] centers 3px bar on the position
-            background: 'rgba(168, 85, 247, 0.85)',
-            boxShadow: '0 0 8px rgba(168, 85, 247, 0.55)',
-            pointerEvents: 'none',
-            zIndex: '1001',
-            willChange: 'transform',
-        });
-        wrapper.appendChild(this.el);
-        console.log('✅ LandscapeFixedCursorOverlay V113: x=', x);
-    }
-
-    updateX(): void {
-        this.el.style.left = `${getFixedCursorX(this.container)}px`;
-    }
-
-    destroy(): void {
-        if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-    }
-}
+// ── [L1-fix] Landscape Fixed Cursor — see FixedLandscapeCursor.tsx ───────────
+// Extracted to src/components/alphaTab/FixedLandscapeCursor.tsx (v1.0).
+// 12px wide, translateX(-50%) centered, 2px spine — matches MaestroCursor geometry.
+// Ref type alias kept here for the landscapeCursorRef.
+type LandscapeFixedCursorOverlay = FixedLandscapeCursor;
 
 // ── [L8-fix] Landscape initial anchor — retry-until-ready ────────────────────
 function landscapeInitialAnchor(
@@ -722,7 +692,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                         const wrapper = h.parentElement;
                         if (wrapper) {
-                            landscapeCursorRef.current = new LandscapeFixedCursorOverlay(wrapper, h);
+                            landscapeCursorRef.current = new FixedLandscapeCursor(
+                                wrapper, h, () => getFixedCursorX(h)
+                            );
                         }
                         landscapeInitialAnchor(h, api, targetScrollLeftRef);
                         startLandscapeScrollLoop(h, api);
@@ -1138,7 +1110,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             applyAxisLock(el, api);
-            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX();
+            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX(); // repin on resize
         });
         ro.observe(el);
         return () => ro.disconnect();
