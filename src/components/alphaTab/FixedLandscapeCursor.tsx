@@ -109,7 +109,7 @@ export class FixedLandscapeCursor {
             zIndex: '20000',   // above AlphaTab's cursor layer (isolation:isolate on wrapper)
             // Subtle bar background + spine via SVG (see renderSVG)
             background: 'transparent',
-            overflow: 'visible',
+            overflow: 'visible',   // cap drop-shadow must not be clipped by container bounds
             willChange: 'left',
         });
     }
@@ -117,79 +117,61 @@ export class FixedLandscapeCursor {
     private renderSVG(): void {
         const w = CURSOR_WIDTH;
         const mid = w / 2;
-        const topR = Math.min(TOP_RADIUS, mid);
+        const topR = TOP_RADIUS;
         const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
-        const baseY = capH - 8;   // cap body end before tip
-        const dotCenterX = mid;
-        const dotCenterY = 7.5;
-        const dotScale = 1.18;
+        const baseY = capH - 8;
 
-        // Two-SVG approach (Cipher's recommendation):
-        // Spine: height="100%" + viewBox so it fills the overlay without scaling the cap.
-        // Cap: fixed capH px tall, own viewBox — coordinates are always predictable.
-        // Avoids "height:100% + static path y-coords" SVG scaling ambiguity that hides the cap.
+        // Single SVG, no viewBox — spine rect uses height="100%" natively,
+        // cap path uses fixed pixel coords (0-40px) with no scaling distortion.
+        // Two-SVG approach caused coordinate space mismatch on mobile Safari.
         this.el.innerHTML = `
-            <!-- Spine SVG — full height of the overlay -->
             <svg
                 width="${w}" height="100%"
-                viewBox="0 0 ${w} 100"
-                preserveAspectRatio="none"
                 style="display:block;position:absolute;top:0;left:0;overflow:visible;"
                 xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                    <filter id="${this.glowId}" x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
-                        <feOffset dx="0" dy="2"/>
-                        <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
-                        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+                    <filter id="${this.glowId}" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="1.5"/>
+                        <feOffset dx="0" dy="1"/>
+                        <feComponentTransfer><feFuncA type="linear" slope="0.6"/></feComponentTransfer>
+                        <feMerge>
+                            <feMergeNode/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
                     </filter>
                 </defs>
+
+                <!-- Full-height spine -->
                 <rect
                     x="${spineLeft}" y="0"
-                    width="${SPINE_WIDTH}" height="100"
+                    width="${SPINE_WIDTH}" height="100%"
                     fill="${this.opts.spineColor}"
                     filter="url(#${this.glowId})"
                 />
-            </svg>
-            <!-- Cap SVG — fixed ${capH}px, pinned to top; coordinates always predictable -->
-            <svg
-                width="${w}" height="${capH}"
-                viewBox="0 0 ${w} ${capH}"
-                style="display:block;position:absolute;top:0;left:0;overflow:visible;"
-                xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <filter id="${this.glowId}_cap" x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
-                        <feOffset dx="0" dy="2"/>
-                        <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
-                        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                </defs>
-                <!-- Teardrop cap — mirrors MaestroCursor path geometry exactly -->
-                <path
-                    d="M 0,${topR}
-                       Q 0,0 ${topR},0
-                       Q ${w},0 ${w},${topR}
-                       V ${baseY}
-                       L ${mid} ${capH}
-                       L 0 ${baseY}
-                       Z"
-                    fill="${this.opts.capFill}"
-                    filter="url(#${this.glowId}_cap)"
-                />
-                <!-- Inner white teardrop dot — same geometry as MaestroCursor -->
-                <path
-                    d="M ${mid - 3.5} 6
-                       C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
-                       C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
-                       C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
-                       C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z"
-                    fill="${this.opts.dotFill}"
-                    transform="translate(${dotCenterX} ${dotCenterY})
-                               scale(${dotScale})
-                               translate(${-dotCenterX} ${-dotCenterY})"
-                />
+
+                <!-- Teardrop cap + inner dot — fixed pixel coords, no viewBox scaling -->
+                <g filter="url(#${this.glowId})">
+                    <path
+                        d="M 0,${topR}
+                           Q 0,0 ${topR},0
+                           L ${w - topR},0
+                           Q ${w},0 ${w},${topR}
+                           V ${baseY}
+                           L ${mid} ${capH}
+                           L 0 ${baseY}
+                           Z"
+                        fill="${this.opts.capFill}"
+                    />
+                    <path
+                        d="M ${mid - 3.5} 6
+                           C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3
+                           C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6
+                           C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12
+                           C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z"
+                        fill="${this.opts.dotFill}"
+                    />
+                </g>
             </svg>`;
     }
 }
