@@ -390,8 +390,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         const loop = () => {
             // [L16] Belt-and-suspenders: bail entirely if dragging.
-            // Primary guard is stopLandscapeScrollLoop() on touchstart.
             if (isDraggingRef.current) {
+                landscapeScrollRafRef.current = requestAnimationFrame(loop);
+                return;
+            }
+            // Hard-idle while paused: pin target to current position so LERP can't drift.
+            // This prevents old targetScrollLeft from pulling the strip after a drag release.
+            if ((api as any)?.playerState !== 1) {
+                targetScrollLeftRef.current = container.scrollLeft;
                 landscapeScrollRafRef.current = requestAnimationFrame(loop);
                 return;
             }
@@ -1313,17 +1319,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 if (seekTicks) seekTicks(bestTick);
                                 api.tickPosition = bestTick;
                                 resetBeatAcceptance();
-                                // Sync scroll target to drag position
-                                targetScrollLeftRef.current = container.scrollLeft;
-                                // ── Null stale scroll state so RAF loop doesn't snap back ──
-                                // Without this, the loop reads old curBeatX/nextBeatX and
-                                // LERPs targetScrollLeft back to the previous playhead position.
-                                // primeLandscapeState will repopulate on next play press.
                                 landscapeScrollStateRef.current = null;
                                 console.log('[V114] drag seek →', { bestTick, beatXUnderCursor, bestX });
                             }
-                            // Restart loop — idles with no state (paused), primes on play
-                            startLandscapeScrollLoop(container, api);
+                            // Always sync target to drag position BEFORE restarting loop.
+                            // Without this, old targetScrollLeft pulls strip back via LERP.
+                            targetScrollLeftRef.current = container.scrollLeft;
+                            // Only restart loop if playing — paused = frozen (Songsterr behavior).
+                            // Loop's hard-idle guard also prevents drift if it's already running.
+                            if ((api.playerState ?? 0) === 1) {
+                                startLandscapeScrollLoop(container, api);
+                            }
                         } else {
                             startLandscapeScrollLoop(container, api);
                         }
