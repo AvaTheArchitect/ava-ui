@@ -390,37 +390,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         console.log('🎬 V113 scroll loop — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
-            // [L16] Don't overwrite targetScrollLeft while user is dragging
-            if (!isDraggingRef.current) {
-                const state = landscapeScrollStateRef.current;
-                if (state && state.beatDur > 0) {
-                    const liveTick = (api as any)?.tickPosition ?? state.lastTick;
-                    const progress = Math.max(0, Math.min(1,
-                        (liveTick - state.beatStart) / state.beatDur
-                    ));
-                    const interpolatedX = state.curBeatX + (state.nextBeatX - state.curBeatX) * progress;
-                    const maxScroll = container.scrollWidth - container.clientWidth;
-                    targetScrollLeftRef.current = Math.max(0, Math.min(
-                        interpolatedX - cursorSurfaceX,
-                        maxScroll
-                    ));
+            // [L16] Bail entirely during drag — don't LERP, don't update target.
+            // isDraggingRef alone isn't enough: the LERP toward old target still fights the finger.
+            // The real fix is stopLandscapeScrollLoop() on touchstart (see touch handlers).
+            // This guard is a belt-and-suspenders safety net.
+            if (isDraggingRef.current) {
+                landscapeScrollRafRef.current = requestAnimationFrame(loop);
+                return;
+            }
+            const state = landscapeScrollStateRef.current;
+            if (state && state.beatDur > 0) {
+                const liveTick = (api as any)?.tickPosition ?? state.lastTick;
+                const progress = Math.max(0, Math.min(1,
+                    (liveTick - state.beatStart) / state.beatDur
+                ));
+                const interpolatedX = state.curBeatX + (state.nextBeatX - state.curBeatX) * progress;
+                const maxScroll = container.scrollWidth - container.clientWidth;
+                targetScrollLeftRef.current = Math.max(0, Math.min(
+                    interpolatedX - cursorSurfaceX,
+                    maxScroll
+                ));
+                const target = targetScrollLeftRef.current;
+                const current = container.scrollLeft;
+                const delta = target - current;
+                if (Math.abs(delta) > 0.5) {
+                    container.scrollLeft = current + delta * SCROLL_EASE;
                 }
-            }
-            const target = targetScrollLeftRef.current;
-            const current = container.scrollLeft;
-            const delta = target - current;
-            if (Math.abs(delta) > 0.5) {
-                container.scrollLeft = current + delta * SCROLL_EASE;
-            }
+                landscapeScrollRafRef.current = requestAnimationFrame(loop);
+            };
             landscapeScrollRafRef.current = requestAnimationFrame(loop);
-        };
-        landscapeScrollRafRef.current = requestAnimationFrame(loop);
-    }, []);
+            if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = landscapeScrollRafRef.current;
+        }, []);
 
     const stopLandscapeScrollLoop = useCallback(() => {
         if (landscapeScrollRafRef.current !== null) {
             cancelAnimationFrame(landscapeScrollRafRef.current);
             landscapeScrollRafRef.current = null;
+            if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = null;
             console.log('⏹ V113 scroll loop stopped');
         }
     }, []);
@@ -1181,11 +1187,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const handleTouchStart = (ev: TouchEvent) => {
                 const api = apiRef.current;
+                const isStrip = forceHorizontalRef.current ||
+                    (api?.settings?.display?.layoutMode === 1);
+                if (!isStrip) return;
+
                 touchState.startX = ev.touches[0].clientX;
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
+                isDraggingRef.current = false;
 
-                // [L17] Compute minScroll from beat1X so clef never appears under cursor
+                // Stop RAF loop immediately so it can't fight the finger
+                stopLandscapeScrollLoop();
+
+                // Compute minScroll from beat1X so clef never appears under cursor
                 const tickCache = (api as any)?.tickCache;
                 const bounds = api?.renderer?.boundsLookup;
                 if (tickCache?.findBeat && bounds?.findBeat) {
@@ -1209,14 +1223,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const dx = touchState.startX - ev.touches[0].clientX;
                 if (Math.abs(dx) >= TAP_THRESHOLD) {
                     touchState.isDragging = true;
-                    isDraggingRef.current = true; // [L16] pause RAF
+                    isDraggingRef.current = true;
+                    if (typeof window !== 'undefined') (window as any).__isUserDragging = true;
                     ev.preventDefault();
                     const maxScroll = container.scrollWidth - container.clientWidth;
-                    container.scrollLeft = Math.max(
+                    const nextScrollLeft = Math.max(
                         touchState.minScroll,
                         Math.min(touchState.startScrollLeft + dx, maxScroll)
                     );
-                    targetScrollLeftRef.current = container.scrollLeft;
+                    // Debug: confirm we're writing to the right element
+                    console.log('[touchmove]', {
+                        containerClass: container.className,
+                        scrollW: container.scrollWidth,
+                        clientW: container.clientWidth,
+                        before: container.scrollLeft.toFixed(1),
+                        next: nextScrollLeft.toFixed(1),
+                    });
+                    container.scrollLeft = nextScrollLeft;
+                    targetScrollLeftRef.current = nextScrollLeft;
                 }
             };
 
@@ -1232,9 +1256,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!isStrip) return;
                     if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
                     else { api.play(); onPlayStateChange(true); }
+                } else {
+                    // Drag ended — sync target to current scroll so LERP starts from here
+                    targetScrollLeftRef.current = container.scrollLeft;
+                    // Restart RAF loop only if still playing
+                    const api = apiRef.current;
+                    if ((api?.playerState ?? 0) === 1) {
+                        startLandscapeScrollLoop(container, api);
+                    }
+                    // V114 TODO: seek to beat under cursor on drag release
                 }
-                // V114 TODO: on drag end, seek to beat under cursor
-                isDraggingRef.current = false; // [L16] resume RAF
+
+                isDraggingRef.current = false;
                 touchState.isDragging = false;
             };
 
