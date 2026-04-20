@@ -33,9 +33,9 @@
  *   ✅ All V108/V107/V106 preserved locks
  *
  * CURSOR_POSITION_RATIO = 0.12:
- *   115px on a 956px iPad — keeps beat-1 (onNotesX ≈ 120px) reachable:
- *   scrollLeft = 120 - 115 = +5px (valid). Was 0.20 (191px) → delta=-71 (impossible).
- *   If a song's first note is even further left, lower to 0.10. Single constant, nothing else moves.
+ *   Confirmed: beat1X = 115.916px (SVG text x attr), cursorX = 956×0.12 = 115px.
+ *   Gap = 0.916px → sub-pixel alignment. REACH_MARGIN = 0 so floor=115 ≤ beat1X.
+ *   If a different song has firstNoteX further right, this ratio still works (scrollLeft just increases).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -150,7 +150,9 @@ function landscapeInitialAnchor(
             ? new Set(api.tracks.map((t: any) => t.index as number))
             : new Set([0]);
         const fixedCursorX = Math.round(container.clientWidth * CURSOR_POSITION_RATIO);
-        const REACH_MARGIN = 16; // px — breathing room so beat sits just left of cursor
+        const REACH_MARGIN = 0;  // px — 0 = no breathing room needed
+        // beat1X = 115.916px, cursorX = 115px (ratio 0.12 × 956px)
+        // floor = 115 → 115.916 ≥ 115 ✅ → scrollLeft ≈ 1px → pixel-perfect
         const reachableFloor = fixedCursorX + REACH_MARGIN;
 
         const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
