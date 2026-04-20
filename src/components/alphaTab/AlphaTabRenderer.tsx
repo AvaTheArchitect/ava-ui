@@ -1194,9 +1194,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
                 isDraggingRef.current = false;
-
-                // Stop RAF loop immediately so it can't fight the finger
-                stopLandscapeScrollLoop();
+                // Do NOT pause here — a tap while playing must toggle cleanly on touchend.
+                // Pause only happens once drag is confirmed in touchmove (dx >= threshold).
+                stopLandscapeScrollLoop(); // stop RAF regardless; restarts on touchend
 
                 // Compute minScroll from beat1X so clef never appears under cursor
                 const tickCache = (api as any)?.tickCache;
@@ -1221,6 +1221,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const dx = touchState.startX - ev.touches[0].clientX;
                 if (Math.abs(dx) >= TAP_THRESHOLD) {
+                    // First frame drag is confirmed: pause playback so scrub is clean
+                    if (!touchState.isDragging) {
+                        const api = apiRef.current;
+                        if ((api?.playerState ?? 0) === 1) {
+                            api.pause();
+                            onPlayStateChange(false);
+                        }
+                    }
                     touchState.isDragging = true;
                     isDraggingRef.current = true;
                     if (typeof window !== 'undefined') (window as any).__isUserDragging = true;
@@ -1256,17 +1264,68 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
                     else { api.play(); onPlayStateChange(true); }
                 } else {
-                    // Drag ended — sync target to current scroll so LERP starts from here
-                    targetScrollLeftRef.current = container.scrollLeft;
-                    // Restart RAF loop only if still playing
+                    // ── [V114] Seek-on-drag-release ───────────────────────────
+                    // Resolve the beat currently under the fixed cursor line,
+                    // seek there, then resume if was playing before drag started.
                     const api = apiRef.current;
-                    if ((api?.playerState ?? 0) === 1) {
-                        startLandscapeScrollLoop(container, api);
+                    targetScrollLeftRef.current = container.scrollLeft;
+
+                    if (api?.isReadyForPlayback) {
+                        const tickCache = (api as any)?.tickCache;
+                        const bounds = api?.renderer?.boundsLookup;
+                        if (tickCache?.findBeat && bounds?.findBeat) {
+                            // beatX under cursor = scrollLeft + cursorSurfaceX (SVG space)
+                            const cursorSurfaceX = getCursorSurfaceX(container);
+                            const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
+                            const trackSet = getTrackSet(api);
+
+                            // Walk masterBars to find the beat whose onNotesX is
+                            // closest to beatXUnderCursor without going past it
+                            const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
+                            let bestBeat: any = null;
+                            let bestX = -Infinity;
+                            let bestTick = 0;
+
+                            for (const mb of masterBarsArr) {
+                                const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
+                                const stepSize = Math.max(1, Math.floor(mbDur / 32));
+                                for (let t = mb.start; t < mb.start + mbDur; t += stepSize) {
+                                    const r = tickCache.findBeat(trackSet, t);
+                                    const b = r?.beat;
+                                    if (!b) continue;
+                                    const bb = bounds.findBeat(b);
+                                    if (!bb?.visualBounds) continue;
+                                    const bx = typeof bb.onNotesX === 'number'
+                                        ? bb.onNotesX
+                                        : bb.visualBounds.x + bb.visualBounds.w / 2;
+                                    if (bx <= beatXUnderCursor && bx > bestX) {
+                                        bestX = bx;
+                                        bestBeat = b;
+                                        bestTick = mb.start + (b.playbackStart ?? 0);
+                                    }
+                                }
+                            }
+
+                            if (bestBeat) {
+                                seekTargetTickRef.current = bestTick;
+                                seekFreezeUntilRef.current = Date.now() + 300;
+                                const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                                if (seekTicks) seekTicks(bestTick);
+                                api.tickPosition = bestTick;
+                                resetBeatAcceptance();
+                                targetScrollLeftRef.current = container.scrollLeft;
+                                console.log('[V114] drag seek →', { bestTick, beatXUnderCursor, bestX });
+                            }
+                            // Always restart loop (idles when paused, ready when play pressed)
+                            startLandscapeScrollLoop(container, api);
+                        } else {
+                            startLandscapeScrollLoop(container, api);
+                        }
                     }
-                    // V114 TODO: seek to beat under cursor on drag release
                 }
 
                 isDraggingRef.current = false;
+                if (typeof window !== 'undefined') (window as any).__isUserDragging = false;
                 touchState.isDragging = false;
             };
 
