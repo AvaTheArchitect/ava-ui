@@ -106,7 +106,7 @@ export class FixedLandscapeCursor {
             // Without this, `left` positions the LEFT EDGE, causing right-edge bias.
             transform: 'translateX(-50%)',
             pointerEvents: 'none',
-            zIndex: '1001',
+            zIndex: '20000',   // above AlphaTab's cursor layer (isolation:isolate on wrapper)
             // Subtle bar background + spine via SVG (see renderSVG)
             background: 'transparent',
             overflow: 'visible',

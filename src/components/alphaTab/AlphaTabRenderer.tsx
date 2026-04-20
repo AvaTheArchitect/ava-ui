@@ -696,6 +696,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 wrapper, h, () => getFixedCursorX(h)
                             );
                         }
+                        // Hide AlphaTab's built-in 1px cursor line in landscape.
+                        // In portrait this is done in ensureCursorAndAnchorOnce, but
+                        // the landscape path never called it — so AlphaTab's cursor
+                        // was rendering over our FixedLandscapeCursor the whole time.
+                        h.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
+                            .forEach(n => ((n as HTMLElement).style.display = 'none'));
                         landscapeInitialAnchor(h, api, targetScrollLeftRef);
                         startLandscapeScrollLoop(h, api);
                     }
