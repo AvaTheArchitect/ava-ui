@@ -2,7 +2,7 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V112
+ * Current version: V113
  * Date: April 19th, 2026
  * Cloned from V111 — Landscape RAF loop fix + touch drag.
  *
@@ -84,7 +84,8 @@ export interface AlphaTabRendererV102Props {
 // 0.144 = beat1X(120.001) / contentW(832) from confirmed probe on Brett's device.
 // Means: cursor lands at padL + contentWidth*0.144 = 62+120 = 182px. Device-stable.
 const CURSOR_POSITION_RATIO = 0.144;
-const CURSOR_BIAS_PX = 0;             // fine-tune knob: try -1 or -2 for tiny left nudge
+const CURSOR_BIAS_PX = -3;            // nudge overlay left so line bisects notehead (not right-edge)
+// scroll math is unaffected — bias only applies to overlay CSS left
 const SCROLL_EASE = 0.18;             // LERP factor per RAF frame
 
 // ── [L9] Padding-aware cursor helpers ────────────────────────────────────────
@@ -1201,31 +1202,69 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const surface = container.querySelector('.at-surface') as HTMLElement | null;
             if (!surface) { if (attempt < 20) setTimeout(() => tryAttach(attempt + 1), 150); return; }
 
-            // ── [L12] Touch drag state ────────────────────────────────────────
-            const touchState = { startX: 0, startScrollLeft: 0, isDragging: false };
-            const TAP_THRESHOLD = 8; // px — below this = tap, above = drag
+            // ── [L12 / V113] Touch drag (landscape) + tap (play/pause) ──────
+            // tap  (<8px movement) → play/pause
+            // drag (≥8px)          → manual scrub, clamped so clef never appears under cursor
+            // touchend after drag  → no seek yet (V114). scrollLeft stays where user left it;
+            //                        RAF loop resumes from targetScrollLeftRef on next play.
+            const touchState = {
+                startX: 0,
+                startScrollLeft: 0,
+                isDragging: false,
+                minScroll: 0,   // computed on touchstart from beat1X
+            };
+            const TAP_THRESHOLD = 8;
 
             const handleTouchStart = (ev: TouchEvent) => {
+                const api = apiRef.current;
                 touchState.startX = ev.touches[0].clientX;
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
-            };
 
-            const handleTouchMove = (ev: TouchEvent) => {
-                const dx = touchState.startX - ev.touches[0].clientX;
-                if (Math.abs(dx) >= TAP_THRESHOLD) {
-                    touchState.isDragging = true;
-                    ev.preventDefault(); // prevent page scroll during landscape drag
-                    const maxScroll = container.scrollWidth - container.clientWidth;
-                    const next = Math.max(0, Math.min(touchState.startScrollLeft + dx, maxScroll));
-                    container.scrollLeft = next;
-                    targetScrollLeftRef.current = next; // keep RAF target in sync
+                // Compute min scroll from beat1X so clef/time-sig can't appear under cursor.
+                // beat1X is in surface space; cursorSurfaceX is also surface space → delta = 0 at M1.
+                const tickCache = (api as any)?.tickCache;
+                const bounds = api?.renderer?.boundsLookup;
+                if (tickCache?.findBeat && bounds?.findBeat) {
+                    const trackSet = getTrackSet(api);
+                    const r = tickCache.findBeat(trackSet, 0);
+                    const bb = r?.beat ? bounds.findBeat(r.beat) : null;
+                    if (bb?.visualBounds) {
+                        const beat1X = typeof bb.onNotesX === 'number'
+                            ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+                        const cursorSurfaceX = getCursorSurfaceX(container);
+                        touchState.minScroll = Math.max(0, beat1X - cursorSurfaceX);
+                    } else {
+                        touchState.minScroll = 0;
+                    }
                 }
             };
 
-            const handleTouchEnd = () => {
-                if (!touchState.isDragging) {
-                    // Tap: play/pause (same as [L3] click handler)
+            const handleTouchMove = (ev: TouchEvent) => {
+                const isStripMode = forceHorizontalRef.current ||
+                    (apiRef.current?.settings?.display?.layoutMode === 1);
+                if (!isStripMode) return;
+
+                const dx = touchState.startX - ev.touches[0].clientX;
+                if (Math.abs(dx) >= TAP_THRESHOLD) {
+                    touchState.isDragging = true;
+                    ev.preventDefault();
+                    const maxScroll = container.scrollWidth - container.clientWidth;
+                    const next = Math.max(
+                        touchState.minScroll,
+                        Math.min(touchState.startScrollLeft + dx, maxScroll)
+                    );
+                    container.scrollLeft = next;
+                    targetScrollLeftRef.current = next; // keep RAF target in sync during drag
+                }
+            };
+
+            const handleTouchEnd = (ev: TouchEvent) => {
+                const dx = touchState.startX - (ev.changedTouches[0]?.clientX ?? touchState.startX);
+                const wasTap = !touchState.isDragging && Math.abs(dx) < TAP_THRESHOLD;
+                console.log('[V113 touch]', { dx: dx.toFixed(1), wasTap, scrollLeft: container.scrollLeft.toFixed(1) });
+
+                if (wasTap) {
                     const api = apiRef.current;
                     if (!api?.isReadyForPlayback) return;
                     const isStripMode = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
@@ -1233,7 +1272,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
                     else { api.play(); onPlayStateChange(true); }
                 }
-                // Drag end: scroll already applied in touchmove. V113 TODO: seek to beat at cursor.
+                // Drag end: scrollLeft already applied in touchmove.
+                // V114 TODO: on drag end, resolve beat under cursor → seek there.
                 touchState.isDragging = false;
             };
 
