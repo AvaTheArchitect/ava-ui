@@ -28,19 +28,19 @@
  *   cursor.destroy();        // call on unmount / mode switch
  */
 
-// ── Constants (must match AlphaTabRenderer constants) ────────────────────────
-// These are duplicated here for standalone rendering. The renderer passes
-// cursorBoxX computed from these same values — no runtime coupling needed.
-const CURSOR_WIDTH = 12;     // px — matches MaestroCursor.cursorWidth
-const SPINE_WIDTH = 2;       // px — vertical spine inside the bar
+// ── Constants ────────────────────────────────────────────────────────────────
+const CURSOR_WIDTH = 12;       // px — matches MaestroCursor.cursorWidth
+const SPINE_WIDTH = 2;        // px — vertical spine (Songsterr-style)
+const CAP_HEIGHT = 40;       // px — teardrop cap height (matches MaestroCursor topOverhang≈26 + cap)
+const TOP_RADIUS = 6;        // px — rounded top corners (matches MaestroCursor topR)
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
-const BAR_COLOR = 'rgba(168, 85, 247, 0.18)';
-const GLOW_COLOR = 'rgba(168, 85, 247, 0.45)';
+const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
+const DOT_FILL = 'white';
 
 export interface FixedLandscapeCursorOptions {
     spineColor?: string;
-    barColor?: string;
-    glowColor?: string;
+    capFill?: string;
+    dotFill?: string;
 }
 
 export class FixedLandscapeCursor {
@@ -65,8 +65,8 @@ export class FixedLandscapeCursor {
         this.glowId = `fcGlow_${Math.random().toString(36).slice(2)}`;
         this.opts = {
             spineColor: options.spineColor ?? SPINE_COLOR,
-            barColor: options.barColor ?? BAR_COLOR,
-            glowColor: options.glowColor ?? GLOW_COLOR,
+            capFill: options.capFill ?? CAP_FILL,
+            dotFill: options.dotFill ?? DOT_FILL,
         };
 
         this.el = document.createElement('div');
@@ -115,40 +115,54 @@ export class FixedLandscapeCursor {
     }
 
     private renderSVG(): void {
-        const mid = CURSOR_WIDTH / 2;
+        const w = CURSOR_WIDTH;
+        const mid = w / 2;
+        const r = TOP_RADIUS;
+        const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
 
+        // Teardrop cap (same geometry as MaestroCursor, fixed at top):
+        //   rounded rectangle top, pointed tip at capH
+        // Spine continues below cap to bottom of overlay (100% height - capH)
         this.el.innerHTML = `
             <svg
-                width="${CURSOR_WIDTH}"
+                width="${w}"
                 height="100%"
                 preserveAspectRatio="none"
                 style="display:block;overflow:visible;position:absolute;top:0;left:0;"
                 xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                    <filter id="${this.glowId}" x="-100%" y="0%" width="300%" height="100%">
+                    <filter id="${this.glowId}" x="-100%" y="-20%" width="300%" height="140%">
                         <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
-                        <feFlood flood-color="${this.opts.glowColor}" result="color"/>
-                        <feComposite in="color" in2="blur" operator="in" result="shadow"/>
-                        <feMerge>
-                            <feMergeNode in="shadow"/>
-                            <feMergeNode in="SourceGraphic"/>
-                        </feMerge>
+                        <feOffset dx="0" dy="2"/>
+                        <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+                        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
                     </filter>
                 </defs>
-                <!-- Subtle full-width bar -->
-                <rect
-                    x="0" y="0"
-                    width="${CURSOR_WIDTH}" height="100%"
-                    fill="${this.opts.barColor}"
-                    rx="1"
-                />
-                <!-- Centered spine -->
+
+                <!-- Full-height spine (Songsterr-style vertical line) -->
                 <rect
                     x="${spineLeft}" y="0"
                     width="${SPINE_WIDTH}" height="100%"
                     fill="${this.opts.spineColor}"
                     filter="url(#${this.glowId})"
+                />
+
+                <!-- Teardrop cap — mirrors MaestroCursor rounded-top + pointed-bottom path -->
+                <path
+                    d="M 0,${r} Q 0,0 ${r},0 Q ${w},0 ${w},${r} V ${capH - 6} L ${mid} ${capH} L 0 ${capH - 6} Z"
+                    fill="${this.opts.capFill}"
+                    filter="url(#${this.glowId})"
+                />
+
+                <!-- White teardrop dot inside cap (matches MaestroCursor inner dot) -->
+                <path
+                    d="M ${mid - 3} 5.5
+                       C ${mid - 3} 3.8 ${mid - 1.8} 2.7 ${mid} 2.7
+                       C ${mid + 1.8} 2.7 ${mid + 3} 3.8 ${mid + 3} 5.5
+                       C ${mid + 3} 7.8 ${mid + 0.8} 11 ${mid} 11
+                       C ${mid - 0.8} 11 ${mid - 3} 7.8 ${mid - 3} 5.5 Z"
+                    fill="${this.opts.dotFill}"
                 />
             </svg>`;
     }
