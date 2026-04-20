@@ -87,15 +87,26 @@ const CURSOR_POSITION_RATIO = 0.144;
 const CURSOR_BIAS_PX = 0;             // fine-tune knob: try -1 or -2 for tiny left nudge
 const SCROLL_EASE = 0.18;             // LERP factor per RAF frame
 
-// ── [L9] Padding-aware cursor X ──────────────────────────────────────────────
-// Uses padL + contentWidth * ratio so safe-area padding doesn't drift the cursor.
-// Called at loop start (captured in closure) and in playerPositionChanged.
+// ── [L9] Padding-aware cursor helpers ────────────────────────────────────────
+// getFixedCursorX  → cursor position in CONTAINER box space (used for overlay left)
+// getCursorSurfaceX → cursor position in SURFACE/SVG space (used for all scroll math)
+//
+// KEY: beatX values from boundsLookup.onNotesX are in surface/SVG space (no padding).
+//      The overlay is positioned in container box space (includes padL).
+//      All scroll targets must use surface space: targetScrollLeft = beatX - cursorSurfaceX
+//      Confirmed probe: padL=62, beatX=120, cursorBoxX=182, cursorSurfaceX=120, delta=0 ✅
 function getFixedCursorX(container: HTMLElement): number {
     const cs = getComputedStyle(container);
     const padL = parseFloat(cs.paddingLeft || '0');
     const padR = parseFloat(cs.paddingRight || '0');
     const contentW = container.clientWidth - padL - padR;
-    return Math.round(padL + contentW * CURSOR_POSITION_RATIO + CURSOR_BIAS_PX);
+    return Math.round(padL + contentW * CURSOR_POSITION_RATIO + CURSOR_BIAS_PX); // container box space
+}
+
+function getCursorSurfaceX(container: HTMLElement): number {
+    const cs = getComputedStyle(container);
+    const padL = parseFloat(cs.paddingLeft || '0');
+    return getFixedCursorX(container) - padL; // surface/SVG space — use for all scroll math
 }
 
 // ── [L1-fix] Landscape Fixed Cursor Overlay ───────────────────────────────────
@@ -155,12 +166,9 @@ function landscapeInitialAnchor(
         const trackSet: Set<number> = api?.tracks
             ? new Set(api.tracks.map((t: any) => t.index as number))
             : new Set([0]);
-        const fixedCursorX = getFixedCursorX(container);
+        const cursorSurfaceX = getCursorSurfaceX(container); // [coord-fix] SVG space
         const REACH_MARGIN = 4;
-        // V112 TODO: replace ratio-based floor with dynamic beat1X probe.
-        // beat1X=115.916 is too close to cursorX on any device to be ratio-stable.
-        // Interim: REACH_MARGIN=4 gives image-1 result (cursor just past TAB block).
-        const reachableFloor = fixedCursorX + REACH_MARGIN;
+        const reachableFloor = cursorSurfaceX + REACH_MARGIN; // [coord-fix] both in surface space
         const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
         for (const probe of PROBE_TICKS) {
             const r = tickCache.findBeat(trackSet, probe);
@@ -170,10 +178,10 @@ function landscapeInitialAnchor(
                 ? bb.onNotesX
                 : bb.visualBounds.x + bb.visualBounds.w / 2;
             if (beatX >= reachableFloor) {
-                const snap = Math.max(0, beatX - fixedCursorX);
+                const snap = Math.max(0, beatX - cursorSurfaceX); // [coord-fix]
                 container.scrollLeft = snap;
                 targetScrollLeftRef.current = snap;
-                console.log('📍 V112 landscapeInitialAnchor ✅', { beatX, fixedCursorX, snap, probe });
+                console.log('📍 V112 landscapeInitialAnchor ✅', { beatX, cursorSurfaceX, snap, probe });
                 return;
             }
         }
@@ -402,8 +410,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // If container resizes, loop restarts via ResizeObserver → fresh fixedCursorX.
     const startLandscapeScrollLoop = useCallback((container: HTMLElement, api: any) => {
         if (landscapeScrollRafRef.current !== null) return;
-        const fixedCursorX = getFixedCursorX(container); // [L9] padding-aware, once per start
-        console.log('🎬 V112 landscape scroll loop started — fixedCursorX=', fixedCursorX);
+        const cursorSurfaceX = getCursorSurfaceX(container); // [L9] SVG space — no padding offset
+        console.log('🎬 V112 landscape scroll loop started — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
             const state = landscapeScrollStateRef.current;
@@ -414,8 +422,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 ));
                 const interpolatedX = state.curBeatX + (state.nextBeatX - state.curBeatX) * progress;
                 const maxScroll = container.scrollWidth - container.clientWidth;
+                // [coord-fix] beatX is in surface space; cursorSurfaceX is also surface space ✅
                 targetScrollLeftRef.current = Math.max(0, Math.min(
-                    interpolatedX - fixedCursorX,
+                    interpolatedX - cursorSurfaceX,
                     maxScroll
                 ));
             }
@@ -707,50 +716,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
 
-                    // ── [L11] State prime: resolve beat NOW and snap scroll ───
-                    // Eliminates cold-start window where RAF loop has no state to work with.
+                    // ── [L11] State prime after curtain drop ─────────────────
                     if (isStripRender) {
                         requestAnimationFrame(() => {
                             const ctr = containerRef.current;
-                            if (!ctr) return;
-                            const tickCache = (api as any).tickCache;
-                            const bounds = api?.renderer?.boundsLookup;
-                            if (!tickCache?.findBeat || !bounds?.findBeat) return;
-                            const trackSet = getTrackSet(api);
-                            const tick = api.tickPosition ?? 0;
-                            const r = tickCache.findBeat(trackSet, tick);
-                            const bb = r?.beat ? bounds.findBeat(r.beat) : null;
-                            if (!bb?.visualBounds) return;
-                            const curBeatX = typeof bb.onNotesX === 'number'
-                                ? bb.onNotesX
-                                : bb.visualBounds.x + bb.visualBounds.w / 2;
-                            const beat = r.beat;
-                            const structuralDur = (beat.playbackDuration ?? beat.duration ?? 480) || 480;
-                            const { nextBeat, nextStart } = resolveNextBeatExpanded(
-                                api, trackSet, beat.absolutePlaybackStart ?? 0, beat
-                            );
-                            let nextBeatX = curBeatX;
-                            if (nextBeat) {
-                                const nbb = bounds.findBeat(nextBeat);
-                                if (nbb?.visualBounds) {
-                                    const nx = typeof nbb.onNotesX === 'number'
-                                        ? nbb.onNotesX
-                                        : nbb.visualBounds.x + nbb.visualBounds.w / 2;
-                                    if (nx > curBeatX) nextBeatX = nx;
-                                }
-                            }
-                            landscapeScrollStateRef.current = {
-                                curBeatX,
-                                nextBeatX,
-                                beatStart: beat.absolutePlaybackStart ?? 0,
-                                beatDur: structuralDur,
-                                lastTick: tick,
-                            };
-                            const fixedCursorX = getFixedCursorX(ctr);
-                            const snap = Math.max(0, curBeatX - fixedCursorX);
-                            targetScrollLeftRef.current = snap;
-                            ctr.scrollLeft = snap;
-                            console.log('🎯 V112 stateAligned', { curBeatX, fixedCursorX, snap });
+                            if (ctr) primeLandscapeState(ctr);
                         });
                     }
                 }, QUIET_MS);
@@ -760,6 +730,48 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
             api.soundFontLoaded?.on(() => notifyPlayerReady());
 
+            // ── Prime landscape scroll state helper ───────────────────────
+            // Called on play start AND after curtain drop. Resolves beat at
+            // current tick → writes landscapeScrollStateRef + snaps scrollLeft.
+            // Uses surface coords throughout (no padding offset in scroll math).
+            const primeLandscapeState = (ctr: HTMLElement) => {
+                const tickCache = (api as any).tickCache;
+                const bounds = api?.renderer?.boundsLookup;
+                if (!tickCache?.findBeat || !bounds?.findBeat) return;
+                const trackSet = getTrackSet(api);
+                const tick = api.tickPosition ?? 0;
+                const r = tickCache.findBeat(trackSet, tick);
+                const bb = r?.beat ? bounds.findBeat(r.beat) : null;
+                if (!bb?.visualBounds) return;
+                const curBeatX = typeof bb.onNotesX === 'number'
+                    ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+                const beat = r.beat;
+                const structuralDur = (beat.playbackDuration ?? beat.duration ?? 480) || 480;
+                const { nextBeat, nextStart } = resolveNextBeatExpanded(
+                    api, trackSet, beat.absolutePlaybackStart ?? 0, beat
+                );
+                let nextBeatX = curBeatX;
+                if (nextBeat) {
+                    const nbb = bounds.findBeat(nextBeat);
+                    if (nbb?.visualBounds) {
+                        const nx = typeof nbb.onNotesX === 'number'
+                            ? nbb.onNotesX : nbb.visualBounds.x + nbb.visualBounds.w / 2;
+                        if (nx > curBeatX) nextBeatX = nx;
+                    }
+                }
+                landscapeScrollStateRef.current = {
+                    curBeatX, nextBeatX,
+                    beatStart: beat.absolutePlaybackStart ?? 0,
+                    beatDur: structuralDur,
+                    lastTick: tick,
+                };
+                const cursorSurfaceX = getCursorSurfaceX(ctr); // [coord-fix] SVG space
+                const snap = Math.max(0, curBeatX - cursorSurfaceX);
+                targetScrollLeftRef.current = snap;
+                ctr.scrollLeft = snap;
+                console.log('🎯 V112 primeLandscapeState', { curBeatX, cursorSurfaceX, snap, tick });
+            };
+
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
                 if (seekInProgressRef.current) return;
@@ -768,6 +780,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const playing = (e.state ?? 0) === 1;
                     if (playing !== isPlayingRef.current) onPlayStateChange(playing);
                 }, 50);
+
+                // ── [L13] Prime-on-play: seed scroll state the moment play starts ──
+                // Eliminates 5-note cold-start delay. playerStateChanged fires before
+                // the first playerPositionChanged, so this is the earliest possible hook.
+                const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                if ((e.state ?? 0) === 1 && isStripNow) {
+                    const ctr = containerRef.current;
+                    if (ctr) {
+                        requestAnimationFrame(() => {
+                            primeLandscapeState(ctr);
+                            startLandscapeScrollLoop(ctr, api);
+                            console.log('[L13] prime+start on play', { tick: api.tickPosition });
+                        });
+                    }
+                }
             });
 
             // 🔒🔒🔒 CURSOR / SCROLL ENGINE — V112 ────────────────────────────
@@ -837,8 +864,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         console.log('🔄 V112 RAF self-heal triggered');
                         startLandscapeScrollLoop(container, api);
                     }
-
-                    return;
                 }
 
                 // ── Portrait cursor engine (🔒 unchanged from V111) ───────────
