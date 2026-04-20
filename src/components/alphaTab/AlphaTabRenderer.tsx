@@ -78,7 +78,7 @@ export interface AlphaTabRendererV102Props {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CURSOR_POSITION_RATIO = 0.20;   // 20% from left — aligns with TAB/Chord toggle button in nav tray
+const CURSOR_POSITION_RATIO = 0.19;   // 20% from left — aligns with TAB/Chord toggle button in nav tray
 // Confirmed working in image 1: cursor at ~191px (956px device)
 // beat1X_absolute ≈ 190–215px (SVG group-transform offset, not raw text x)
 // "Slightly left of TAB button" → try 0.18 or 0.19
