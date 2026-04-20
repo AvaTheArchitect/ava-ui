@@ -1313,10 +1313,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 if (seekTicks) seekTicks(bestTick);
                                 api.tickPosition = bestTick;
                                 resetBeatAcceptance();
+                                // Sync scroll target to drag position
                                 targetScrollLeftRef.current = container.scrollLeft;
+                                // ── Null stale scroll state so RAF loop doesn't snap back ──
+                                // Without this, the loop reads old curBeatX/nextBeatX and
+                                // LERPs targetScrollLeft back to the previous playhead position.
+                                // primeLandscapeState will repopulate on next play press.
+                                landscapeScrollStateRef.current = null;
                                 console.log('[V114] drag seek →', { bestTick, beatXUnderCursor, bestX });
                             }
-                            // Always restart loop (idles when paused, ready when play pressed)
+                            // Restart loop — idles with no state (paused), primes on play
                             startLandscapeScrollLoop(container, api);
                         } else {
                             startLandscapeScrollLoop(container, api);
