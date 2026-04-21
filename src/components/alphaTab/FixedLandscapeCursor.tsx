@@ -1,16 +1,19 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.5
+ * Version: v1.6
  * Date: April 20th, 2026
  *
- * v1.5 CHANGES:
- * ✅ [S7] getViewportX(): container stored, left = rect.left + getCursorBoxX().
- *         position:fixed requires viewport-space X. getCursorBoxX() returns
- *         container-box space — must add container's viewport left offset.
- *         On full-width pages rect.left=0 so it looked the same, but on iPhone
- *         with safe-area insets the container may not start at viewport left=0.
- * ✅ [S8] Dot transform added — matches MaestroCursor v4.6 scale/translate.
- * ✅ [S9] destroy() log corrected to v1.5.
+ * v1.6 CHANGES:
+ * ✅ [S10] Mount on document.body instead of wrapper.
+ *          Root cause: iOS Safari treats position:fixed as position:absolute when
+ *          any ancestor has overflow:hidden. <main> has overflow-x/y-hidden in
+ *          landscape — this trapped the cursor inside that scroll container.
+ *          document.body has no overflow containment, so fixed positioning works
+ *          correctly and z-index:20000 competes in the true global stacking context.
+ * ✅ [S11] High-contrast debug colors: black spine, red cap.
+ *          Confirms rendering+visibility before restoring purple palette.
+ *          Revert SPINE_COLOR/CAP_FILL to purple after confirmed working.
+ * 🔒 v1.5 PRESERVED: getViewportX(), DOM API renderSVG, dot transform, destroy()
  *
  * 🔒 v1.4 PRESERVED EXACTLY:
  *   ✅ position: fixed (stacking context bypass — cap above TopMenuTray)
@@ -25,8 +28,9 @@ const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
 const CAP_HEIGHT = 40;
 const TOP_RADIUS = 6;
-const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
-const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
+// ── Debug colors — revert to purple after confirmed working ──────────────────
+const SPINE_COLOR = 'rgba(0, 0, 0, 1)';        // [S11] black — max contrast
+const CAP_FILL = 'rgba(255, 0, 0, 0.95)';   // [S11] red — unmissable
 const DOT_FILL = 'white';
 
 export interface FixedLandscapeCursorOptions {
@@ -62,8 +66,13 @@ export class FixedLandscapeCursor {
         this.applyStyles(x);
         this.renderSVG();
 
-        wrapper.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.5: attached at viewportX=', x);
+        // [S10] Mount on document.body — escapes overflow:hidden containment.
+        // iOS Safari: position:fixed inside overflow:hidden ancestor → acts like
+        // position:absolute. <main> has overflow-x/y-hidden in landscape.
+        // document.body has no overflow trap. destroy() uses parentElement.removeChild
+        // so cleanup works correctly regardless of mount point.
+        document.body.appendChild(this.el);
+        console.log('✅ FixedLandscapeCursor v1.6: body-mounted at viewportX=', x);
     }
 
     // [S7] viewport-space X for position:fixed elements
@@ -78,7 +87,7 @@ export class FixedLandscapeCursor {
 
     destroy(): void {
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-        console.log('🧹 FixedLandscapeCursor v1.5: destroyed');  // [S9]
+        console.log('🧹 FixedLandscapeCursor v1.6: destroyed');
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -103,7 +112,7 @@ export class FixedLandscapeCursor {
     }
 
     private renderSVG(): void {
-        console.log('🔥 FixedLandscapeCursor v1.5 renderSVG — TEARDROP BUILD ACTIVE');
+        console.log('🔥 FixedLandscapeCursor v1.6 renderSVG — BODY MOUNT + DEBUG COLORS');
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
