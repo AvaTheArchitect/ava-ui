@@ -1,6 +1,6 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.3
+ * Version: v1.4
  * Date: April 20th, 2026
  * Cloned from v1.2 — DOM API replaces innerHTML (iOS Safari SVG parse fix).
  *
@@ -69,7 +69,7 @@ export class FixedLandscapeCursor {
         this.renderSVG();
 
         wrapper.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.3: attached at x=', x);
+        console.log('✅ FixedLandscapeCursor v1.4: attached at x=', x);
     }
 
     updateX(): void {
@@ -85,7 +85,13 @@ export class FixedLandscapeCursor {
 
     private applyStyles(x: number): void {
         Object.assign(this.el.style, {
-            position: 'absolute',
+            // [v1.4] position: fixed — bypasses all stacking context inheritance.
+            // The wrapper has z-index:10 (below TopMenuTray z-index:50), which caused
+            // the teardrop cap (top 40px) to paint behind the header.
+            // fixed elements compete in the global stacking context at their own z-index.
+            // z-index: 20000 > header (50) > everything else — cap always visible.
+            // left: Xpx in fixed = Xpx from viewport left — correct for full-width pages.
+            position: 'fixed',
             top: '0',
             bottom: '0',
             left: `${x}px`,
@@ -100,7 +106,7 @@ export class FixedLandscapeCursor {
     }
 
     private renderSVG(): void {
-        console.log('🔥 FixedLandscapeCursor v1.3 renderSVG — TEARDROP BUILD ACTIVE');
+        console.log('🔥 FixedLandscapeCursor v1.4 renderSVG — TEARDROP BUILD ACTIVE');
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
