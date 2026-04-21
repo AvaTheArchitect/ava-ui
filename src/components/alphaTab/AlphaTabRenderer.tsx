@@ -46,6 +46,7 @@ import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/Maestr
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
+import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
 export interface AlphaTabRendererV102Props {
@@ -679,6 +680,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     if (activeRendersRef.current !== 0) return;
 
+                    runUniversalLayoutPatches(h);        // all GP formats
                     if (isGP8) {
                         runGp8LayoutEngineV2(h);
                         forceRevealSurface(h, forceRevealCancelRef);
