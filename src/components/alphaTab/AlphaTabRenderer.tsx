@@ -359,6 +359,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         console.log('🎬 V113 scroll loop — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
+            // Suppress AlphaTab's native cursor on every frame — it re-injects after playerPositionChanged
+            const nativeBeat = container.querySelector('.at-cursor-beat') as HTMLElement | null;
+            if (nativeBeat && nativeBeat.style.display !== 'none') {
+                nativeBeat.style.display = 'none';
+                nativeBeat.style.opacity = '0';
+            }
             // [L16] Belt-and-suspenders: bail entirely if dragging.
             if (isDraggingRef.current) {
                 landscapeScrollRafRef.current = requestAnimationFrame(loop);
@@ -695,14 +701,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             landscapeCursorRef.current = new FixedLandscapeCursor(
                                 wrapper, h, () => getFixedCursorX(h)
                             );
-                            // Diagnostic: confirm mount + innerHTML
-                            const mounted = wrapper.querySelector('.maestro-landscape-cursor');
-                            console.log('[strip] FixedLandscapeCursor mounted?', !!mounted, mounted?.innerHTML?.slice(0, 80));
-                        } else {
-                            console.warn('[strip] wrapper (h.parentElement) is null — cursor not mounted');
                         }
-                        // Hide AlphaTab's native 1px cursor in landscape — do this every render.
-                        // AlphaTab may re-inject .at-cursor-* elements after each renderFinished.
+                        // Suppress AlphaTab's native cursors in landscape strip mode.
+                        // Also suppressed per-frame in the RAF loop (AlphaTab re-injects on position change).
                         h.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
                             .forEach(n => {
                                 (n as HTMLElement).style.display = 'none';
