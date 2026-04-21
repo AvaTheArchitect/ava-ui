@@ -598,6 +598,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (!el || !host.contains(el)) { cursorRef.current.destroy(); cursorRef.current = attachMaestroCursor(api, host); }
                     }
                     host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor').forEach(n => ((n as HTMLElement).style.display = 'none'));
+                    const trackSet = getTrackSet(api);
                     const step = () => {
                         if (renderTokenRef.current !== tok) return resolve(false);
                         forceRevealSurface(host, forceRevealCancelRef);
@@ -605,7 +606,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const bounds = api.renderer?.boundsLookup;
                         if (!tickCache || !bounds) { requestAnimationFrame(step); return; }
                         const tick = api.tickPosition ?? 0;
-                        const r = tickCache.findBeat(getTrackSet(api), tick);
+                        const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
                         cursorRef.current?.requestSnap();
@@ -1123,7 +1124,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             applyAxisLock(el, api);
-            if (landscapeCursorRef.current) landscapeCursorRef.current.updateX(); // repin on resize
+            if (landscapeCursorRef.current) landscapeCursorRef.current.updateLayout(); // [S15] repin X + top + height on resize
         });
         ro.observe(el);
         return () => ro.disconnect();

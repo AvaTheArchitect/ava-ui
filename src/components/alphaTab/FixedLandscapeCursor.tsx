@@ -1,22 +1,31 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.7
+ * Version: v1.8
  * Date: April 20th, 2026
  *
- * v1.7 CHANGES:
- * ✅ [S12] containerTop offset: cap and spine now start at container.getBoundingClientRect().top
- *          instead of top:0 (viewport top). Positions teardrop at notation area, not
- *          behind TopMenuTray. containerTop stored in constructor — valid post-curtain-drop.
- * ✅ [S13] Purple colors restored (confirmed rendering in v1.6 debug pass).
- * 🔒 v1.6 PRESERVED: document.body mount, getViewportX(), DOM API renderSVG, dot transform
+ * v1.8 CHANGES:
+ * ✅ [S14] cursor element IS the notation area — top + height set on el itself.
+ *          Children (spine, cap) use top:0 relative to el. Cleaner than threading
+ *          topOffset through renderSVG (v1.7 approach, which broke when containerTop=0).
+ * ✅ [S15] updateLayout() — updates left + top + height atomically.
+ *          Call from ResizeObserver (replace updateX()) and after mount.
+ *          Handles TopMenuTray height changes, orientation, iOS visual viewport shifts.
+ * ✅ [S16] getContainerTop() — scans fixed-position headers for their bottom edge.
+ *          container.getBoundingClientRect().top = 0 in landscape (container starts
+ *          at viewport top, just visually covered by fixed TopMenuTray). Trusting
+ *          the container rect was the v1.7 bug — header scan is the correct approach.
  *
- * 🔒 v1.4 PRESERVED EXACTLY:
- *   ✅ position: fixed (stacking context bypass — cap above TopMenuTray)
+ * 🔒 v1.6/v1.7 PRESERVED:
+ *   ✅ document.body mount (iOS overflow:hidden trap bypass)
  *   ✅ DOM API renderSVG — no innerHTML, no Safari sibling-drop bug
- *   ✅ Spine as plain <div>, cap as single createElementNS <svg>
- *   ✅ CSS drop-shadow on cap (no SVG filter defs)
- *   ✅ Constructor signature unchanged — AlphaTabRenderer.tsx needs no edits
- *   ✅ No shared DOM IDs — P2 dual-mount safe
+ *   ✅ Spine as plain <div>, cap as createElementNS <svg>
+ *   ✅ CSS drop-shadow, dot transform matching MaestroCursor v4.6
+ *   ✅ Purple colors, no shared DOM IDs, P2 dual-mount safe
+ *
+ * AlphaTabRenderer.tsx call site — NO CHANGES needed:
+ *   landscapeCursorRef.current = new FixedLandscapeCursor(wrapper, h, () => getFixedCursorX(h));
+ * ResizeObserver — change updateX() → updateLayout():
+ *   if (landscapeCursorRef.current) landscapeCursorRef.current.updateLayout();
  */
 
 const CURSOR_WIDTH = 12;
@@ -24,8 +33,8 @@ const SPINE_WIDTH = 2;
 const CAP_HEIGHT = 40;
 const TOP_RADIUS = 6;
 // ── Colors ────────────────────────────────────────────────────────────────────
-const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';   // purple — matches MaestroCursor
-const CAP_FILL = 'rgba(168, 85, 247, 0.45)';   // purple translucent
+const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';  // purple — matches MaestroCursor
+const CAP_FILL = 'rgba(168, 85, 247, 0.45)';  // purple translucent
 const DOT_FILL = 'white';
 
 export interface FixedLandscapeCursorOptions {
@@ -37,7 +46,6 @@ export interface FixedLandscapeCursorOptions {
 export class FixedLandscapeCursor {
     private el: HTMLElement;
     private container: HTMLElement;
-    private containerTop: number = 0;  // [S12] viewport-space top of notation area
     private getCursorBoxX: () => number;
     private opts: Required<FixedLandscapeCursorOptions>;
 
@@ -48,9 +56,6 @@ export class FixedLandscapeCursor {
         options: FixedLandscapeCursorOptions = {},
     ) {
         this.container = container;
-        // [S12] Snapshot container top at mount time (post curtain-drop, layout stable).
-        // Used to offset cap + spine so they start at the notation area, not viewport top.
-        this.containerTop = Math.round(container.getBoundingClientRect().top);
         this.getCursorBoxX = getCursorBoxX;
         this.opts = {
             spineColor: options.spineColor ?? SPINE_COLOR,
@@ -61,44 +66,75 @@ export class FixedLandscapeCursor {
         this.el = document.createElement('div');
         this.el.className = 'maestro-landscape-cursor';
 
-        const x = this.getViewportX();   // [S7] viewport space
-        this.applyStyles(x);
+        const x = this.getViewportX();
+        const top = this.getContainerTop();
+        this.applyStyles(x, top);
         this.renderSVG();
 
         // [S10] Mount on document.body — escapes overflow:hidden containment.
         // iOS Safari: position:fixed inside overflow:hidden ancestor → acts like
-        // position:absolute. <main> has overflow-x/y-hidden in landscape.
-        // document.body has no overflow trap. destroy() uses parentElement.removeChild
-        // so cleanup works correctly regardless of mount point.
+        // position:absolute. document.body has no overflow trap. destroy() uses
+        // parentElement.removeChild so cleanup works regardless of mount point.
         document.body.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.7: body-mounted', { viewportX: x, containerTop: this.containerTop });
+        console.log('✅ FixedLandscapeCursor v1.8: body-mounted', { viewportX: x, top });
     }
 
-    // [S7] viewport-space X for position:fixed elements
+    /** Re-pin left + top + height in one shot. Call from ResizeObserver + after mount. */
+    updateLayout(): void {
+        const x = this.getViewportX();
+        const top = this.getContainerTop();
+        this.el.style.left = `${x}px`;
+        this.el.style.top = `${top}px`;
+        this.el.style.height = `${Math.max(0, window.innerHeight - top)}px`;
+    }
+
+    /** Legacy compat — ResizeObserver should prefer updateLayout(). */
+    updateX(): void {
+        this.el.style.left = `${this.getViewportX()}px`;
+    }
+
+    destroy(): void {
+        if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
+        console.log('🧹 FixedLandscapeCursor v1.8: destroyed');
+    }
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
+    /** Viewport-space X for position:fixed elements. */
     private getViewportX(): number {
         const rect = this.container.getBoundingClientRect();
         return rect.left + this.getCursorBoxX();
     }
 
-    updateX(): void {
-        this.el.style.left = `${this.getViewportX()}px`;  // [S7]
+    /**
+     * Viewport-space top of visible notation area = bottom edge of fixed header.
+     * container.getBoundingClientRect().top = 0 in landscape — the container
+     * starts at viewport top but is visually covered by the fixed TopMenuTray.
+     * Trusting the container rect gives 0 (v1.7 bug). Instead, scan all
+     * fixed-position elements for the one with the largest bottom edge.
+     */
+    private getContainerTop(): number {
+        let maxBottom = 0;
+        const candidates = document.querySelectorAll(
+            'header, nav, [data-topmenutray], .top-menu-tray, [class*="TopMenu"], [class*="top-menu"]'
+        );
+        for (const el of Array.from(candidates)) {
+            const cs = getComputedStyle(el as HTMLElement);
+            if (cs.position !== 'fixed') continue;
+            const r = (el as HTMLElement).getBoundingClientRect();
+            if (r.bottom > maxBottom) maxBottom = r.bottom;
+        }
+        // Fallback: if no fixed header found, use safe-area top inset (~0 on most devices)
+        return Math.round(maxBottom);
     }
 
-    destroy(): void {
-        if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-        console.log('🧹 FixedLandscapeCursor v1.7: destroyed');  // ← was v1.6
-    }
-
-    // ── Private ───────────────────────────────────────────────────────────────
-
-    private applyStyles(x: number): void {
+    private applyStyles(x: number, top: number): void {
         Object.assign(this.el.style, {
-            // position:fixed — bypasses stacking context hierarchy.
-            // Competes globally at z-index:20000 > TopMenuTray(50) > everything.
-            // left uses viewport X (rect.left + cursorBoxX), not container-relative.
+            // [S14] el IS the notation area — top + height position it below header.
+            // Children use top:0 relative to this element (no topOffset threading needed).
             position: 'fixed',
-            top: '0',
-            bottom: '0',
+            top: `${top}px`,
+            height: `${Math.max(0, window.innerHeight - top)}px`,
             left: `${x}px`,
             width: `${CURSOR_WIDTH}px`,
             transform: 'translateX(-50%)',
@@ -106,12 +142,12 @@ export class FixedLandscapeCursor {
             zIndex: '20000',
             background: 'transparent',
             overflow: 'visible',
-            willChange: 'left',
+            willChange: 'left, top, height',
         });
     }
 
     private renderSVG(): void {
-        console.log('🔥 FixedLandscapeCursor v1.7 renderSVG — containerTop=', this.containerTop);
+        console.log('🔥 FixedLandscapeCursor v1.8 renderSVG');
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
@@ -119,13 +155,12 @@ export class FixedLandscapeCursor {
         const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
         const baseY = capH - 8;
-        const topOffset = `${this.containerTop}px`;  // [S12] was missing — caused TS2304
 
-        // Spine — plain <div>, starts at notation area top
+        // Spine — plain <div>. top:0 = top of el = top of notation area. [S14]
         const spineDiv = document.createElement('div');
         Object.assign(spineDiv.style, {
             position: 'absolute',
-            top: topOffset,   // notation area, not viewport top
+            top: '0',
             bottom: '0',
             left: `${spineLeft}px`,
             width: `${SPINE_WIDTH}px`,
@@ -134,7 +169,7 @@ export class FixedLandscapeCursor {
             pointerEvents: 'none',
         });
 
-        // Cap — single SVG via DOM API (no innerHTML, no Safari sibling-drop)
+        // Cap — single SVG via DOM API (no innerHTML, no Safari sibling-drop bug)
         const ns = 'http://www.w3.org/2000/svg';
 
         const capSvg = document.createElementNS(ns, 'svg');
@@ -144,7 +179,7 @@ export class FixedLandscapeCursor {
         Object.assign(capSvg.style, {
             display: 'block',
             position: 'absolute',
-            top: topOffset,   // notation area, not viewport top
+            top: '0',   // [S14] top of el = top of notation area
             left: '0',
             overflow: 'visible',
             zIndex: '1',
