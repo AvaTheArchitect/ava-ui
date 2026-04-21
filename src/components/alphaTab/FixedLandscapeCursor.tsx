@@ -1,19 +1,14 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.6
+ * Version: v1.7
  * Date: April 20th, 2026
  *
- * v1.6 CHANGES:
- * ✅ [S10] Mount on document.body instead of wrapper.
- *          Root cause: iOS Safari treats position:fixed as position:absolute when
- *          any ancestor has overflow:hidden. <main> has overflow-x/y-hidden in
- *          landscape — this trapped the cursor inside that scroll container.
- *          document.body has no overflow containment, so fixed positioning works
- *          correctly and z-index:20000 competes in the true global stacking context.
- * ✅ [S11] High-contrast debug colors: black spine, red cap.
- *          Confirms rendering+visibility before restoring purple palette.
- *          Revert SPINE_COLOR/CAP_FILL to purple after confirmed working.
- * 🔒 v1.5 PRESERVED: getViewportX(), DOM API renderSVG, dot transform, destroy()
+ * v1.7 CHANGES:
+ * ✅ [S12] containerTop offset: cap and spine now start at container.getBoundingClientRect().top
+ *          instead of top:0 (viewport top). Positions teardrop at notation area, not
+ *          behind TopMenuTray. containerTop stored in constructor — valid post-curtain-drop.
+ * ✅ [S13] Purple colors restored (confirmed rendering in v1.6 debug pass).
+ * 🔒 v1.6 PRESERVED: document.body mount, getViewportX(), DOM API renderSVG, dot transform
  *
  * 🔒 v1.4 PRESERVED EXACTLY:
  *   ✅ position: fixed (stacking context bypass — cap above TopMenuTray)
@@ -28,9 +23,9 @@ const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
 const CAP_HEIGHT = 40;
 const TOP_RADIUS = 6;
-// ── Debug colors — revert to purple after confirmed working ──────────────────
-const SPINE_COLOR = 'rgba(0, 0, 0, 1)';        // [S11] black — max contrast
-const CAP_FILL = 'rgba(255, 0, 0, 0.95)';   // [S11] red — unmissable
+// ── Colors ────────────────────────────────────────────────────────────────────
+const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';   // purple — matches MaestroCursor
+const CAP_FILL = 'rgba(168, 85, 247, 0.45)';   // purple translucent
 const DOT_FILL = 'white';
 
 export interface FixedLandscapeCursorOptions {
@@ -41,7 +36,8 @@ export interface FixedLandscapeCursorOptions {
 
 export class FixedLandscapeCursor {
     private el: HTMLElement;
-    private container: HTMLElement;   // [S7] stored for viewport X conversion
+    private container: HTMLElement;
+    private containerTop: number = 0;  // [S12] viewport-space top of notation area
     private getCursorBoxX: () => number;
     private opts: Required<FixedLandscapeCursorOptions>;
 
@@ -51,7 +47,10 @@ export class FixedLandscapeCursor {
         getCursorBoxX: () => number,
         options: FixedLandscapeCursorOptions = {},
     ) {
-        this.container = container;   // [S7]
+        this.container = container;
+        // [S12] Snapshot container top at mount time (post curtain-drop, layout stable).
+        // Used to offset cap + spine so they start at the notation area, not viewport top.
+        this.containerTop = Math.round(container.getBoundingClientRect().top);
         this.getCursorBoxX = getCursorBoxX;
         this.opts = {
             spineColor: options.spineColor ?? SPINE_COLOR,
@@ -72,7 +71,7 @@ export class FixedLandscapeCursor {
         // document.body has no overflow trap. destroy() uses parentElement.removeChild
         // so cleanup works correctly regardless of mount point.
         document.body.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.6: body-mounted at viewportX=', x);
+        console.log('✅ FixedLandscapeCursor v1.7: body-mounted', { viewportX: x, containerTop: this.containerTop });
     }
 
     // [S7] viewport-space X for position:fixed elements
@@ -87,7 +86,7 @@ export class FixedLandscapeCursor {
 
     destroy(): void {
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-        console.log('🧹 FixedLandscapeCursor v1.6: destroyed');
+        console.log('🧹 FixedLandscapeCursor v1.7: destroyed');  // ← was v1.6
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -112,7 +111,7 @@ export class FixedLandscapeCursor {
     }
 
     private renderSVG(): void {
-        console.log('🔥 FixedLandscapeCursor v1.6 renderSVG — BODY MOUNT + DEBUG COLORS');
+        console.log('🔥 FixedLandscapeCursor v1.7 renderSVG — containerTop=', this.containerTop);
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
@@ -120,12 +119,13 @@ export class FixedLandscapeCursor {
         const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
         const baseY = capH - 8;
+        const topOffset = `${this.containerTop}px`;  // [S12] was missing — caused TS2304
 
-        // Spine — plain <div>, full height
+        // Spine — plain <div>, starts at notation area top
         const spineDiv = document.createElement('div');
         Object.assign(spineDiv.style, {
             position: 'absolute',
-            top: '0',
+            top: topOffset,   // notation area, not viewport top
             bottom: '0',
             left: `${spineLeft}px`,
             width: `${SPINE_WIDTH}px`,
@@ -144,7 +144,7 @@ export class FixedLandscapeCursor {
         Object.assign(capSvg.style, {
             display: 'block',
             position: 'absolute',
-            top: '0',
+            top: topOffset,   // notation area, not viewport top
             left: '0',
             overflow: 'visible',
             zIndex: '1',
@@ -159,7 +159,7 @@ export class FixedLandscapeCursor {
         );
         capPath.setAttribute('fill', this.opts.capFill);
 
-        // White dot — matches MaestroCursor v4.6 geometry + transform [S8]
+        // White dot — MaestroCursor v4.6 geometry + transform [S8]
         const dotCenterX = mid;
         const dotCenterY = 7.5;
         const dotScale = 1.18;
