@@ -542,7 +542,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (containerRef.current) applyAxisLock(containerRef.current, api);
                 }
 
-                if (trackProfile === 'songBookPageSparse') {
+                console.log('[profile]', { primaryTrackName, trackProfile, forceHorizontal: forceHorizontalRef.current });
+
+                // Sparse reset nukes systemsLayout, which removes "1–2 bars/row" constraint.
+                // Vocal tracks also resolve to songBookPageSparse but must NOT have that
+                // constraint removed — they need tight packing for lyrics readability.
+                const isVocalTrack = /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal)/i.test(primaryTrackName);
+                if (trackProfile === 'songBookPageSparse' && !isVocalTrack) {
                     const scoreAny = score as any;
                     const renderedTrack = tr[0] as any;
                     if (renderedTrack) { renderedTrack.systemsLayout = null; renderedTrack.defaultSystemsLayout = 0; }
@@ -680,10 +686,33 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     if (activeRendersRef.current !== 0) return;
 
+                    // Timeout guard: if a patch pass stalls (rare render weirdness),
+                    // log a warning and reveal anyway rather than blocking the curtain.
+                    // .finally() clears the timer so fast-resolving patches don't leave
+                    // a dangling setTimeout ticking after the curtain has already dropped.
+                    const withPatchTimeout = (p: Promise<void>, label: string, ms = 1000): Promise<void> => {
+                        let t: number | null = null;
+                        const timeout = new Promise<void>(resolve => {
+                            t = window.setTimeout(() => {
+                                console.warn(`[patch-timeout] ${label} exceeded ${ms}ms — revealing anyway`);
+                                resolve();
+                            }, ms);
+                        });
+                        return Promise.race([p, timeout]).finally(() => {
+                            if (t !== null) window.clearTimeout(t);
+                        });
+                    };
+
                     // Await both patch passes before curtain drop — prevents pre-patch
                     // layout from flashing on screen (bar numbers / section labels jumping).
-                    await runUniversalLayoutPatches(h);
-                    if (isGP8) await runGp8LayoutEngineV2(h);
+                    await withPatchTimeout(runUniversalLayoutPatches(h), 'universalLayoutPatches');
+                    // Stale-render token guard: a new renderStarted may have fired while
+                    // we were awaiting. If so, bail — the new render cycle owns the curtain.
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    if (isGP8) {
+                        await withPatchTimeout(runGp8LayoutEngineV2(h), 'gp8LayoutEngineV2');
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                    }
 
                     const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
 
