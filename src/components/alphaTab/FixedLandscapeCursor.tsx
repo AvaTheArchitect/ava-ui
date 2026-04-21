@@ -95,7 +95,11 @@ export class FixedLandscapeCursor {
         // If container starts at y:0 (fixed TopMenuTray is an overlay, not layout flow),
         // fall back to the measured bottom of any top-pinned fixed element.
         const headerBottom = this.getHeaderBottomFloor();
-        const visualTop = rect.top > 0 ? rect.top : headerBottom;
+        // Math.max: rect.top is sub-pixel (~0.4) in landscape — ">" guard fails.
+        // Taking the larger of the two always lands at headerBottom (80px) when
+        // the container starts at viewport top, and naturally uses rect.top when
+        // content is genuinely pushed below the header.
+        const visualTop = Math.max(rect.top, headerBottom);
 
         Object.assign(this.el.style, {
             left: `${viewportX}px`,
