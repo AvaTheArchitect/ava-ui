@@ -680,11 +680,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     if (activeRendersRef.current !== 0) return;
 
-                    runUniversalLayoutPatches(h);        // all GP formats
-                    if (isGP8) {
-                        runGp8LayoutEngineV2(h);
-                        forceRevealSurface(h, forceRevealCancelRef);
-                    }
+                    // Await both patch passes before curtain drop — prevents pre-patch
+                    // layout from flashing on screen (bar numbers / section labels jumping).
+                    await runUniversalLayoutPatches(h);
+                    if (isGP8) await runGp8LayoutEngineV2(h);
 
                     const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
 

@@ -138,6 +138,9 @@ function diagnoseRow(svg: SVGSVGElement, i: number, anchors: RowAnchors): void {
 }
 
 // ─── Lyrics pass ─────────────────────────────────────────────────────────────
+// TODO: Lyrics can overlap on dense syllables. Requires lane policy (wrap /
+// collision avoidance / multi-line layout). Deferred to Option A overlay lanes.
+// Do not fix here — this is a layout policy problem, not a patch correctness bug.
 
 function fixLyrics(svg: SVGSVGElement, anchors: RowAnchors): number {
   const { svgHeight } = anchors;
@@ -260,77 +263,79 @@ function applyRowPlan(plan: RowPlan): void {
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
-export function runGp8LayoutEngineV2(containerEl: HTMLElement): void {
+/**
+ * runGp8LayoutEngineV2 — returns a Promise that resolves only after both
+ * rAF frames AND the GP8 mutation pass complete. Caller awaits after
+ * runUniversalLayoutPatches() and before curtain drop.
+ */
+export function runGp8LayoutEngineV2(containerEl: HTMLElement): Promise<void> {
   console.log(`[GP8] runGp8LayoutEngineV2 called — MODE="${MODE}"`);
+  return new Promise((resolve) => {
+    const run = () => {
+      let firstStaffRowSeen = false;
+      const svgRows =
+        containerEl.querySelectorAll<SVGSVGElement>("svg.at-surface-svg");
+      console.log("[GP8] svg.at-surface-svg rows found:", svgRows.length);
 
-  const run = () => {
-    let firstStaffRowSeen = false;
-    const svgRows =
-      containerEl.querySelectorAll<SVGSVGElement>("svg.at-surface-svg");
-    console.log("[GP8] svg.at-surface-svg rows found:", svgRows.length);
-
-    svgRows.forEach((svg, i) => {
-      if (!isStaffSvg(svg)) {
-        console.log(`[GP8] row[${i}] skipped (no staff lines)`);
-        return;
-      }
-      const anchors = getRowAnchors(svg);
-
-      // Always diagnose regardless of mode
-      diagnoseRow(svg, i, anchors);
-      if (MODE === "diagnose") return; // 🔒 zero DOM writes
-
-      // Lyrics — runs in lyricsOnly + full
-      const lyricsMoved = fixLyrics(svg, anchors);
-      if (lyricsMoved)
-        console.log(
-          `[GP8] row[${i}] lyrics pinned: ${lyricsMoved} nodes → y=${(anchors.svgHeight - LYRIC_MARGIN).toFixed(1)}`,
-        );
-
-      // Tempo cluster — GP8 encoding; pass V2 anchors in "native" mode
-      const allTextNodes = Array.from(
-        svg.querySelectorAll<SVGTextElement>("text"),
-      );
-      const tempoNodes = allTextNodes.filter((t) => {
-        const norm = (t.textContent ?? "").replace(/\u00A0/g, " ").trim();
-        return /^=\s*\d+\s*$/.test(norm);
-      });
-      const sectionLabelNode =
-        allTextNodes.find((t) => {
-          const style = (t.getAttribute("style") ?? "").toLowerCase();
-          if (!style.includes("bold") || !style.includes("georgia"))
-            return false;
-          const txt = (t.textContent ?? "").trim();
-          return !!txt && !/^=\s*\d+/.test(txt) && !TRACK_LABELS.test(txt);
-        }) ?? null;
-
-      if (tempoNodes.length > 0) {
-        applyTempoClusterForSvg(
-          svg,
-          i,
-          {
-            barNumberY: anchors.barNumberY,
-            bar1X: null,
-            sectionLabelNode,
-            tempoNodes,
-          },
-          { mode: "native", debugBox: false },
-        );
-      }
-
-      firstStaffRowSeen = true;
-
-      // Above-staff lane pass — only in full mode
-      if (MODE === "full") {
-        const candidates = collectCandidates(svg, anchors);
-        if (candidates.length) {
-          const plan = buildRowPlan(candidates, anchors);
-          applyRowPlan(plan);
-          svg.dataset["laneHeadroom"] = String(plan.topHeadroom);
+      svgRows.forEach((svg, i) => {
+        if (!isStaffSvg(svg)) {
+          console.log(`[GP8] row[${i}] skipped (no staff lines)`);
+          return;
         }
-      }
-    });
-  };
+        const anchors = getRowAnchors(svg);
 
-  requestAnimationFrame(() => requestAnimationFrame(run));
+        diagnoseRow(svg, i, anchors);
+        if (MODE === "diagnose") return;
+
+        const lyricsMoved = fixLyrics(svg, anchors);
+        if (lyricsMoved)
+          console.log(
+            `[GP8] row[${i}] lyrics pinned: ${lyricsMoved} nodes → y=${(anchors.svgHeight - LYRIC_MARGIN).toFixed(1)}`,
+          );
+
+        const allTextNodes = Array.from(
+          svg.querySelectorAll<SVGTextElement>("text"),
+        );
+        const tempoNodes = allTextNodes.filter((t) => {
+          const norm = (t.textContent ?? "").replace(/\u00A0/g, " ").trim();
+          return /^=\s*\d+\s*$/.test(norm);
+        });
+        const sectionLabelNode =
+          allTextNodes.find((t) => {
+            const style = (t.getAttribute("style") ?? "").toLowerCase();
+            if (!style.includes("bold") || !style.includes("georgia"))
+              return false;
+            const txt = (t.textContent ?? "").trim();
+            return !!txt && !/^=\s*\d+/.test(txt) && !TRACK_LABELS.test(txt);
+          }) ?? null;
+
+        if (tempoNodes.length > 0) {
+          applyTempoClusterForSvg(
+            svg,
+            i,
+            {
+              barNumberY: anchors.barNumberY,
+              bar1X: null,
+              sectionLabelNode,
+              tempoNodes,
+            },
+            { mode: "native", debugBox: false },
+          );
+        }
+
+        firstStaffRowSeen = true;
+
+        if (MODE === "full") {
+          const candidates = collectCandidates(svg, anchors);
+          if (candidates.length) {
+            const plan = buildRowPlan(candidates, anchors);
+            applyRowPlan(plan);
+            svg.dataset["laneHeadroom"] = String(plan.topHeadroom);
+          }
+        }
+      });
+      resolve();
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  });
 }
