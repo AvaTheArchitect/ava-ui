@@ -31,8 +31,9 @@
 
 const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
-const CAP_HEIGHT = 50;   // [S21] proportional to landscape strip (~300px tall)
+const CAP_HEIGHT = 90;   // [S21] matches Cipher v1.7 — proportional to landscape strip
 const TOP_RADIUS = 6;
+const CURSOR_TOP_OFFSET = 80;   // ← TURN THIS KNOB ↑ to push cursor down into notation
 // ── Colors ────────────────────────────────────────────────────────────────────
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
 const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
@@ -99,7 +100,7 @@ export class FixedLandscapeCursor {
         // Taking the larger of the two always lands at headerBottom (80px) when
         // the container starts at viewport top, and naturally uses rect.top when
         // content is genuinely pushed below the header.
-        const visualTop = Math.max(rect.top, headerBottom);
+        const visualTop = Math.max(rect.top, headerBottom) + CURSOR_TOP_OFFSET;
 
         Object.assign(this.el.style, {
             left: `${viewportX}px`,
@@ -110,8 +111,9 @@ export class FixedLandscapeCursor {
             opacity: '1',
         });
 
-        // [S20] Maestro overhang — cap peeks 26px above notation strip top.
-        if (this.capSvg) this.capSvg.style.top = '-26px';
+        // Cap starts at notation area top (0 = top of cursor el = 80px viewport).
+        // No negative overhang — cap drops cleanly from the header/notation boundary.
+        if (this.capSvg) this.capSvg.style.top = '0px';
     }
 
     /** Legacy alias — ResizeObserver calls this; routes to updateLayout(). */
