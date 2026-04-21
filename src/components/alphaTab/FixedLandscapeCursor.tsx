@@ -33,7 +33,7 @@ const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
 const CAP_HEIGHT = 90;   // [S21] matches Cipher v1.7 — proportional to landscape strip
 const TOP_RADIUS = 6;
-const CURSOR_TOP_OFFSET = 90;   // ← TURN THIS KNOB ↑ to push cursor down into notation
+const CURSOR_TOP_OFFSET = 100;   // ← TURN THIS KNOB ↑ to push cursor down into notation
 // ── Colors ────────────────────────────────────────────────────────────────────
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
 const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
