@@ -1,40 +1,41 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.8
- * Date: April 20th, 2026
+ * Version: v1.9
+ * Date: April 21st, 2026
  *
- * v1.8 CHANGES:
- * ✅ [S14] cursor element IS the notation area — top + height set on el itself.
- *          Children (spine, cap) use top:0 relative to el. Cleaner than threading
- *          topOffset through renderSVG (v1.7 approach, which broke when containerTop=0).
- * ✅ [S15] updateLayout() — updates left + top + height atomically.
- *          Call from ResizeObserver (replace updateX()) and after mount.
- *          Handles TopMenuTray height changes, orientation, iOS visual viewport shifts.
- * ✅ [S16] getContainerTop() — scans fixed-position headers for their bottom edge.
- *          container.getBoundingClientRect().top = 0 in landscape (container starts
- *          at viewport top, just visually covered by fixed TopMenuTray). Trusting
- *          the container rect was the v1.7 bug — header scan is the correct approach.
+ * v1.9 CHANGES:
+ * ✅ [S17] getHeaderBottomFloor() — geometry-based scan (r.top <= 1) instead of
+ *          class-name matching. Catches Tailwind "fixed top-0 inset-x-0" header
+ *          that has no "menu"/"header" keyword. Returns 80px on current iPhone landscape.
+ * ✅ [S18] Viewport X conversion: viewportX = rect.left + cursorBoxX.
+ *          body-mount means left is screen space, not container space. Without this,
+ *          left:182px = 182px from screen edge, not 182px into the music strip.
+ * ✅ [S19] updateLayout() — atomic: left + top + height in one shot.
+ *          "Peace treaty" top: rect.top if trustworthy (>0), else headerBottomFloor.
+ *          height: rect.height (spans notation area only, not full viewport).
+ * ✅ [S20] capSvg ref stored → capSvg.style.top = '-26px' Maestro overhang.
+ *          Cap peeks 26px into gutter above staff, matching portrait MaestroCursor feel.
+ * ✅ [S21] CAP_HEIGHT = 50 — proportional to landscape notation strip height.
  *
- * 🔒 v1.6/v1.7 PRESERVED:
- *   ✅ document.body mount (iOS overflow:hidden trap bypass)
+ * 🔒 v1.6–v1.8 PRESERVED:
+ *   ✅ document.body mount (iOS overflow:hidden fixed-trap bypass)
  *   ✅ DOM API renderSVG — no innerHTML, no Safari sibling-drop bug
  *   ✅ Spine as plain <div>, cap as createElementNS <svg>
  *   ✅ CSS drop-shadow, dot transform matching MaestroCursor v4.6
  *   ✅ Purple colors, no shared DOM IDs, P2 dual-mount safe
  *
- * AlphaTabRenderer.tsx call site — NO CHANGES needed:
+ * AlphaTabRenderer.tsx — NO call-site changes needed.
  *   landscapeCursorRef.current = new FixedLandscapeCursor(wrapper, h, () => getFixedCursorX(h));
- * ResizeObserver — change updateX() → updateLayout():
- *   if (landscapeCursorRef.current) landscapeCursorRef.current.updateLayout();
+ *   ResizeObserver + visualViewport already call updateLayout() via updateX() alias.
  */
 
 const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
-const CAP_HEIGHT = 90;  // matches Cipher v1.7 disk — taller feels proportional to portrait
+const CAP_HEIGHT = 50;   // [S21] proportional to landscape strip (~300px tall)
 const TOP_RADIUS = 6;
 // ── Colors ────────────────────────────────────────────────────────────────────
-const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';  // purple — matches MaestroCursor
-const CAP_FILL = 'rgba(168, 85, 247, 0.45)';  // purple translucent
+const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
+const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
 const DOT_FILL = 'white';
 
 export interface FixedLandscapeCursorOptions {
@@ -48,6 +49,7 @@ export class FixedLandscapeCursor {
     private container: HTMLElement;
     private getCursorBoxX: () => number;
     private opts: Required<FixedLandscapeCursorOptions>;
+    private capSvg: SVGSVGElement | null = null;  // [S20] ref for overhang update
 
     constructor(
         wrapper: HTMLElement,
@@ -66,76 +68,81 @@ export class FixedLandscapeCursor {
         this.el = document.createElement('div');
         this.el.className = 'maestro-landscape-cursor';
 
-        const x = this.getViewportX();
-        const top = this.getContainerTop();
-        this.applyStyles(x, top);
+        this.applyBaseStyles();
         this.renderSVG();
 
-        // [S10] Mount on document.body — escapes overflow:hidden containment.
-        // iOS Safari: position:fixed inside overflow:hidden ancestor → acts like
-        // position:absolute. document.body has no overflow trap. destroy() uses
-        // parentElement.removeChild so cleanup works regardless of mount point.
+        // [S10] Body-mount escapes iOS overflow:hidden fixed-positioning trap.
         document.body.appendChild(this.el);
-        console.log('✅ FixedLandscapeCursor v1.8: body-mounted', { viewportX: x, top });
+
+        this.updateLayout();  // set left + top + height after mount
+        console.log('✅ FixedLandscapeCursor v1.9: body-mounted', {
+            viewportX: parseFloat(this.el.style.left),
+            top: parseFloat(this.el.style.top),
+            height: parseFloat(this.el.style.height),
+        });
     }
 
-    /** Re-pin left + top + height in one shot. Call from ResizeObserver + after mount. */
+    /** Atomic re-pin: left + top + height. Call from ResizeObserver + visualViewport. */
     updateLayout(): void {
-        const x = this.getViewportX();
-        const top = this.getContainerTop();
-        this.el.style.left = `${x}px`;
-        this.el.style.top = `${top}px`;
-        this.el.style.height = `${Math.max(0, window.innerHeight - top)}px`;
+        const rect = this.container.getBoundingClientRect();
+
+        // [S18] Convert container-space X → viewport-space X for body-mounted element.
+        // getFixedCursorX() returns px from container's left edge; rect.left offsets to screen.
+        const cursorBoxX = this.getCursorBoxX();
+        const viewportX = rect.left + cursorBoxX;
+
+        // [S17] "Peace treaty" Y: use rect.top if Safari reports it correctly (> 0).
+        // If container starts at y:0 (fixed TopMenuTray is an overlay, not layout flow),
+        // fall back to the measured bottom of any top-pinned fixed element.
+        const headerBottom = this.getHeaderBottomFloor();
+        const visualTop = rect.top > 0 ? rect.top : headerBottom;
+
+        Object.assign(this.el.style, {
+            left: `${viewportX}px`,
+            top: `${visualTop}px`,
+            height: `${rect.height}px`,
+            display: 'block',
+            visibility: 'visible',
+            opacity: '1',
+        });
+
+        // [S20] Maestro overhang — cap peeks 26px above notation strip top.
+        if (this.capSvg) this.capSvg.style.top = '-26px';
     }
 
-    /** Legacy compat — ResizeObserver should prefer updateLayout(). */
-    updateX(): void {
-        this.el.style.left = `${this.getViewportX()}px`;
-    }
+    /** Legacy alias — ResizeObserver calls this; routes to updateLayout(). */
+    updateX(): void { this.updateLayout(); }
 
     destroy(): void {
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
-        console.log('🧹 FixedLandscapeCursor v1.8: destroyed');
+        console.log('🧹 FixedLandscapeCursor v1.9: destroyed');
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    /** Viewport-space X for position:fixed elements. */
-    private getViewportX(): number {
-        const rect = this.container.getBoundingClientRect();
-        return rect.left + this.getCursorBoxX();
-    }
-
     /**
-     * Viewport-space top of visible notation area = bottom edge of fixed header.
-     * container.getBoundingClientRect().top = 0 in landscape — the container
-     * starts at viewport top but is visually covered by the fixed TopMenuTray.
-     * Trusting the container rect gives 0 (v1.7 bug). Instead, scan all
-     * fixed-position elements for the one with the largest bottom edge.
+     * [S17] Geometry-based fixed-header scan. Matches on r.top <= 1 (pinned to
+     * viewport top), NOT class names. Catches Tailwind "fixed top-0 inset-x-0"
+     * without needing to know the element's class. Returns largest bottom edge found.
+     * Console output confirmed: TopMenuTray bottom = 80.0px on iPhone landscape.
      */
-    private getContainerTop(): number {
+    private getHeaderBottomFloor(): number {
         let maxBottom = 0;
-        const candidates = document.querySelectorAll(
-            'header, nav, [data-topmenutray], .top-menu-tray, [class*="TopMenu"], [class*="top-menu"]'
-        );
-        for (const el of Array.from(candidates)) {
-            const cs = getComputedStyle(el as HTMLElement);
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+            if (el === this.el) continue;                          // skip self
+            const cs = getComputedStyle(el);
             if (cs.position !== 'fixed') continue;
-            const r = (el as HTMLElement).getBoundingClientRect();
-            if (r.bottom > maxBottom) maxBottom = r.bottom;
+            const r = el.getBoundingClientRect();
+            if (r.height <= 0) continue;
+            if (r.top <= 1 && r.bottom > maxBottom) maxBottom = r.bottom;
         }
-        // Fallback: if no fixed header found, use safe-area top inset (~0 on most devices)
         return Math.round(maxBottom);
     }
 
-    private applyStyles(x: number, top: number): void {
+    /** Base styles only — no top/height (those come from updateLayout). */
+    private applyBaseStyles(): void {
         Object.assign(this.el.style, {
-            // [S14] el IS the notation area — top + height position it below header.
-            // Children use top:0 relative to this element (no topOffset threading needed).
             position: 'fixed',
-            top: `${top}px`,
-            height: `${Math.max(0, window.innerHeight - top)}px`,
-            left: `${x}px`,
             width: `${CURSOR_WIDTH}px`,
             transform: 'translateX(-50%)',
             pointerEvents: 'none',
@@ -147,7 +154,7 @@ export class FixedLandscapeCursor {
     }
 
     private renderSVG(): void {
-        console.log('🔥 FixedLandscapeCursor v1.8 renderSVG');
+        console.log('🔥 FixedLandscapeCursor v1.9 renderSVG');
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
@@ -156,7 +163,7 @@ export class FixedLandscapeCursor {
         const spineLeft = mid - SPINE_WIDTH / 2;
         const baseY = capH - 8;
 
-        // Spine — plain <div>. top:0 = top of el = top of notation area. [S14]
+        // Spine — fills notation area (top:0/bottom:0 relative to cursor el)
         const spineDiv = document.createElement('div');
         Object.assign(spineDiv.style, {
             position: 'absolute',
@@ -169,9 +176,8 @@ export class FixedLandscapeCursor {
             pointerEvents: 'none',
         });
 
-        // Cap — single SVG via DOM API (no innerHTML, no Safari sibling-drop bug)
+        // Cap — top overridden to -26px in updateLayout() for Maestro overhang [S20]
         const ns = 'http://www.w3.org/2000/svg';
-
         const capSvg = document.createElementNS(ns, 'svg');
         capSvg.setAttribute('width', `${w}`);
         capSvg.setAttribute('height', `${capH}`);
@@ -179,7 +185,7 @@ export class FixedLandscapeCursor {
         Object.assign(capSvg.style, {
             display: 'block',
             position: 'absolute',
-            top: '0',   // [S14] top of el = top of notation area
+            top: '0',   // overridden to -26px by updateLayout()
             left: '0',
             overflow: 'visible',
             zIndex: '1',
@@ -194,7 +200,7 @@ export class FixedLandscapeCursor {
         );
         capPath.setAttribute('fill', this.opts.capFill);
 
-        // White dot — MaestroCursor v4.6 geometry + transform [S8]
+        // White dot — MaestroCursor v4.6 geometry + transform
         const dotCenterX = mid;
         const dotCenterY = 7.5;
         const dotScale = 1.18;
@@ -213,5 +219,7 @@ export class FixedLandscapeCursor {
         this.el.innerHTML = '';
         this.el.appendChild(spineDiv);
         this.el.appendChild(capSvg);
+
+        this.capSvg = capSvg;  // [S20] store ref for overhang update
     }
 }
