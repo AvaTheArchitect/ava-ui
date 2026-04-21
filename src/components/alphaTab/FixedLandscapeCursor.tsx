@@ -13,9 +13,9 @@
  * ✅ [S19] updateLayout() — atomic: left + top + height in one shot.
  *          "Peace treaty" top: rect.top if trustworthy (>0), else headerBottomFloor.
  *          height: rect.height (spans notation area only, not full viewport).
- * ✅ [S20] capSvg ref stored → capSvg.style.top = '-26px' Maestro overhang.
- *          Cap peeks 26px into gutter above staff, matching portrait MaestroCursor feel.
- * ✅ [S21] CAP_HEIGHT = 50 — proportional to landscape notation strip height.
+ * ✅ [S20] CAP_OVERHANG_PX = 0 constant — set to 26 to re-enable Maestro overhang once
+ *          staff is in final position. capSvg.style.top reads from constant, not hardcoded.
+ * ✅ [S21] CAP_HEIGHT = 90 — do not tune until GP8 lane compaction lands.
  *
  * 🔒 v1.6–v1.8 PRESERVED:
  *   ✅ document.body mount (iOS overflow:hidden fixed-trap bypass)
@@ -31,9 +31,18 @@
 
 const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
-const CAP_HEIGHT = 90;   // [S21] matches Cipher v1.7 — proportional to landscape strip
+const CAP_HEIGHT = 90;   // landscape — do not tune until GP8 lanes are normalized
+const CAP_OVERHANG_PX = 0;    // set to 26 to re-enable Maestro "peeks into gutter" feel
 const TOP_RADIUS = 6;
-const CURSOR_TOP_OFFSET = 100;   // ← TURN THIS KNOB ↑ to push cursor down into notation
+const CURSOR_TOP_OFFSET = 100;
+// ── CALIBRATION LOG ──────────────────────────────────────────────────────────
+// Measured April 21, 2026 on iPhone landscape (Dynamic Island device):
+//   headerBottom = 80px (TopMenuTray)
+//   visualTop = 80 + 100 = 180px → cursorTop: 180 ✅
+//   cursor tip touching G string (4th string) — correct pre-gp8-fix position.
+// After gp8 lane normalization moves notation up, re-run probe and adjust if needed.
+//   Target post-fix: tip at top of notation staff, ~top of high-E string area.
+// ─────────────────────────────────────────────────────────────────────────────
 // ── Colors ────────────────────────────────────────────────────────────────────
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
 const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
@@ -111,9 +120,9 @@ export class FixedLandscapeCursor {
             opacity: '1',
         });
 
-        // Cap starts at notation area top (0 = top of cursor el = 80px viewport).
-        // No negative overhang — cap drops cleanly from the header/notation boundary.
-        if (this.capSvg) this.capSvg.style.top = '0px';
+        // CAP_OVERHANG_PX = 0: cap starts flush at notation area top.
+        // Set to 26 once staff is in final position to re-enable Maestro overhang.
+        if (this.capSvg) this.capSvg.style.top = `${-CAP_OVERHANG_PX}px`;
     }
 
     /** Legacy alias — ResizeObserver calls this; routes to updateLayout(). */
@@ -191,7 +200,7 @@ export class FixedLandscapeCursor {
         Object.assign(capSvg.style, {
             display: 'block',
             position: 'absolute',
-            top: '0',   // overridden to -26px by updateLayout()
+            top: '0',   // overridden by updateLayout() via CAP_OVERHANG_PX
             left: '0',
             overflow: 'visible',
             zIndex: '1',
