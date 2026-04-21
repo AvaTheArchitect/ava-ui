@@ -30,7 +30,7 @@
 
 const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
-const CAP_HEIGHT = 40;
+const CAP_HEIGHT = 90;  // matches Cipher v1.7 disk — taller feels proportional to portrait
 const TOP_RADIUS = 6;
 // ── Colors ────────────────────────────────────────────────────────────────────
 const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';  // purple — matches MaestroCursor

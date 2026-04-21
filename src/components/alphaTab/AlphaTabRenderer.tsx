@@ -1106,6 +1106,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         api.playbackRange = (loopEnabled && playbackRange) ? playbackRange : null;
     }, [loopEnabled, playbackRange]);
 
+    // [S15] iOS orientation: visualViewport resize doesn't always trigger ResizeObserver.
+    // Re-pin cursor geometry on both window + visualViewport resize events.
+    useEffect(() => {
+        const onResize = () => landscapeCursorRef.current?.updateLayout();
+        window.addEventListener('resize', onResize);
+        window.visualViewport?.addEventListener('resize', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.visualViewport?.removeEventListener('resize', onResize);
+        };
+    }, []);
+
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
