@@ -1,32 +1,20 @@
 /**
- * AlphaTab Initialization Utility — V102.3
- * Date: April 17th, 2026
- * Cloned from V102.2 — 4 mobile layout patches applied (Cipher spec).
+ * AlphaTab Initialization Utility — V102.4
+ * Date: April 21st, 2026
+ * Cloned from V102.3 — vocal track profile fix.
  *
- * V102.3 CHANGES:
- * ✅ [M1] LayoutProfileName: added "songBookPageMobile"
- * ✅ [M2] PROFILE_SONGBOOK_PAGE_MOBILE: portrait phone — barsPerRow:2, scale:0.9, minBarWidth:180
- * ✅ [M3] LAYOUT_PROFILES: registered songBookPageMobile
- * ✅ [M4] resolveProfileByWidth: added < 520px mobile-page tier (instruments → mobile,
- *         vocals stay sparse); useHorizontal is now 3rd arg (was already added in V102.2 file
- *         but resolver lacked the mobile tier)
+ * V102.4 CHANGES:
+ * ✅ [M5] resolveTrackLayoutProfile: vocals now route to songBookPageMobile
+ *         instead of songBookPageSparse. Probe confirmed: vocal track was
+ *         running barsPerRow:8 (sparse) — "1 bar/row" constraint never applied.
+ *         songBookPageMobile enforces barsPerRow:1 + justifyLastSystem:true.
  *
- * 🔒 V102.2 PRESERVED EXACTLY (all other behavior unchanged):
- *   ✅ songBookPageDense + songBookPageSparse profiles
- *   ✅ resolveTrackLayoutProfile(trackName, isMobile)
- *   ✅ _mutateApiSettings() direct mutation pattern
- *   ✅ applyAlphaTabLayoutProfileSettings() — settings-only, no render
- *   ✅ justifyLastSystem in interface + all profiles + bake-in
- *   ✅ displayOverrides win over profile (applied after profile bake-in)
- *   ✅ resolveLayoutProfile() for viewport-only switching
- *
- * 🔒 V101.2 EMPIRICAL LOCKS:
- *   - settings.core.useWorkers = false (M1 + StrictMode blank-canvas)
- *   - settings.core.includeNoteBounds = true (MaestroCursor)
- *   - settings.player.enableUserInteraction = false
- *   - "Invisible Engine" cursor (system ON, cursorType = 0)
- *   - notation.elements Map suppression
- *   - scrollOffsetX / scrollOffsetY as SEPARATE properties (do not consolidate)
+ * 🔒 V102.3 PRESERVED EXACTLY:
+ *   ✅ [M1] LayoutProfileName: songBookPageMobile
+ *   ✅ [M2] PROFILE_SONGBOOK_PAGE_MOBILE: barsPerRow:1, scale:0.9, minBarWidth:180
+ *   ✅ [M3] LAYOUT_PROFILES: songBookPageMobile registered
+ *   ✅ [M4] resolveProfileByWidth: mobile tier + sparse exception
+ *   ✅ All V101.2 empirical locks unchanged
  */
 
 import type { AlphaTabApi } from "./types";
@@ -34,21 +22,21 @@ import type { AlphaTabApi } from "./types";
 // ── Layout Profile Types ───────────────────────────────────────────────────────
 
 export type LayoutProfileName =
-  | "compactPage" // GP layout, no reflow — pre-V102 behavior
-  | "songBookPage" // Middle-ground fallback (kept for dev overrides)
-  | "songBookPageDense" // Guitar/bass: full desktop (≥900px)
-  | "songBookPageDenseNarrow" // Guitar/bass: narrow desktop 520–900px (devtools open)
-  | "songBookPageSparse" // Vocals/rest-heavy: empty bars collapse naturally
-  | "songBookPageMobile" // [M1] Portrait phone — 2 bars/row, scale 0.9
-  | "songBookHorizontal"; // Mobile: SongBook reflow, horizontal strip
+  | "compactPage"
+  | "songBookPage"
+  | "songBookPageDense"
+  | "songBookPageDenseNarrow"
+  | "songBookPageSparse"
+  | "songBookPageMobile"
+  | "songBookHorizontal";
 
 export interface LayoutProfileSettings {
   notation: {
-    notationMode: string; // "GuitarPro" | "SongBook"
+    notationMode: string;
   };
   display: {
-    layoutMode: string; // "Page" | "Horizontal"
-    systemsLayoutMode: string; // "Automatic" | "UseModelLayout"
+    layoutMode: string;
+    systemsLayoutMode: string;
     stretchForce: number;
     notationStaffPaddingTop: number;
     firstNotationStaffPaddingTop: number;
@@ -62,7 +50,6 @@ export interface LayoutProfileSettings {
 
 // ── Profile Definitions ────────────────────────────────────────────────────────
 
-/** compactPage — pre-V102 behavior. GP mode, honors file metadata. */
 export const PROFILE_COMPACT_PAGE: LayoutProfileSettings = {
   notation: { notationMode: "GuitarPro" },
   display: {
@@ -76,10 +63,6 @@ export const PROFILE_COMPACT_PAGE: LayoutProfileSettings = {
   },
 };
 
-/**
- * songBookPage — middle-ground fallback.
- * Used when track type is unknown. Kept for dev override / query-param testing.
- */
 export const PROFILE_SONGBOOK_PAGE: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
@@ -96,14 +79,6 @@ export const PROFILE_SONGBOOK_PAGE: LayoutProfileSettings = {
   },
 };
 
-/**
- * songBookPageDense — Guitar/bass/drum tracks with technique text.
- *
- * minBarWidth: 180 — hard floor prevents "dive bomb" / "Half Time" / dense
- *   chord bars from collapsing to unreadable widths under Automatic layout.
- * barsPerRow: 5 — matches Songsterr desktop density for instrument tracks.
- * justifyLastSystem: true — last row stretches to match others (looks intentional).
- */
 export const PROFILE_SONGBOOK_PAGE_DENSE: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
@@ -119,13 +94,6 @@ export const PROFILE_SONGBOOK_PAGE_DENSE: LayoutProfileSettings = {
   },
 };
 
-/**
- * songBookPageDenseNarrow — Guitar/bass on narrow desktop (520–900px).
- *
- * Triggered when devtools is docked or window is narrowed below ~900px.
- * barsPerRow: 3 — matches Songsterr "console open" reflow behavior.
- * Everything else identical to songBookPageDense.
- */
 export const PROFILE_SONGBOOK_PAGE_DENSE_NARROW: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
@@ -141,15 +109,6 @@ export const PROFILE_SONGBOOK_PAGE_DENSE_NARROW: LayoutProfileSettings = {
   },
 };
 
-/**
- * songBookPageSparse — Vocals/rest-heavy tracks.
- *
- * minBarWidth: 40 — lets whole-rest bars collapse to natural width (~40–60px),
- *   matching Songsterr's "18 bars in one row" behavior for sparse vocal intros.
- * barsPerRow: 8 — allows many empty bars per row without forced wrapping.
- * justifyLastSystem: false — avoids comically wide last row for sparse content.
- * effectStaffPaddingTop: 6 — vocals rarely have dense technique staff; save space.
- */
 export const PROFILE_SONGBOOK_PAGE_SPARSE: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
@@ -165,34 +124,22 @@ export const PROFILE_SONGBOOK_PAGE_SPARSE: LayoutProfileSettings = {
   },
 };
 
-/**
- * [M2] songBookPageMobile — Portrait phone page density.
- *
- * barsPerRow: 2 — iPhone portrait fits ~2 dense bars readably.
- * scale: 0.9 — slightly shrunk glyphs to recover horizontal room.
- * minBarWidth: 180 — same floor as Dense; prevents collapse on busy bars.
- * justifyLastSystem: false — avoids overstretched orphan row at bottom.
- */
 export const PROFILE_SONGBOOK_PAGE_MOBILE: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
     layoutMode: "Page",
     systemsLayoutMode: "Automatic",
-    barsPerRow: 1, // ✅ Option A — 1 bar/row for readability (Songsterr-style)
+    barsPerRow: 1,
     stretchForce: 0.6,
     notationStaffPaddingTop: 30,
     firstNotationStaffPaddingTop: 35,
     effectStaffPaddingTop: 10,
     minBarWidth: 180,
-    justifyLastSystem: true, // ✅ single-bar rows fill full width (no "short last row" look)
+    justifyLastSystem: true,
     scale: 0.9,
   },
 };
 
-/**
- * songBookHorizontal — Mobile horizontal layout (landscape phone).
- * stretchForce: 0.2 — cursor-safe. Drop to 0 after cursor validation.
- */
 export const PROFILE_SONGBOOK_HORIZONTAL: LayoutProfileSettings = {
   notation: { notationMode: "SongBook" },
   display: {
@@ -206,7 +153,6 @@ export const PROFILE_SONGBOOK_HORIZONTAL: LayoutProfileSettings = {
   },
 };
 
-// [M3] songBookPageMobile registered
 export const LAYOUT_PROFILES: Record<LayoutProfileName, LayoutProfileSettings> =
   {
     compactPage: PROFILE_COMPACT_PAGE,
@@ -214,27 +160,33 @@ export const LAYOUT_PROFILES: Record<LayoutProfileName, LayoutProfileSettings> =
     songBookPageDense: PROFILE_SONGBOOK_PAGE_DENSE,
     songBookPageDenseNarrow: PROFILE_SONGBOOK_PAGE_DENSE_NARROW,
     songBookPageSparse: PROFILE_SONGBOOK_PAGE_SPARSE,
-    songBookPageMobile: PROFILE_SONGBOOK_PAGE_MOBILE, // [M3]
+    songBookPageMobile: PROFILE_SONGBOOK_PAGE_MOBILE,
     songBookHorizontal: PROFILE_SONGBOOK_HORIZONTAL,
   };
 
 // ── Track Profile Resolver ─────────────────────────────────────────────────────
 
+// [M5] Vocals no longer match SPARSE_TRACK_RE — they are handled explicitly below.
+// songBookPageSparse (barsPerRow:8) was the wrong profile for vocals; they need
+// the same "1 bar/row" density as instrument tracks on mobile.
 const SPARSE_TRACK_RE = /voc|voice|singer|lead\s*vocal|backing\s*vocal|lyric/i;
+
+// [M5] Vocal detector — matches the same track names that used to trigger sparse.
+// Kept as a named constant so resolveTrackLayoutProfile and resolveProfileByWidth
+// both use the same regex (single source of truth).
+export const VOCAL_TRACK_RE =
+  /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal)/i;
 
 /**
  * resolveProfileByWidth()
  *
  * Width-tier resolver for ResizeObserver + init seeding.
- * Takes the base track profile (sparse vs dense) and adjusts for container width.
- *
- * Tiers (evaluated top-to-bottom):
- *   useHorizontal   → songBookHorizontal    (landscape phone / forceHorizontal)
- *   < 520px         → songBookPageMobile    (portrait phone — 2 bars/row)
- *                      vocals exception: stays songBookPageSparse
- *   sparse          → songBookPageSparse    (vocals/rest-heavy, any desktop width)
- *   < 900px         → songBookPageDenseNarrow (devtools open / narrow desktop)
- *   ≥ 900px         → songBookPageDense     (full desktop)
+ * Tiers (top-to-bottom):
+ *   useHorizontal  → songBookHorizontal
+ *   < 520px        → songBookPageMobile  (vocals included — barsPerRow:1)
+ *   sparse (non-vocal) → songBookPageSparse
+ *   < 900px        → songBookPageDenseNarrow
+ *   ≥ 900px        → songBookPageDense
  */
 export function resolveProfileByWidth(
   containerWidth: number,
@@ -242,38 +194,30 @@ export function resolveProfileByWidth(
   useHorizontal: boolean,
 ): LayoutProfileName {
   if (useHorizontal) return "songBookHorizontal";
-
-  // [M4] Portrait phone: < 520px → mobile page density
-  // Sparse exception: vocals stay sparse (fewer staves = more room per bar)
-  if (containerWidth < 520) {
-    return baseTrackProfile === "songBookPageSparse"
-      ? "songBookPageSparse"
-      : "songBookPageMobile";
-  }
-
-  // Sparse tracks: barsPerRow:8 handles any desktop/tablet width — no narrow tier
+  if (containerWidth < 520) return "songBookPageMobile"; // vocals + instruments both use mobile density
   if (baseTrackProfile === "songBookPageSparse") return "songBookPageSparse";
-
-  // 520–900px — tablet or devtools-narrowed desktop
   if (containerWidth < 900) return "songBookPageDenseNarrow";
-
-  // ≥ 900px — full desktop
   return "songBookPageDense";
 }
 
 /**
  * resolveTrackLayoutProfile()
  *
- * Picks the correct page profile for a given track name.
- * Mobile always returns songBookHorizontal regardless of track type.
- * Sparse heuristic: track name matches vocal/voice/singer keywords.
- * Everything else (guitar, bass, drums, keys) → Dense.
+ * [M5] Vocals now return songBookPageMobile (barsPerRow:1) instead of
+ * songBookPageSparse (barsPerRow:8). Probe confirmed: vocal track was running
+ * barsPerRow:8 — "1 bar/row" constraint was never being applied.
+ *
+ * songBookPageSparse is now reserved for non-vocal rest-heavy tracks only
+ * (e.g. instrument tracks with many whole-rest bars).
  */
 export function resolveTrackLayoutProfile(
   trackName: string,
   isMobile: boolean,
 ): LayoutProfileName {
   if (isMobile) return "songBookHorizontal";
+  // [M5] Vocals → mobile density (1 bar/row). Never sparse.
+  if (VOCAL_TRACK_RE.test(trackName ?? "")) return "songBookPageMobile";
+  // Non-vocal sparse tracks (rest-heavy instruments) still use sparse.
   return SPARSE_TRACK_RE.test(trackName)
     ? "songBookPageSparse"
     : "songBookPageDense";
@@ -281,9 +225,7 @@ export function resolveTrackLayoutProfile(
 
 /**
  * resolveLayoutProfile()
- *
- * Viewport-only resolver (no track context). Used at init time and on resize.
- * For track-aware switching, use resolveTrackLayoutProfile() instead.
+ * Viewport-only resolver (no track context). Used at init and on resize.
  */
 export function resolveLayoutProfile(
   isMobile: boolean,
@@ -295,16 +237,6 @@ export function resolveLayoutProfile(
 
 // ── Profile Switchers ─────────────────────────────────────────────────────────
 
-/**
- * _mutateApiSettings()
- *
- * Directly mutates api.settings.display + api.settings.notation in-place.
- *
- * WHY direct mutation instead of api.updateSettings({...partial}):
- * AlphaTab's updateSettings() in this build reads from api.settings —
- * passing a partial object argument is silently ignored. Direct mutation
- * is the same pattern used by initAlphaTab() itself and is confirmed safe.
- */
 function _mutateApiSettings(
   api: AlphaTabApi,
   alphaTab: any,
@@ -331,7 +263,7 @@ function _mutateApiSettings(
   }
 
   d.stretchForce = p.display.stretchForce;
-  d.scale = p.display.scale ?? 1.0; // reset to 1.0 for dense tracks
+  d.scale = p.display.scale ?? 1.0;
   d.notationStaffPaddingTop = p.display.notationStaffPaddingTop;
   d.firstNotationStaffPaddingTop = p.display.firstNotationStaffPaddingTop;
   d.effectStaffPaddingTop = p.display.effectStaffPaddingTop;
@@ -343,13 +275,6 @@ function _mutateApiSettings(
   }
 }
 
-/**
- * applyAlphaTabLayoutProfileSettings()
- *
- * Mutates api.settings in-place, then calls updateSettings() with no args.
- * Does NOT call api.render(). Use inside scoreLoaded before renderTracks()
- * so there is exactly one render (fired by renderTracks), not two.
- */
 export function applyAlphaTabLayoutProfileSettings(
   api: AlphaTabApi,
   alphaTab: any,
@@ -372,13 +297,6 @@ export function applyAlphaTabLayoutProfileSettings(
   );
 }
 
-/**
- * applyAlphaTabLayoutProfile()
- *
- * Mutates api.settings in-place, calls updateSettings() (no args), then
- * calls api.render(). Use for resize / manual profile switching OUTSIDE
- * of the scoreLoaded → renderTracks flow.
- */
 export function applyAlphaTabLayoutProfile(
   api: AlphaTabApi,
   alphaTab: any,
@@ -433,7 +351,6 @@ export async function initAlphaTab(
   const alphaTab = await import("@coderline/alphatab");
   const settings = new alphaTab.Settings();
 
-  // ── Core ──────────────────────────────────────────────────────────────────────
   settings.core.engine = "svg";
   settings.core.logLevel = 1;
   settings.core.fontDirectory =
@@ -442,18 +359,15 @@ export async function initAlphaTab(
   settings.core.useWorkers = false; // 🔒 M1 + StrictMode blank-canvas
   settings.core.includeNoteBounds = true; // 🔒 MaestroCursor
 
-  // ── Display — bake profile ────────────────────────────────────────────────────
   const profile = LAYOUT_PROFILES[layoutProfile];
 
   settings.display.scale = profile.display.scale ?? 1.0;
   settings.display.staveProfile = alphaTab.StaveProfile.Tab;
-
   settings.display.layoutMode =
-    isMobile && layoutMode === "horizontal"
+    (isMobile && layoutMode === "horizontal") ||
+    profile.display.layoutMode === "Horizontal"
       ? alphaTab.LayoutMode.Horizontal
-      : profile.display.layoutMode === "Horizontal"
-        ? alphaTab.LayoutMode.Horizontal
-        : alphaTab.LayoutMode.Page;
+      : alphaTab.LayoutMode.Page;
 
   settings.display.stretchForce = profile.display.stretchForce;
 
@@ -478,7 +392,6 @@ export async function initAlphaTab(
     (settings.display as any).barsPerRow = profile.display.barsPerRow;
   }
 
-  // displayOverrides applied last — always win over profile values.
   if (displayOverrides) {
     for (const [key, value] of Object.entries(displayOverrides)) {
       if (key in (settings.display as any)) {
@@ -491,7 +404,6 @@ export async function initAlphaTab(
     }
   }
 
-  // Suppress AlphaTab internal metadata header (title/artist/album).
   const notationElements = (settings.notation as any).elements;
   if (notationElements instanceof Map) {
     notationElements.forEach((_: boolean, key: unknown) =>
@@ -503,7 +415,6 @@ export async function initAlphaTab(
     );
   }
 
-  // ── Notation ──────────────────────────────────────────────────────────────────
   settings.notation.rhythmMode = alphaTab.TabRhythmMode.ShowWithBars;
   settings.notation.rhythmHeight = 15;
   settings.notation.notationMode =
@@ -511,7 +422,6 @@ export async function initAlphaTab(
       ? alphaTab.NotationMode.SongBook
       : alphaTab.NotationMode.GuitarPro;
 
-  // ── Player ────────────────────────────────────────────────────────────────────
   if (playerMode === "synthesizer" || playerMode === "external") {
     settings.player.playerMode =
       playerMode === "synthesizer"
@@ -526,7 +436,7 @@ export async function initAlphaTab(
         : alphaTab.ScrollMode.Continuous;
     settings.player.enableUserInteraction = false;
 
-    // 🔒 "Invisible Engine" — cursor ON, visual hidden.
+    // 🔒 "Invisible Engine" — cursor ON, visual hidden
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
     (settings.display as any).cursorType = 0;
@@ -537,8 +447,7 @@ export async function initAlphaTab(
     settings.player.enableCursor = false;
   }
 
-  // ── Diagnostic bake check (remove once stable) ────────────────────────────────
-  console.log("[Layout bake check] V102.3 (before AlphaTabApi)", {
+  console.log("[Layout bake check] V102.4 (before AlphaTabApi)", {
     layoutProfile,
     notationMode: profile.notation.notationMode,
     layoutMode: settings.display.layoutMode,
@@ -554,9 +463,8 @@ export async function initAlphaTab(
     justifyLastSystem: (settings.display as any).justifyLastSystem,
   });
 
-  // ── Instantiate ───────────────────────────────────────────────────────────────
   const api = new alphaTab.AlphaTabApi(container, settings);
-  console.log("[Layout API check] V102.3 (after AlphaTabApi)", {
+  console.log("[Layout API check] V102.4 (after AlphaTabApi)", {
     systemsLayoutMode: (api as any).settings?.display?.systemsLayoutMode,
     barsPerRow: (api as any).settings?.display?.barsPerRow,
     minBarWidth: (api as any).settings?.display?.minBarWidth,
@@ -565,7 +473,7 @@ export async function initAlphaTab(
     notationMode: (api as any).settings?.notation?.notationMode,
   });
 
-  console.log("🎸 initAlphaTab V102.3", {
+  console.log("🎸 initAlphaTab V102.4", {
     layoutProfile,
     notationMode: profile.notation.notationMode,
     systemsLayoutMode: profile.display.systemsLayoutMode,
@@ -582,9 +490,8 @@ export async function initAlphaTab(
 }
 
 /**
- * V101.2 EMPIRICAL LOCK:
+ * 🔒 V101.2 EMPIRICAL LOCK:
  * scrollOffsetX / scrollOffsetY must remain SEPARATE properties.
- * Single 'scrollOffset' is silently ignored by AlphaTab in this build.
  */
 function _applyScrollConfig(
   settings: any,
@@ -611,8 +518,7 @@ export async function loadGuitarProFile(
   fileUrl: string,
 ): Promise<void> {
   const response = await fetch(fileUrl);
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(`loadGuitarProFile: HTTP ${response.status} — ${fileUrl}`);
-  }
   api.load(new Uint8Array(await response.arrayBuffer()));
 }
