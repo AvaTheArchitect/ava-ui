@@ -207,6 +207,9 @@ function fixDisplacedBarNumbers(
 
 /**
  * hideRepeatedTabClef — keeps TAB clef only on first staff row.
+ * Skips SMuFL time-signature digit glyphs (U+E080–E089) so mid-row
+ * time sig changes are not hidden alongside the TAB clef.
+ * Also skips U+E044 (barline-structure glyph confirmed by probe).
  */
 function hideRepeatedTabClef(svg: SVGSVGElement): void {
   let hidden = 0;
@@ -215,8 +218,11 @@ function hideRepeatedTabClef(svg: SVGSVGElement): void {
     const m = tf.match(/translate\(\s*([-\d.]+)/);
     if (!m) return;
     if (parseFloat(m[1]) >= 90) return;
-    const content = (g.querySelector("text")?.textContent ?? "").trim();
-    if (!content || /^[\x20-\x7E]+$/.test(content)) return;
+    const raw = (g.querySelector("text")?.textContent ?? "").trim();
+    if (!raw || /^[\x20-\x7E]+$/.test(raw)) return; // skip empty or ASCII
+    const cp = raw.codePointAt(0) ?? 0;
+    if (cp >= 0xe080 && cp <= 0xe089) return; // ✅ SMuFL time-sig digits — never hide
+    if (cp === 0xe044) return; // ✅ barline-structure glyph — never hide
     g.setAttribute("display", "none");
     hidden++;
   });

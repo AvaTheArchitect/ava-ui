@@ -46,6 +46,7 @@ import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/Maestr
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
+import { runGp8OverlaySuppression } from '@/lib/alphaTab/gp8OverlaySuppression';
 import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
@@ -260,6 +261,20 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
     return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
 }
 
+// ── GP8 URL detection — robust to Supabase signed URLs, proxy routes, query params ──
+// Cannot rely on api.score.fileName (undefined on mobile) or path suffix alone.
+// Checks substring patterns so /api/tab?file=song.gp and song.gp?token=... both match.
+function isGp8Url(fileUrl: string): boolean {
+    const u = (fileUrl ?? '').toLowerCase();
+    return (
+        u.includes('.gp8') ||
+        u.endsWith('.gp') ||
+        u.includes('.gp?') ||
+        u.includes('.gp&') ||
+        /[?&](filename|file|name)=([^&]+)\.gp8?($|&)/.test(u)
+    );
+}
+
 export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     fileUrl,
     trackIndices = [0],
@@ -432,9 +447,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         let destroyed = false;
         const token = ++initTokenRef.current;
 
-        const cleanUrl = fileUrl.split('?')[0];
-        const fileExt = cleanUrl.split('.').pop()?.toLowerCase() ?? '';
-        const isGP8 = fileExt === 'gp';
+        // Expose fileUrl for mobile debugging probe: window.__LAST_FILE_URL__
+        if (typeof window !== 'undefined') (window as any).__LAST_FILE_URL__ = fileUrl;
+
+        const isGP8 = isGp8Url(fileUrl);
 
         const init = async () => {
             const container = containerRef.current!;
@@ -706,11 +722,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     // Await both patch passes before curtain drop — prevents pre-patch
                     // layout from flashing on screen (bar numbers / section labels jumping).
                     await withPatchTimeout(runUniversalLayoutPatches(h), 'universalLayoutPatches');
-                    // Stale-render token guard: a new renderStarted may have fired while
-                    // we were awaiting. If so, bail — the new render cycle owns the curtain.
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     if (isGP8) {
                         await withPatchTimeout(runGp8LayoutEngineV2(h), 'gp8LayoutEngineV2');
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        await withPatchTimeout(runGp8OverlaySuppression(h), 'gp8OverlaySuppression');
                         if (renderTokenRef.current !== tokenAtFinish) return;
                     }
 
