@@ -836,12 +836,13 @@ export default function SynthPlayerPage() {
                 ref={mainScrollContainerRef}
                 className={`
         w-full
+        ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}
         ${isMobileLandscape
                         ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
                         : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain'}
         ${isHeaderShown && !isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
         transition-[padding] duration-300
-                `}
+    `}
             >
                 {error && (
                     <div className="px-4 mb-4">
