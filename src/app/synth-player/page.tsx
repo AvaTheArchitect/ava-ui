@@ -1,24 +1,28 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.8
- * Date: April 16th, 2026
- * Cloned from V102.7 — PWA landscape fixes applied.
+ * Synth Player Page — Phase 4 V102.16
+ * Date: May 2026
+ * Cloned from V102.15 — GPU-composited tray animation polish.
  *
- * V102.8 CHANGES:
- * ✅ [P1] <main> className ternary fixed — was literal text (missing ${}), now executes.
- * ✅ [P1] <main> style prop removed — maxWidth/100vw was part of strip-mode setup.
- * ✅ [P1] Header padding applies in both portrait AND landscape (removed !isMobileLandscape guard).
- * ✅ [P2] #maestro-player strip-mode styles removed (inline-block/max-content/h-full/paddingTop).
- * ✅ [P2] #maestro-player paddingBottom → calc(74px + env(safe-area-inset-bottom) + 24px).
+ * V102.16 CHANGES:
+ * ✅ [VA1] TopMenuTray wrapper: duration-300 → duration-200 ease-out + will-change-transform.
+ *          200ms ease-out matches Songsterr's snappier slide feel.
+ *          will-change-transform promotes the layer to GPU before animation fires.
+ *          No intent-guard logic touched.
  *
- * V102.7 PRESERVED EXACTLY:
- * ✅ isVocalTrack() vocal supreme override
- * ✅ Songsterr-style tone-first track scoring
- * ✅ CURSOR_V2_ACTIVE = true (MaestroCursorV2)
- * ✅ All transport/loop/mixer behavior
- * ✅ Song switching, signed URL cache
- * ✅ AlphaTabRendererV102 from AlphaTabRenderer (stable entrypoint)
+ * V102.15 LOCKED EXACTLY:
+ * ✅ [TG4-clean] All unconditional diagnostic logs removed (module, render, effect).
+ * ✅ Remaining debug output gated behind localStorage.getItem('maestro_header_debug') === '1'.
+ * ✅ Intent-guard architecture locked — do not modify without a new version tag.
+ * ✅ [TG1] wheel → window capture, filtered by el.contains(target). Sets userScrollIntentUntilRef 700ms on scroll-up.
+ * ✅ [TG2] pointerdown → window capture, same filter. Scrollbar heuristic: clientX > rect.right - 20. Sets intent 1000ms.
+ * ✅ [TG3] scroll-up reveal gated by userScrollIntentUntilRef.current > performance.now().
+ *          Programmatic auto-scroll (note click / cursor) cannot reveal tray.
+ * ✅ [TG-cleanup] Both window listeners removed with matching { capture: true }.
+ * ✅ [PS1b] Tray hides immediately when isPlaying → true.
+ * ✅ [PS3-removed] No auto-restore on pause.
+ * ✅ All V102.11/V102.10/V102.9/V102.7 changes intact.
  */
 
 import React, {
@@ -33,6 +37,7 @@ import { TopMenuTray, MobileToolsSlideout } from '@/components/audio/maestro/lay
 import { MyTabsPanel } from '@/components/audio/maestro/tabs/MyTabsPanel';
 import { NewTabPanel } from '@/components/audio/maestro/tabs/NewTabPanel';
 import { MetadataEditorPanel } from '@/components/audio/maestro/tabs/MetadataEditorPanel';
+import { YouTubePlayer } from '@/components/audio/maestro/media/YouTubePlayer';
 import {
     CountInOverlay,
     useSmartMetronome,
@@ -62,8 +67,15 @@ export default function SynthPlayerPage() {
     const isPlayingRef = useRef<boolean>(false);
     const [playerReady, setPlayerReady] = useState<boolean>(false);
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+    // [C5] audioSource is now state — was 'synth' as const
+    const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
-    const audioSource = 'synth' as const;
+    // ==================== YOUTUBE STATE ====================
+    const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
+    const [isYouTubeReady, setIsYouTubeReady] = useState(false);
+    const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+    const youtubePlayerRef = useRef<any>(null);
+    const pauseTransitionRef = useRef<boolean>(false);
 
     // ==================== MASTER VOLUME ====================
     const [masterVolume, setMasterVolume] = useState<number>(1.0);
@@ -130,50 +142,65 @@ export default function SynthPlayerPage() {
     const signedUrlRetryRef = useRef<Set<string>>(new Set());
 
     // ==================== FETCH SONGS + BATCH SIGN ====================
-    useEffect(() => {
-        async function load() {
-            const songs = await fetchSongs();
-            if (!songs.length) return;
-            const paths = songs
-                .map(s => s.file_path || (s.file_name && s.file_extension ? `${s.file_name}.${s.file_extension}` : null))
-                .filter(Boolean) as string[];
-            const { data: urlData } = await supabase.storage.from('tabs').createSignedUrls(paths, 3600);
-            if (urlData) {
-                const expiresAt = Date.now() + 55 * 60 * 1000;
-                urlData.forEach(entry => {
-                    if (entry.path && entry.signedUrl)
-                        signedUrlCacheRef.current.set(entry.path, { url: entry.signedUrl, expiresAt });
-                });
-                console.log(`✅ Phase 3: Batch signed ${urlData.length} URLs`);
-            }
-            const sortedSongs = songs
-                .slice()
-                .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' }));
-            setSongState(prev => ({
-                ...prev,
-                songs: sortedSongs,
-                currentSongId: sortedSongs[0]?.id ?? null,
-            }));
+    // [C1] Extracted to useCallback so NewTabPanel can trigger a re-fetch after upload.
+    // ?? preserves the currently playing song instead of jumping back to index 0.
+    const refetchSongs = useCallback(async () => {
+        const songs = await fetchSongs();
+        if (!songs.length) return;
+        const paths = songs
+            .map(s => s.file_path || (s.file_name && s.file_extension ? `${s.file_name}.${s.file_extension}` : null))
+            .filter(Boolean) as string[];
+        const { data: urlData } = await supabase.storage.from('tabs').createSignedUrls(paths, 3600);
+        if (urlData) {
+            const expiresAt = Date.now() + 55 * 60 * 1000;
+            urlData.forEach(entry => {
+                if (entry.path && entry.signedUrl)
+                    signedUrlCacheRef.current.set(entry.path, { url: entry.signedUrl, expiresAt });
+            });
+            console.log(`✅ Phase 3: Batch signed ${urlData.length} URLs`);
         }
-        load();
+        const sortedSongs = songs
+            .slice()
+            .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' }));
+        setSongState(prev => ({
+            ...prev,
+            songs: sortedSongs,
+            currentSongId: prev.currentSongId ?? sortedSongs[0]?.id ?? null,
+        }));
     }, []);
+    useEffect(() => { refetchSongs(); }, [refetchSongs]);
 
     const currentSong = useMemo(
         () => getSongById(songState.songs, songState.currentSongId || ''),
         [songState.songs, songState.currentSongId],
     );
 
+    // Derived YouTube ID — after currentSong so the reference is valid
+    const defaultYouTubeId = useMemo(() =>
+        (currentSong as any)?.youtubeVideoId ?? null,
+        [currentSong]);
+    const activeVideoId = currentVideoId || defaultYouTubeId;
+
+    // Reset video override when song changes
+    useEffect(() => {
+        setCurrentVideoId(null);
+        setIsYouTubeReady(false);
+    }, [defaultYouTubeId]);
+
     // ==================== SIGNED URL RESOLVER ====================
     useEffect(() => {
-        if (!currentSong?.file_name || !currentSong?.file_extension) return;
+        // [C4] Support file_path-only rows (new uploads) alongside legacy file_name+extension rows.
+        const path =
+            currentSong?.file_path ||
+            (currentSong?.file_name && currentSong?.file_extension
+                ? `${currentSong.file_name}.${currentSong.file_extension}`
+                : null);
+        if (!path) return;
         setSignedUrl(null);
         setSongInfo(null);
         setTracks([]);
         setSelectedTrack(0);
         setError(null);
-        const path =
-            currentSong.file_path ||
-            `${currentSong.file_name}.${currentSong.file_extension}`;
         signedUrlRetryRef.current.delete(path);
         const cached = signedUrlCacheRef.current.get(path);
         if (cached && cached.expiresAt > Date.now()) {
@@ -181,7 +208,7 @@ export default function SynthPlayerPage() {
         } else {
             supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
                 if (error || !data?.signedUrl) {
-                    setError(`Failed to load tab for "${currentSong.title}"`);
+                    setError(`Failed to load tab for "${currentSong?.title ?? 'this tab'}"`);
                     return;
                 }
                 const expiresAt = Date.now() + 55 * 60 * 1000;
@@ -190,6 +217,47 @@ export default function SynthPlayerPage() {
             });
         }
     }, [currentSong]);
+
+    // ==================== EXTERNAL CLOCK DRIVER ====================
+    // RAF-based monotonic clock driver for Original mode cursor.
+    // - Monotonic clamp prevents AlphaTab seeing backward time (main jitter cause).
+    // - RAF produces smoother cursor motion than setInterval.
+    // - State dedup in handleYouTubeStateChange prevents api.play() spam during buffering.
+    const lastDrivenMsRef = useRef<number>(0);
+    const externalClockRafRef = useRef<number | null>(null);
+    const SEEK_BACKWARD_THRESHOLD_MS = 800; // treat as user seek if time jumps back > this
+
+    useEffect(() => {
+        if (audioSource !== 'original') return;
+        if (!api || !isYouTubeReady) return;
+        const out = (api.player?.output as any) ?? null;
+        if (!out || typeof out.updatePosition !== 'function') return;
+
+        const tick = () => {
+            if (isPlayingRef.current && youtubePlayerRef.current?.getCurrentTime) {
+                const ytSecs = youtubePlayerRef.current.getCurrentTime();
+                const offset = (currentSong as any)?.videoStartOffset ?? 0;
+                const rawMs = Math.max(0, ytSecs - offset) * 1000;
+                const lastMs = lastDrivenMsRef.current;
+                // Allow genuine user seeks (big backward jump), otherwise clamp monotonic
+                const isBigBackwardSeek = rawMs < lastMs - SEEK_BACKWARD_THRESHOLD_MS;
+                const timeMs = isBigBackwardSeek ? rawMs : Math.max(lastMs, rawMs);
+                lastDrivenMsRef.current = timeMs;
+                out.updatePosition(timeMs);
+                currentTimeRef.current = timeMs;
+            }
+            externalClockRafRef.current = requestAnimationFrame(tick);
+        };
+
+        externalClockRafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (externalClockRafRef.current !== null) {
+                cancelAnimationFrame(externalClockRafRef.current);
+                externalClockRafRef.current = null;
+            }
+            lastDrivenMsRef.current = 0;
+        };
+    }, [audioSource, api, isYouTubeReady, currentSong]);
 
     // ==================== TIME TRACKING ====================
     const currentTimeRef = useRef<number>(0);
@@ -234,7 +302,90 @@ export default function SynthPlayerPage() {
         };
     }, []);
 
-    // ==================== AUTH DIAGNOSTICS ====================
+    // ==================== TRAY AUTO-HIDE (scroll + playback) ====================
+    // Songsterr rule: tray hides when playing starts, ONLY comes back from:
+    //   (a) manual scroll-up gesture while paused, or (b) scrolling to within 10px of top.
+    // No auto-restore on pause — user must actively scroll up to reveal.
+    //
+    // [TG1] wheel → window capture: AlphaTab's .at-surface SVG swallows wheel events
+    //        before they bubble to <main>. Capture on window sees them first.
+    // [TG2] pointerdown → window capture: same reason. Scrollbar detection via clientX.
+    // [TG3] scroll-up reveal gated by userScrollIntentUntilRef — note clicks that cause
+    //        programmatic auto-scroll no longer accidentally reveal the tray.
+
+    // [PS2] Tracks previous scrollTop for direction detection.
+    const lastScrollTopRef = useRef<number>(0);
+    // [TG3] Set by wheel/scrollbar-pointer events; gating scroll-up → show tray.
+    const userScrollIntentUntilRef = useRef<number>(0);
+    // [PS2] Unused guards kept for forward compatibility.
+    const suppressHeaderRevealUntilRef = useRef<number>(0);
+    const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+    // [TG1] True when the pointer went down on the scroll container's scrollbar/rail.
+    const isPointerOnScrollbarRef = useRef<boolean>(false);
+
+    // [PS1b] Hide tray the moment playback starts.
+    useEffect(() => {
+        if (isPlaying) setIsHeaderVisible(false);
+    }, [isPlaying]);
+
+    // [PS2 + TG1/TG2/TG3] Scroll / wheel / pointer intent listeners.
+    useEffect(() => {
+        const el = mainScrollContainerRef.current;
+        if (!el) return;
+
+        // [TG1] Wheel on window capture — AlphaTab canvas swallows bubble path.
+        // Filter: only act when target is inside <main>.
+        const onWheel = (e: WheelEvent) => {
+            if (!el.contains(e.target as Node)) return;
+            if (e.deltaY < 0) userScrollIntentUntilRef.current = performance.now() + 700;
+        };
+        window.addEventListener('wheel', onWheel, { passive: true, capture: true });
+
+        // [TG2] Pointerdown on window capture — same reason.
+        // Scrollbar heuristic: clientX near the right edge of <main>'s bounding rect.
+        const onPointerDown = (e: PointerEvent) => {
+            if (!el.contains(e.target as Node)) return;
+            pointerStartRef.current = { x: e.clientX, y: e.clientY };
+            const rect = el.getBoundingClientRect();
+            const isScrollbar = e.clientX > rect.right - 20;
+            isPointerOnScrollbarRef.current = isScrollbar;
+            if (isScrollbar) userScrollIntentUntilRef.current = performance.now() + 1000;
+        };
+        window.addEventListener('pointerdown', onPointerDown, { capture: true });
+
+        // [PS2] Scroll direction → show/hide tray.
+        //   scroll down    → always hide
+        //   scroll up      → show ONLY when not playing AND user intent confirmed [TG3]
+        //   within 10px    → always show (user scrolled back to top)
+        const onScroll = () => {
+            const curr = el.scrollTop;
+            const prev = lastScrollTopRef.current;
+            // Belt-and-suspenders: OR both checks. isPlayingRef can lag during
+            // seek-pause; api.playerState can be null between loads. [PS2-fix]
+            const atApi = (window as any).__at;
+            const liveIsPlaying = isPlayingRef.current || (atApi?.playerState ?? 0) === 1;
+            if (curr < 10) {
+                setIsHeaderVisible(true);
+            } else if (curr > prev + 4) {
+                setIsHeaderVisible(false);
+            } else if (curr < prev - 4 && !liveIsPlaying) {
+                // [TG3] Only reveal on confirmed user scroll-up intent (wheel or scrollbar pointer).
+                // Programmatic auto-scroll from note clicks will not have set this window.
+                if (userScrollIntentUntilRef.current > performance.now()) {
+                    setIsHeaderVisible(true);
+                }
+            }
+            lastScrollTopRef.current = curr;
+        };
+        el.addEventListener('scroll', onScroll, { passive: true });
+
+        return () => {
+            window.removeEventListener('wheel', onWheel, { capture: true });
+            window.removeEventListener('pointerdown', onPointerDown, { capture: true });
+            el.removeEventListener('scroll', onScroll);
+        };
+    }, []);
+
     useEffect(() => {
         supabase.auth.getSession().then(({ data, error }) => {
             console.log('APP SESSION', data, error);
@@ -406,6 +557,84 @@ export default function SynthPlayerPage() {
         }
     }, [isLooping, clearLoopFully]);
 
+    // ==================== YOUTUBE MEDIA HANDLER ====================
+    // Bridges AlphaTab's playback engine to the YouTube player — restored from V98.67.
+    const youTubeMediaHandlerInstance = useMemo(() => ({
+        play: () => { youtubePlayerRef.current?.playVideo?.(); },
+        pause: () => { youtubePlayerRef.current?.pauseVideo?.(); },
+        seekTo: (milliseconds: number) => {
+            const offset = (currentSong as any)?.videoStartOffset ?? 0;
+            const seconds = milliseconds / 1000 + offset;
+            youtubePlayerRef.current?.seekTo?.(seconds, true);
+        },
+        get currentTime() {
+            if (!youtubePlayerRef.current?.getCurrentTime) return 0;
+            const offset = (currentSong as any)?.videoStartOffset ?? 0;
+            return Math.max(0, youtubePlayerRef.current.getCurrentTime() - offset) * 1000;
+        },
+        get duration() {
+            return (youtubePlayerRef.current?.getDuration?.() ?? 0) * 1000;
+        },
+    }), [currentSong]);
+
+    // ==================== YOUTUBE HANDLERS ====================
+    const handleYouTubeClose = useCallback(() => {
+        setIsYouTubePlayerVisible(false);
+        setIsYouTubeReady(false);
+    }, []);
+
+    const handleYouTubePlayerReady = useCallback(() => {
+        setIsYouTubeReady(true);
+        // ✅ Mute synth only once YouTube is confirmed live — avoids total silence
+        // if the handler attaches late or the iframe takes a moment to initialize.
+        if (api) api.masterVolume = 0;
+        console.log('[page] YouTube ready — synth muted');
+    }, [api]);
+
+    const handleYouTubeTimeUpdate = useCallback((time: number) => {
+        currentTimeRef.current = time;
+        setDisplayTime(time);
+    }, []);
+
+    const lastYtStateRef = useRef<number | null>(null);
+    const handleYouTubeStateChange = useCallback((event: any) => {
+        if (pauseTransitionRef.current) return;
+        const state = event.data;
+        // Dedupe — ignore repeated states and buffering churn (-1, 3)
+        if (lastYtStateRef.current === state) return;
+        lastYtStateRef.current = state;
+        if (state === 1) {
+            setIsPlaying(true);
+            api?.play?.();
+        } else if (state === 2) {
+            setIsPlaying(false);
+            if (api) { pauseTransitionRef.current = true; api.pause(); setTimeout(() => { pauseTransitionRef.current = false; }, 200); }
+        } else if (state === 0) {
+            setIsPlaying(false);
+            api?.stop?.();
+        }
+        // Ignore -1 (unstarted) and 3 (buffering) — don't poke AlphaTab
+    }, [api]);
+
+    const handleVideoVariantChange = useCallback((newVideoId: string) => {
+        setCurrentVideoId(newVideoId);
+    }, []);
+
+    // ==================== AUDIO SOURCE CHANGE ====================
+    // [C5] Restored from V98.67 — mutes synth when switching to YouTube, restores on return.
+    const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
+        setAudioSource(source);
+        if (source === 'original') {
+            // Don't mute yet — wait for handleYouTubePlayerReady to confirm iframe is live
+            setIsYouTubePlayerVisible(true);
+        } else {
+            setIsYouTubePlayerVisible(false);
+            setIsYouTubeReady(false);
+            // Restore synth volume immediately on switch back
+            if (api) api.masterVolume = masterVolumeRef.current;
+        }
+    }, [api]);
+
     // ==================== SPEED / VOLUME ====================
     const handleSpeedChange = useCallback((speed: number) => {
         setPlaybackSpeed(speed);
@@ -523,6 +752,11 @@ export default function SynthPlayerPage() {
 
     // ==================== MISC ====================
     const handleThemeToggle = useCallback(() => setTheme(p => p === 'dark' ? 'light' : 'dark'), []);
+
+    // [TH1] Sync theme to document root so globals.css [data-theme='dark'] selectors fire.
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+    }, [theme]);
     const handleCountInToggle = useCallback(() => setIsCountInEnabled(p => !p), []);
     const handleMetronomeToggle = useCallback(() => setIsMetronomeEnabled(p => !p), []);
     const handlePitchShiftToggle = useCallback((anchor?: { top: number; left: number }) => {
@@ -532,15 +766,18 @@ export default function SynthPlayerPage() {
     const trackIndices = useMemo(() => [selectedTrack], [selectedTrack]);
 
     // 🔒 Single source of truth for header visibility.
-    // Landscape always shows header (Songsterr behavior — controls reachable when sideways).
-    const isHeaderShown = isMobileLandscape || isHeaderVisible;
+    // [PS1] Hide during playback. Landscape always shows (controls must stay reachable).
+    // [PS2] isHeaderVisible tracks scroll direction — set by scroll listener above.
+    const isHeaderShown = isMobileLandscape || (isHeaderVisible && !isPlaying);
 
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
-            <div className={`fixed top-0 inset-x-0 w-full z-50 transform transition-transform duration-300 ${isHeaderShown ? 'translate-y-0' : '-translate-y-full'}`}>
+            {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
+            <div className={`fixed top-0 inset-x-0 w-full z-50 will-change-transform transform transition-transform duration-200 ease-out ${isHeaderShown ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
+                    isPlaying={isPlaying}  // ← [PS4] v1.6 prop — parent reads for shell class
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
                     onNewTabOpen={() => setIsNewTabOpen(true)}
@@ -562,7 +799,18 @@ export default function SynthPlayerPage() {
                 onEditMetadata={(songId) => setMetaEditorState({ tabId: songId, source: 'mytabs' })}
             />
 
-            <NewTabPanel isOpen={isNewTabOpen} onClose={() => setIsNewTabOpen(false)} theme={theme} />
+            {/* [C2] onTabAdded fires refetchSongs → My Tabs updates immediately after upload */}
+            {/* [C3] onTabUploaded closes panel + opens MetadataEditorPanel for the new tab */}
+            <NewTabPanel
+                isOpen={isNewTabOpen}
+                onClose={() => setIsNewTabOpen(false)}
+                theme={theme}
+                onTabAdded={refetchSongs}
+                onTabUploaded={(tabId) => {
+                    setIsNewTabOpen(false);
+                    setMetaEditorState({ tabId, source: 'newtab' });
+                }}
+            />
 
             {metaEditorState.tabId && (
                 <MetadataEditorPanel
@@ -609,9 +857,10 @@ export default function SynthPlayerPage() {
                  *   - paddingBottom → safe-area-aware calc so last bar clears the fixed footer
                  *   - className simplified to w-full (works portrait + landscape)
                  */}
+                {/* [TH3-restored] Dark wrapper matches AlphaTab dark canvas — eliminates white gutter bleed. */}
                 <div
                     id="maestro-player"
-                    className="relative bg-white w-full"
+                    className={`relative w-full ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}`}
                     style={{
                         paddingBottom: isMobileLandscape
                             ? 'env(safe-area-inset-bottom, 0px)'  // landscape: no bottom push
@@ -620,6 +869,8 @@ export default function SynthPlayerPage() {
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
+                            playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
+                            externalMediaHandler={audioSource === 'original' ? youTubeMediaHandlerInstance : undefined}
                             key={signedUrl}
                             fileUrl={signedUrl}
                             trackIndices={trackIndices}
@@ -642,6 +893,7 @@ export default function SynthPlayerPage() {
                                 setHasLoopSelection(true);
                             }}
                             onLoopClear={clearLoopFully}
+                            theme={theme}
                             forceHorizontal={isMobileLandscape}
                         />
                     )}
@@ -681,7 +933,7 @@ export default function SynthPlayerPage() {
                         onLoopRangeChange={(start, end) => setHasLoopSelection(start !== null && end !== null)}
                         onSpeedChange={handleSpeedChange}
                         onTrackChange={handleTrackChange}
-                        onAudioSourceChange={() => { }}
+                        onAudioSourceChange={handleAudioSourceChange}
                         onTrackMuteToggle={handleTrackMuteToggle}
                         onTrackSoloToggle={handleTrackSoloToggle}
                         onThemeToggle={handleThemeToggle}
@@ -746,6 +998,29 @@ export default function SynthPlayerPage() {
                     />
                 </div>
             )}
+            {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display */}
+            <div style={{
+                position: 'fixed', bottom: isMobileLandscape ? 0 : 80,
+                right: isMobileLandscape ? 0 : 16, zIndex: 40,
+                width: 240, height: 427, borderRadius: 8, overflow: 'hidden',
+                display: audioSource === 'original' && isYouTubePlayerVisible && activeVideoId ? 'block' : 'none',
+            }}>
+                <YouTubePlayer
+                    ref={youtubePlayerRef}
+                    videoId={activeVideoId ?? ''}
+                    isVisible={audioSource === 'original' && isYouTubePlayerVisible}
+                    onClose={handleYouTubeClose}
+                    currentTime={displayTime}
+                    isPlaying={isPlaying}
+                    onTimeUpdate={handleYouTubeTimeUpdate}
+                    onStateChange={handleYouTubeStateChange}
+                    onPlayerReady={handleYouTubePlayerReady}
+                    isMobileLandscape={isMobileLandscape}
+                    videoVariants={(currentSong as any)?.youtubeVariants}
+                    onVariantChange={handleVideoVariantChange}
+                    videoStartOffset={(currentSong as any)?.videoStartOffset}
+                />
+            </div>
         </div>
     );
 }

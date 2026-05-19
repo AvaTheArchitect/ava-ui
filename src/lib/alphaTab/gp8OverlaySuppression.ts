@@ -1,12 +1,18 @@
 "use client";
+
 /**
  * gp8OverlaySuppression.ts
- * Date: April 21st, 2026 — v1.0
+ * Date: April 21st, 2026 — v1.1
  *
  * P4 Lane Phase 1 (Suppression-only):
  * Hides layout-toxic FX/comment text nodes that AlphaTab places in the layout
  * flow (italic Georgia tech text above staff). These inflate bar widths and
  * cause the "FX text garble" visible in landscape strip mode.
+ *
+ * v1.1: Exclude technique tokens (LetRing, dive bomb) from suppression —
+ * they are note-adjacent effects, not comment-lane content. They get their
+ * own lane in P4 Phase 4+. Suppressing them into the FX lane caused
+ * bar-number overlap on rows with tight headroom.
  *
  * Rules:
  *   - Only hides <text>/<tspan> nodes — never <g> (glyph clusters stay safe)
@@ -36,6 +42,11 @@ const TECH_TEXT_PAT =
 const KEEP_TECH_TEXT_PAT =
   /^(finger slide|pick slide|turn volume knob to \d+|three whammy dips?)$/i;
 
+// 🔒 v1.1: Technique tokens excluded from FX overlay lane.
+// These are note-adjacent effects (not comment-lane content).
+// They will get their own lane in P4 Phase 4+.
+const TECHNIQUE_TOKEN_PAT = /^(let\s*ring|letring|dive\s*bomb)$/i;
+
 const TRACK_LABELS = /^[a-z]\..*\.|^s\.guit\.|^t\.bass\.|^voc\.|^drum/i;
 
 // ── Predicate ─────────────────────────────────────────────────────────────────
@@ -44,7 +55,7 @@ const TRACK_LABELS = /^[a-z]\..*\.|^s\.guit\.|^t\.bass\.|^voc\.|^drum/i;
  * Returns true if this element is layout-toxic tech text that should be hidden.
  * "Layout-toxic" = italic Georgia, above staff, matches TECH_TEXT_PAT.
  * Never suppresses: bar numbers, bold section/header labels, maestro-owned nodes,
- * track labels, keep-listed items, or nodes already suppressed.
+ * track labels, keep-listed items, technique tokens, or nodes already suppressed.
  */
 function isLayoutToxicTechText(el: SVGElement, staffTopY: number): boolean {
   const tag = el.tagName.toLowerCase();
@@ -55,7 +66,7 @@ function isLayoutToxicTechText(el: SVGElement, staffTopY: number): boolean {
   if (el.getAttribute("data-maestro-suppressed") === "1") return false;
 
   const style = (el.getAttribute("style") ?? "").toLowerCase();
-  // Tech text is italic Georgia, non-bold (same filter as lyric/tech separation in gp8Engine)
+  // Tech text is italic Georgia, non-bold
   if (
     !style.includes("italic") ||
     !style.includes("georgia") ||
@@ -66,6 +77,7 @@ function isLayoutToxicTechText(el: SVGElement, staffTopY: number): boolean {
   const txt = (el.textContent ?? "").trim();
   if (!txt) return false;
   if (TRACK_LABELS.test(txt)) return false;
+  if (TECHNIQUE_TOKEN_PAT.test(txt)) return false; // 🔒 v1.1: skip technique tokens
   if (!TECH_TEXT_PAT.test(txt)) return false;
   if (KEEP_TECH_TEXT_PAT.test(txt)) return false;
 

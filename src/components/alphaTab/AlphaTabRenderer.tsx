@@ -2,21 +2,58 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V113
- * Date: April 20th, 2026
- * Cloned from V112 — cursor centering + touch drag rubber-band fix.
+ * Current version: V119
+ * Date: May 4th, 2026
+ * Cloned from V118 — dark/light score palette + title/artist branding locked.
  *
- * V113 CHANGES:
- * ✅ [L14] CURSOR_BIAS_PX = 0: probe confirmed onNotesX = vbCenter = 120.001,
- *          cursorSurfaceX was 117 (-3 bias was wrong direction). Bias removed.
- * ✅ [L15] translateX(-50%) on overlay: line now visually centered on cursorBoxX.
- *          width bumped 2px → 3px for better readability.
- * ✅ [L16] isDraggingRef: RAF loop yields to touch drag. Without this, the loop
- *          overwrote targetScrollLeftRef every frame → rubber-band snap on release.
- * ✅ [L17] Touch drag minScroll: computed from beat1X - cursorSurfaceX on touchstart.
- *          Prevents dragging clef/time-sig under the cursor line.
+ * V119 LOCKS:
+ * 🔒 [TH] AlphaTab score palette — applied via api.settings.display.resources on theme change.
+ *         Gated on !isSettling. lastThemeRef dedupes + resets to null on score reload.
+ *         6 resources: staffLine, barSeparator, mainGlyph, secondaryGlyph, scoreInfo, barNumber.
+ *         Dark values from V94.6 confirmed-stable probe. api.render() follows updateSettings().
+ * 🔒 [colorPatch] Title/artist brand colors survive every render including theme-triggered ones.
+ *         Fill guard removed — after dark palette, AT sets real white fill (null guard was blocking).
+ *         Guards kept: font.includes('32px') + text-anchor=middle → #38bdf8 (title).
+ *                      font.includes('20px') + text-anchor=middle → #60a5fa (artist).
+ * 🔒 [page.tsx TH3] #maestro-player wrapper is theme-aware: bg-[#1a1a1a] dark / bg-white light.
+ *         Safe now that alphaTab palette is active — no more black-on-black regression risk.
  *
- * 🔒 V112 PRESERVED EXACTLY:
+ * V118 LOCKS (carried forward):
+ * 🔒 [S1] Portrait/page mode = ScrollMode.Off. S1 owns all vertical row snapping.
+ *         AlphaTab VerticalContinuousScrollHandler confirmed as the scroll thief
+ *         (stack trace: doScroll → BrowserUiFacade.scrollToY → scrollTo smooth).
+ *         Disabling Continuous eliminates drift entirely (verified: drift=0 at 60ms+200ms).
+ * 🔒 [S1] Horizontal/strip mode = ScrollMode.Continuous (unchanged — native AlphaTab).
+ * 🔒 [S1] ABS row-boundary snap: DOM SVG rects, scrollRect.top subtracted for
+ *         scroll-container coords, height>100 && width>500 filter, anchorIdx=0→top=0.
+ * 🔒 [S1] Previous-row ABS clearance: prevBottomAbs vs safeTopAbsAfterTarget prediction.
+ * 🔒 [S1] easeOutCubic RAF tween 150ms — natural slide feel, no native smooth-scroll.
+ *         Cancels if new anchorIdx arrives mid-tween. Final frame forces scrollTop=target.
+ *         s1AnimRafRef cancelled on unmount.
+ * 🔒 [S1] All diagnostic logs gated behind maestro_snap_debug — zero production noise.
+ *         scrollTo interceptor removed. Unconditional FINAL APPLY log removed.
+ *
+ * ✅ [F1] Unified isLandscape() helper — 40px hysteresis, matches resize stabilizer.
+ * ✅ [F3] reassertLayout clears stale isApplyingProfileRef/activeRendersRef before
+ *         executing a confirmed orientation flip (landscape→portrait stuck fix).
+ * ✅ [F4] renderFinished: post-render collapse → hardReset() instead of api.render()
+ *         retry. AlphaTab geometry corrupts on live LayoutMode switch (Daniel confirmed);
+ *         only full instance recreation is reliable.
+ *
+ * V115 ADDS:
+ * ✅ [P1] playerMode / externalMediaHandler props on AlphaTabRendererV102Props
+ * ✅ [P2] Destructured with safe defaults (playerMode = 'synthesizer')
+ * ✅ [P3] playerModeRef / externalMediaHandlerRef synced via useEffect
+ * ✅ [P4] initAlphaTab now receives playerModeRef.current (not hardcoded 'synthesizer')
+ * ✅ [P5] Handler attached inside playerReady — earliest point player.output exists
+ * ✅ [P6] useEffect syncs handler when prop changes after init (guards external-only)
+ * ✅ [P7] useEffect switches PlayerMode enum when playerMode prop changes
+ *
+ * 🔒 V114-clean PRESERVED EXACTLY (all locks carry forward):
+ *   ✅ [L17] Touch drag minScroll: computed from beat1X - cursorSurfaceX on touchstart.
+ *   ✅ [L16] isDraggingRef: RAF loop yields to touch drag.
+ *   ✅ [L15] translateX(-50%) on overlay: line centered on cursorBoxX.
+ *   ✅ [L14] CURSOR_BIAS_PX = 0: probe confirmed onNotesX = vbCenter = 120.001.
  *   ✅ [L13] prime-on-play via playerStateChanged
  *   ✅ [L11] state prime after curtain drop
  *   ✅ [L10] RAF self-heal in playerPositionChanged
@@ -25,7 +62,7 @@
  *   ✅ [L7-fix] within-beat interpolation (curBeatX → nextBeatX)
  *   ✅ [L1-fix] overlay on non-scrolling wrapper
  *   ✅ Portrait MaestroCursor V1 engine — unchanged
- *   ✅ All V111/V110/V109/V108 preserved locks
+ *   ✅ All V112/V111/V110/V109/V108 preserved locks
  *
  * CURSOR MATH (confirmed probe):
  *   padL=62, contentW=832, ratio=0.144 → cursorBoxX=182, cursorSurfaceX=120
@@ -42,14 +79,22 @@ import {
     applyAlphaTabLayoutProfileSettings,
     type LayoutProfileName,
 } from '@/lib/alphaTab/initAlphaTab';
-import { attachMaestroCursor, MaestroCursor } from '@/components/alphaTab/MaestroCursor';
+import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
+import { runGp8ChordOverlay, type Gp8ChordOverlayHandle } from '@/lib/alphaTab/gp8ChordOverlay';
+import { runGp8ChordSuppression } from '@/lib/alphaTab/gp8ChordSuppression';
 import { runGp8OverlaySuppression } from '@/lib/alphaTab/gp8OverlaySuppression';
+import { runGp8OverlayLanes, type Gp8OverlayLaneHandle } from '@/lib/alphaTab/gp8OverlayLanes';
+import { runGp8PmOverlay, type Gp8PmOverlayHandle } from '@/lib/alphaTab/gp8PmOverlay';
+import { runGp8PmSuppression } from '@/lib/alphaTab/gp8PmSuppression';
+import { runGp8VibratoOverlay, type Gp8VibratoOverlayHandle } from '@/lib/alphaTab/gp8VibratoOverlay';
+import { runGp8VibratoSuppression } from '@/lib/alphaTab/gp8VibratoSuppression';
 import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 
+// ─── [P1] Props interface ─────────────────────────────────────────────────────
 export interface AlphaTabRendererV102Props {
     fileUrl: string;
     trackIndices?: number[];
@@ -70,19 +115,28 @@ export interface AlphaTabRendererV102Props {
     className?: string;
     scrollContainer?: HTMLElement | null;
     forceHorizontal?: boolean;
+    playerMode?: 'disabled' | 'external' | 'synthesizer';
+    externalMediaHandler?: any;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// CURSOR_POSITION_RATIO: fraction of content width (excluding safe-area padding).
-// 0.144 = beat1X(120.001) / contentW(832). cursor lands at padL+120 = 182px.
 const CURSOR_POSITION_RATIO = 0.144;
-const CURSOR_BIAS_PX = 0;        // probe: onNotesX=120.001, cursorSurfaceX=120 → delta≈0 ✅
-const SCROLL_EASE = 0.18;        // LERP factor per RAF frame
+const CURSOR_BIAS_PX = 0;
+const SCROLL_EASE = 0.18;
+const MOBILE_LANDSCAPE_MAX_W = 900;
+const HARD_RESET_COOLDOWN_MS = 4000;
+const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
+const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
+
+// ── [F1] Unified orientation helper — 40px hysteresis ────────────────────────
+function isDeviceLandscape(): boolean {
+    const vvW = window.visualViewport?.width ?? window.innerWidth;
+    const vvH = window.visualViewport?.height ?? window.innerHeight;
+    const mqLandscape = window.matchMedia?.('(orientation: landscape)')?.matches ?? false;
+    return (vvW > vvH + 40) || mqLandscape;
+}
 
 // ── [L9] Padding-aware cursor helpers ────────────────────────────────────────
-// getFixedCursorX  → container box space (used for overlay CSS left)
-// getCursorSurfaceX → SVG/surface space (used for ALL scroll math)
-// beatX from onNotesX is SVG space; padding must be subtracted for scroll targets.
 function getFixedCursorX(container: HTMLElement): number {
     const cs = getComputedStyle(container);
     const padL = parseFloat(cs.paddingLeft || '0');
@@ -97,11 +151,24 @@ function getCursorSurfaceX(container: HTMLElement): number {
     return getFixedCursorX(container) - padL;
 }
 
-// ── [L1-fix] Landscape Fixed Cursor — see FixedLandscapeCursor.tsx ───────────
-// Extracted to src/components/alphaTab/FixedLandscapeCursor.tsx (v1.0).
-// 12px wide, translateX(-50%) centered, 2px spine — matches MaestroCursor geometry.
-// Ref type alias kept here for the landscapeCursorRef.
 type LandscapeFixedCursorOverlay = FixedLandscapeCursor;
+
+type MaestroCursorLike = {
+    element: HTMLElement;
+    destroy: () => void;
+    requestSnap: (reason?: string) => void;
+    setBeat: (
+        beat: any | null,
+        preScannedNextBeat?: any | null,
+        nextExpandedBeatStart?: number | null,
+        expandedBeatStart?: number | null,
+    ) => void;
+    setTick: (
+        tick: number,
+        nextBeat?: any | null,
+        overrideBeatStart?: number | null,
+    ) => void;
+};
 
 // ── [L8-fix] Landscape initial anchor — retry-until-ready ────────────────────
 function landscapeInitialAnchor(
@@ -116,7 +183,7 @@ function landscapeInitialAnchor(
         const bounds = api?.renderer?.boundsLookup;
         if (!tickCache?.findBeat || !bounds?.findBeat) {
             if (performance.now() < deadline) requestAnimationFrame(step);
-            else console.warn('⚠️ V113 landscapeInitialAnchor: timed out');
+            else console.warn('⚠️ V117 landscapeInitialAnchor: timed out');
             return;
         }
         const trackSet: Set<number> = api?.tracks
@@ -135,7 +202,6 @@ function landscapeInitialAnchor(
                 const snap = Math.max(0, beatX - cursorSurfaceX);
                 container.scrollLeft = snap;
                 targetScrollLeftRef.current = snap;
-                console.log('📍 V113 anchor ✅', { beatX, cursorSurfaceX, snap, probe });
                 return;
             }
         }
@@ -261,9 +327,72 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
     return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
 }
 
-// ── GP8 URL detection — robust to Supabase signed URLs, proxy routes, query params ──
-// Cannot rely on api.score.fileName (undefined on mobile) or path suffix alone.
-// Checks substring patterns so /api/tab?file=song.gp and song.gp?token=... both match.
+// ── [S1] Snap debug — activate: localStorage.setItem('maestro_snap_debug','1') ──
+function isSnapDebugEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    if (new URLSearchParams(window.location.search).get('snapDebug') === '1') return true;
+    try { return localStorage.getItem('maestro_snap_debug') === '1'; } catch { return false; }
+}
+
+// ── Renderer debug — activate: localStorage.setItem('maestro_renderer_debug','1') ──
+function isRendererDebugEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem('maestro_renderer_debug') === '1'; } catch { return false; }
+}
+
+// ── [S1] Portrait system-snap helper ─────────────────────────────────────────
+// Returns the index of the staff system that contains pixel-y `y`.
+function findSystemIndexForY(systems: any[], y: number): number {
+    for (let i = 0; i < systems.length; i++) {
+        const vb = systems[i]?.visualBounds;
+        if (vb && y >= vb.y && y < vb.y + vb.h) return i;
+    }
+    return -1;
+}
+
+// ── Redundant rest suppression (tick-collision strategy) ─────────────────────
+const ENABLE_REDUNDANT_REST_STRIP = false;
+
+function stripRedundantRests(score: any): void {
+    try {
+        for (const track of score?.tracks ?? []) {
+            for (const staff of track?.staves ?? []) {
+                for (const bar of staff?.bars ?? []) {
+                    const voices: any[] = bar?.voices ?? [];
+                    if (!voices.length) continue;
+                    const noteStarts = new Set<number>();
+                    let barHasAnyNotes = false;
+                    for (const v of voices) {
+                        for (const b of (v?.beats ?? [])) {
+                            if ((b?.notes?.length ?? 0) > 0) {
+                                barHasAnyNotes = true;
+                                const s: number = b.start ?? b.playbackStart ?? b.absolutePlaybackStart ?? 0;
+                                noteStarts.add(s);
+                            }
+                        }
+                    }
+                    if (!barHasAnyNotes) continue;
+                    for (const v of voices) {
+                        const beats: any[] = v?.beats ?? [];
+                        if (!beats.length) continue;
+                        v.beats = beats.filter((b: any) => {
+                            if ((b?.notes?.length ?? 0) > 0) return true;
+                            if (b?.isRest) {
+                                const s: number = b.start ?? b.playbackStart ?? b.absolutePlaybackStart ?? 0;
+                                if (noteStarts.has(s)) return false;
+                            }
+                            return true;
+                        });
+                    }
+                }
+            }
+        }
+        console.log('[rests] stripRedundantRests applied');
+    } catch (e) {
+        console.warn('[rests] stripRedundantRests failed (non-fatal):', e);
+    }
+}
+
 function isGp8Url(fileUrl: string): boolean {
     const u = (fileUrl ?? '').toLowerCase();
     return (
@@ -275,6 +404,7 @@ function isGp8Url(fileUrl: string): boolean {
     );
 }
 
+// ─── [P2] Component ───────────────────────────────────────────────────────────
 export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     fileUrl,
     trackIndices = [0],
@@ -295,17 +425,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     className,
     scrollContainer,
     forceHorizontal = false,
+    playerMode = 'synthesizer',
+    externalMediaHandler,
 }: AlphaTabRendererV102Props) {
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const shellRef = useRef<HTMLDivElement>(null);
     const curtainRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
-    const cursorRef = useRef<MaestroCursor | null>(null);
+    const cursorRef = useRef<MaestroCursorLike | null>(null);
     const landscapeCursorRef = useRef<LandscapeFixedCursorOverlay | null>(null);
+    const gp8OverlayHandleRef = useRef<Gp8OverlayLaneHandle | null>(null);
+    const gp8PmOverlayHandleRef = useRef<Gp8PmOverlayHandle | null>(null);
+    const gp8ChordOverlayHandleRef = useRef<Gp8ChordOverlayHandle | null>(null);
+    const gp8VibratoOverlayHandleRef = useRef<Gp8VibratoOverlayHandle | null>(null);
 
     const targetScrollLeftRef = useRef<number>(0);
     const landscapeScrollRafRef = useRef<number | null>(null);
-    const isDraggingRef = useRef<boolean>(false); // [L16] RAF yields to touch drag
+    const isDraggingRef = useRef<boolean>(false);
 
     const landscapeScrollStateRef = useRef<{
         curBeatX: number;
@@ -316,19 +453,51 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     } | null>(null);
 
     const initTokenRef = useRef(0);
+    const scoreBytesRef = useRef<Uint8Array | null>(null);
+    const lastHardResetAtRef = useRef<number>(0);
     const trackIndicesRef = useRef(trackIndices);
     useEffect(() => { trackIndicesRef.current = trackIndices; }, [trackIndices]);
+    useEffect(() => { scoreBytesRef.current = null; }, [fileUrl]);
 
     const forceHorizontalRef = useRef<boolean>(!!forceHorizontal);
     useEffect(() => { forceHorizontalRef.current = !!forceHorizontal; }, [forceHorizontal]);
+
+    const playerModeRef = useRef(playerMode);
+    const externalMediaHandlerRef = useRef(externalMediaHandler);
+    const lastThemeRef = useRef<'light' | 'dark' | null>(null); // [TH] tracks last applied palette
+    useEffect(() => { playerModeRef.current = playerMode; }, [playerMode]);
+    useEffect(() => { externalMediaHandlerRef.current = externalMediaHandler; }, [externalMediaHandler]);
 
     const alphaTabModuleRef = useRef<any>(null);
     const activeProfileRef = useRef<LayoutProfileName | null>(null);
     const baseTrackProfileRef = useRef<LayoutProfileName | null>(null);
     const isApplyingProfileRef = useRef(false);
 
+    const reassertRafRef = useRef<number | null>(null);
+    const lastReassertTokenRef = useRef<number | null>(null);
+    const collapseFixAttemptsRef = useRef(0);
+    const isRecoveringCollapseRef = useRef(false);
+    const isHardResettingRef = useRef(false);
+    const stabilizeRafRef = useRef<number | null>(null);
+    const stableFramesRef = useRef(0);
+    const lastStableWRef = useRef(0);
+
     const [isLoading, setIsLoading] = useState(true);
     const [isSettling, setIsSettling] = useState(true);
+    const [resetKey, setResetKey] = useState(0);
+    const [showGutters, setShowGutters] = useState(
+        typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    );
+
+    useEffect(() => {
+        const update = () => setShowGutters(window.innerWidth >= 768);
+        window.addEventListener('resize', update);
+        window.visualViewport?.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('resize', update);
+            window.visualViewport?.removeEventListener('resize', update);
+        };
+    }, []);
 
     const loopEnabledRef = useRef(loopEnabled);
     const playbackRangeRef = useRef(playbackRange);
@@ -357,6 +526,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const reAnchorCountRef = useRef<{ beat: number; count: number }>({ beat: -1, count: 0 });
     const lastAcceptedBeatStartRef = useRef<number>(-1);
     const allowBacktrackUntilRef = useRef<number>(0);
+    const lastAnchorSysRef = useRef<number>(-1);
+    // [S1] RAF handle for the portrait scroll tween — cancelled on new snap or user scroll.
+    const s1AnimRafRef = useRef<number | null>(null);
 
     const resetBeatAcceptance = () => {
         lastAcceptedBeatStartRef.current = -1;
@@ -372,22 +544,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const startLandscapeScrollLoop = useCallback((container: HTMLElement, api: any) => {
         if (landscapeScrollRafRef.current !== null) return;
         const cursorSurfaceX = getCursorSurfaceX(container);
-        console.log('🎬 V113 scroll loop — cursorSurfaceX=', cursorSurfaceX);
 
         const loop = () => {
-            // Suppress AlphaTab's native cursor on every frame — it re-injects after playerPositionChanged
             const nativeBeat = container.querySelector('.at-cursor-beat') as HTMLElement | null;
             if (nativeBeat && nativeBeat.style.display !== 'none') {
                 nativeBeat.style.display = 'none';
                 nativeBeat.style.opacity = '0';
             }
-            // [L16] Belt-and-suspenders: bail entirely if dragging.
             if (isDraggingRef.current) {
                 landscapeScrollRafRef.current = requestAnimationFrame(loop);
                 return;
             }
-            // Hard-idle while paused: pin target to current position so LERP can't drift.
-            // This prevents old targetScrollLeft from pulling the strip after a drag release.
             if ((api as any)?.playerState !== 1) {
                 targetScrollLeftRef.current = container.scrollLeft;
                 landscapeScrollRafRef.current = requestAnimationFrame(loop);
@@ -424,17 +591,103 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             cancelAnimationFrame(landscapeScrollRafRef.current);
             landscapeScrollRafRef.current = null;
             if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = null;
-            console.log('⏹ V113 scroll loop stopped');
         }
     }, []);
 
+    const hardReset = useCallback(() => {
+        if (isHardResettingRef.current) return;
+        const now = Date.now();
+        if (now - lastHardResetAtRef.current < HARD_RESET_COOLDOWN_MS) {
+            console.warn('[V117] hardReset skipped — cooldown active');
+            return;
+        }
+        lastHardResetAtRef.current = now;
+        isHardResettingRef.current = true;
+        console.warn('[V117] hardReset: destroying wedged AlphaTab instance');
+        stopLandscapeScrollLoop();
+        landscapeScrollStateRef.current = null;
+        if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+        if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+        gp8OverlayHandleRef.current?.destroy(); gp8OverlayHandleRef.current = null;
+        gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
+        gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
+        gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
+        if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
+        collapseFixAttemptsRef.current = 0;
+        lastReassertTokenRef.current = null;
+        isRecoveringCollapseRef.current = false;
+        showCurtain(curtainRef.current);
+        setIsLoading(true);
+        setIsSettling(true);
+        requestAnimationFrame(() => {
+            isHardResettingRef.current = false;
+            setResetKey(k => k + 1);
+        });
+    }, [stopLandscapeScrollLoop]);
+
+    const reassertLayout = useCallback(() => {
+        if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
+        reassertRafRef.current = requestAnimationFrame(async () => {
+            reassertRafRef.current = null;
+            const api = apiRef.current;
+            const at = alphaTabModuleRef.current;
+            const el = containerRef.current;
+            if (!api || !at || !el) return;
+            if (activeRendersRef.current !== 0) return;
+            if (isApplyingProfileRef.current) return;
+            const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
+            const wantStrip = forceHorizontalRef.current || (isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W);
+            const wantLayout = wantStrip
+                ? (at as any).LayoutMode?.Horizontal
+                : (at as any).LayoutMode?.Page;
+            if (wantLayout == null) return;
+            const currentLayout = api.settings.display.layoutMode;
+            const needsFlip = currentLayout !== wantLayout;
+            const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+            const firstBars = (systems?.[0] as any)?.bars?.length ?? 0;
+            const looksCollapsed = !wantStrip
+                && currentLayout === (at as any).LayoutMode?.Page
+                && systems.length === 1
+                && firstBars > 40;
+            if (!needsFlip && !looksCollapsed) return;
+            isApplyingProfileRef.current = false;
+            if (activeRendersRef.current > 1) activeRendersRef.current = 0;
+            console.warn('[V117] reassertLayout', { needsFlip, looksCollapsed, wantStrip, firstBars });
+            api.settings.display.layoutMode = wantLayout;
+            if (!wantStrip && (at as any).SystemsLayoutMode) {
+                (api.settings.display as any).systemsLayoutMode =
+                    (at as any).SystemsLayoutMode.Automatic;
+            }
+            await api.updateSettings();
+            api.render();
+            applyAxisLock(el, api);
+            if (!wantStrip) {
+                stopLandscapeScrollLoop();
+                landscapeScrollStateRef.current = null;
+                if (landscapeCursorRef.current) {
+                    landscapeCursorRef.current.destroy();
+                    landscapeCursorRef.current = null;
+                }
+            }
+        });
+    }, [stopLandscapeScrollLoop]);
+
+    // ── Scroll mode ownership ─────────────────────────────────────────────────
+    // Portrait/page mode: ScrollMode.Off — S1 owns all vertical row snapping.
+    //   AlphaTab's VerticalContinuousScrollHandler was confirmed (via stack trace)
+    //   to fight S1 with a smooth scrollTo() after each snap, drifting ~20-40px.
+    // Landscape/horizontal mode: ScrollMode.Continuous — native AlphaTab scroll
+    //   handles the horizontal strip; S1 does not run in this mode.
     const applyScrollMode = useCallback(async (enabled: boolean) => {
         const api = apiRef.current;
         if (!api) return;
         const alphaTab = await import('@coderline/alphatab');
-        (api.settings.player as any).scrollMode = enabled
+        const isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+        // Never enable Continuous in portrait — it fights S1. [S1-ownership]
+        const useMode = (enabled && isStrip)
             ? (alphaTab as any).ScrollMode.Continuous
             : (alphaTab as any).ScrollMode.Off;
+        (api.settings.player as any).scrollMode = useMode;
         await api.updateSettings();
     }, []);
 
@@ -447,7 +700,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         let destroyed = false;
         const token = ++initTokenRef.current;
 
-        // Expose fileUrl for mobile debugging probe: window.__LAST_FILE_URL__
         if (typeof window !== 'undefined') (window as any).__LAST_FILE_URL__ = fileUrl;
 
         const isGP8 = isGp8Url(fileUrl);
@@ -459,31 +711,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const alphaTab = await import('@coderline/alphatab');
             alphaTabModuleRef.current = alphaTab;
+            if (typeof window !== 'undefined') (window as any).__alphaTab = alphaTab;
 
-            const vvW = window.visualViewport?.width ?? window.innerWidth;
-            const vvH = window.visualViewport?.height ?? window.innerHeight;
-            const isLandscape = (vvW > vvH) || (window.matchMedia?.('(orientation: landscape)')?.matches ?? false);
-            const containerW = containerRef.current?.clientWidth ?? vvW;
-            const useHorizontal = forceHorizontal || (isLandscape && containerW < 480);
+            const containerW = containerRef.current?.clientWidth ?? (window.visualViewport?.width ?? window.innerWidth);
+            const useHorizontal = forceHorizontal || (isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W);
             const base = 'songBookPageDense' as LayoutProfileName;
             const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
             activeProfileRef.current = initProfile;
 
             const api = await initAlphaTab({
                 container,
-                playerMode: 'synthesizer',
+                playerMode: playerModeRef.current,
                 soundFontPath,
                 layoutMode: 'page',
                 scrollMode: 'off',
                 scrollContainer: scrollContainer ?? undefined,
                 layoutProfile: initProfile,
-                ...(isGP8 && { displayOverrides: GP8_DISPLAY_OVERRIDES }),
             });
             if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
 
             apiRef.current = api;
             if (typeof window !== 'undefined') {
-                (window as any).__atV113 = api;
+                (window as any).__atV115 = api;
                 (window as any).__at = api;
             }
 
@@ -558,19 +807,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (containerRef.current) applyAxisLock(containerRef.current, api);
                 }
 
-                console.log('[profile]', { primaryTrackName, trackProfile, forceHorizontal: forceHorizontalRef.current });
+                if (isRendererDebugEnabled()) console.log('[profile]', { primaryTrackName, trackProfile, forceHorizontal: forceHorizontalRef.current });
 
-                // Sparse reset nukes systemsLayout, which removes "1–2 bars/row" constraint.
-                // Vocal tracks also resolve to songBookPageSparse but must NOT have that
-                // constraint removed — they need tight packing for lyrics readability.
-                const isVocalTrack = /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal)/i.test(primaryTrackName);
-                if (trackProfile === 'songBookPageSparse' && !isVocalTrack) {
-                    const scoreAny = score as any;
-                    const renderedTrack = tr[0] as any;
-                    if (renderedTrack) { renderedTrack.systemsLayout = null; renderedTrack.defaultSystemsLayout = 0; }
-                    scoreAny.systemsLayout = null;
-                    scoreAny.defaultSystemsLayout = 0;
-                }
+                if (ENABLE_REDUNDANT_REST_STRIP) stripRedundantRests(api.score);
 
                 api.renderTracks(tr);
 
@@ -595,6 +834,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 hasRevealedRef.current = false;
                 showCurtain(curtainRef.current);
                 stopLandscapeScrollLoop();
+                gp8OverlayHandleRef.current?.destroy(); gp8OverlayHandleRef.current = null;
+                gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
+                gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
+                gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
             });
 
             const waitForPaintableSurface = (host: HTMLElement, tok: number): Promise<boolean> =>
@@ -614,12 +857,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 new Promise(resolve => {
                     const host = containerRef.current;
                     if (!host || renderTokenRef.current !== tok) return resolve(false);
+                    const attachCursor = () => attachMaestroCursorV2(api, host);
                     if (!cursorRef.current) {
-                        cursorRef.current = attachMaestroCursor(api, host);
+                        cursorRef.current = attachCursor();
                     } else {
                         const el = cursorRef.current.element;
-                        if (!el || !host.contains(el)) { cursorRef.current.destroy(); cursorRef.current = attachMaestroCursor(api, host); }
+                        if (!el || !host.contains(el)) { cursorRef.current.destroy(); cursorRef.current = attachCursor(); }
                     }
+                    (window as any).__maestroCursor = cursorRef.current;
                     host.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor').forEach(n => ((n as HTMLElement).style.display = 'none'));
                     const trackSet = getTrackSet(api);
                     const step = () => {
@@ -632,7 +877,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
-                        cursorRef.current?.requestSnap();
+                        cursorRef.current?.requestSnap('song-load');
                         cursorRef.current?.setBeat(r.beat);
                         cursorRef.current?.setTick(tick);
                         resolve(true);
@@ -640,9 +885,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     requestAnimationFrame(step);
                 });
 
-            // ── [L11/L13] Prime landscape scroll state ────────────────────────
-            // Resolves beat at current tick → writes landscapeScrollStateRef + snaps scrollLeft.
-            // Called on curtain drop AND on play start (playerStateChanged).
             const primeLandscapeState = (ctr: HTMLElement) => {
                 const tickCache = (api as any).tickCache;
                 const bounds = api?.renderer?.boundsLookup;
@@ -678,7 +920,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const snap = Math.max(0, curBeatX - cursorSurfaceX);
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
-                console.log('🎯 V113 primeLandscapeState', { curBeatX, cursorSurfaceX, snap, tick });
             };
 
             api.renderFinished.on(() => {
@@ -702,10 +943,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     if (activeRendersRef.current !== 0) return;
 
-                    // Timeout guard: if a patch pass stalls (rare render weirdness),
-                    // log a warning and reveal anyway rather than blocking the curtain.
-                    // .finally() clears the timer so fast-resolving patches don't leave
-                    // a dangling setTimeout ticking after the curtain has already dropped.
+                    if (isRecoveringCollapseRef.current) {
+                        const sysList = apiRef.current?.renderer?.boundsLookup?.staffSystems ?? [];
+                        if (sysList.length > 1) {
+                            isRecoveringCollapseRef.current = false;
+                            collapseFixAttemptsRef.current = 0;
+                            console.log('[V117] collapse recovery succeeded');
+                        } else {
+                            isRecoveringCollapseRef.current = false;
+                            collapseFixAttemptsRef.current = 0;
+                            console.warn('[V117] collapse persists after hardReset — revealing as-is');
+                        }
+                        hideCurtainAtomic(curtainRef.current);
+                        hasRevealedRef.current = true;
+                        isSettlingRef.current = false;
+                        setIsLoading(false);
+                        setIsSettling(false);
+                        onRendered?.();
+                        onBoundsReady?.();
+                        isApplyingProfileRef.current = false;
+                        return;
+                    }
+
                     const withPatchTimeout = (p: Promise<void>, label: string, ms = 1000): Promise<void> => {
                         let t: number | null = null;
                         const timeout = new Promise<void>(resolve => {
@@ -719,16 +978,31 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     };
 
-                    // Await both patch passes before curtain drop — prevents pre-patch
-                    // layout from flashing on screen (bar numbers / section labels jumping).
                     await withPatchTimeout(runUniversalLayoutPatches(h), 'universalLayoutPatches');
                     if (renderTokenRef.current !== tokenAtFinish) return;
+                    await withPatchTimeout(runGp8VibratoSuppression(h), 'gp8VibratoSuppression');
+                    if (renderTokenRef.current !== tokenAtFinish) return;
+                    gp8VibratoOverlayHandleRef.current?.destroy();
+                    gp8VibratoOverlayHandleRef.current = await runGp8VibratoOverlay(h);
+
                     if (isGP8) {
                         await withPatchTimeout(runGp8LayoutEngineV2(h), 'gp8LayoutEngineV2');
                         if (renderTokenRef.current !== tokenAtFinish) return;
                         await withPatchTimeout(runGp8OverlaySuppression(h), 'gp8OverlaySuppression');
                         if (renderTokenRef.current !== tokenAtFinish) return;
+                        await withPatchTimeout(runGp8PmSuppression(h), 'gp8PmSuppression');
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        await withPatchTimeout(runGp8ChordSuppression(h), 'gp8ChordSuppression');
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                        gp8OverlayHandleRef.current?.destroy();
+                        gp8OverlayHandleRef.current = await runGp8OverlayLanes(h);
+                        gp8PmOverlayHandleRef.current?.destroy();
+                        gp8PmOverlayHandleRef.current = await runGp8PmOverlay(h);
+                        gp8ChordOverlayHandleRef.current?.destroy();
+                        gp8ChordOverlayHandleRef.current = await runGp8ChordOverlay(h);
                     }
+
+                    window.dispatchEvent(new Event('maestro:overlays-ready'));
 
                     const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
 
@@ -742,15 +1016,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
                         if (renderTokenRef.current !== tokenAtFinish) return;
                         if (activeRendersRef.current !== 0) return;
-
                         const wrapper = h.parentElement;
                         if (wrapper) {
                             landscapeCursorRef.current = new FixedLandscapeCursor(
                                 wrapper, h, () => getFixedCursorX(h)
                             );
                         }
-                        // Suppress AlphaTab's native cursors in landscape strip mode.
-                        // Also suppressed per-frame in the RAF loop (AlphaTab re-injects on position change).
                         h.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
                             .forEach(n => {
                                 (n as HTMLElement).style.display = 'none';
@@ -760,13 +1031,45 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         startLandscapeScrollLoop(h, api);
                     }
 
+                    // ── [F4] Post-render collapse detection ───────────────────
+                    const postSystems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+                    const postIsPage = (api?.settings?.display?.layoutMode ?? -1) === 0;
+                    const postFirstBars = (postSystems[0] as any)?.bars?.length ?? 0;
+                    if (postIsPage && postSystems.length === 1 && postFirstBars > 4) {
+                        console.warn('[V117] post-render collapse detected — hardReset to recover');
+                        hardReset();
+                        return;
+                    }
+                    collapseFixAttemptsRef.current = 0;
+
                     forceRevealSurface(h, forceRevealCancelRef);
                     h.getBoundingClientRect();
                     (h.querySelector('.at-surface') as HTMLElement | null)?.getBoundingClientRect();
 
+                    // ── [colorPatch] A/B — force title/artist brand colors after every render ──
+                    // Fill guard removed: after dark palette apply, alphaTab sets a real white fill,
+                    // so null/undefined check was skipping both elements in dark mode.
+                    // Font+anchor guards are specific enough — no other score text matches both.
+                    {
+                        const svgTexts = Array.from(
+                            h.querySelectorAll<SVGTextElement>('.at-surface svg text') ?? []
+                        );
+                        svgTexts.forEach((el) => {
+                            const font = el.style.font ?? '';
+                            const anchor = el.getAttribute('text-anchor');
+                            if (anchor !== 'middle') return;
+
+                            if (font.includes('32px')) {
+                                el.setAttribute('fill', SCORE_TITLE_CYAN);
+                            } else if (font.includes('20px')) {
+                                el.setAttribute('fill', SCORE_ARTIST_BLUE);
+                            }
+                        });
+                    }
+
                     hideCurtainAtomic(curtainRef.current);
                     hasRevealedRef.current = true;
-                    console.log('🟢 V113 curtain dropped', { token: tokenAtFinish, isStripRender });
+                    if (isRendererDebugEnabled()) console.log('🟢 V119 curtain dropped', { token: tokenAtFinish, isStripRender });
 
                     if (containerRef.current) applyAxisLock(containerRef.current, api);
                     requestAnimationFrame(() => forceRevealSurface(h, forceRevealCancelRef));
@@ -777,7 +1080,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
 
-                    // [L11] Prime state immediately after curtain drop
                     if (isStripRender) {
                         requestAnimationFrame(() => {
                             const ctr = containerRef.current;
@@ -787,20 +1089,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }, QUIET_MS);
             });
 
-            const notifyPlayerReady = () => { if (api.isReadyForPlayback) onPlayerReady?.(); };
+            // ─── [P5] notifyPlayerReady ───────────────────────────────────────
+            const notifyPlayerReady = () => {
+                if (!api.isReadyForPlayback) return;
+                if (playerModeRef.current === 'external' && api.player?.output) {
+                    const out = api.player.output as any;
+                    out.handler = externalMediaHandlerRef.current ?? null;
+                    if (isRendererDebugEnabled()) console.log('[renderer] external handler attached on playerReady', !!out.handler);
+                }
+                onPlayerReady?.();
+            };
             api.playerReady?.on(() => setTimeout(notifyPlayerReady, 100));
             api.soundFontLoaded?.on(() => notifyPlayerReady());
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
+                if ((e.state ?? 0) === 1 && hasRevealedRef.current && isSettlingRef.current) {
+                    console.warn('[V117] isSettling stuck on play — force clearing');
+                    isSettlingRef.current = false;
+                    setIsSettling(false);
+                }
                 if (seekInProgressRef.current) return;
                 clearTimeout(stateDebounce);
                 stateDebounce = setTimeout(() => {
                     const playing = (e.state ?? 0) === 1;
                     if (playing !== isPlayingRef.current) onPlayStateChange(playing);
                 }, 50);
-
-                // [L13] Prime-on-play: eliminates cold-start delay
                 const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                 if ((e.state ?? 0) === 1 && isStripNow) {
                     const ctr = containerRef.current;
@@ -808,13 +1122,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         requestAnimationFrame(() => {
                             primeLandscapeState(ctr);
                             startLandscapeScrollLoop(ctr, api);
-                            console.log('[L13] prime+start on play', { tick: api.tickPosition });
                         });
                     }
                 }
             });
 
-            // 🔒🔒🔒 CURSOR / SCROLL ENGINE — V113 ────────────────────────────
+            // 🔒🔒🔒 CURSOR / SCROLL ENGINE ───────────────────────────────────
             api.playerPositionChanged.on((e: any) => {
                 if (isSettlingRef.current) return;
 
@@ -871,15 +1184,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastTick: tickRaw,
                     };
 
-                    // [L10] Self-heal: restart loop if playing but loop died
                     if ((api.playerState ?? 0) === 1 && landscapeScrollRafRef.current === null) {
-                        console.log('🔄 V113 RAF self-heal');
                         startLandscapeScrollLoop(container, api);
                     }
                     return;
                 }
 
-                // ── Portrait cursor engine (🔒 unchanged from V112) ───────────
+                // ── Portrait cursor engine ────────────────────────────────────
                 if (!cursorRef.current) return;
 
                 const FAR_TICKS = 240;
@@ -890,7 +1201,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const range = playbackRangeRef.current;
                 if (loopEnabledRef.current && range) {
                     if (tickRaw >= range.endTick - 120) {
-                        cursorRef.current.requestSnap();
+                        cursorRef.current.requestSnap('loop-wrap');
                         api.tickPosition = range.startTick;
                         return;
                     }
@@ -898,11 +1209,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const tick = tickRaw;
                 const lastTick = lastTickRef.current;
-                const jumped = lastTick != null && Math.abs(tick - lastTick) > 2000;
+                const delta = lastTick != null ? Math.abs(tick - lastTick) : 0;
+                const jumped = delta > 2000;
+                const hugeJump = delta > 30000;
                 lastTickRef.current = tick;
 
                 if (jumped) {
-                    cursorRef.current.requestSnap();
+                    if (hugeJump) cursorRef.current.requestSnap('huge-jump');
                     resetBeatAcceptance();
                     stableCurBeatRef.current = null;
                     stableExpandedBeatStartRef.current = 0;
@@ -1000,7 +1313,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const regKey = `${incomingStart}:${prevAbs}`;
                             if (lastRegressionLogRef.current !== regKey) {
                                 lastRegressionLogRef.current = regKey;
-                                console.warn('[V113] structural regression discarded');
+                                console.warn('[V117] structural regression discarded');
                             }
                             return;
                         }
@@ -1059,10 +1372,218 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
 
                 cursorRef.current.setTick(tick, stableNextBeatRef.current, stableExpandedBeatStartRef.current);
+
+                // ── [S1] Songsterr-style snap-to-system scroll (portrait only) ──
+                // DOM SVG rows measured directly — includes effect lanes in bounding rect.
+                // scrollRect.top subtracted so rowRect.top is scroll-container-relative.
+                // height>100 AND width>500 filters title (~69px) and tuning (~60px) SVGs.
+                {
+                    const snapBounds = api.renderer?.boundsLookup;
+                    const snapSystems = snapBounds?.staffSystems ?? [];
+                    const snapBb = snapBounds?.findBeat?.(curBeat);
+                    const beatY = snapBb?.visualBounds?.y;
+
+                    if (beatY != null && snapSystems.length > 0) {
+                        const sysIdx = findSystemIndexForY(snapSystems, beatY);
+                        const anchorIdx = Math.max(0, sysIdx - 1);
+
+                        if (sysIdx >= 0 && anchorIdx !== lastAnchorSysRef.current) {
+                            lastAnchorSysRef.current = anchorIdx;
+
+                            const scrollEl = (api.settings.player as any).scrollElement
+                                ?? scrollContainer
+                                ?? containerRef.current;
+
+                            if (scrollEl) {
+                                const scrollElEl = scrollEl as HTMLElement;
+                                const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
+                                const isPlayingNow = (api.playerState ?? 0) === 1;
+                                const headerH = (!isPlayingNow && header
+                                    && getComputedStyle(header).display !== 'none')
+                                    ? header.getBoundingClientRect().height : 0;
+                                const GAP = 8;
+                                const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
+                                const scrollRect = scrollElEl.getBoundingClientRect();
+
+                                const allSvgs = Array.from(
+                                    scrollElEl.querySelectorAll<SVGElement>('.at-surface svg')
+                                );
+                                const staffRows = allSvgs.filter(el => {
+                                    const r = el.getBoundingClientRect();
+                                    return r.height > 100 && r.width > 500;
+                                });
+
+                                if (isSnapDebugEnabled()) {
+                                    console.table(staffRows.map((svg, idx) => {
+                                        const r = svg.getBoundingClientRect();
+                                        return {
+                                            idx,
+                                            topViewport: Math.round(r.top),
+                                            topInScroll: Math.round(r.top - scrollRect.top),
+                                            height: Math.round(r.height),
+                                            width: Math.round(r.width),
+                                            scrollTop: Math.round(scrollElEl.scrollTop),
+                                            targetIfSnapped: Math.round(
+                                                scrollElEl.scrollTop + r.top - scrollRect.top - headerH - GAP
+                                            ),
+                                            className: svg.getAttribute('class') ?? '',
+                                        };
+                                    }));
+                                    console.log('[S1 snap choice]', {
+                                        anchorIdx, sysIdx,
+                                        staffRowsLength: staffRows.length,
+                                        headerH, GAP,
+                                        currentScrollTop: scrollElEl.scrollTop,
+                                        chosenHeight: staffRows[anchorIdx]?.getBoundingClientRect().height,
+                                    });
+                                }
+
+                                let target: number;
+                                if (anchorIdx === 0) {
+                                    target = 0;
+                                } else if (staffRows.length > anchorIdx) {
+                                    const rowRect = staffRows[anchorIdx].getBoundingClientRect();
+                                    target = Math.max(
+                                        0,
+                                        scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP
+                                    );
+                                } else {
+                                    const anchorVb = (snapSystems[anchorIdx] as any)?.visualBounds;
+                                    target = Math.max(0, (anchorVb?.y ?? 0) - headerH - GAP);
+                                }
+
+                                const currentVb = (snapSystems[sysIdx] as any)?.visualBounds;
+                                const currentTop = currentVb?.y ?? 0;
+                                target = Math.min(target, Math.max(0, currentTop - headerH - GAP));
+
+                                // ── Previous-row clearance — absolute-coordinate prediction [S1-clearance] ──
+                                // Old: measured prevRect.bottom in current viewport → same value
+                                //      every tick → giant repeated correction → slam/bounce.
+                                // New: converts prevRect.bottom to scroll-content coordinates,
+                                //      then checks whether it will still be visible AFTER target
+                                //      is applied. Only corrects if it would still dangle.
+                                {
+                                    const safeOffset = headerH + GAP;
+                                    const targetBeforeClearance = target;
+                                    const prevRow = anchorIdx > 0 ? (staffRows[anchorIdx - 1] ?? null) : null;
+                                    let danglingAfterTarget = 0;
+                                    let prevBottomAbs: number | null = null;
+                                    let safeTopAbsAfterTarget: number | null = null;
+
+                                    if (prevRow) {
+                                        const prevRect = prevRow.getBoundingClientRect();
+                                        // Convert viewport-relative bottom → scroll-content absolute y
+                                        prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
+                                        // Where the safe top line will sit after target is applied
+                                        safeTopAbsAfterTarget = target + safeOffset;
+                                        danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
+                                        // ε=0.5 avoids sub-pixel jitter; +3 prevents SVG hairline ghost
+                                        if (danglingAfterTarget > 0.5) {
+                                            target = Math.max(0, target + danglingAfterTarget + 3);
+                                        }
+                                    }
+
+                                    if (isSnapDebugEnabled()) {
+                                        console.log('[S1 prev-row clearance ABS]', {
+                                            anchorIdx,
+                                            scrollTopBefore: Math.round(scrollElEl.scrollTop),
+                                            safeOffset,
+                                            targetBeforeClearance: Math.round(targetBeforeClearance),
+                                            prevBottomAbs: prevBottomAbs != null ? Math.round(prevBottomAbs) : null,
+                                            safeTopAbsAfterTarget: safeTopAbsAfterTarget != null ? Math.round(safeTopAbsAfterTarget) : null,
+                                            danglingAfterTarget: Math.round(danglingAfterTarget),
+                                            targetAfterClearance: Math.round(target),
+                                        });
+                                    }
+                                }
+
+                                target = Math.min(target, maxScroll);
+
+                                if (isSnapDebugEnabled()) {
+                                    console.log('[S1 snap apply]', {
+                                        anchorIdx, sysIdx,
+                                        target: Math.round(target),
+                                        fromScroll: Math.round(scrollElEl.scrollTop),
+                                        delta: Math.round(target - scrollElEl.scrollTop),
+                                    });
+                                }
+
+                                // ── [S1] Portrait scroll tween — easeOutCubic, 150ms ─────
+                                // S1 owns vertical scrolling (ScrollMode.Off confirmed).
+                                // Cancels if a new snap fires mid-tween or user scrolls.
+                                if (s1AnimRafRef.current !== null) {
+                                    cancelAnimationFrame(s1AnimRafRef.current);
+                                    s1AnimRafRef.current = null;
+                                }
+                                const tweenFrom = scrollElEl.scrollTop;
+                                const tweenTo = target;
+                                const tweenDelta = tweenTo - tweenFrom;
+                                const TWEEN_MS = 150;
+                                const snapAnchor = anchorIdx; // capture for cancel guard
+
+                                if (Math.abs(tweenDelta) < 2) {
+                                    // Already there — skip tween
+                                    scrollElEl.scrollTop = tweenTo;
+                                } else {
+                                    const startTime = performance.now();
+                                    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+                                    const step = (now: number) => {
+                                        // Cancel if a newer snap took over
+                                        if (lastAnchorSysRef.current !== snapAnchor) return;
+                                        const elapsed = now - startTime;
+                                        const progress = Math.min(elapsed / TWEEN_MS, 1);
+                                        scrollElEl.scrollTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                                        if (progress < 1) {
+                                            s1AnimRafRef.current = requestAnimationFrame(step);
+                                        } else {
+                                            // Force exact landing
+                                            scrollElEl.scrollTop = tweenTo;
+                                            s1AnimRafRef.current = null;
+                                        }
+                                    };
+                                    s1AnimRafRef.current = requestAnimationFrame(step);
+                                }
+
+                                // ── Drift check — debug only ──────────────────────────────
+                                if (isSnapDebugEnabled()) {
+                                    const driftCheck = (delay: number) => {
+                                        window.setTimeout(() => {
+                                            if (lastAnchorSysRef.current !== anchorIdx) return;
+                                            const drift = scrollElEl.scrollTop - target;
+                                            const scrollRectNow = scrollElEl.getBoundingClientRect();
+                                            const prevNow = staffRows[anchorIdx - 1]?.getBoundingClientRect();
+                                            const safeNow = scrollRectNow.top + headerH + GAP;
+                                            const prevDanglingNow = prevNow ? prevNow.bottom - safeNow : null;
+                                            console.log('[S1 DRIFT CHECK]', {
+                                                delay, anchorIdx,
+                                                target: Math.round(target),
+                                                scrollTopNow: Math.round(scrollElEl.scrollTop),
+                                                drift: Math.round(drift),
+                                                prevDanglingNow: prevDanglingNow != null ? Math.round(prevDanglingNow) : null,
+                                            });
+                                        }, delay);
+                                    };
+                                    driftCheck(60);
+                                    driftCheck(200);
+                                }
+                            }
+                        }
+                    }
+                }
             });
             // 🔒🔒🔒 END CURSOR/SCROLL ENGINE 🔒🔒🔒
 
-            await loadGuitarProFile(api, fileUrl);
+            // [F5] Load from byte cache on reset; prime cache on first load.
+            if (scoreBytesRef.current) {
+                api.load(scoreBytesRef.current.buffer);
+            } else {
+                fetch(fileUrl)
+                    .then(r => r.arrayBuffer())
+                    .then(buf => { if (!destroyed) scoreBytesRef.current = new Uint8Array(buf); })
+                    .catch(() => { });
+                await loadGuitarProFile(api, fileUrl);
+            }
         };
 
         init().catch(console.error);
@@ -1083,6 +1604,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             showCurtain(curtainRef.current);
             if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
             if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+            gp8OverlayHandleRef.current?.destroy(); gp8OverlayHandleRef.current = null;
+            gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
+            gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
+            gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
             if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
             lastAcceptedBeatStartRef.current = -1;
             lastRegressionLogRef.current = '';
@@ -1092,39 +1617,80 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             stableNextBeatRef.current = null;
             stableNextExpandedBeatStartRef.current = null;
             stableVisualKeyRef.current = null;
+            lastAnchorSysRef.current = -1;
+            lastThemeRef.current = null; // [TH] force palette re-apply on next reveal
+            if (s1AnimRafRef.current !== null) {
+                cancelAnimationFrame(s1AnimRafRef.current);
+                s1AnimRafRef.current = null;
+            }
         };
-    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop]);
+    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, resetKey]);
 
     useEffect(() => {
         const api = apiRef.current;
-        if (!api?.score?.tracks?.length) return;
-        const tr = trackIndices.map((i: number) => api.score.tracks[i]).filter(Boolean);
-        if (!tr.length) return;
+        if (!api) return;
+        const tracks = api.score?.tracks;
+        if (!tracks || !Array.isArray(tracks) || tracks.length === 0) return;
 
-        const primaryTrackName = (tr[0] as any)?.name ?? '';
-        const w = containerRef.current?.clientWidth ?? window.innerWidth;
-        const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
-        const trackProfile = resolveProfileByWidth(w, baseProfile, forceHorizontalRef.current);
-        const at = alphaTabModuleRef.current;
-        baseTrackProfileRef.current = baseProfile;
-        if (at && trackProfile !== activeProfileRef.current) {
-            activeProfileRef.current = trackProfile;
-            applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
-            if (containerRef.current) applyAxisLock(containerRef.current, api);
-        }
+        let cancelled = false;
+        const raf = requestAnimationFrame(() => {
+            if (cancelled) return;
 
-        stopLandscapeScrollLoop();
-        landscapeScrollStateRef.current = null;
-        isDraggingRef.current = false;
-        if (forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1)) {
-            if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
-        } else {
-            if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
-        }
+            const tracks = api.score?.tracks;
+            if (!tracks?.length) return;
+            const safeIndices = (trackIndices ?? [])
+                .filter((i): i is number => Number.isFinite(i))
+                .map(i => Math.floor(i))
+                .filter(i => i >= 0 && i < tracks.length);
 
-        hasRevealedRef.current = false;
-        showCurtain(curtainRef.current);
-        api.renderTracks(tr);
+            if (safeIndices.length === 0) {
+                console.warn('[V117] renderTracks skipped: no valid track indices', { trackIndices, tracksLen: tracks.length });
+                return;
+            }
+
+            const tr = safeIndices.map(i => tracks[i]).filter(Boolean);
+            const bad = tr.find(t => !(t as any)?.staves);
+            if (bad) {
+                console.warn('[V117] renderTracks skipped: track missing staves');
+                return;
+            }
+
+            const primaryTrackName = (tr[0] as any)?.name ?? '';
+            const w = containerRef.current?.clientWidth ?? window.innerWidth;
+            const baseProfile = resolveTrackLayoutProfile(primaryTrackName, false);
+            const trackProfile = resolveProfileByWidth(w, baseProfile, forceHorizontalRef.current);
+            const at = alphaTabModuleRef.current;
+            baseTrackProfileRef.current = baseProfile;
+            if (at && trackProfile !== activeProfileRef.current) {
+                activeProfileRef.current = trackProfile;
+                applyAlphaTabLayoutProfileSettings(api, at, trackProfile);
+                if (containerRef.current) applyAxisLock(containerRef.current, api);
+            }
+
+            stopLandscapeScrollLoop();
+            landscapeScrollStateRef.current = null;
+            isDraggingRef.current = false;
+            if (forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1)) {
+                if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
+            } else {
+                if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+            }
+
+            hasRevealedRef.current = false;
+            showCurtain(curtainRef.current);
+            cursorRef.current?.requestSnap('track-change');
+
+            try {
+                api.renderTracks(tr);
+            } catch (err) {
+                console.error('[V117] renderTracks failed', err, { safeIndices });
+            }
+        });
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf);
+        };
     }, [trackIndices, stopLandscapeScrollLoop]);
 
     useEffect(() => {
@@ -1152,15 +1718,101 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         api.playbackRange = (loopEnabled && playbackRange) ? playbackRange : null;
     }, [loopEnabled, playbackRange]);
 
-    // [S15] iOS orientation: visualViewport resize doesn't always trigger ResizeObserver.
-    // Re-pin cursor geometry on both window + visualViewport resize events.
     useEffect(() => {
-        const onResize = () => landscapeCursorRef.current?.updateLayout();
+        const STABLE_TOLERANCE = 2;
+        const STABLE_FRAMES_NEEDED = 2;
+
+        const runWhenStable = () => {
+            if (stabilizeRafRef.current != null) cancelAnimationFrame(stabilizeRafRef.current);
+            stableFramesRef.current = 0;
+            lastStableWRef.current = 0;
+
+            const tick = () => {
+                const el = containerRef.current;
+                if (!el) return;
+                const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
+                const isPortrait = !isDeviceLandscape();
+                const isDesktop = containerW >= MOBILE_LANDSCAPE_MAX_W;
+
+                const withinTolerance = Math.abs(containerW - lastStableWRef.current) <= STABLE_TOLERANCE;
+                if (withinTolerance) { stableFramesRef.current++; }
+                else { stableFramesRef.current = 0; lastStableWRef.current = containerW; }
+
+                if (stableFramesRef.current < STABLE_FRAMES_NEEDED) {
+                    stabilizeRafRef.current = requestAnimationFrame(tick);
+                    return;
+                }
+
+                stabilizeRafRef.current = null;
+
+                if (isDesktop && !isPortrait) {
+                    stopLandscapeScrollLoop();
+                    if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+                }
+
+                landscapeCursorRef.current?.updateLayout();
+                reassertLayout();
+            };
+
+            stabilizeRafRef.current = requestAnimationFrame(tick);
+        };
+
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        const onResize = () => {
+            if (debounceTimer !== null) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => { debounceTimer = null; runWhenStable(); }, 100);
+        };
+
         window.addEventListener('resize', onResize);
         window.visualViewport?.addEventListener('resize', onResize);
         return () => {
             window.removeEventListener('resize', onResize);
             window.visualViewport?.removeEventListener('resize', onResize);
+            if (debounceTimer !== null) clearTimeout(debounceTimer);
+            if (stabilizeRafRef.current != null) cancelAnimationFrame(stabilizeRafRef.current);
+        };
+    }, [reassertLayout, stopLandscapeScrollLoop]);
+
+    useEffect(() => {
+        return () => {
+            if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
+            if (stabilizeRafRef.current != null) cancelAnimationFrame(stabilizeRafRef.current);
+            reassertRafRef.current = null;
+            stabilizeRafRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        let raf1 = 0, raf2 = 0, raf3 = 0;
+        const schedule = () => {
+            cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); cancelAnimationFrame(raf3);
+            raf1 = requestAnimationFrame(() => {
+                raf2 = requestAnimationFrame(() => {
+                    raf3 = requestAnimationFrame(() => {
+                        gp8PmOverlayHandleRef.current?.update();
+                        gp8ChordOverlayHandleRef.current?.update();
+                        gp8OverlayHandleRef.current?.update();
+                        gp8VibratoOverlayHandleRef.current?.updatePlacement();
+                        requestAnimationFrame(() => requestAnimationFrame(() => {
+                            gp8VibratoOverlayHandleRef.current?.updateClamp();
+                        }));
+                    });
+                });
+            });
+        };
+        const ro = new ResizeObserver(schedule);
+        ro.observe(el);
+        window.addEventListener('resize', schedule);
+        window.visualViewport?.addEventListener('resize', schedule);
+        window.addEventListener('maestro:overlays-ready', schedule);
+        return () => {
+            ro.disconnect();
+            window.removeEventListener('resize', schedule);
+            window.visualViewport?.removeEventListener('resize', schedule);
+            window.removeEventListener('maestro:overlays-ready', schedule);
+            cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); cancelAnimationFrame(raf3);
         };
     }, []);
 
@@ -1182,7 +1834,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeProfileRef.current = nextProfile;
             applyAlphaTabLayoutProfile(api, at, nextProfile);
             applyAxisLock(el, api);
-            if (landscapeCursorRef.current) landscapeCursorRef.current.updateLayout(); // [S15] repin X + top + height on resize
+            if (landscapeCursorRef.current) landscapeCursorRef.current.updateLayout();
         });
         ro.observe(el);
         return () => ro.disconnect();
@@ -1227,28 +1879,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const surface = container.querySelector('.at-surface') as HTMLElement | null;
             if (!surface) { if (attempt < 20) setTimeout(() => tryAttach(attempt + 1), 150); return; }
 
-            // ── [L12/L16/L17] Touch drag + tap ───────────────────────────────
-            // tap  (<8px) → play/pause
-            // drag (≥8px) → scrub scrollLeft, clamped to [beat1X-cursorSurfaceX, maxScroll]
-            // isDraggingRef pauses RAF interpolation so scroll doesn't rubber-band back
             const touchState = { startX: 0, startScrollLeft: 0, isDragging: false, minScroll: 0 };
             const TAP_THRESHOLD = 8;
 
             const handleTouchStart = (ev: TouchEvent) => {
                 const api = apiRef.current;
-                const isStrip = forceHorizontalRef.current ||
-                    (api?.settings?.display?.layoutMode === 1);
+                const isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                 if (!isStrip) return;
-
                 touchState.startX = ev.touches[0].clientX;
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
                 isDraggingRef.current = false;
-                // Do NOT pause here — a tap while playing must toggle cleanly on touchend.
-                // Pause only happens once drag is confirmed in touchmove (dx >= threshold).
-                stopLandscapeScrollLoop(); // stop RAF regardless; restarts on touchend
-
-                // Compute minScroll from beat1X so clef never appears under cursor
+                stopLandscapeScrollLoop();
                 const tickCache = (api as any)?.tickCache;
                 const bounds = api?.renderer?.boundsLookup;
                 if (tickCache?.findBeat && bounds?.findBeat) {
@@ -1265,76 +1907,51 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             };
 
             const handleTouchMove = (ev: TouchEvent) => {
-                const isStrip = forceHorizontalRef.current ||
-                    (apiRef.current?.settings?.display?.layoutMode === 1);
+                const isStrip = forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1);
                 if (!isStrip) return;
-
                 const dx = touchState.startX - ev.touches[0].clientX;
                 if (Math.abs(dx) >= TAP_THRESHOLD) {
-                    // First frame drag is confirmed: pause playback so scrub is clean
                     if (!touchState.isDragging) {
                         const api = apiRef.current;
-                        if ((api?.playerState ?? 0) === 1) {
-                            api.pause();
-                            onPlayStateChange(false);
-                        }
+                        if ((api?.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
                     }
                     touchState.isDragging = true;
                     isDraggingRef.current = true;
                     if (typeof window !== 'undefined') (window as any).__isUserDragging = true;
                     ev.preventDefault();
                     const maxScroll = container.scrollWidth - container.clientWidth;
-                    const nextScrollLeft = Math.max(
-                        touchState.minScroll,
-                        Math.min(touchState.startScrollLeft + dx, maxScroll)
-                    );
-                    // Debug: confirm we're writing to the right element
-                    console.log('[touchmove]', {
-                        containerClass: container.className,
-                        scrollW: container.scrollWidth,
-                        clientW: container.clientWidth,
-                        before: container.scrollLeft.toFixed(1),
-                        next: nextScrollLeft.toFixed(1),
-                    });
-                    container.scrollLeft = nextScrollLeft;
-                    targetScrollLeftRef.current = nextScrollLeft;
+                    container.scrollLeft = Math.max(touchState.minScroll, Math.min(touchState.startScrollLeft + dx, maxScroll));
+                    targetScrollLeftRef.current = container.scrollLeft;
                 }
             };
 
             const handleTouchEnd = (ev: TouchEvent) => {
                 const dx = touchState.startX - (ev.changedTouches[0]?.clientX ?? touchState.startX);
                 const wasTap = !touchState.isDragging && Math.abs(dx) < TAP_THRESHOLD;
-                console.log('[V113 touch]', { dx: dx.toFixed(1), wasTap, scrollLeft: container.scrollLeft.toFixed(1) });
-
                 if (wasTap) {
                     const api = apiRef.current;
                     if (!api?.isReadyForPlayback) return;
                     const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
                     if (!isStrip) return;
-                    if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
-                    else { api.play(); onPlayStateChange(true); }
+                    try {
+                        if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
+                        else { api.play(); onPlayStateChange(true); }
+                    } catch (e) {
+                        console.warn('[V117] tap play/pause swallowed AudioWorklet error', e);
+                    }
                 } else {
-                    // ── [V114] Seek-on-drag-release ───────────────────────────
-                    // Resolve the beat currently under the fixed cursor line,
-                    // seek there, then resume if was playing before drag started.
                     const api = apiRef.current;
                     targetScrollLeftRef.current = container.scrollLeft;
-
                     if (api?.isReadyForPlayback) {
                         const tickCache = (api as any)?.tickCache;
                         const bounds = api?.renderer?.boundsLookup;
                         if (tickCache?.findBeat && bounds?.findBeat) {
-                            // beatX under cursor = scrollLeft + cursorSurfaceX (SVG space)
                             const cursorSurfaceX = getCursorSurfaceX(container);
                             const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
                             const trackSet = getTrackSet(api);
                             const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
-                            let bestBeat: any = null;
-                            let bestX = -Infinity;
-                            let bestTick = 0;
-                            // +2px epsilon: beat1X=120.001 would fail bx<=120.000 at scrollLeft=0
+                            let bestBeat: any = null, bestX = -Infinity, bestTick = 0;
                             const BEAT_EPSILON = 2;
-
                             for (const mb of masterBarsArr) {
                                 const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
                                 const stepSize = Math.max(1, Math.floor(mbDur / 32));
@@ -1344,23 +1961,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     if (!b) continue;
                                     const bb = bounds.findBeat(b);
                                     if (!bb?.visualBounds) continue;
-                                    const bx = typeof bb.onNotesX === 'number'
-                                        ? bb.onNotesX
-                                        : bb.visualBounds.x + bb.visualBounds.w / 2;
-                                    if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) {
-                                        bestX = bx;
-                                        bestBeat = b;
-                                        bestTick = mb.start + (b.playbackStart ?? 0);
-                                    }
+                                    const bx = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+                                    if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) { bestX = bx; bestBeat = b; bestTick = mb.start + (b.playbackStart ?? 0); }
                                 }
                             }
-
-                            // Fallback: if clamped at minScroll (M1 position), seek to tick 0
-                            if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) {
-                                bestTick = 0;
-                                bestBeat = true; // sentinel — just need the seek to fire
-                            }
-
+                            if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) { bestTick = 0; bestBeat = true; }
                             if (bestBeat) {
                                 seekTargetTickRef.current = bestTick;
                                 seekFreezeUntilRef.current = Date.now() + 300;
@@ -1369,22 +1974,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 api.tickPosition = bestTick;
                                 resetBeatAcceptance();
                                 landscapeScrollStateRef.current = null;
-                                console.log('[V114] drag seek →', { bestTick, beatXUnderCursor, bestX });
                             }
-                            // Always sync target to drag position BEFORE restarting loop.
-                            // Without this, old targetScrollLeft pulls strip back via LERP.
+                            cursorRef.current?.requestSnap('touch-seek');
+                            resetBeatAcceptance();
                             targetScrollLeftRef.current = container.scrollLeft;
-                            // Only restart loop if playing — paused = frozen (Songsterr behavior).
-                            // Loop's hard-idle guard also prevents drift if it's already running.
-                            if ((api.playerState ?? 0) === 1) {
-                                startLandscapeScrollLoop(container, api);
-                            }
+                            if ((api.playerState ?? 0) === 1) startLandscapeScrollLoop(container, api);
                         } else {
                             startLandscapeScrollLoop(container, api);
                         }
                     }
                 }
-
                 isDraggingRef.current = false;
                 if (typeof window !== 'undefined') (window as any).__isUserDragging = false;
                 touchState.isDragging = false;
@@ -1394,7 +1993,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             surface.addEventListener('touchmove', handleTouchMove, { passive: false });
             surface.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-            // ── Portrait click-to-seek ────────────────────────────────────────
             const findClosestBeatAtPos = (x: number, y: number, anchorBeat?: any): any | null => {
                 const api = apiRef.current;
                 const tickCache = (api as any)?.tickCache;
@@ -1462,7 +2060,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 stableNextBeatRef.current = nb;
                 stableNextExpandedBeatStartRef.current = ns;
                 stableCurBeatRef.current = r.beat;
-                cursor.requestSnap();
+                cursor.requestSnap('click-seek');
                 cursor.setBeat(r.beat, nb, ns, expandedStart);
                 cursor.setTick(expandedTick, nb, expandedStart);
             };
@@ -1472,15 +2070,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const api = apiRef.current;
                 if (!api) return;
                 const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
-                if (isStrip) return; // landscape handled by touch
-
+                if (isStrip) return;
                 if (loopEnabledRef.current) return;
                 const rect = surface.getBoundingClientRect();
                 const containerEl = containerRef.current!;
                 const scrollEl = (api.renderer?.framer?.scrollElement as HTMLElement | null | undefined) ?? containerEl;
                 const x = (ev.clientX - rect.left) + (scrollEl.scrollLeft ?? 0);
                 const y = (ev.clientY - rect.top) + (scrollEl.scrollTop ?? 0);
-
                 const bds = api.renderer?.boundsLookup;
                 let beat = bds?.getBeatAtPos?.(x, y) ?? null;
                 if (beat) {
@@ -1505,25 +2101,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
                 }
-
                 if (!beat || !tickCache?.masterBars) return;
                 const mbIdx = beat.voice?.bar?.masterBar?.index;
                 const offset = beat.playbackStart ?? 0;
                 if (mbIdx == null) return;
-
                 const currentTick = api.tickPosition ?? 0;
                 const candidates: number[] = tickCache.masterBars
                     .filter((mb: any) => mb.masterBar?.index === mbIdx)
                     .map((mb: any) => mb.start + offset);
                 if (!candidates.length) return;
-
                 const target = candidates.reduce((prev: number, curr: number) =>
                     Math.abs(curr - currentTick) < Math.abs(prev - currentTick) ? curr : prev);
                 const beatDurForClamp = beat.playbackDuration ?? beat.duration ?? 480;
                 const safeTarget = Math.min(target + 2, target + Math.max(0, beatDurForClamp - 1));
                 seekTargetTickRef.current = safeTarget;
                 seekFreezeUntilRef.current = Date.now() + 250;
-
                 const wasPlaying = (api.playerState ?? 0) === 1;
                 const tok = ++seekTokenRef.current;
                 if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
@@ -1533,7 +2125,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 api.tickPosition = safeTarget;
                 resetBeatAcceptance();
                 publishCursorAtTick(safeTarget);
-
                 if (wasPlaying) {
                     resumeTimerRef.current = window.setTimeout(() => {
                         resumeTimerRef.current = null;
@@ -1573,6 +2164,79 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         };
     }, [fileUrl]);
 
+    // ─── [TH] AlphaTab resource palette — applied on theme change ───────────────
+    // Gated on !isSettling: api.render() is only safe once the score is revealed.
+    // lastThemeRef dedupes repeated calls (e.g. strict-mode double-fire).
+    // Resources sourced from V94.6 confirmed probe — these values were stable.
+    // Note: colorPatch fill guard (null / "undefined") naturally skips title/artist
+    // in dark mode because AlphaTab will set a real white hex on scoreInfoColor.
+    useEffect(() => {
+        if (isSettling) return;
+        const api = apiRef.current;
+        if (!api) return;
+        if (lastThemeRef.current === theme) return;
+        lastThemeRef.current = theme;
+
+        const applyThemePalette = async () => {
+            const alphaTab = await import('@coderline/alphatab');
+            const Color = (alphaTab as any).model.Color;
+            const resources = api.settings.display.resources as any;
+            if (theme === 'dark') {
+                resources.staffLineColor = new Color(85, 85, 85, 255);
+                resources.barSeparatorColor = new Color(136, 136, 136, 255);
+                resources.mainGlyphColor = new Color(255, 255, 255, 255);
+                resources.secondaryGlyphColor = new Color(224, 224, 224, 255);
+                resources.scoreInfoColor = new Color(255, 255, 255, 255);
+                resources.barNumberColor = new Color(153, 153, 153, 255);
+            } else {
+                resources.staffLineColor = new Color(153, 153, 153, 255);
+                resources.barSeparatorColor = new Color(102, 102, 102, 255);
+                resources.mainGlyphColor = new Color(0, 0, 0, 255);
+                resources.secondaryGlyphColor = new Color(0, 0, 0, 255);
+                resources.scoreInfoColor = new Color(0, 0, 0, 255);
+                resources.barNumberColor = new Color(102, 102, 102, 255);
+            }
+            await api.updateSettings();
+            api.render();
+            if (isRendererDebugEnabled()) console.log('[TH] palette applied:', theme);
+        };
+
+        applyThemePalette().catch(console.error);
+    }, [theme, isSettling]);
+
+    // ─── [P6] Sync handler when prop changes after init ──────────────────────
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api) return;
+        const attach = () => {
+            const out = (api.player?.output as any) ?? null;
+            if (!out) return;
+            out.handler = playerMode === 'external' ? (externalMediaHandler ?? null) : null;
+        };
+        const attachOnce = () => { attach(); api.playerReady?.off(attachOnce); };
+        if (!api.player?.output) {
+            api.playerReady?.on(attachOnce);
+            return () => { api.playerReady?.off(attachOnce); };
+        }
+        attach();
+    }, [playerMode, externalMediaHandler]);
+
+    // ─── [P7] Switch PlayerMode enum when prop changes ────────────────────────
+    useEffect(() => {
+        const api = apiRef.current;
+        const at = alphaTabModuleRef.current;
+        if (!api || !at) return;
+        const modeMap: Record<string, any> = {
+            synthesizer: (at as any).PlayerMode?.EnabledSynthesizer,
+            external: (at as any).PlayerMode?.EnabledExternalMedia,
+            disabled: (at as any).PlayerMode?.Disabled,
+        };
+        const mode = modeMap[playerMode ?? 'synthesizer'];
+        if (mode == null) return;
+        (api.settings.player as any).playerMode = mode;
+        api.updateSettings();
+    }, [playerMode]);
+
     const bgColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
 
     return (
@@ -1591,24 +2255,34 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             <div ref={curtainRef} className="absolute inset-0 pointer-events-none"
                 style={{ background: bgColor, display: 'block', zIndex: 5000 }} />
 
-            {/*
-             * Non-scrolling wrapper — LandscapeFixedCursorOverlay attaches here.
-             * Cursor stays visually fixed; .alphatab-container scrolls beneath it.
-             */}
             <div style={{ position: 'relative', zIndex: 10, isolation: 'isolate' as any }}>
+                {/*
+                    Shell — carries the reading-column inset.
+                    🔒 55px = Songsterr parity (2.2cm gutter, probe-confirmed)
+                */}
                 <div
-                    ref={containerRef}
-                    className="alphatab-container"
+                    ref={shellRef}
+                    className="alphatab-shell"
                     style={{
                         position: 'relative',
                         width: '100%',
-                        overflow: 'hidden',
-                        WebkitOverflowScrolling: 'touch' as any,
-                        background: bgColor,
-                        paddingLeft: 'env(safe-area-inset-left, 0px)',
-                        paddingRight: 'env(safe-area-inset-right, 0px)',
+                        boxSizing: 'border-box' as const,
+                        paddingLeft: (forceHorizontal || !showGutters) ? 'env(safe-area-inset-left, 0px)' : '55px',
+                        paddingRight: (forceHorizontal || !showGutters) ? 'env(safe-area-inset-right, 0px)' : '55px',
                     }}
-                />
+                >
+                    <div
+                        ref={containerRef}
+                        className="alphatab-container"
+                        style={{
+                            position: 'relative',
+                            width: '100%',
+                            overflow: 'hidden',
+                            WebkitOverflowScrolling: 'touch' as any,
+                            background: bgColor,
+                        }}
+                    />
+                </div>
                 {apiRef.current && !isSettling && (
                     <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 900 }}>
                         <BeatCustomLoopOverlay

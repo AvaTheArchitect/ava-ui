@@ -1,6 +1,10 @@
 'use client';
 
 /**
+ * Last Updated April 29th, 2026
+ * Version V1.2 
+ * File: components/alphaTab/MaestroCursor2.tsx
+ * 
  * v1.1 changes (V105 renderer compat):
  *   ✅ Renderer D1 gate now blocks out-of-order beats upstream — cursor
  *      out-of-order guard is defense-in-depth, not primary filter.
@@ -11,8 +15,12 @@
  *   ✅ lastValidRatio: ratio memory now only updates from clean scans
  *      (expandedDur >= MIN_PRIMARY_BEAT_TICKS AND ratio in [0.5, 3.0]).
  * MaestroCursor2.tsx — "Songsterr Edition" v1.1
- * File: components/alphaTab/MaestroCursor2.tsx
- * Date: April 13, 2026
+ * 
+ * V1.1 patch (V115 renderer compat):
+ *   ✅ requestSnap(_reason?: string) — optional reason arg for interface
+ *      parity with MaestroCursor v1 (V1). Reason is intentionally ignored
+ *      in V2 — V2's direct-render model doesn't need per-reason branching.
+ *      Eliminates TS error: "Expected 0 arguments, but got 1".
  *
  * Philosophy: ANCHOR-LERP, not hitbox-math.
  *   Cursor walks from onNotesX(beat N) → onNotesX(beat N+1) over the
@@ -33,6 +41,13 @@
  *   ✅ Monotonic tick gate     — kills AlphaTab worker jitter
  *   ✅ requestSnap()           — resets lastTickApplied for backward seeks
  *   ✅ SOFT backstep clamp     — no freeze-then-lurch on phantom backward ticks
+ *
+ * requestSnap() should ONLY be called for explicit user actions:
+ *   - click-to-seek    → requestSnap('click-seek')
+ *   - loop wrap/drag   → requestSnap('loop-wrap')
+ *   - song/track load  → requestSnap('song-load')
+ *   - huge tick jump   → requestSnap('huge-jump')
+ *   NOT for: barlines, repeats, normal playback quantization gaps.
  *
  * Visual: Songsterr-style teal semi-transparent bar + thin solid spine.
  *   Use CSS var(--at-cursor-color) if present, else teal fallback.
@@ -237,10 +252,6 @@ export class MaestroCursorV2 {
         (this as any)._currentBeat = beat;
 
         // Snap to beat origin — forward-only guard on same row.
-        // If new anchor is behind lastX on the same staff row (e.g. two beats share
-        // the same onNotesX, or a bend cluster renders at identical pixel), don't
-        // snap backward. A true hard snap is only needed for row changes or after
-        // requestSnap() (which resets lastX to -9999).
         const finalX = this.currentNoteX - BAR_WIDTH / 2;
         const finalY = this.currentY;
         const sameRow = Math.abs(finalY - this.lastY) < 5;
@@ -293,7 +304,6 @@ export class MaestroCursorV2 {
             // STAY PUT: next beat same row, same X (bend cluster / stacked notes).
             // Micro-drift 4px max over the beat duration — avoids hard-freeze
             // perception on clusters where AlphaTab's anchor bias is visible.
-            // Does NOT glide to barline — just breathes forward slightly.
             const STAY_DRIFT_PX = 4;
             interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
         } else {
@@ -305,7 +315,7 @@ export class MaestroCursorV2 {
                 : null;
             const barRight = mbBounds?.visualBounds
                 ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
-                : this.currentNoteX + 24; // graceful fallback
+                : this.currentNoteX + 24;
             interpolatedX = this.currentNoteX + (barRight - this.currentNoteX) * progress;
         }
 
@@ -322,16 +332,26 @@ export class MaestroCursorV2 {
     /**
      * Call before seeks, loop wraps, song switch, and tick === 0.
      * Resets monotonic gate so backward ticks are accepted again.
-     * [M2] Combined with the tick≤0 guard in page.tsx, kills M1 skip.
+     *
+     * ✅ Accepts optional reason string for interface parity with MaestroCursor v1.
+     *    Reason is intentionally not acted on in V2 — V2's direct-render model
+     *    doesn't need per-reason branching. Eliminates TS "Expected 0 arguments" error.
+     *
+     * Only call from explicit user actions:
+     *   requestSnap('click-seek')   — click-to-seek
+     *   requestSnap('loop-wrap')    — loop drag end / wrap
+     *   requestSnap('song-load')    — song/track reload
+     *   requestSnap('huge-jump')    — tick delta > 30k (coda/D.S.)
+     * NOT for: barlines, repeats, normal playback quantization gaps.
      */
-    public requestSnap(): void {
+    public requestSnap(_reason?: string): void {
         this.nextNoteX = null;
         this.stayPutMode = false;
         this.lastValidRatio = 1.0; // reset ratio on seek/loop/song-switch
         this.lastTickApplied = -1;
         this.lastX = -9999;
         this.lastY = -9999;
-        console.log('[CursorV2] requestSnap — gate reset');
+        console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
     }
 
     public destroy(): void {
@@ -341,12 +361,9 @@ export class MaestroCursorV2 {
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    // Convenience ref — needed for PARK MODE masterBar lookup.
     private get currentBeat(): any { return (this as any)._currentBeat ?? null; }
 
     private _applyTransform(x: number, y: number, h: number, snap: boolean): void {
-        // [Fix C port] Soft backstep clamp — not hard drop.
-        // Allows 0–(BACKSTEP_PX-1)px float noise; blocks larger phantom reversal.
         const sameRow = Math.abs(y - this.lastY) < 5;
         if (!snap && sameRow && this.lastX > -9000 && x < this.lastX - BACKSTEP_PX) {
             x = this.lastX;
@@ -388,8 +405,7 @@ export class MaestroCursorV2 {
 
     /**
      * Songsterr-style teal vertical bar SVG.
-     * Structure: semi-transparent fill bar + 1px solid spine centered at x=BAR_WIDTH/2.
-     * No teardrop — clean A/B visual contrast vs v4.6.1 purple teardrop.
+     * Semi-transparent fill bar + 1px solid spine centered at x=BAR_WIDTH/2.
      */
     private _renderBarSVG(h: number): void {
         const w = BAR_WIDTH;
@@ -399,11 +415,9 @@ export class MaestroCursorV2 {
             <svg width="${w}" height="${h}"
                  viewBox="0 0 ${w} ${h}"
                  style="display:block;overflow:visible;">
-                <!-- Semi-transparent fill bar -->
                 <rect x="0" y="0" width="${w}" height="${h}"
                       fill="${BAR_COLOR}"
                       rx="2" ry="2"/>
-                <!-- Solid spine — the "teal red line" -->
                 <line x1="${spineX}" y1="0"
                       x2="${spineX}" y2="${h}"
                       stroke="${SPINE_COLOR}"

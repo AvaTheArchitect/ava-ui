@@ -2,7 +2,7 @@
 
 /* ============================================================================
    MAESTRO.AI — globals.css
-   Updated: March 2026
+   Updated: May 2026
 
    SCOPE OF THIS FILE
    ──────────────────
@@ -13,6 +13,7 @@
         - Shared typography color tiers
         - Accent / brand colors
         - Tailwind @theme registration
+   ✅ Player shell — TopMenuTray slide-out during playback [PS1]
 
    ❌ NOT in this file:
         - TopMenuTray chrome     → future maestro.css (fixed dark surface)
@@ -77,6 +78,9 @@
   --shadow-elevation:
     0 20px 40px -8px rgba(0, 0, 0, 0.18),
     0 10px 16px -6px rgba(0, 0, 0, 0.12);
+
+  /* Player shell — tray slide transition duration [PS1] */
+  --tray-transition-ms: 160ms;
 }
 
 
@@ -204,6 +208,41 @@ body {
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+
+/* ============================================================================
+   PLAYER SHELL — TopMenuTray auto-hide during playback                  [PS1]
+   ============================================================================
+   How it works:
+     1. Wrap TopMenuTray + <main> in a <div className="player-shell">.
+     2. Add is-playing to that div whenever isPlaying === true.
+     3. The tray slides up and out; snap-scroll math in the renderer reads
+        headerH = 0 during playback (tray is visually gone).
+
+   The tray uses position: sticky so <main> re-claims its space as soon as
+   translateY(-100%) fires — no layout shift, no padding juggle needed.
+
+   Restore on pause: removing is-playing triggers the reverse transition.
+   ============================================================================ */
+
+/* Tray slide transition */
+[data-top-menu-tray] {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  transition:
+    transform var(--tray-transition-ms) ease,
+    opacity   var(--tray-transition-ms) ease;
+  will-change: transform;
+}
+
+/* Slide out when playing */
+.player-shell.is-playing [data-top-menu-tray] {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
 
 /* ============================================================================
    MAESTRO CURSOR — Drag Visual Feedback V99.23

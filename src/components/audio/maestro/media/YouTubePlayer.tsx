@@ -1,27 +1,40 @@
 'use client';
 
 /**
- * YouTube Player Component - March 14th, 2026 - V99: Dynamic slot awareness
+ * YouTube Player Component
+ * V99.2 — Mobile sizing blueprint merged from backup (V99).
+ * Date: April 29th, 2026
  *
- * 🔥 V99 CHANGES:
- * ✅ videoVariants expanded to all 6 tab_youtube slots (main, backing, solo,
- *    playthrough, live, lesson) — matches SongItem.youtubeVariants + queries.ts
- * ✅ Dropdown renders all 6 slots dynamically — only shows slots with a real video ID
- * ✅ selectedVariant type updated to include 'live' | 'lesson'
- * ✅ lesson maps to "Tutorial" in the player UI
+ * LAYOUT MATRIX (all 5 cases):
+ * ─────────────────────────────────────────────────────────────────
+ * Mobile landscape   (any variant):   180×100px  right-0 bottom-[80px]  🔒 backup
+ * Mobile portrait    normal variant:  52vw wide  58vw video h            🔒 backup
+ * Mobile portrait    large variant:   full-width 548px tall               ← same as "big" normal was before
+ * Desktop            normal variant:  355×235px  right-4 md:bottom-[74px] 🔒 locked
+ * Desktop            large variant:   min(912px,95vw)×548px right-4       🔒 locked
+ * ─────────────────────────────────────────────────────────────────
  *
- * 🔒 V98.2 FEATURES (PRESERVED):
+ * Bottom clearance: use CSS var approach when TransportBar height is confirmed.
+ * Currently: landscape=80px, portrait-mobile=80px, desktop=74px.
+ *
+ * V99.1 PRESERVED:
+ * ✅ isLargeVariant (playthrough | lesson)
+ * ✅ onVariantTypeChange prop
+ * ✅ All 6 slot types + dynamic dropdown
+ * ✅ Deferred seek / initialSeekRef pattern
+ * ✅ All imperative handle methods
  */
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
 
-// YouTube IFrame API types
 declare global {
     interface Window {
         YT: any;
         onYouTubeIframeAPIReady: () => void;
     }
 }
+
+type VariantKey = 'main' | 'backing' | 'solo' | 'playthrough' | 'live' | 'lesson';
 
 interface YouTubePlayerProps {
     videoId: string;
@@ -44,10 +57,10 @@ interface YouTubePlayerProps {
         lesson?: string;
     };
     onVariantChange?: (videoId: string) => void;
+    onVariantTypeChange?: (variant: VariantKey) => void;
     videoStartOffset?: number;
 }
 
-// 🔒 Memoized component
 export const YouTubePlayer = React.memo(
     React.forwardRef<any, YouTubePlayerProps>(({
         videoId,
@@ -63,23 +76,20 @@ export const YouTubePlayer = React.memo(
         isMobileLandscape = false,
         videoVariants,
         onVariantChange,
+        onVariantTypeChange,
         videoStartOffset = 0,
     }, ref) => {
         const playerRef = useRef<any>(null);
         const containerRef = useRef<HTMLDivElement>(null);
         const [isAPIReady, setIsAPIReady] = useState(false);
-        // All 6 tab_youtube slot types — dropdown surfaces whichever have a real video ID
-        const [selectedVariant, setSelectedVariant] = useState<'main' | 'backing' | 'solo' | 'playthrough' | 'live' | 'lesson'>('main');
-
-        // Track initial seek to prevent auto-play
+        const [selectedVariant, setSelectedVariant] = useState<VariantKey>('main');
         const initialSeekRef = useRef<number>(-1);
 
-        // Expose YouTube player instance
+        const isLargeVariant = selectedVariant === 'playthrough' || selectedVariant === 'lesson';
+
         useImperativeHandle(ref, () => ({
             playVideo: () => {
-                // Apply deferred initial seek on first play
                 if (initialSeekRef.current >= 0) {
-                    console.log(`⏱️ V98: Applying deferred seek to ${initialSeekRef.current}s on play`);
                     playerRef.current?.seekTo?.(initialSeekRef.current, true);
                     initialSeekRef.current = -1;
                 }
@@ -87,26 +97,14 @@ export const YouTubePlayer = React.memo(
             },
             pauseVideo: () => playerRef.current?.pauseVideo?.(),
             seekTo: (seconds: number, allowSeekAhead: boolean) => {
-                if (!playerRef.current) {
-                    console.warn('⚠️ V98: Player ref not ready');
-                    return;
-                }
-
+                if (!playerRef.current) { console.warn('⚠️ V98: Player ref not ready'); return; }
                 const YT = (window as any).YT;
-                if (!YT || !YT.PlayerState) {
-                    console.warn('⚠️ V98: YouTube API not loaded - deferring seek');
-                    initialSeekRef.current = seconds;
-                    return;
-                }
-
+                if (!YT || !YT.PlayerState) { initialSeekRef.current = seconds; return; }
                 const state = playerRef.current.getPlayerState?.();
-
                 if (state !== YT.PlayerState.PAUSED && state !== YT.PlayerState.PLAYING) {
                     initialSeekRef.current = seconds;
-                    console.log(`⏱️ V98: Deferring seek to ${seconds}s (state=${state})`);
                 } else {
                     playerRef.current.seekTo(seconds, allowSeekAhead);
-                    console.log(`⏱️ V98: Immediate seek to ${seconds}s (state=${state})`);
                 }
             },
             getCurrentTime: () => playerRef.current?.getCurrentTime?.() || 0,
@@ -118,167 +116,115 @@ export const YouTubePlayer = React.memo(
             getPlayerState: () => playerRef.current?.getPlayerState?.() || -1,
         }), []);
 
-        // ==================== YOUTUBE API LOADING ====================
+        // ── YouTube API loading ───────────────────────────────────────────────
         useEffect(() => {
-            if (window.YT && window.YT.Player) {
-                setIsAPIReady(true);
-                return;
-            }
-
+            if (window.YT && window.YT.Player) { setIsAPIReady(true); return; }
             const tag = document.createElement('script');
             tag.src = 'https://www.youtube.com/iframe_api';
-            const firstScriptTag = document.getElementsByTagName('script')[0];
-            firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-
-            window.onYouTubeIframeAPIReady = () => {
-                console.log('✅ V98: YouTube IFrame API Ready');
-                setIsAPIReady(true);
-            };
-
-            return () => {
-                window.onYouTubeIframeAPIReady = () => { };
-            };
+            const first = document.getElementsByTagName('script')[0];
+            first.parentNode?.insertBefore(tag, first);
+            window.onYouTubeIframeAPIReady = () => { setIsAPIReady(true); };
+            return () => { window.onYouTubeIframeAPIReady = () => {}; };
         }, []);
 
-        // ==================== PLAYER INITIALIZATION ====================
+        // ── Player initialization ─────────────────────────────────────────────
         useEffect(() => {
             if (!isAPIReady || !isVisible || !containerRef.current) return;
-
-            console.log(`🎬 V98: Initializing YouTube player: ${videoId}`);
-            if (videoStartOffset > 0) {
-                console.log(`⏱️ V98: Video start offset: ${videoStartOffset}s`);
-                initialSeekRef.current = videoStartOffset;
-            }
-
+            if (videoStartOffset > 0) initialSeekRef.current = videoStartOffset;
             playerRef.current = new window.YT.Player(containerRef.current, {
-                videoId: videoId,
+                videoId,
                 width: '100%',
                 height: '100%',
                 playerVars: {
-                    autoplay: 0,
-                    controls: 0,
-                    disablekb: 1,
-                    showinfo: 0,
-                    rel: 0,
-                    modestbranding: 0,
-                    fs: 0,
-                    cc_load_policy: 0,
-                    iv_load_policy: 3,
-                    enablejsapi: 1,
-                    widgetid: 1,
+                    autoplay: 0, controls: 0, disablekb: 1, showinfo: 0,
+                    rel: 0, modestbranding: 0, fs: 0, cc_load_policy: 0,
+                    iv_load_policy: 3, enablejsapi: 1, widgetid: 1,
                     origin: window.location.origin,
                 },
                 events: {
-                    onReady: (event: any) => {
-                        console.log('✅ V98: YouTube player ready (no auto-seek)');
-                        if (onPlayerReady) {
-                            console.log('📢 V98: Notifying parent - YouTube player is ready');
-                            onPlayerReady();
-                        }
-                    },
+                    onReady: () => { onPlayerReady?.(); },
                     onStateChange: (event: any) => {
-                        const state = event.data;
-                        console.log(`🎬 V98: YouTube state: ${state}`);
-
-                        if (onStateChange) {
-                            onStateChange(event);
-                        }
-
-                        if (state === window.YT.PlayerState.PLAYING && onPlayStateChange) {
-                            onPlayStateChange(true);
-                        } else if (state === window.YT.PlayerState.PAUSED && onPlayStateChange) {
-                            onPlayStateChange(false);
-                        } else if (state === window.YT.PlayerState.ENDED && onPlayStateChange) {
-                            onPlayStateChange(false);
-                        }
+                        onStateChange?.(event);
+                        if (event.data === window.YT.PlayerState.PLAYING) onPlayStateChange?.(true);
+                        else if (event.data === window.YT.PlayerState.PAUSED) onPlayStateChange?.(false);
+                        else if (event.data === window.YT.PlayerState.ENDED) onPlayStateChange?.(false);
                     },
                 },
             });
-
             return () => {
-                if (playerRef.current && playerRef.current.destroy) {
-                    console.log('🗑️ V98: Destroying YouTube player');
-                    playerRef.current.destroy();
-                    playerRef.current = null;
-                }
+                playerRef.current?.destroy?.();
+                playerRef.current = null;
                 initialSeekRef.current = -1;
             };
         }, [isAPIReady, isVisible, videoId, videoStartOffset, onStateChange, onPlayStateChange, onPlayerReady]);
 
-        // ==================== YOUTUBE TIME HEARTBEAT ====================
+        // ── Time heartbeat ────────────────────────────────────────────────────
         useEffect(() => {
             if (!playerRef.current || !onTimeUpdate) return;
-
-            const interval = setInterval(() => {
+            const id = setInterval(() => {
                 try {
-                    if (playerRef.current && playerRef.current.getCurrentTime) {
-                        const ytTime = playerRef.current.getCurrentTime();
-                        const adjustedTime = Math.max(0, ytTime - videoStartOffset);
-                        const ytTimeMs = adjustedTime * 1000;
-                        onTimeUpdate(ytTimeMs);
+                    if (playerRef.current?.getCurrentTime) {
+                        onTimeUpdate(Math.max(0, playerRef.current.getCurrentTime() - videoStartOffset) * 1000);
                     }
-                } catch {
-                    // Player not ready
-                }
+                } catch { /* not ready */ }
             }, 50);
-
-            return () => clearInterval(interval);
+            return () => clearInterval(id);
         }, [onTimeUpdate, videoStartOffset]);
 
-        // ==================== UI HANDLERS ====================
+        // ── UI handlers ───────────────────────────────────────────────────────
         const handleClose = useCallback(() => {
-            if (playerRef.current) {
-                playerRef.current.pauseVideo();
-            }
+            playerRef.current?.pauseVideo?.();
             onClose();
         }, [onClose]);
 
-        const handleVariantChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
-            const variant = event.target.value as 'main' | 'backing' | 'solo' | 'playthrough' | 'live' | 'lesson';
+        const handleVariantChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+            const variant = e.target.value as VariantKey;
             setSelectedVariant(variant);
-
-            console.log(`🔄 V99: Variant selected: ${variant}`);
-
+            onVariantTypeChange?.(variant);
             const newVideoId = videoVariants?.[variant];
-            if (newVideoId) {
-                console.log(`🔄 V99: Switching to ${variant} video: ${newVideoId}`);
-                onVariantChange?.(newVideoId);
-            } else {
-                console.warn(`⚠️ V99: No video ID found for variant: ${variant}`);
-            }
-        }, [videoVariants, onVariantChange]);
+            if (newVideoId) onVariantChange?.(newVideoId);
+            else console.warn(`⚠️ V99: No video ID for variant: ${variant}`);
+        }, [videoVariants, onVariantChange, onVariantTypeChange]);
 
         if (!isVisible) return null;
 
-        // ==================== RENDER - SONGSTERR STYLE ====================
+        // ── Layout resolution ─────────────────────────────────────────────────
+        // Priority: landscape > desktop (md+) > mobile portrait
+        // Mobile portrait large reuses the "big" footprint — readable for tutorials.
+
         return (
             <div
                 className={`
-                    fixed z-40 
-                    bg-black overflow-hidden
-                    shadow-2xl border border-gray-300
-                    flex flex-col
+                    fixed z-40 bg-black overflow-hidden shadow-2xl border border-gray-300 flex flex-col
                     ${isMobileLandscape
+                        // 🔒 Landscape: always compact (backup locked)
                         ? 'bottom-[80px] right-0 w-[180px]'
-                        : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[320px]'
+                        // Desktop (md+): Songsterr exact pixel sizes
+                        // Mobile portrait: 52vw normal | full-width large
+                        : isLargeVariant
+                            ? 'bottom-[80px] right-0 w-full md:bottom-[74px] md:right-4 md:w-[min(912px,95vw)]'
+                            : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[355px]'
                     }
                 `}
+                style={{
+                    height: isMobileLandscape
+                        // 🔒 Landscape: 100px (backup locked)
+                        ? '100px'
+                        : isLargeVariant
+                            // Large: 548px desktop | full-height-ish mobile portrait
+                            ? 'min(548px, 85vh)'
+                            // Normal: 235px desktop (fixed) | auto mobile (58vw video drives it)
+                            : undefined,
+                }}
             >
-                {/* Menu bar — all 6 slots rendered dynamically.
-                    Only options with a real youtube_id from tab_youtube are shown.
-                    Compact playback labels (lesson → "Tutorial"). */}
-                <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between">
+                {/* Top bar — 35px, matches Songsterr */}
+                <div className="bg-white border-b border-gray-200 px-2 py-1.5 flex items-center justify-between" style={{ height: 35, flexShrink: 0 }}>
                     <label className="flex items-center gap-1.5 text-xs text-gray-700">
                         <span className="text-gray-500 text-[10px] md:text-xs">Synced video:</span>
                         <select
                             value={selectedVariant}
                             onChange={handleVariantChange}
-                            className="
-                                bg-white text-gray-800 text-[10px] md:text-xs
-                                border border-gray-300 rounded px-1 py-0.5
-                                focus:outline-none focus:border-blue-500
-                                cursor-pointer
-                            "
+                            className="bg-white text-gray-800 text-[10px] md:text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer"
                         >
                             {videoVariants?.main && <option value="main">Full mix</option>}
                             {videoVariants?.backing && <option value="backing">Backing track</option>}
@@ -286,31 +232,34 @@ export const YouTubePlayer = React.memo(
                             {videoVariants?.playthrough && <option value="playthrough">Playthrough</option>}
                             {videoVariants?.live && <option value="live">Live</option>}
                             {videoVariants?.lesson && <option value="lesson">Tutorial</option>}
-                            {/* Fallback: no variants available */}
                             {!videoVariants?.main && !videoVariants?.backing && !videoVariants?.solo &&
-                                !videoVariants?.playthrough && !videoVariants?.live && !videoVariants?.lesson && (
-                                    <option value="main" disabled>Full mix</option>
-                                )}
+                             !videoVariants?.playthrough && !videoVariants?.live && !videoVariants?.lesson && (
+                                <option value="main" disabled>Full mix</option>
+                            )}
                         </select>
                     </label>
-
-                    <button
-                        onClick={handleClose}
-                        className="p-1 text-gray-500 hover:text-gray-800 transition-colors"
-                        title="Close video"
-                    >
+                    <button onClick={handleClose} className="p-1 text-gray-500 hover:text-gray-800 transition-colors" title="Close video">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                         </svg>
                     </button>
                 </div>
 
-                {/* Video container */}
+                {/* Video container
+                    🔒 Mobile portrait normal: h-[58vw] (backup locked)
+                    🔒 Mobile landscape:       h-[100px] minus 35px bar = effectively ~65px (iframe fills)
+                       Desktop normal:         200px (235 total - 35 bar)
+                       Desktop/mobile large:   flex-1 fills remaining wrapper height */}
                 <div
                     ref={containerRef}
                     className={`
                         w-full bg-black
-                        ${isMobileLandscape ? 'h-[100px]' : 'h-[58vw] md:h-[180px]'}
+                        ${isMobileLandscape
+                            ? 'h-[65px]'
+                            : isLargeVariant
+                                ? 'flex-1'
+                                : 'h-[58vw] md:h-[200px]'
+                        }
                     `}
                 />
             </div>

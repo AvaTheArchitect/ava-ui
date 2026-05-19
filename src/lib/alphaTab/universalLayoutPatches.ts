@@ -28,7 +28,7 @@ export interface RowAnchors {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STAFF_LINE_FILL = "#a5a5a5"; // lowercase — AlphaTab emits #A5A5A5; getAttribute returns as-is
+const STAFF_LINE_FILL = "#a5a5a5";
 
 const HEADER_SECTION_GAP = 20; // barNumberY - 20 → section label lane
 const HEADER_TEMPO_CONTEXT_GAP = 45; // barNumberY - 45 → above tempo cluster
@@ -116,9 +116,6 @@ function _mode(values: number[]): number {
 
 // ─── Universal patches ────────────────────────────────────────────────────────
 
-/**
- * fixBar1X — first staff row only. Pins bar "1" past the clef/time sig.
- */
 function fixBar1X(svg: SVGSVGElement): void {
   let staffStartX: number | null = null;
   svg.querySelectorAll<SVGRectElement>("rect").forEach((r) => {
@@ -144,10 +141,6 @@ function fixBar1X(svg: SVGSVGElement): void {
   });
 }
 
-/**
- * fixDisplacedBarNumbers — all rows. Handles mid-row time sig changes that
- * push bar numbers right of their barline.
- */
 function fixDisplacedBarNumbers(
   svg: SVGSVGElement,
   anchors: RowAnchors,
@@ -189,8 +182,11 @@ function fixDisplacedBarNumbers(
     if (!Number.isFinite(currentX)) return;
     const nearestLeft = barlineXs.filter((x) => x < currentX).at(-1);
     if (nearestLeft === undefined) return;
-    const targetX = nearestLeft + BAR_NUM_PAD;
-    if (currentX - targetX < MIN_DISPLACEMENT) return;
+    const targetX =
+      currentX - nearestLeft < MIN_DISPLACEMENT
+        ? currentX
+        : nearestLeft + BAR_NUM_PAD;
+    if (Math.abs(currentX - targetX) < 1) return;
     t.setAttribute("x", String(targetX));
     console.log(
       `[universal] fixDisplacedBarNumbers row[${rowIdx}] "${barText}" x ${currentX.toFixed(1)}→${targetX.toFixed(1)}`,
@@ -205,12 +201,6 @@ function fixDisplacedBarNumbers(
   return moved;
 }
 
-/**
- * hideRepeatedTabClef — keeps TAB clef only on first staff row.
- * Skips SMuFL time-signature digit glyphs (U+E080–E089) so mid-row
- * time sig changes are not hidden alongside the TAB clef.
- * Also skips U+E044 (barline-structure glyph confirmed by probe).
- */
 function hideRepeatedTabClef(svg: SVGSVGElement): void {
   let hidden = 0;
   svg.querySelectorAll<SVGGElement>("g.at").forEach((g) => {
@@ -219,10 +209,10 @@ function hideRepeatedTabClef(svg: SVGSVGElement): void {
     if (!m) return;
     if (parseFloat(m[1]) >= 90) return;
     const raw = (g.querySelector("text")?.textContent ?? "").trim();
-    if (!raw || /^[\x20-\x7E]+$/.test(raw)) return; // skip empty or ASCII
+    if (!raw || /^[\x20-\x7E]+$/.test(raw)) return;
     const cp = raw.codePointAt(0) ?? 0;
-    if (cp >= 0xe080 && cp <= 0xe089) return; // ✅ SMuFL time-sig digits — never hide
-    if (cp === 0xe044) return; // ✅ barline-structure glyph — never hide
+    if (cp >= 0xe080 && cp <= 0xe089) return; // SMuFL time-sig digits
+    if (cp === 0xe044) return; // barline-structure glyph
     g.setAttribute("display", "none");
     hidden++;
   });
@@ -230,9 +220,6 @@ function hideRepeatedTabClef(svg: SVGSVGElement): void {
     console.log(`[universal] hideRepeatedTabClef: hidden=${hidden} glyphs`);
 }
 
-/**
- * fixSectionLabelX — snaps section label X to its bar's barline. X-only pass.
- */
 function fixSectionLabelX(
   svg: SVGSVGElement,
   anchors: RowAnchors,
@@ -271,9 +258,7 @@ function fixSectionLabelX(
       return;
     if (!isHeaderBoldGeorgia(el)) return;
     const text = (el.textContent ?? "").trim();
-    if (!text) return;
-    if (RX_SECTION_SKIP.test(text)) return;
-    if (RX_TEMPO_TEXT.test(text)) return;
+    if (!text || RX_SECTION_SKIP.test(text) || RX_TEMPO_TEXT.test(text)) return;
 
     const currentX = parseFloat(el.getAttribute("x") ?? "NaN");
     if (!Number.isFinite(currentX)) return;
@@ -288,10 +273,6 @@ function fixSectionLabelX(
   });
 }
 
-/**
- * fixHeaderStack — pins section labels and tempo-context markers to consistent
- * Y lanes relative to barNumberY. Text-only. No <g> moves.
- */
 function fixHeaderStack(
   svg: SVGSVGElement,
   anchors: RowAnchors,
@@ -318,13 +299,10 @@ function fixHeaderStack(
       return;
     if (!isHeaderBoldGeorgia(el)) return;
     const text = (el.textContent ?? "").trim();
-    if (!text) return;
-    if (RX_SECTION_SKIP.test(text)) return;
-    if (RX_TEMPO_TEXT.test(text)) return; // TempoClusterManager owns tempo text
+    if (!text || RX_SECTION_SKIP.test(text) || RX_TEMPO_TEXT.test(text)) return;
 
     const currentY = parseFloat(el.getAttribute("y") ?? "NaN");
-    let rawTarget: number;
-    let lane: string;
+    let rawTarget: number, lane: string;
 
     if (RX_TEMPO_CONTEXT.test(text)) {
       rawTarget = tempoCtxY;
@@ -350,16 +328,30 @@ function fixHeaderStack(
     );
 }
 
-// ─── Entry point ──────────────────────────────────────────────────────────────
+// ─── Stable row key stamping ──────────────────────────────────────────────────
 
 /**
- * runUniversalLayoutPatches — called unconditionally for ALL GP file types.
- * Safe to run on gp4/gp5/gp7/gp8. Zero GP8-specific assumptions.
+ * stampStaffSvgRowKeys — assigns data-maestro-row-key to every staff SVG in
+ * DOM order. Called once per renderFinished (inside runUniversalLayoutPatches)
+ * before any overlay runs. All overlay systems read this key so row "0" means
+ * the same physical svg.at-surface-svg everywhere (PM, chord, FX, etc.).
  */
+function stampStaffSvgRowKeys(containerEl: HTMLElement): void {
+  const svgs = Array.from(
+    containerEl.querySelectorAll<SVGSVGElement>("svg.at-surface-svg"),
+  ).filter(isStaffSvg);
+  svgs.forEach((svg, i) => {
+    svg.dataset.maestroRowKey = String(i);
+  });
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
 /**
  * runUniversalLayoutPatches — returns a Promise that resolves only after both
  * rAF frames AND the mutation pass complete. Caller must await before curtain drop
  * to prevent the pre-patch layout from flashing on screen.
+ * Called unconditionally for ALL GP file types. Safe on gp4/gp5/gp7/gp8.
  */
 export function runUniversalLayoutPatches(
   containerEl: HTMLElement,
@@ -367,6 +359,8 @@ export function runUniversalLayoutPatches(
   console.log("[universal] runUniversalLayoutPatches");
   return new Promise((resolve) => {
     const run = () => {
+      // Stamp stable row keys first — all overlays depend on this
+      stampStaffSvgRowKeys(containerEl);
       let firstStaffRowSeen = false;
       const svgRows =
         containerEl.querySelectorAll<SVGSVGElement>("svg.at-surface-svg");
@@ -389,8 +383,6 @@ export function runUniversalLayoutPatches(
       });
       resolve();
     };
-    // Two rAF frames: first ensures AlphaTab paint is complete,
-    // second ensures getBoundingClientRect reflects final layout.
     requestAnimationFrame(() => requestAnimationFrame(run));
   });
 }

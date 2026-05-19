@@ -48,7 +48,6 @@ type Instrument = 'any' | 'guitar6' | 'guitar7' | 'guitar12' | 'bass4' | 'bass5'
 type Difficulty = 'any' | 1 | 2 | 3;
 type Tuning = string;
 type PlaylistSort = 'az' | 'za';
-// Genre filter type — Favorites / All Songs only
 type Genre = 'any' | 'rock' | 'metal' | 'blues' | 'country' | 'worship';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -90,10 +89,6 @@ const getTheme = (dark: boolean) => ({
 });
 
 // ─── Local filter option arrays ───────────────────────────────────────────────
-// These are UI-only wrappers — not exported. Canonical data lives in @/lib/song-data.
-//
-// MY_TABS_GENRE_OPTIONS: prepend 'Any genre' to canonical GENRE_OPTIONS
-// TUNINGS: used directly — canonical array already starts with { 'Any tunings', 'any' }
 
 const MY_TABS_GENRE_OPTIONS: { label: string; value: string }[] = [
     { label: 'Any genre', value: 'any' },
@@ -102,7 +97,6 @@ const MY_TABS_GENRE_OPTIONS: { label: string; value: string }[] = [
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-// ── Sort options — date_added / last_played are UI-only until Phase 2 metadata
 const SORT_OPTIONS = [
     { label: 'By artist', value: 'artist' },
     { label: 'By title', value: 'title' },
@@ -110,7 +104,6 @@ const SORT_OPTIONS = [
     { label: 'By last played', value: 'last_played' },
 ];
 
-// ── Difficulty: 4 tiers
 const DIFFICULTY_OPTIONS: { label: string; value: string | number }[] = [
     { label: 'Any difficulty', value: 'any' },
     { label: 'Beginner', value: 1 },
@@ -549,9 +542,6 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
     const displayedSongs = useMemo(() => {
         let list = category === 'favorites' ? getFavoriteSongs(songs) : [...songs];
         list = searchSongs(list, search);
-        // Instrument filter is browse-mode only — all songs appear under any instrument
-        // selection until per-instrument arrangements exist. Difficulty display is
-        // hidden for bass/drums below. Exact matching re-enabled when arrangements land.
         list = filterSongs(list, { instrument: 'any', tuning, difficulty, genre });
         if (sort === 'title' || sort === 'artist') list = sortSongs(list, sort);
         if (sortDir === 'za') list = [...list].reverse();
@@ -738,19 +728,14 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                             paddingLeft: 27, paddingRight: 25, boxSizing: 'border-box',
                             display: 'flex', alignItems: 'center', gap: 15,
                         }}>
-                            {/* Sort — left edge: fixed 62px */}
                             <div style={{ flex: '0 0 62px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconSort />} value={sort} theme={t} tooltip="Sort song list"
                                     onChange={v => setSort(v as SortOption)} options={SORT_OPTIONS} />
                             </div>
-
-                            {/* Genre — middle 1 */}
                             <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconGenre />} value={genre} theme={t} tooltip="Filter by genre"
                                     onChange={v => setGenre(v as Genre)} options={MY_TABS_GENRE_OPTIONS} />
                             </div>
-
-                            {/* Instrument — middle 2 */}
                             <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconInstrument />} value={instrument} theme={t} tooltip="Filter by instrument"
                                     onChange={v => setInstrument(v as Instrument)}
@@ -762,8 +747,6 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     ]}
                                 />
                             </div>
-
-                            {/* Tuning — middle 3 */}
                             <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
                                     onChange={v => setTuning(String(v))} listMaxHeight={380}
@@ -780,8 +763,6 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     options={TUNINGS}
                                 />
                             </div>
-
-                            {/* Difficulty — right edge: fixed 62px */}
                             <div style={{ flex: '0 0 62px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
                                     onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
@@ -792,7 +773,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     </div>
                 )}
 
-                {/* ── A-Z sort row — Favorites / All Songs only ── */}
+                {/* ── A-Z sort row ── */}
                 {category !== 'playlists' && (
                     <div style={{ width: 769, height: 55, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6, boxSizing: 'border-box' }}>
                         <div style={{ width: 194 }}>
@@ -801,7 +782,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     </div>
                 )}
 
-                {/* ── Song list (Favorites + All Songs) ── */}
+                {/* ── Song list ── */}
                 {category !== 'playlists' && (
                     <ul style={{
                         flex: 1, overflowY: 'auto', overscrollBehavior: 'contain',
@@ -824,9 +805,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                             <circle cx="37" cy="26" r="2" fill={t.textMuted} stroke="none" />
                                             <path d="M23 38 Q30 33 37 38" />
                                         </svg>
-                                        <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>
-                                            Tabs not found
-                                        </div>
+                                        <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Tabs not found</div>
                                         <button
                                             onClick={() => {
                                                 setSearch('');
@@ -835,11 +814,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                                 setDifficulty('any');
                                                 setGenre('any');
                                             }}
-                                            style={{
-                                                marginTop: 4, background: 'none', border: 'none',
-                                                cursor: 'pointer', padding: 0,
-                                                fontSize: 13, fontFamily: 'inherit',
-                                            }}
+                                            style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit' }}
                                         >
                                             <span style={{ color: GREEN, fontWeight: 500 }}>Reset filter</span>
                                             <span style={{ color: t.textMuted }}>
@@ -880,29 +855,18 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                             )}
                                         </div>
                                     </div>
-                                    {/* Difficulty dots — guitar only; hidden for bass/drums (no per-instrument arrangements yet) */}
                                     {!['bass', 'drums'].includes(instrument) && <DifficultyDots difficulty={song.difficulty} />}
                                     <button
                                         onClick={e => handleEditMetadata(e, song.id)}
                                         title="Edit metadata"
-                                        style={{
-                                            width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                                            border: 'none', background: 'none', cursor: 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            color: t.textMuted,
-                                        }}
+                                        style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted }}
                                     >
                                         <IconPencil />
                                     </button>
                                     <button
                                         onClick={e => handleOpenPopup(e, song.id)}
                                         title="Add to playlist / remove"
-                                        style={{
-                                            width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                                            border: 'none', background: 'none', cursor: 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            color: t.textMuted, fontSize: 18, lineHeight: 1, fontFamily: 'inherit',
-                                        }}
+                                        style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted, fontSize: 18, lineHeight: 1, fontFamily: 'inherit' }}
                                     >
                                         +
                                     </button>
@@ -912,16 +876,13 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     </ul>
                 )}
 
-                {/* ── SongRowPopup at panel level — position:fixed escapes overflow clipping ── */}
+                {/* ── SongRowPopup ── */}
                 {openPopupSongId && category !== 'playlists' && (() => {
                     const song = songs.find(s => s.id === openPopupSongId);
                     if (!song) return null;
                     return (
                         <SongRowPopup
-                            song={song}
-                            playlists={playlists}
-                            theme={t}
-                            anchorRect={popupAnchorRect}
+                            song={song} playlists={playlists} theme={t} anchorRect={popupAnchorRect}
                             onAddToPlaylist={(sId, pId) => onPlaylistAction?.('add', sId, pId)}
                             onRemoveFavorite={id => onToggleFavorite?.(id)}
                             onClose={() => { setOpenPopupSongId(null); setPopupAnchorRect(null); }}
@@ -929,23 +890,16 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     );
                 })()}
 
-                {/* ══ Playlists tab — two-column grid ══ */}
+                {/* ══ Playlists tab ══ */}
                 {category === 'playlists' && (
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
 
-                        {/* Row 1: Create + filters */}
                         <div style={{ display: 'flex', alignItems: 'center', columnGap: 40, height: 55, flexShrink: 0 }}>
                             <div style={{ width: 194, flexShrink: 0 }}>
                                 {onCreatePlaylist && (
                                     <button
                                         onClick={() => { setCreatingPlaylist(true); setNewPlaylistName(''); }}
-                                        style={{
-                                            width: '100%', height: 32, padding: '0 14px',
-                                            borderRadius: 6, border: 'none',
-                                            background: GREEN, color: 'white',
-                                            fontSize: 13, fontWeight: 500,
-                                            fontFamily: 'inherit', cursor: 'pointer',
-                                        }}
+                                        style={{ width: '100%', height: 32, padding: '0 14px', borderRadius: 6, border: 'none', background: GREEN, color: 'white', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
                                     >
                                         Create playlist
                                     </button>
@@ -961,10 +915,9 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                             </div>
                         </div>
 
-                        {/* Row 2: Left + Right columns */}
                         <div style={{ display: 'flex', flex: 1, columnGap: 40, overflow: 'hidden', minHeight: 0 }}>
 
-                            {/* Left column: 194px */}
+                            {/* Left: playlist list */}
                             <div style={{ width: 194, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                 <div style={{ padding: '0 0 10px', flexShrink: 0 }}>
                                     <AZToggle value={playlistSort} onChange={setPlaylistSort} theme={t} />
@@ -976,23 +929,11 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                         value={newPlaylistName}
                                         onChange={e => setNewPlaylistName(e.target.value)}
                                         onKeyDown={e => {
-                                            if (e.key === 'Enter' && newPlaylistName.trim()) {
-                                                onCreatePlaylist?.(newPlaylistName.trim());
-                                                setCreatingPlaylist(false); setNewPlaylistName('');
-                                            }
+                                            if (e.key === 'Enter' && newPlaylistName.trim()) { onCreatePlaylist?.(newPlaylistName.trim()); setCreatingPlaylist(false); setNewPlaylistName(''); }
                                             if (e.key === 'Escape') { setCreatingPlaylist(false); setNewPlaylistName(''); }
                                         }}
-                                        onBlur={() => {
-                                            if (newPlaylistName.trim()) onCreatePlaylist?.(newPlaylistName.trim());
-                                            setCreatingPlaylist(false); setNewPlaylistName('');
-                                        }}
-                                        style={{
-                                            width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
-                                            border: `1px solid ${t.inputBorder}`, borderBottom: `2px solid ${DOT_PURPLE}`,
-                                            background: t.inputBg, color: t.text,
-                                            fontSize: 13, fontFamily: 'inherit', fontWeight: 300,
-                                            outline: 'none', borderRadius: 4, marginBottom: 4, flexShrink: 0,
-                                        }}
+                                        onBlur={() => { if (newPlaylistName.trim()) onCreatePlaylist?.(newPlaylistName.trim()); setCreatingPlaylist(false); setNewPlaylistName(''); }}
+                                        style={{ width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box', border: `1px solid ${t.inputBorder}`, borderBottom: `2px solid ${DOT_PURPLE}`, background: t.inputBg, color: t.text, fontSize: 13, fontFamily: 'inherit', fontWeight: 300, outline: 'none', borderRadius: 4, marginBottom: 4, flexShrink: 0 }}
                                     />
                                 )}
 
@@ -1010,51 +951,29 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                             <li key={pl.id}
                                                 onMouseEnter={() => setHoveredPlaylistId(pl.id)}
                                                 onMouseLeave={() => setHoveredPlaylistId(null)}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center',
-                                                    minHeight: 30, padding: '4px 0',
-                                                    background: pendingDelete ? 'rgba(220,38,38,0.06)' : 'transparent',
-                                                    borderRadius: 4, transition: 'background 0.15s ease',
-                                                }}
+                                                style={{ display: 'flex', alignItems: 'center', minHeight: 30, padding: '4px 0', background: pendingDelete ? 'rgba(220,38,38,0.06)' : 'transparent', borderRadius: 4, transition: 'background 0.15s ease' }}
                                             >
                                                 {isRenaming ? (
                                                     <input autoFocus type="text" maxLength={30} value={renameValue}
                                                         onChange={e => setRenameValue(e.target.value)}
-                                                        onKeyDown={e => {
-                                                            if (e.key === 'Enter') commitRename(pl.id);
-                                                            if (e.key === 'Escape') { setRenamingId(null); setRenameValue(''); }
-                                                        }}
+                                                        onKeyDown={e => { if (e.key === 'Enter') commitRename(pl.id); if (e.key === 'Escape') { setRenamingId(null); setRenameValue(''); } }}
                                                         onBlur={() => commitRename(pl.id)}
-                                                        style={{
-                                                            flex: 1, height: 26, padding: '0 6px', boxSizing: 'border-box',
-                                                            border: `1px solid ${t.inputBorder}`, borderBottom: `2px solid ${DOT_PURPLE}`,
-                                                            background: t.inputBg, color: t.text,
-                                                            fontSize: 13, fontFamily: 'inherit', fontWeight: 500,
-                                                            outline: 'none', borderRadius: 4,
-                                                        }}
+                                                        style={{ flex: 1, height: 26, padding: '0 6px', boxSizing: 'border-box', border: `1px solid ${t.inputBorder}`, borderBottom: `2px solid ${DOT_PURPLE}`, background: t.inputBg, color: t.text, fontSize: 13, fontFamily: 'inherit', fontWeight: 500, outline: 'none', borderRadius: 4 }}
                                                     />
                                                 ) : (
                                                     <>
                                                         <span
                                                             onClick={() => setSelectedPlaylistId(pl.id)}
-                                                            style={{
-                                                                flex: 1, minWidth: 0,
-                                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                                fontSize: 14, fontWeight: isSelected ? 500 : 300,
-                                                                color: pendingDelete ? RED : isSelected ? GREEN : t.text,
-                                                                cursor: 'pointer', transition: 'color 0.15s ease', paddingRight: 2,
-                                                            }}
+                                                            style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14, fontWeight: isSelected ? 500 : 300, color: pendingDelete ? RED : isSelected ? GREEN : t.text, cursor: 'pointer', transition: 'color 0.15s ease', paddingRight: 2 }}
                                                         >
                                                             {pl.name}
                                                         </span>
                                                         {showIcons && (
                                                             <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
                                                                 {!pendingDelete && (
-                                                                    <button
-                                                                        title="Rename playlist"
+                                                                    <button title="Rename playlist"
                                                                         onClick={() => { setRenamingId(pl.id); setRenameValue(pl.name); setConfirmDeleteId(null); }}
-                                                                        style={{ padding: 3, border: 'none', borderRadius: 3, cursor: 'pointer', background: 'none', color: t.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                                                    >
+                                                                        style={{ padding: 3, border: 'none', borderRadius: 3, cursor: 'pointer', background: 'none', color: t.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                                         <IconPencil />
                                                                     </button>
                                                                 )}
@@ -1066,20 +985,10 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                                                         if (pendingDelete) {
                                                                             onDeletePlaylist?.(pl.id);
                                                                             setConfirmDeleteId(null);
-                                                                            if (selectedPlaylistId === pl.id) {
-                                                                                setSelectedPlaylistId(sortedPlaylists.find(p => p.id !== pl.id)?.id ?? null);
-                                                                            }
-                                                                        } else {
-                                                                            setConfirmDeleteId(pl.id);
-                                                                        }
+                                                                            if (selectedPlaylistId === pl.id) setSelectedPlaylistId(sortedPlaylists.find(p => p.id !== pl.id)?.id ?? null);
+                                                                        } else { setConfirmDeleteId(pl.id); }
                                                                     }}
-                                                                    style={{
-                                                                        padding: 3, border: 'none', borderRadius: 3, cursor: 'pointer',
-                                                                        background: trashHot ? RED : 'none',
-                                                                        color: trashHot ? 'white' : t.textMuted,
-                                                                        transition: 'background 0.15s ease, color 0.15s ease',
-                                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                    }}
+                                                                    style={{ padding: 3, border: 'none', borderRadius: 3, cursor: 'pointer', background: trashHot ? RED : 'none', color: trashHot ? 'white' : t.textMuted, transition: 'background 0.15s ease, color 0.15s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                                                 >
                                                                     <IconTrash />
                                                                 </button>
@@ -1093,17 +1002,13 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                 </ul>
                             </div>
 
-                            {/* Right column: selected playlist songs */}
+                            {/* Right: selected playlist songs */}
                             <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', minHeight: 0 }}>
                                 {playlists.length === 0 && !creatingPlaylist ? (
                                     <div style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                                        <svg width="64" height="72" viewBox="0 0 64 72" fill="none"
-                                            stroke={t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                                            style={{ marginBottom: 8, opacity: 0.6 }}>
-                                            <line x1="38" y1="4" x2="38" y2="8" />
-                                            <line x1="36" y1="6" x2="40" y2="6" />
-                                            <line x1="46" y1="1" x2="47" y2="4" />
-                                            <line x1="44" y1="2" x2="48" y2="3" />
+                                        <svg width="64" height="72" viewBox="0 0 64 72" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 8, opacity: 0.6 }}>
+                                            <line x1="38" y1="4" x2="38" y2="8" /><line x1="36" y1="6" x2="40" y2="6" />
+                                            <line x1="46" y1="1" x2="47" y2="4" /><line x1="44" y1="2" x2="48" y2="3" />
                                             <path d="M16 20 L20 58 Q20 62 24 62 L40 62 Q44 62 44 58 L48 20 Z" />
                                             <line x1="13" y1="20" x2="51" y2="20" strokeWidth="2.5" />
                                             <path d="M24 20 Q24 14 32 14 Q40 14 40 20" />
@@ -1111,24 +1016,18 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                         <div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>You have no playlists</div>
                                         <div style={{ fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: '20px' }}>
                                             Create a playlist and go to{' '}
-                                            <button onClick={() => handleCategoryChange('favorites')}
-                                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: DOT_PURPLE, fontSize: 13, fontFamily: 'inherit' }}>
-                                                Favorites
-                                            </button>{' '}or{' '}
-                                            <button onClick={() => handleCategoryChange('all')}
-                                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: DOT_PURPLE, fontSize: 13, fontFamily: 'inherit' }}>
-                                                All Songs
-                                            </button>{' '}to fill it with songs.
+                                            <button onClick={() => handleCategoryChange('favorites')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: DOT_PURPLE, fontSize: 13, fontFamily: 'inherit' }}>Favorites</button>
+                                            {' '}or{' '}
+                                            <button onClick={() => handleCategoryChange('all')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: DOT_PURPLE, fontSize: 13, fontFamily: 'inherit' }}>All Songs</button>
+                                            {' '}to fill it with songs.
                                         </div>
                                     </div>
                                 ) : selectedPlaylist && selectedPlaylistSongs.length === 0 ? (
                                     <div style={{ padding: '40px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                                         <div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>Playlist is empty</div>
                                         <div style={{ fontSize: 13, color: t.textMuted }}>
-                                            <button onClick={() => handleCategoryChange('favorites')}
-                                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: GREEN, fontSize: 13, fontFamily: 'inherit' }}>
-                                                Go to Favorites
-                                            </button>{' '}to fill it with songs
+                                            <button onClick={() => handleCategoryChange('favorites')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: GREEN, fontSize: 13, fontFamily: 'inherit' }}>Go to Favorites</button>
+                                            {' '}to fill it with songs
                                         </div>
                                     </div>
                                 ) : selectedPlaylist ? (
@@ -1140,23 +1039,12 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                                     onClick={() => { onSongSelect(song.id); onClose(); }}
                                                     onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = t.rowHover; }}
                                                     onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
-                                                    style={{
-                                                        display: 'flex', alignItems: 'center', gap: 12,
-                                                        padding: '9px 10px', borderRadius: 6, cursor: 'pointer',
-                                                        background: isActive ? t.rowActive : 'transparent',
-                                                        transition: 'background 0.12s ease',
-                                                    }}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 10px', borderRadius: 6, cursor: 'pointer', background: isActive ? t.rowActive : 'transparent', transition: 'background 0.12s ease' }}
                                                 >
-                                                    <span style={{ width: 22, textAlign: 'right', flexShrink: 0, fontSize: 12, color: t.textMuted, fontVariantNumeric: 'tabular-nums' }}>
-                                                        {i + 1}.
-                                                    </span>
+                                                    <span style={{ width: 22, textAlign: 'right', flexShrink: 0, fontSize: 12, color: t.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}.</span>
                                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ fontSize: 16, fontWeight: isActive ? 600 : 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                            {song.title}
-                                                        </div>
-                                                        <div style={{ fontSize: 15, color: t.textMuted, marginTop: 2 }}>
-                                                            {song.artist}
-                                                        </div>
+                                                        <div style={{ fontSize: 16, fontWeight: isActive ? 600 : 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
+                                                        <div style={{ fontSize: 15, color: t.textMuted, marginTop: 2 }}>{song.artist}</div>
                                                     </div>
                                                     <DifficultyDots difficulty={song.difficulty} />
                                                 </li>
@@ -1165,11 +1053,9 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     </ul>
                                 ) : null}
                             </div>
-
                         </div>
                     </div>
                 )}
-
             </div>
         </>
     );

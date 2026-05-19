@@ -1,36 +1,27 @@
 'use client';
 
 /**
- * MaestroCursor v4.6
+ * MaestroCursor v4.7.1
  * File: components/alphaTab/MaestroCursor.tsx
- * Date: April 12th, 2026
- * Cloned from v4.5.2 — backward re-anchor guard added.
+ * Date: April 29th, 2026
+ * Cloned from v4.7 — tiered smoother + snapPending reason logging.
  *
- * v4.6 CHANGES (minimum delta from v4.5.2):
- * ✅ lastAcceptedBeatStart + snapArmed — protect against stale post-seek re-anchors.
- *    Mirrors the protection CursorV2 already proved effective. requestSnap() rearms
- *    so legitimate backward seeks (loopback, click-back) are always accepted.
- * ✅ requestSnap() resets both fields — gate is open after every snap.
+ * v4.7.1 CHANGES (minimum delta from v4.7):
+ * ✅ Tiered smoothing rates — baseRate for normal motion, boostedRate when
+ *    renderTick trails targetTick by 120–720 ticks (barline catch-up without lunge).
+ *    Snap threshold unchanged (> SEEK_JUMP_TICKS = 960 → instant).
+ * ✅ requestSnap(reason) — logs call site so spurious playback snaps are visible.
+ * ✅ snapPending only set by explicit seek/click, not by jumped detection.
+ *    NOTE: AlphaTabRenderer.tsx must NOT call requestSnap() from the jumped
+ *    branch in playerPositionChanged — see renderer patch below.
  *
- * ROOT CAUSE this fixes: after a click-to-seek with a large tick delta (jumped=true),
- * playerPositionChanged calls requestSnap() then immediately calls setBeat() with the
- * beat at safeTarget (which may be 1-2 ticks before the clicked beat, i.e. prev bar).
- * v4.5.2 accepted this and overwrote the correctly-published click position.
- * v4.6 discards any setBeat whose scanStart is meaningfully behind lastAcceptedBeatStart
- * unless snapArmed is true (i.e. a requestSnap just fired).
- *
- * NOTE: With V105's clickedExpandedStart clamp applied to handleClick,
- * safeTarget no longer lands in the previous beat, so this guard becomes
- * "belt and suspenders" — it protects against any remaining edge cases.
- *
- * 🔒 v4.5.2 PRESERVED EXACTLY (all other behavior byte-for-byte):
- *   ✅ expandedBeatDuration denominator (FixA)
- *   ✅ PAUSE CLAMP: progress >= 0.999 + stopped → parks at note head
- *   ✅ Two-mode walk (MODE A / MODE B)
- *   ✅ nextBeatCenterX frozen at setBeat(), filled-only (never cleared) in setTick()
- *   ✅ No RAF in setTick() — direct rendering
- *   ✅ 3-arg setTick() contract unchanged
- *   ✅ Purple teardrop SVG — same geometry (cursorWidth=12)
+ * 🔒 v4.6 PRESERVED EXACTLY (all other behavior):
+ *   ✅ Backward re-anchor guard (lastAcceptedBeatStart / snapArmed)
+ *   ✅ ANCHOR_BIAS_PX / VBW_INFLATION_GUARD anchor selection
+ *   ✅ nextBeatCenterX frozen at setBeat(), filled-only in setTick()
+ *   ✅ MODE A / MODE B walk distance logic
+ *   ✅ Pause clamp at progress >= 0.999
+ *   ✅ Purple teardrop SVG — same geometry
  */
 
 interface Beat {
@@ -51,9 +42,6 @@ export class MaestroCursor {
     private readonly topOverhang = 26;
     private readonly bottomOverhang = 12;
     private readonly bottomPointBaseShift = 2;
-    // Max px difference between onNotesX and visual center before we prefer center.
-    // alphaTab's onNotesX drifts left on shuffle down-strums and right on chord stacks.
-    // 6px keeps normal beats unchanged while correcting biased anchors.
     private readonly ANCHOR_BIAS_PX = 6;
 
     private currentBeat: Beat | null = null;
@@ -64,9 +52,9 @@ export class MaestroCursor {
     private nextBeatCenterX: number | null = null;
 
     private beatStart = 0;
-    private beatDuration = 0;
+    private beatDuration = 0;         // structural duration — used as interpolation denominator
     private beatStartToUse = 0;
-    private expandedBeatDuration = 0;
+    private expandedBeatDuration = 0; // kept for reference / logging only
 
     private svgRendered = false;
     private lastSvgHeight = 0;
@@ -75,12 +63,28 @@ export class MaestroCursor {
     private hasInitialPosition = false;
 
     // ── [v4.6] Backward re-anchor guard ─────────────────────────────────────
-    // Prevents stale post-seek playerPositionChanged from overwriting a
-    // correctly-published click position.
-    // snapArmed=true after requestSnap() — allows any beat unconditionally.
-    // Once a beat is accepted, snapArmed=false and the backtrack gate activates.
     private lastAcceptedBeatStart = -1;
     private snapArmed = true;
+    // ────────────────────────────────────────────────────────────────────────
+
+    // ── [v4.7] RAF smoothing state ───────────────────────────────────────────
+    // targetTick: what AlphaTab/YouTube is reporting (chunked, may have gaps)
+    // renderTick: what we actually draw (eased toward targetTick each frame)
+    // snapPending: if true, RAF loop snaps renderTick instantly (seek only)
+    private targetTick = 0;
+    private renderTick = 0;
+    private snapPending = false;
+    private rafId: number | null = null;
+    private lastRafTime = 0;
+
+    // Tiered slew rates — absorbs barline quantization without lunging.
+    // base: normal smooth motion
+    // boosted: when trailing by 120–720 ticks (e.g. barline boundary catch-up)
+    // snap: when delta > SEEK_JUMP_TICKS (user seek — instant)
+    private readonly TICK_RATE_BASE = 2400; // ticks/sec — normal motion
+    private readonly TICK_RATE_BOOSTED = 4800; // ticks/sec — catch-up zone
+    private readonly BOOST_THRESHOLD = 120;  // ticks — start boosting above this
+    private readonly SEEK_JUMP_TICKS = 960;  // ticks — snap instantly above this
     // ────────────────────────────────────────────────────────────────────────
 
     private lastLogBeat = -1;
@@ -104,10 +108,108 @@ export class MaestroCursor {
             transform: 'translate3d(-100vw, 0px, 0px)',
         });
         container.appendChild(this.element);
-        console.log('✅ MaestroCursor v4.6: Ready');
+        this.startRaf();
+        console.log('✅ MaestroCursor v4.7: Ready');
     }
 
     get domElement(): HTMLElement { return this.element; }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RAF loop — smooth renderTick toward targetTick
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private startRaf(): void {
+        const loop = (now: number) => {
+            this.rafId = requestAnimationFrame(loop);
+            if (!this.currentBeat || this.beatDuration <= 0) return;
+
+            const dt = this.lastRafTime > 0 ? Math.min((now - this.lastRafTime) / 1000, 0.1) : 0;
+            this.lastRafTime = now;
+
+            const delta = this.targetTick - this.renderTick;
+            const isSeek = Math.abs(delta) > this.SEEK_JUMP_TICKS;
+
+            const absDelta = Math.abs(delta);
+
+            if (this.snapPending || isSeek) {
+                // Explicit seek or song/track load — instant snap
+                this.renderTick = this.targetTick;
+                this.snapPending = false;
+            } else if (absDelta <= 48) {
+                // ✅ Deadband snap — micro-deltas at barlines/beat-boundaries
+                // snap instantly rather than easing. Removes the "micro-lunge"
+                // feel at last-note→first-note transitions. Songsterr uses this.
+                this.renderTick = this.targetTick;
+            } else {
+                // Tiered slew — boost rate when trailing at barline boundaries
+                const rate = absDelta > this.BOOST_THRESHOLD
+                    ? this.TICK_RATE_BOOSTED
+                    : this.TICK_RATE_BASE;
+                const maxStep = rate * dt;
+                this.renderTick += Math.max(-maxStep, Math.min(delta, maxStep));
+            }
+
+            this.renderPosition(this.renderTick);
+        };
+        this.rafId = requestAnimationFrame(loop);
+    }
+
+    private stopRaf(): void {
+        if (this.rafId !== null) { cancelAnimationFrame(this.rafId); this.rafId = null; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // renderPosition — compute and apply cursor transform from a tick value
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private renderPosition(tick: number): void {
+        // ── [v4.7] Use structuralDur as denominator ───────────────────────────
+        // expandedBeatDuration caused "slow then catch up" on ties/sustains.
+        // beatDuration (structural) gives uniform motion across the bar.
+        const denom = Math.max(1, this.beatDuration);
+        let progress = (tick - this.beatStartToUse) / denom;
+        progress = Math.max(0, Math.min(1, progress));
+
+        // ── Walk distance (MODE A / MODE B) ──────────────────────────────────
+        let walkDistance: number;
+        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
+            walkDistance = this.nextBeatCenterX - this.currentNoteX;        // MODE A
+        } else {
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar);
+            walkDistance = mbBounds?.visualBounds
+                ? (mbBounds.visualBounds.x + mbBounds.visualBounds.w) - this.currentNoteX
+                : this.currentVbW;                                          // MODE B
+        }
+
+        let interpolatedX = this.currentNoteX + walkDistance * progress;
+        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
+            interpolatedX = Math.min(interpolatedX, this.nextBeatCenterX);  // MODE A overshoot guard
+        }
+
+        // ✅ Pause clamp
+        const isPlaying = this.api?.player?.isPlaying ?? false;
+        if (!isPlaying && progress >= 0.999) interpolatedX = this.currentNoteX;
+
+        const finalX = interpolatedX - this.cursorWidth / 2;
+        const totalH = this.currentHeight + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
+        const finalY = this.currentY - this.topOverhang;
+        this.applyTransform(finalX, finalY, totalH, false);
+
+        if (this.beatStartToUse !== this.lastLogBeat) {
+            this.lastLogBeat = this.beatStartToUse;
+            const mode = this.nextBeatCenterX !== null ? 'A→nextBeat' : 'B→barline';
+            console.log(`[Maestro v4.7] Beat ${this.beatStartToUse} | ${mode}`, {
+                renderTick: Math.round(tick),
+                targetTick: Math.round(this.targetTick),
+                progress: progress.toFixed(3),
+                denom,
+                structuralDur: this.beatDuration,
+                expandedDur: this.expandedBeatDuration,
+                nextBeatCenterX: this.nextBeatCenterX?.toFixed(1) ?? null,
+            });
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API
@@ -121,32 +223,20 @@ export class MaestroCursor {
     ): void {
         if (!beat) { this.hide(); return; }
 
-        // ── Compute scanStart for the guard (before any state mutation) ──────
         const structuralStart = beat.absolutePlaybackStart ?? beat.playbackStart ?? 0;
         const scanStart = expandedBeatStart ?? structuralStart;
 
         // ── [v4.6] Backward re-anchor guard ─────────────────────────────────
-        // After a click-to-seek, playerPositionChanged may fire with a stale beat
-        // (from safeTarget landing 1-2 ticks before the clicked beat).
-        // jumped=true → requestSnap() was called → snapArmed=true → that beat is accepted.
-        // With V105's clickedExpandedStart clamp, safeTarget no longer lands in the
-        // previous beat, but this guard remains as belt-and-suspenders protection.
-        //
-        // Gate logic: discard only if ALL of these are true:
-        //   1. hasInitialPosition — not the very first beat placement
-        //   2. !snapArmed — a requestSnap has NOT just fired (which would legitimately allow any beat)
-        //   3. scanStart is meaningfully behind lastAcceptedBeatStart (> BACKTRACK_TICKS)
         if (this.hasInitialPosition && !this.snapArmed) {
-            const BACKTRACK_TICKS = 60; // tuned: covers 1-2 ticks of EPS drift, not real backward seeks
+            const BACKTRACK_TICKS = 60;
             if (this.lastAcceptedBeatStart >= 0 &&
                 scanStart < this.lastAcceptedBeatStart - BACKTRACK_TICKS) {
-                console.log('[Maestro v4.6] out-of-order beat discarded', {
+                console.log('[Maestro v4.7] out-of-order beat discarded', {
                     scanStart, lastAccepted: this.lastAcceptedBeatStart,
                 });
                 return;
             }
         }
-        // Accept this beat — update guard state
         this.lastAcceptedBeatStart = scanStart;
         this.snapArmed = false;
         // ────────────────────────────────────────────────────────────────────
@@ -164,32 +254,19 @@ export class MaestroCursor {
         if (!bb?.visualBounds) { this.hide(); return; }
 
         const vb = bb.visualBounds;
-        // [v4.6] Guarded anchor selection — prefer onNotesX when close to visual center.
-        // Use this.ANCHOR_BIAS_PX throughout (class field, no local shadow).
-        //
-        // Three-way logic:
-        //   1. onNotesX within ANCHOR_BIAS_PX of center → use onNotesX (they agree)
-        //   2. onNotesX biased BUT vb.w > VBW_INFLATION_GUARD → use onNotesX anyway.
-        //      Bend/pitch-helper annotations (<24>, <17>) inflate vb.w, so centerX
-        //      drifts into the label region rather than the notehead. onNotesX is
-        //      more reliable here. This is the regression vs v4.5 on bend notes.
-        //   3. onNotesX biased AND vb.w normal → use centerX.
-        //      Catches shuffle down-strum (left bias) and chord dyads (right bias).
         const centerX = vb.x + vb.w / 2;
-        const VBW_INFLATION_GUARD = 16; // px; normal noteheads ~8px, bend annotations push wider
+        const VBW_INFLATION_GUARD = 16;
         const onNotesXValid = typeof bb.onNotesX === 'number';
         const withinBias = onNotesXValid && Math.abs(bb.onNotesX - centerX) <= this.ANCHOR_BIAS_PX;
         const boundsInflated = vb.w > VBW_INFLATION_GUARD;
         this.currentNoteX = (onNotesXValid && (withinBias || boundsInflated))
-            ? bb.onNotesX
-            : centerX;
+            ? bb.onNotesX : centerX;
         this.currentY = vb.y;
         this.currentHeight = vb.h;
         this.currentVbW = vb.w;
 
-        // ── Resolve nextBeatCenterX and FREEZE ────────────────────────────────
         this.nextBeatCenterX = null;
-        const nextCandidate = preScannedNextBeat ?? null; // structural beat.nextBeat intentionally removed — renderer contract only
+        const nextCandidate = preScannedNextBeat ?? null;
         if (nextCandidate) {
             const nb = this.api?.renderer?.boundsLookup?.findBeat(nextCandidate);
             if (nb?.visualBounds) {
@@ -213,32 +290,35 @@ export class MaestroCursor {
         this.show();
     }
 
-    // ── [v4.6] requestSnap: rearm the guard ──────────────────────────────────
-    public requestSnap(): void {
+    // ── [v4.7] requestSnap: arm instant jump in RAF loop (seek only) ─────────
+    public requestSnap(reason: string): void {
         this.nextBeatCenterX = null;
         this.beatStartToUse = this.beatStart;
         this.lastFinalX = -1;
         this.lastFinalY = -1;
-        this.snapArmed = true;   // [v4.6] allow next beat unconditionally
-        this.lastAcceptedBeatStart = -1;     // [v4.6] reset accepted baseline
-        console.log('[Maestro v4.6] requestSnap — gate reset');
+        this.snapArmed = true;
+        this.snapPending = true;
+        this.lastAcceptedBeatStart = -1;
+        console.log(`[MaestroCursor v4.7.1] requestSnap`, { reason, targetTick: this.targetTick, renderTick: Math.round(this.renderTick) });
     }
 
     /**
-     * Called on every playerPositionChanged. Direct render — NO RAF.
-     * [FixA] Uses expandedBeatDuration as denominator when available.
+     * setTick — called on every playerPositionChanged.
+     * [v4.7] Only updates targetTick. RAF loop handles rendering.
+     * No longer does direct DOM writes — eliminates buffer-burst jitter.
      */
     setTick(tick: number, nextBeat: Beat | null = null, overrideBeatStart: number | null = null): void {
         if (!this.currentBeat || this.beatDuration <= 0) return;
 
         this.beatStartToUse = overrideBeatStart ?? this.beatStart;
+        this.targetTick = tick;
 
-        // Fill nextBeatCenterX if setBeat() didn't find one — NEVER clear. [v4.3.5]
+        // Fill nextBeatCenterX if setBeat() didn't find one — NEVER clear [v4.3.5]
         if (nextBeat && this.nextBeatCenterX === null) {
             const nb = this.api?.renderer?.boundsLookup?.findBeat(nextBeat);
             if (nb?.visualBounds) {
                 const nbCenter = nb.visualBounds.x + nb.visualBounds.w / 2;
-                const nbInflated2 = nb.visualBounds.w > this.ANCHOR_BIAS_PX * 2.5; // reuse field; ~16px
+                const nbInflated2 = nb.visualBounds.w > this.ANCHOR_BIAS_PX * 2.5;
                 const nbOnOk2 = typeof nb.onNotesX === 'number';
                 const nbWithin2 = nbOnOk2 && Math.abs(nb.onNotesX - nbCenter) <= this.ANCHOR_BIAS_PX;
                 const nx = (nbOnOk2 && (nbWithin2 || nbInflated2)) ? nb.onNotesX : nbCenter;
@@ -248,56 +328,12 @@ export class MaestroCursor {
                 if (sameRow && curBarIdx === nextBarIdx) this.nextBeatCenterX = nx;
             }
         }
-
-        // ── Progress ── [FixA] expanded denominator ───────────────────────────
-        const denom = Math.max(1, this.expandedBeatDuration > 0 ? this.expandedBeatDuration : this.beatDuration);
-        let progress = (tick - this.beatStartToUse) / denom;
-        progress = Math.max(0, Math.min(1, progress));
-
-        // ── Walk distance ─────────────────────────────────────────────────────
-        let walkDistance: number;
-        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
-            walkDistance = this.nextBeatCenterX - this.currentNoteX;        // MODE A
-        } else {
-            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
-            const mbBounds = this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar);
-            walkDistance = mbBounds?.visualBounds
-                ? (mbBounds.visualBounds.x + mbBounds.visualBounds.w) - this.currentNoteX
-                : this.currentVbW;                                          // MODE B
-        }
-
-        let interpolatedX = this.currentNoteX + walkDistance * progress;
-        if (this.nextBeatCenterX !== null && this.nextBeatCenterX > this.currentNoteX) {
-            interpolatedX = Math.min(interpolatedX, this.nextBeatCenterX);  // MODE A overshoot guard
-        }
-
-        // ✅ Pause clamp — must stay below interpolatedX calculation
-        const isPlaying = this.api?.player?.isPlaying ?? false;
-        if (!isPlaying && progress >= 0.999) interpolatedX = this.currentNoteX;
-
-        const finalX = interpolatedX - this.cursorWidth / 2;
-        const totalH = this.currentHeight + this.topOverhang + this.bottomOverhang + this.bottomPointBaseShift;
-        const finalY = this.currentY - this.topOverhang;
-        this.applyTransform(finalX, finalY, totalH, false);
-
-        if (this.beatStartToUse !== this.lastLogBeat) {
-            this.lastLogBeat = this.beatStartToUse;
-            const mode = this.nextBeatCenterX !== null ? 'A→nextBeat' : 'B→barline';
-            console.log(`[Maestro v4.6] Beat ${this.beatStartToUse} | ${mode}`, {
-                tick,
-                progress: progress.toFixed(3),
-                denom,
-                expandedDur: this.expandedBeatDuration,
-                structuralDur: this.beatDuration,
-                ratio: this.beatDuration > 0 ? (this.expandedBeatDuration / this.beatDuration).toFixed(2) : 'n/a',
-                nextBeatCenterX: this.nextBeatCenterX?.toFixed(1) ?? null,
-            });
-        }
     }
 
     destroy(): void {
+        this.stopRaf();
         if (this.element.parentElement) this.element.parentElement.removeChild(this.element);
-        console.log('🧹 MaestroCursor v4.6: Destroyed');
+        console.log('🧹 MaestroCursor v4.7: Destroyed');
     }
 
     // ── Helpers (unchanged from v4.5.2) ──────────────────────────────────────
