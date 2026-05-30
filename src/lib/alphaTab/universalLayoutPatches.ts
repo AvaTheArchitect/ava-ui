@@ -2,13 +2,22 @@
 /**
  * universalLayoutPatches.ts
  * Date: April 21st, 2026 — v1.0
+ * V119 patch (geometry guards):
+ *   - Staff line fill changed from #a5a5a5 → #999999 after [TH] palette apply.
+ *     isStaffSvg() and getRowAnchors() now use geometry only (h≤1.8, w>20).
+ *   - Barline fill changed from #222211 → theme-dependent after [TH] palette.
+ *     fixDisplacedBarNumbers() and fixSectionLabelX() now use geometry only
+ *     (w 1.0–2.5, h≥staffHeight×0.8, y within staff band ±5px).
+ *   - isBarNumber() fill="#c80000" guard removed (theme overwrites to black/white).
+ *     Identified by: style "11px arial" + digits-only content.
+ *   - No fill constants remain in hot paths — all guards are geometry-based.
  *
  * Format-agnostic SVG alignment/cleanup patches. Applied to ALL GP file types
  * (gp4, gp5, gp7, gp8) unconditionally in the AlphaTabRenderer post-render pipeline.
  *
  * Rules:
  *   - <g> elements are NEVER moved (composite ornaments are multi-primitive)
- *   - Bar numbers (fill #C80000 + 11px Arial + digits) are NEVER touched by layout passes
+ *   - Bar numbers (11px Arial + digits) are NEVER touched by layout passes
  *   - Only text elements are repositioned — no structure changes
  *   - LANE_Y_OFFSET constants were measured from GP8 SVG spy.
  *     Validate against gp5/gp7 before treating as universal geometry.
@@ -28,8 +37,6 @@ export interface RowAnchors {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STAFF_LINE_FILL = "#a5a5a5";
-
 const HEADER_SECTION_GAP = 20; // barNumberY - 20 → section label lane
 const HEADER_TEMPO_CONTEXT_GAP = 45; // barNumberY - 45 → above tempo cluster
 
@@ -37,6 +44,45 @@ export const RX_TEMPO_TEXT = /^\s*=\s*\d+\s*$/;
 export const RX_TEMPO_CONTEXT = /^(half[\s-]?time|double[\s-]?time)$/i;
 export const RX_SECTION_SKIP =
   /^[a-z]\..*\.|^s\.guit\.|^t\.bass\.|^voc\.|^drum/i;
+
+// ─── Geometry-based rect guards ───────────────────────────────────────────────
+
+/**
+ * isHorizontalStaffLineRect — geometry only, no fill dependency.
+ * Staff lines are thin horizontal rects (h≤1.8, w>20).
+ * Previously guarded by fill="#a5a5a5"; V119 [TH] changes it to #999999.
+ */
+function isHorizontalStaffLineRect(r: SVGRectElement): boolean {
+  const h = parseFloat(r.getAttribute("height") ?? "0");
+  const w = parseFloat(r.getAttribute("width") ?? "0");
+  const y = parseFloat(r.getAttribute("y") ?? "NaN");
+  return Number.isFinite(y) && h > 0 && h <= 1.8 && w > 20;
+}
+
+/**
+ * isVerticalBarlineRect — geometry only, no fill dependency.
+ * Barlines are narrow vertical rects (w 1.0–2.5) that span ≥80% of staff height.
+ * Previously guarded by fill="#222211"; V119 [TH] changes barline color.
+ */
+function isVerticalBarlineRect(
+  r: SVGRectElement,
+  anchors: RowAnchors,
+): boolean {
+  const w = parseFloat(r.getAttribute("width") ?? "0");
+  const h = parseFloat(r.getAttribute("height") ?? "0");
+  const x = parseFloat(r.getAttribute("x") ?? "NaN");
+  const y = parseFloat(r.getAttribute("y") ?? "NaN");
+  const staffHeight = anchors.staffBottomY - anchors.staffTopY;
+  return (
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    w >= 1.0 &&
+    w <= 2.5 &&
+    h >= staffHeight * 0.8 &&
+    y >= anchors.staffTopY - 5 &&
+    y <= anchors.staffBottomY + 5
+  );
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -49,12 +95,16 @@ export function getSvgHeight(svg: SVGSVGElement): number {
   return svg.getBoundingClientRect().height;
 }
 
+/**
+ * isBarNumber — identifies AlphaTab bar number text elements.
+ * Fill-independent: [TH] palette overwrites fill to black/white.
+ * Matches: style "11px arial" + digits-only content.
+ */
 export function isBarNumber(el: SVGElement): boolean {
-  const fill = (el.getAttribute("fill") ?? "").toLowerCase();
   const style = (el.getAttribute("style") ?? "").toLowerCase();
   const text = (el.textContent ?? "").trim();
   return (
-    fill === "#c80000" && style.includes("11px arial") && /^\d+\s*$/.test(text)
+    style.includes("11px") && style.includes("arial") && /^\d+\s*$/.test(text)
   );
 }
 
@@ -63,25 +113,25 @@ export function isHeaderBoldGeorgia(el: SVGElement): boolean {
   return style.includes("bold") && style.includes("georgia");
 }
 
+/**
+ * isStaffSvg — geometry-based, no fill dependency.
+ * Previously used fill="#a5a5a5"; V119 [TH] changes staff line fill.
+ */
 export function isStaffSvg(svg: SVGSVGElement): boolean {
-  return Array.from(svg.querySelectorAll<SVGRectElement>("rect")).some((r) => {
-    const fill = (r.getAttribute("fill") ?? "").toLowerCase();
-    const h = parseFloat(r.getAttribute("height") ?? "0");
-    const w = parseFloat(r.getAttribute("width") ?? "0");
-    return fill === "#a5a5a5" && h > 0.5 && h < 2.0 && w > 20;
-  });
+  return Array.from(svg.querySelectorAll<SVGRectElement>("rect")).some(
+    isHorizontalStaffLineRect,
+  );
 }
 
 export function getRowAnchors(svg: SVGSVGElement): RowAnchors {
   const staffYs: number[] = [];
   const barNumYs: number[] = [];
 
+  // Geometry-based — no fill guard
   svg.querySelectorAll<SVGRectElement>("rect").forEach((r) => {
-    const fill = (r.getAttribute("fill") ?? "").toLowerCase();
-    const h = parseFloat(r.getAttribute("height") ?? "0");
-    const w = parseFloat(r.getAttribute("width") ?? "0");
+    if (!isHorizontalStaffLineRect(r)) return;
     const y = parseFloat(r.getAttribute("y") ?? "0");
-    if (fill === STAFF_LINE_FILL && h <= 1.5 && w > 20) staffYs.push(y);
+    staffYs.push(y);
   });
 
   svg.querySelectorAll<SVGTextElement>("text").forEach((t) => {
@@ -119,11 +169,9 @@ function _mode(values: number[]): number {
 function fixBar1X(svg: SVGSVGElement): void {
   let staffStartX: number | null = null;
   svg.querySelectorAll<SVGRectElement>("rect").forEach((r) => {
-    const fill = (r.getAttribute("fill") ?? "").toLowerCase();
-    const h = parseFloat(r.getAttribute("height") ?? "0");
-    const w = parseFloat(r.getAttribute("width") ?? "0");
+    if (!isHorizontalStaffLineRect(r)) return;
     const x = parseFloat(r.getAttribute("x") ?? "NaN");
-    if (fill !== "#a5a5a5" || h > 1.5 || w < 20 || !Number.isFinite(x)) return;
+    if (!Number.isFinite(x)) return;
     if (staffStartX === null || x < staffStartX) staffStartX = x;
   });
   if (staffStartX === null) return;
@@ -146,21 +194,14 @@ function fixDisplacedBarNumbers(
   anchors: RowAnchors,
   rowIdx: number,
 ): number {
-  const staffHeight = anchors.staffBottomY - anchors.staffTopY;
   const seen = new Set<number>();
   const barlineXs: number[] = [];
 
+  // Geometry-based barline detection — no fill guard
   svg.querySelectorAll<SVGRectElement>("rect").forEach((r) => {
-    const fill = (r.getAttribute("fill") ?? "").toLowerCase();
-    if (fill !== "#222211") return;
-    const w = parseFloat(r.getAttribute("width") ?? "0");
-    const h = parseFloat(r.getAttribute("height") ?? "0");
+    if (!isVerticalBarlineRect(r, anchors)) return;
     const x = parseFloat(r.getAttribute("x") ?? "NaN");
-    const y = parseFloat(r.getAttribute("y") ?? "NaN");
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    if (w < 1.2 || w > 2.0) return;
-    if (h < staffHeight * 0.8) return;
-    if (y < anchors.staffTopY - 5 || y > anchors.staffBottomY + 5) return;
+    if (!Number.isFinite(x)) return;
     const key = Math.round(x * 2) / 2;
     if (seen.has(key)) return;
     seen.add(key);
@@ -225,21 +266,14 @@ function fixSectionLabelX(
   anchors: RowAnchors,
   rowIdx: number,
 ): void {
-  const staffHeight = anchors.staffBottomY - anchors.staffTopY;
   const seen = new Set<number>();
   const barlineXs: number[] = [];
 
+  // Geometry-based barline detection — no fill guard
   svg.querySelectorAll<SVGRectElement>("rect").forEach((r) => {
-    const fill = (r.getAttribute("fill") ?? "").toLowerCase();
-    if (fill !== "#222211") return;
-    const w = parseFloat(r.getAttribute("width") ?? "0");
-    const h = parseFloat(r.getAttribute("height") ?? "0");
+    if (!isVerticalBarlineRect(r, anchors)) return;
     const x = parseFloat(r.getAttribute("x") ?? "NaN");
-    const y = parseFloat(r.getAttribute("y") ?? "NaN");
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    if (w < 1.2 || w > 2.0) return;
-    if (h < staffHeight * 0.8) return;
-    if (y < anchors.staffTopY - 5 || y > anchors.staffBottomY + 5) return;
+    if (!Number.isFinite(x)) return;
     const key = Math.round(x * 2) / 2;
     if (seen.has(key)) return;
     seen.add(key);
@@ -359,7 +393,6 @@ export function runUniversalLayoutPatches(
   console.log("[universal] runUniversalLayoutPatches");
   return new Promise((resolve) => {
     const run = () => {
-      // Stamp stable row keys first — all overlays depend on this
       stampStaffSvgRowKeys(containerEl);
       let firstStaffRowSeen = false;
       const svgRows =

@@ -1,10 +1,82 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.7.6 — Toggle-ON Bar Boundary Guard
- * Date: March 22nd, 2026
+ * BeatCustomLoopOverlay v1.8.4 — Loop Reseat Global Flag
+ * Date: May 29th, 2026
  *
- * 🔥 V1.7.6 CHANGES:
+ * 🔥 V1.8.4 CHANGES:
+ * ✅ Loop reseat global flag: commitBarSnap sets window.__maestroLoopReseat
+ *    with { tick, at, reason } on every click-to-move and toggle-ON reseat.
+ *    AlphaTabRenderer playerPositionChanged consumes this flag to flush all
+ *    stable refs and re-prime the cursor from the expanded bar start tick,
+ *    preventing pick/slide/tie material from priming the cursor to the wrong
+ *    visual beat on the first loop pass.
+ * ✅ Flag is set BEFORE requestSnap so the renderer sees it on the very next
+ *    playerPositionChanged event after the reseat.
+ * ✅ BeatCustomLoopOverlay owns the flag write-only. AlphaTabRenderer owns
+ *    the flag read + clear. No other files touch __maestroLoopReseat.
+ *
+ * ✅ Click-to-move cursor reseat: commitBarSnap now always parks cursor at
+ *    newRange.startTick after setting api.playbackRange. Uses the expanded
+ *    bar start from getExpandedBarRange — never the clicked/nearest beat tick.
+ *    Sequence: api.playbackRange → api.isLooping → api.tickPosition →
+ *    api.player?.seekTicks → onLoopChange → __maestroManualSeek → requestSnap.
+ * ✅ smartCursorSnap NOT used for click-to-move (it uses nearest-boundary
+ *    heuristic which can park outside the loop). Reseat is always startTick.
+ * ✅ Handle dragEnd retains smartCursorSnap (containment check still useful
+ *    when dragging handle to a range the cursor is already inside).
+ *
+ * ✅ Active handle = pointer-driven (not tied to preview rect edge).
+ *    activeHandleClientXRef tracks raw pointer clientX during drag.
+ *    Handle renders at pointer X converted to overlay-space coordinates.
+ * ✅ Preview highlight = snap/forecast-driven (beat-level, same as v1.8.1).
+ * ✅ Inactive handle = anchored to opposite edge of preview/committed range.
+ * ✅ Grab offset removed — was causing 1–2 inch separation. Handle center
+ *    now tracks pointer directly with no offset math.
+ * ✅ api.playbackRange committed only on dragEnd (fix E preserved).
+ * ✅ Transition fix (fix A) preserved — no positional animation.
+ *
+ * ✅ A — Positional transition removed: loop rect never animates position/size.
+ *         Only opacity/shadow may transition. Clicking a new measure is instant.
+ * ✅ B — Grab offset: pointer-to-handle-center delta stored on dragStart,
+ *         applied during dragMove so finger stays attached to handle.
+ * ✅ D — LOOP_X_OFFSET = 55 added as diagnostic constant (set to 0 to disable).
+ *         If overlay aligns correctly with 55, coordinate host fix is confirmed.
+ * ✅ E — Preview/forecast model for handle drag:
+ *         - While dragging: preview rects computed from pointer beat, NOT committed
+ *         - previewRange state holds the forecasted tick range during drag
+ *         - On mouseup/touchend: previewRange is committed to api.playbackRange
+ *         - buildRects used for preview (beat-level, same as drag-selection path)
+ *         - commitBarSnap preserved for toggle-on and click bar-snap ONLY
+ *
+ * ✅ STAGE 1 — Handle state + drag event wiring:
+ *    - isDragging / dragTarget state added (separate from loop-creation isDragging ref)
+ *    - handleDragStart / handleDragMove / handleDragEnd ported from V99.8
+ *    - handleDragMove calls commitBarSnap (repeat-safe) — NOT V99.8's structural snapToBar
+ *    - smartCursorSnap ported as-is (uses window.__maestroCursor)
+ *    - isDragging listener useEffect attached/detached on dragTarget change
+ *    - Touch events (touchstart/touchmove/touchend) wired alongside mouse events
+ *
+ * ✅ STAGE 2 — Handle JSX:
+ *    - Highlight rects: pointer-events managed per-child (rects = none, tabs = auto)
+ *    - Start handle rendered inside first rect (› tab, left edge)
+ *    - End handle rendered inside last rect (‹ tab, right edge)
+ *    - Handle tabs have explicit pointerEvents: 'auto'
+ *
+ * ✅ STAGE 3 — Wrapper pointer-events note:
+ *    - BeatCustomLoopOverlay now manages pointer-events internally
+ *    - AlphaTabRenderer wrapper div must remove pointer-events-none (see note below)
+ *    - Highlight rects stay pointer-events: none; handle tabs are auto
+ *
+ * ✅ STAGE 4 — Landscape suppress:
+ *    - isLandscape prop added; returns null in landscape mode
+ *    - Prevents coordinate-space mismatch until landscape loop system is designed
+ *
+ * 🔒 ALL V1.7.6 INTERNALS PRESERVED — nothing removed:
+ *    tickOf, durOf, loHi, resolveBeatWithX, commitBarSnap, getBarEdgesFromBeat,
+ *    getExpandedBarRange, buildBarRects, buildRects, toggle-snap useEffect,
+ *    re-render sync useEffect, clearLoop
+ *
  * ✅ TOGGLE-ON PLAY-HEAD BOUNDARY GUARD:
  *    Root cause confirmed via logs: api.tickPosition = 92160 at toggle time
  *    (exactly the startTick of barIdx 25 / visual bar 26). AlphaTab advances
@@ -32,9 +104,6 @@
  *    Fix: beatCrossedRef tracks whether any onMove event ever resolved a
  *    different beat tick than the mousedown beat. This is the ground truth of
  *    "did a drag happen" — immune to resolver drift at mouseup time.
- *
- *    Intent gate: !beatCrossedRef.current && pixelDist < 10 → bar-snap
- *    Everything else → v1.6 beat-level commit
  *
  * ✅ ZERO FAN-OUT: onDown no longer calls setRects at all. The single-beat
  *    rect that caused the "fan-out" animation (small rect → full bar on mouseup)
@@ -93,10 +162,13 @@ interface Props {
     onLoopToggle?: (enabled: boolean) => void;
     onLoopChange?: (startTick: number, endTick: number) => void;
     onLoopClear?: () => void;
+    /** Stage 4: suppress overlay in landscape until coordinate-space fix is built */
+    isLandscape?: boolean;
 }
 
 export default function BeatCustomLoopOverlay({
     api, container, loopEnabled, onLoopToggle, onLoopChange, onLoopClear,
+    isLandscape = false,
 }: Props) {
 
     const loopRef = useRef(loopEnabled);
@@ -107,6 +179,20 @@ export default function BeatCustomLoopOverlay({
     const downYRef = useRef<number>(0);
     const downTickRef = useRef<number | null>(null);
     const beatCrossedRef = useRef(false);
+
+    // ── Stage 1: Handle drag state ───────────────────────────────────────────
+    const [handleDragging, setHandleDragging] = useState(false);
+    const [dragTarget, setDragTarget] = useState<'start' | 'end' | null>(null);
+    const dragTargetRef = useRef<'start' | 'end' | null>(null);
+
+    // Preview range: set during handle drag, committed on release (fix E)
+    const [previewRange, setPreviewRange] = useState<{ startTick: number; endTick: number } | null>(null);
+    const previewRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+    const previewRectsRef = useRef<HighlightRect[]>([]);
+
+    // Active handle pointer tracking — raw clientX, no offset math (fix v1.8.2)
+    const activeHandleClientXRef = useRef<number>(0);
+    const [activeHandleX, setActiveHandleX] = useState<number | null>(null);
 
     // 🔒 Warn once only
     const tickCacheWarnedRef = useRef(false);
@@ -315,6 +401,33 @@ export default function BeatCustomLoopOverlay({
 
         api.playbackRange = { startTick, endTick };
         api.isLooping = true;
+
+        // V1.8.3 / V1.8.4: cursor reseat — always park at startTick for click-to-move.
+        // Do NOT use smartCursorSnap here (nearest-boundary can park outside loop).
+        // getExpandedBarRange gives the true expanded bar start, so tied/continuation
+        // notes at bar entry are never used as the park tick.
+        if (source === 'click' || source === 'toggle ON') {
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = startTick;
+            }
+            api.player?.seekTicks?.(startTick);
+
+            // V1.8.4: set reseat flag BEFORE requestSnap so AlphaTabRenderer
+            // sees it on the very next playerPositionChanged after seek.
+            // Renderer flushes all stable refs and re-primes from startTick,
+            // preventing pick/slide/tie content from mis-priming the cursor
+            // on the first loop pass.
+            (window as any).__maestroLoopReseat = {
+                tick: startTick,
+                at: Date.now(),
+                reason: source,
+            };
+
+            (window as any).__maestroManualSeek = Date.now();
+            const cursor = (window as any).__maestroCursor;
+            cursor?.requestSnap?.('loop-click-move');
+        }
+
         setRects(buildBarRects(barIdx));
         onLoopChange?.(startTick, endTick);
         return true;
@@ -606,6 +719,15 @@ export default function BeatCustomLoopOverlay({
             console.log('🎼 BeatLoop bar-snap (toggle ON, tick-only fallback):', range);
             api.playbackRange = { startTick: range.startTick, endTick: range.endTick };
             api.isLooping = true;
+
+            // V1.8.4: set reseat flag on fallback path too — same contract as
+            // commitBarSnap. Renderer flushes stale refs on next position event.
+            (window as any).__maestroLoopReseat = {
+                tick: range.startTick,
+                at: Date.now(),
+                reason: 'toggle-ON-fallback',
+            };
+
             onLoopChange?.(range.startTick, range.endTick);
         }
     }, [loopEnabled]);
@@ -700,6 +822,212 @@ export default function BeatCustomLoopOverlay({
     }, [api]);
 
     // ─────────────────────────────────────────
+    // Fix D — Diagnostic gutter offset
+    // Set to 55 to test coordinate-space alignment with 55px reading gutter.
+    // Set to 0 once the alphatab-content-host fix is confirmed correct.
+    // ─────────────────────────────────────────
+    const LOOP_X_OFFSET = 0; // ← change to 55 to test gutter alignment
+
+    // ─────────────────────────────────────────
+    // Stage 1 — smartCursorSnap (ported as-is from V99.8)
+    // ─────────────────────────────────────────
+
+    const smartCursorSnap = () => {
+        const cursor = (window as any).__maestroCursor;
+        if (cursor && typeof cursor.requestSnap === 'function') {
+            cursor.requestSnap('loop-handle-drag');
+        }
+    };
+
+    // ─────────────────────────────────────────
+    // Stage 1 — resolveEventPosition (mouse + touch unified)
+    // ─────────────────────────────────────────
+
+    const resolveEventPosition = (e: MouseEvent | TouchEvent): { clientX: number; clientY: number } => {
+        if ('touches' in e && e.touches.length > 0) {
+            return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+        }
+        if ('changedTouches' in e && e.changedTouches.length > 0) {
+            return { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY };
+        }
+        return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY };
+    };
+
+    // ─────────────────────────────────────────
+    // Stage 1 — Handle drag handlers
+    // ─────────────────────────────────────────
+
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent, target: 'start' | 'end') => {
+        e.stopPropagation();
+        e.preventDefault();
+        dragTargetRef.current = target;
+        setDragTarget(target);
+        setHandleDragging(true);
+
+        const { clientX } = resolveEventPosition(e as any);
+        // v1.8.2: seed active handle at exact pointer position — no offset
+        activeHandleClientXRef.current = clientX;
+        setActiveHandleX(clientX);
+
+        const range = api?.playbackRange;
+        if (range) {
+            previewRangeRef.current = { ...range };
+            setPreviewRange({ ...range });
+        }
+
+        (window as any).__maestroIsDraggingLoop = true;
+        (window as any).__maestroActiveHandle = target;
+
+        const cursor = (window as any).__maestroCursor;
+        if (cursor && typeof cursor.setDragging === 'function') cursor.setDragging(true);
+
+        document.body.style.userSelect = 'none';
+        (document.body.style as any).webkitUserSelect = 'none';
+        document.body.classList.add('loop-dragging');
+    };
+
+    /**
+     * handleDragMove — v1.8.2 pointer-driven model.
+     * Active handle: tracks raw clientX directly (no offset math).
+     * Preview rects: computed from snapped beat (forecast).
+     * api.playbackRange: NOT written during drag, only on release.
+     */
+    const handleDragMove = (e: MouseEvent | TouchEvent) => {
+        if (!dragTargetRef.current) return;
+        e.preventDefault();
+
+        const { clientX, clientY } = resolveEventPosition(e);
+
+        // v1.8.2: active handle tracks raw pointer — no offset
+        activeHandleClientXRef.current = clientX;
+        setActiveHandleX(clientX);
+
+        // Forecast: resolve beat at pointer for preview highlight
+        const syntheticEvent = {
+            clientX,
+            clientY,
+            target: (() => {
+                const surface = (container ?? document).querySelector('.at-surface');
+                return surface ?? document.body;
+            })(),
+        } as unknown as MouseEvent;
+
+        const result = resolveBeatWithX(syntheticEvent);
+        if (!result?.beat) return;
+
+        const beat = result.beat;
+        const beatTick = tickOf(beat);
+        const beatDur = durOf(beat);
+        const current = previewRangeRef.current ?? api?.playbackRange;
+        if (!current) return;
+
+        let nextPreview: { startTick: number; endTick: number };
+        const trackIndices = api.tracks
+            ? new Set(api.tracks.map((t: any) => t.index))
+            : new Set([0]);
+        const tickCache = (api as any)?.tickCache;
+
+        if (dragTargetRef.current === 'start') {
+            const newStart = beatTick;
+            if (newStart >= current.endTick - beatDur) return;
+            nextPreview = { startTick: newStart, endTick: current.endTick };
+            if (tickCache) {
+                const endResult = tickCache.findBeat(trackIndices, current.endTick - 1);
+                if (endResult?.beat) {
+                    const [lo, hi] = loHi(beat, endResult.beat);
+                    const preview = buildRects(lo, hi);
+                    previewRectsRef.current = preview;
+                    setRects(preview);
+                }
+            }
+        } else {
+            const newEnd = beatTick + beatDur;
+            if (newEnd <= current.startTick + beatDur) return;
+            nextPreview = { startTick: current.startTick, endTick: newEnd };
+            if (tickCache) {
+                const startResult = tickCache.findBeat(trackIndices, current.startTick);
+                if (startResult?.beat) {
+                    const [lo, hi] = loHi(startResult.beat, beat);
+                    const preview = buildRects(lo, hi);
+                    previewRectsRef.current = preview;
+                    setRects(preview);
+                }
+            }
+        }
+
+        previewRangeRef.current = nextPreview;
+        setPreviewRange(nextPreview);
+    };
+
+    /**
+     * handleDragEnd — Fix E: commits previewRange to api.playbackRange on release.
+     * Nothing is written to api during drag — only on mouseup/touchend.
+     */
+    const handleDragEnd = (e: MouseEvent | TouchEvent) => {
+        if (!dragTargetRef.current) return;
+        e.preventDefault();
+
+        // Fix E: commit preview → api only on release
+        const finalRange = previewRangeRef.current;
+        if (finalRange && api) {
+            api.playbackRange = finalRange;
+            api.isLooping = true;
+            onLoopChange?.(finalRange.startTick, finalRange.endTick);
+        }
+
+        previewRangeRef.current = null;
+        setPreviewRange(null);
+        setActiveHandleX(null);
+        activeHandleClientXRef.current = 0;
+
+        dragTargetRef.current = null;
+        setDragTarget(null);
+        setHandleDragging(false);
+
+        // Clear global flags FIRST, then unfreeze cursor
+        (window as any).__maestroIsDraggingLoop = false;
+        (window as any).__maestroActiveHandle = null;
+
+        const cursor = (window as any).__maestroCursor;
+        if (cursor) {
+            if (typeof cursor.setDragging === 'function') cursor.setDragging(false);
+            if (typeof cursor.requestSnap === 'function') cursor.requestSnap('loop-handle-drag-end');
+        }
+
+        document.body.style.userSelect = '';
+        (document.body.style as any).webkitUserSelect = '';
+        document.body.classList.remove('loop-dragging');
+
+        smartCursorSnap();
+    };
+
+    // ─────────────────────────────────────────
+    // Stage 1 — Handle drag global event listeners
+    // Attaches/detaches when handleDragging changes.
+    // ─────────────────────────────────────────
+
+    useEffect(() => {
+        if (!handleDragging) return;
+
+        const onMove = (e: MouseEvent | TouchEvent) => handleDragMove(e);
+        const onUp = (e: MouseEvent | TouchEvent) => handleDragEnd(e);
+
+        window.addEventListener('mousemove', onMove, { passive: false });
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp, { passive: false });
+        window.addEventListener('touchcancel', onUp, { passive: false });
+
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
+            window.removeEventListener('touchcancel', onUp);
+        };
+    }, [handleDragging]);
+
+    // ─────────────────────────────────────────
     // Clear
     // ─────────────────────────────────────────
 
@@ -716,25 +1044,188 @@ export default function BeatCustomLoopOverlay({
     // Render
     // ─────────────────────────────────────────
 
+    // Stage 4: suppress in landscape — coordinate-space mismatch until
+    // a scrollLeft-aware landscape loop system is built as a separate sprint.
+    // ── Compute active handle overlay-space X ─────────────────────────────────
+    // Converts raw clientX to position relative to the overlay's containing rect.
+    // The overlay wrapper is position:relative inside alphatab-content-host,
+    // so we subtract the host's left edge from clientX.
+    const getActiveHandleOverlayX = (): number | null => {
+        if (activeHandleX === null) return null;
+        const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+        if (!surface) return null;
+        const rect = surface.getBoundingClientRect();
+        return (activeHandleX - rect.left) + LOOP_X_OFFSET;
+    };
+    const activeOverlayX = getActiveHandleOverlayX();
+
+    if (isLandscape) return null;
+
+    // ── V99.8-matched color palette ──────────────────────────────────────────
+    const handleColor = '#9333ea';
+    const tabColor = '#9c47f0';
+    const overlayColor = 'rgba(100, 116, 139, 0.12)';
+    const borderColor = 'rgba(129, 140, 248, 0.2)';
+    // Fix A: NO positional transition — loop rect moves must be instant.
+    // Only shadow/color transitions are allowed on handles.
+    const handleColorTransition = 'background-color 150ms ease-in-out, box-shadow 150ms ease-in-out';
+
+    const EXTEND = 50;
+
     return (
         <>
-            <style>{`
-                .beat-loop-highlight {
-                    position: absolute;
-                    background: rgba(33, 150, 243, 0.25);
-                    border: 2px solid rgba(33, 150, 243, 0.65);
-                    pointer-events: none;
-                    z-index: 900;
-                    box-sizing: border-box;
-                    transition: none !important;
-                }
-            `}</style>
+            {rects.map((r, i) => {
+                const isFirst = i === 0;
+                const isLast = i === rects.length - 1;
 
-            {rects.map((r, i) => (
-                <div key={i} className="beat-loop-highlight" style={{
-                    left: r.x, top: r.y, width: r.w, height: r.h,
-                }} />
-            ))}
+                // v1.8.2: active handle rendered at pointer X (not rect edge)
+                // inactive handle stays anchored to opposite rect edge
+                const startIsDragging = handleDragging && dragTarget === 'start';
+                const endIsDragging = handleDragging && dragTarget === 'end';
+
+                return (
+                    <div
+                        key={i}
+                        className="beat-loop-highlight"
+                        style={{
+                            position: 'absolute',
+                            left: r.x + LOOP_X_OFFSET,  // Fix D: diagnostic gutter offset
+                            top: r.y - EXTEND,
+                            width: r.w,
+                            height: r.h + EXTEND * 2,
+                            background: overlayColor,
+                            borderTop: `1px solid ${borderColor}`,
+                            borderBottom: `1px solid ${borderColor}`,
+                            pointerEvents: 'none',
+                            zIndex: 900,
+                            boxSizing: 'border-box',
+                            // Fix A: no transition on position/size
+                        }}
+                    >
+                        {/* ── Start handle ── */}
+                        {isFirst && (
+                            <div
+                                onMouseDown={e => handleDragStart(e, 'start')}
+                                onTouchStart={e => handleDragStart(e, 'start')}
+                                style={{
+                                    position: 'absolute',
+                                    // v1.8.2: if this handle is active, position from pointer X
+                                    // otherwise anchor to left edge of rect as normal
+                                    ...(startIsDragging && activeOverlayX !== null
+                                        ? { left: activeOverlayX - r.x - 13.5 }
+                                        : { left: '-13.5px' }
+                                    ),
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '27px',
+                                    height: '60px',
+                                    cursor: 'ew-resize',
+                                    zIndex: 1001,
+                                    pointerEvents: 'auto',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    touchAction: 'none',
+                                    userSelect: 'none',
+                                }}
+                            >
+                                {/* Vertical glowing bar */}
+                                <div style={{
+                                    position: 'absolute',
+                                    left: '12px',
+                                    top: '-50px',
+                                    width: '3px',
+                                    height: '160px',
+                                    backgroundColor: handleColor,
+                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    transition: handleColorTransition,
+                                }} />
+                                {/* Arrow tab */}
+                                <div style={{
+                                    position: 'absolute',
+                                    left: '0',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '14px',
+                                    height: '32px',
+                                    backgroundColor: tabColor,
+                                    borderRadius: '4px 0 0 4px',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    fontSize: '28px',
+                                    fontWeight: '900',
+                                    fontFamily: "'Courier New', monospace",
+                                    transition: handleColorTransition,
+                                }}>›</div>
+                            </div>
+                        )}
+
+                        {/* ── End handle ── */}
+                        {isLast && (
+                            <div
+                                onMouseDown={e => handleDragStart(e, 'end')}
+                                onTouchStart={e => handleDragStart(e, 'end')}
+                                style={{
+                                    position: 'absolute',
+                                    // v1.8.2: if this handle is active, position from pointer X
+                                    // otherwise anchor to right edge of rect as normal
+                                    ...(endIsDragging && activeOverlayX !== null
+                                        ? { left: activeOverlayX - r.x - 13.5, right: 'unset' }
+                                        : { right: '-13.5px' }
+                                    ),
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '27px',
+                                    height: '60px',
+                                    cursor: 'ew-resize',
+                                    zIndex: 1001,
+                                    pointerEvents: 'auto',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    touchAction: 'none',
+                                    userSelect: 'none',
+                                }}
+                            >
+                                {/* Vertical glowing bar */}
+                                <div style={{
+                                    position: 'absolute',
+                                    left: '12px',
+                                    top: '-50px',
+                                    width: '3px',
+                                    height: '160px',
+                                    backgroundColor: handleColor,
+                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    transition: handleColorTransition,
+                                }} />
+                                {/* Arrow tab */}
+                                <div style={{
+                                    position: 'absolute',
+                                    right: '0',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '14px',
+                                    height: '32px',
+                                    backgroundColor: tabColor,
+                                    borderRadius: '0 4px 4px 0',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    fontSize: '28px',
+                                    fontWeight: '900',
+                                    fontFamily: "'Courier New', monospace",
+                                    transition: handleColorTransition,
+                                }}>‹</div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </>
     );
 }

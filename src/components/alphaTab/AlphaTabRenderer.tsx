@@ -3,8 +3,8 @@
 /**
  * AlphaTabRenderer.tsx
  * Current version: V119
- * Date: May 4th, 2026
- * Cloned from V118 — dark/light score palette + title/artist branding locked.
+ * Date: May 29th, 2026
+ * Cloned from V118 — full sprint locked.
  *
  * V119 LOCKS:
  * 🔒 [TH] AlphaTab score palette — applied via api.settings.display.resources on theme change.
@@ -17,6 +17,15 @@
  *                      font.includes('20px') + text-anchor=middle → #60a5fa (artist).
  * 🔒 [page.tsx TH3] #maestro-player wrapper is theme-aware: bg-[#1a1a1a] dark / bg-white light.
  *         Safe now that alphaTab palette is active — no more black-on-black regression risk.
+ * 🔒 [TH-notationFix] notation.elements re-suppressed before updateSettings() in applyThemePalette.
+ *         api.updateSettings() resets the notation.elements Map to AlphaTab defaults,
+ *         re-enabling the TAB clef on every system + shifting bar-1 right of the clef.
+ *         Same blanket-false forEach as initAlphaTab, applied pre-updateSettings each palette call.
+ * 🔒 [Stage 1 cleanup] Production console noise reduced.
+ *         colorPatch logs removed — patch confirmed locked, no longer needs A/B proof.
+ *         Routine dev logs gated behind isRendererDebugEnabled() (localStorage maestro_renderer_debug).
+ *         Gated: curtain dropped, [profile] ×2, external handler attach, [TH] palette applied.
+ *         All warn/error/recovery logs preserved unconditionally.
  *
  * V118 LOCKS (carried forward):
  * 🔒 [S1] Portrait/page mode = ScrollMode.Off. S1 owns all vertical row snapping.
@@ -327,6 +336,20 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
     return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
 }
 
+// ── [TH-notationFix] Re-suppress notation.elements before every updateSettings ──
+// api.updateSettings() resets the notation.elements Map to AlphaTab defaults,
+// re-enabling the TAB clef on every system + shifting bar-1 right of the clef.
+// Called in renderStarted (catches all render paths) and again in applyThemePalette
+// immediately before updateSettings (extra guard for the theme-triggered render).
+function suppressNotationElements(api: any): void {
+    const notationElements = api?.settings?.notation?.elements;
+    if (notationElements instanceof Map) {
+        notationElements.forEach((_: boolean, key: unknown) =>
+            notationElements.set(key, false)
+        );
+    }
+}
+
 // ── [S1] Snap debug — activate: localStorage.setItem('maestro_snap_debug','1') ──
 function isSnapDebugEnabled(): boolean {
     if (typeof window === 'undefined') return false;
@@ -529,6 +552,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const lastAnchorSysRef = useRef<number>(-1);
     // [S1] RAF handle for the portrait scroll tween — cancelled on new snap or user scroll.
     const s1AnimRafRef = useRef<number | null>(null);
+    // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
+    const reseatMinBarIdxRef = useRef<number | null>(null);
+    const reseatMinBarUntilRef = useRef<number>(0);
 
     const resetBeatAcceptance = () => {
         lastAcceptedBeatStartRef.current = -1;
@@ -659,6 +685,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     (at as any).SystemsLayoutMode.Automatic;
             }
             await api.updateSettings();
+            suppressNotationElements(api); // [TH-notationFix] re-suppress after reassertLayout updateSettings
             api.render();
             applyAxisLock(el, api);
             if (!wantStrip) {
@@ -824,6 +851,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             });
 
             api.renderStarted.on(() => {
+                suppressNotationElements(api); // [TH-notationFix] re-suppress before every render
                 activeRendersRef.current += 1;
                 renderTokenRef.current += 1;
                 forceRevealCancelRef.current += 1;
@@ -1209,6 +1237,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const tick = tickRaw;
                 const lastTick = lastTickRef.current;
+
+                // ── V1.8.4: Loop reseat guard ─────────────────────────────────────────────
+                // BeatCustomLoopOverlay sets window.__maestroLoopReseat on commitBarSnap
+                // (click-to-move) and toggle-ON. Flushing stable cursor refs here prevents
+                // slide/tie/pick-slide content on the FIRST loop pass from mis-priming the
+                // cursor to a later beat (cursor jumps ahead and parks until player catches up).
+                // Guard window: 800ms from reseat, tick within 960 ticks of loop start.
+                // Does NOT return — normal playerPositionChanged logic continues with clean refs.
+                {
+                    const reseatFlag = (window as any).__maestroLoopReseat;
+                    const RESEAT_WINDOW_MS = 800;
+                    const RESEAT_TICK_SLOP = 960;
+                    if (
+                        reseatFlag &&
+                        Date.now() - reseatFlag.at < RESEAT_WINDOW_MS &&
+                        Math.abs(tick - reseatFlag.tick) < RESEAT_TICK_SLOP
+                    ) {
+                        (window as any).__maestroLoopReseat = null;
+                        console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
+                            liveTick: tick,
+                            reseatTick: reseatFlag.tick,
+                        });
+                        cursorRef.current?.requestSnap('loop-reseat');
+                        stableCurBeatRef.current = null;
+                        stableVisualKeyRef.current = null;
+                        stableExpandedBeatStartRef.current = 0;
+                        stableNextBeatRef.current = null;
+                        stableNextExpandedBeatStartRef.current = null;
+                        lastTickRef.current = null;
+                        lastAcceptedBeatStartRef.current = -1;
+                        allowBacktrackUntilRef.current = Date.now() + 600;
+                        reAnchorCountRef.current = { beat: -1, count: 0 };
+                        // Do not return — let normal logic continue with clean refs
+                        // so the cursor primes correctly from the current loop start tick.
+                    }
+                }
+
                 const delta = lastTick != null ? Math.abs(tick - lastTick) : 0;
                 const jumped = delta > 2000;
                 const hugeJump = delta > 30000;
@@ -2197,6 +2262,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 resources.barNumberColor = new Color(102, 102, 102, 255);
             }
             await api.updateSettings();
+            suppressNotationElements(api); // [TH-notationFix] re-suppress AFTER updateSettings resets the Map
             api.render();
             if (isRendererDebugEnabled()) console.log('[TH] palette applied:', theme);
         };
@@ -2271,30 +2337,41 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         paddingRight: (forceHorizontal || !showGutters) ? 'env(safe-area-inset-right, 0px)' : '55px',
                     }}
                 >
-                    <div
-                        ref={containerRef}
-                        className="alphatab-container"
-                        style={{
-                            position: 'relative',
-                            width: '100%',
-                            overflow: 'hidden',
-                            WebkitOverflowScrolling: 'touch' as any,
-                            background: bgColor,
-                        }}
-                    />
-                </div>
-                {apiRef.current && !isSettling && (
-                    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 900 }}>
-                        <BeatCustomLoopOverlay
-                            api={apiRef.current}
-                            container={containerRef.current}
-                            loopEnabled={loopEnabled}
-                            onLoopToggle={onLoopToggle}
-                            onLoopChange={onLoopChange}
-                            onLoopClear={onLoopClear}
+                    {/*
+                      alphatab-content-host — shared coordinate origin for containerRef + loop overlay.
+                      shellRef owns the 55px gutters via padding. absolute inset-0 inside shellRef
+                      still starts at the outer padding edge, so the overlay was 55px off.
+                      This inner host sits inside the padded content box — containerRef and the
+                      overlay both use this as their position:relative ancestor, so visualBounds
+                      x/y coords from AlphaTab map 1:1 to overlay left/top with no gutter offset.
+                    */}
+                    <div className="alphatab-content-host" style={{ position: 'relative' }}>
+                        <div
+                            ref={containerRef}
+                            className="alphatab-container"
+                            style={{
+                                position: 'relative',
+                                width: '100%',
+                                overflow: 'hidden',
+                                WebkitOverflowScrolling: 'touch' as any,
+                                background: bgColor,
+                            }}
                         />
+                        {apiRef.current && !isSettling && (
+                            <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 900 }}>
+                                <BeatCustomLoopOverlay
+                                    api={apiRef.current}
+                                    container={containerRef.current}
+                                    loopEnabled={loopEnabled}
+                                    onLoopToggle={onLoopToggle}
+                                    onLoopChange={onLoopChange}
+                                    onLoopClear={onLoopClear}
+                                    isLandscape={forceHorizontal}
+                                />
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );
