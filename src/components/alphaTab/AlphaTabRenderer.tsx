@@ -2,9 +2,16 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V122
+ * Current version: V123
  * Date: June 7th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V123 DIAGNOSTIC:
+ * 🔍 [orientation-anchor-probe] Landscape scroll → Portrait anchor diagnostic.
+ *     ORIENTATION_ANCHOR_DEBUG = true (temporary). Remove after root cause confirmed.
+ *     Probes: landscape-scroll, orientation-change, portrait-s1-snap,
+ *     orientation-cursor-probe (song-load, loop-play-start).
+ *     lastLandscapeVisibleBarRef: diagnostic ref only — not wired to behavior.
  *
  * V120 LOOP/CURSOR LOCKS:
  * 🔒 [LoopClick] Click-to-move is Songsterr-style: loop snaps bar-to-bar but
@@ -176,6 +183,8 @@ const CURSOR_BIAS_PX = 0;
 const SCROLL_EASE = 0.18;
 const MOBILE_LANDSCAPE_MAX_W = 900;
 const HARD_RESET_COOLDOWN_MS = 4000;
+// [orientation-anchor-probe] V123 diagnostic flag — set false to silence probes
+const ORIENTATION_ANCHOR_DEBUG = true;
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -583,6 +592,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const lastAnchorSysRef = useRef<number>(-1);
     // [S1] RAF handle for the portrait scroll tween — cancelled on new snap or user scroll.
     const s1AnimRafRef = useRef<number | null>(null);
+    // ── [orientation-anchor-probe] Diagnostic refs — V123, remove after diagnosis ──
+    const lastLandscapeVisibleBarRef = useRef<{
+        barIdx: number;
+        startTick: number;
+        at: number;
+        scrollLeft: number;
+    } | null>(null);
+    const landscapeScrollProbeRafRef = useRef<number | null>(null);
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
     const reseatMinBarUntilRef = useRef<number>(0);
@@ -606,6 +623,77 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
     const startLandscapeScrollLoop = useCallback((container: HTMLElement, api: any) => {
         if (landscapeScrollRafRef.current !== null) return;
+
+        // ── [orientation-anchor-probe] Landscape scroll listener — diagnostic only ──
+        if (ORIENTATION_ANCHOR_DEBUG && !(container as any).__orientationScrollProbeAttached) {
+            (container as any).__orientationScrollProbeAttached = true;
+            container.addEventListener('scroll', () => {
+                if (landscapeScrollProbeRafRef.current !== null) return;
+                landscapeScrollProbeRafRef.current = requestAnimationFrame(() => {
+                    landscapeScrollProbeRafRef.current = null;
+                    const scrollLeft = container.scrollLeft;
+                    const containerW = container.clientWidth;
+                    const surface = container.querySelector('.at-surface') as HTMLElement | null;
+                    const surfaceW = surface?.scrollWidth ?? 0;
+                    const apiTickPosition = (api as any)?.tickPosition ?? null;
+                    const isPlaying = isPlayingRef?.current ?? null;
+
+                    let mostVisibleBarIdx: number | null = null;
+                    let mostVisibleBarStartTick: number | null = null;
+                    let mostVisibleBarX: number | null = null;
+                    let mostVisibleBarW: number | null = null;
+                    try {
+                        const systems = (api as any)?.renderer?.boundsLookup?.staffSystems ?? [];
+                        let bestOverlap = -1;
+                        const viewL = scrollLeft;
+                        const viewR = scrollLeft + containerW;
+                        for (const sys of systems) {
+                            for (const mbb of ((sys as any)?.bars ?? [])) {
+                                const vb = (mbb as any)?.visualBounds;
+                                if (!vb) continue;
+                                const barL = vb.x;
+                                const barR = vb.x + vb.w;
+                                const overlap = Math.max(0, Math.min(barR, viewR) - Math.max(barL, viewL));
+                                if (overlap > bestOverlap) {
+                                    bestOverlap = overlap;
+                                    mostVisibleBarIdx = (mbb as any)?.masterBar?.index ?? null;
+                                    mostVisibleBarX = vb.x;
+                                    mostVisibleBarW = vb.w;
+                                    try {
+                                        const mbArr = ((api as any).tickCache as any)?.masterBars ?? [];
+                                        const match = mbArr.find((mb: any) => mb?.masterBar?.index === mostVisibleBarIdx);
+                                        mostVisibleBarStartTick = match?.start ?? null;
+                                    } catch { mostVisibleBarStartTick = null; }
+                                }
+                            }
+                        }
+                    } catch { /* non-fatal */ }
+
+                    if (mostVisibleBarIdx != null) {
+                        lastLandscapeVisibleBarRef.current = {
+                            barIdx: mostVisibleBarIdx,
+                            startTick: mostVisibleBarStartTick ?? 0,
+                            at: Date.now(),
+                            scrollLeft,
+                        };
+                    }
+
+                    console.log('[orientation-anchor-probe]', {
+                        reason: 'landscape-scroll',
+                        scrollLeft,
+                        containerW,
+                        surfaceW,
+                        apiTickPosition,
+                        isPlaying,
+                        mostVisibleBarIdx,
+                        mostVisibleBarStartTick,
+                        mostVisibleBarX,
+                        mostVisibleBarW,
+                    });
+                });
+            }, { passive: true });
+        }
+
         const cursorSurfaceX = getCursorSurfaceX(container);
 
         const loop = () => {
@@ -1143,6 +1231,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
                         cursorRef.current?.requestSnap('song-load');
+                        if (ORIENTATION_ANCHOR_DEBUG) {
+                            console.log('[orientation-cursor-probe]', {
+                                reason: 'song-load-prime',
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                curBeatAbs: r?.beat?.absolutePlaybackStart ?? null,
+                                curBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                                isLandscape: isDeviceLandscape(),
+                                wantStrip: forceHorizontalRef.current,
+                            });
+                        }
                         cursorRef.current?.setBeat(r.beat);
                         cursorRef.current?.setTick(tick);
                         resolve(true);
@@ -2071,6 +2169,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 const TWEEN_MS = 150;
                                 const snapAnchor = anchorIdx; // capture for cancel guard
 
+                                if (ORIENTATION_ANCHOR_DEBUG) {
+                                    console.log('[orientation-anchor-probe]', {
+                                        reason: 'portrait-s1-snap',
+                                        apiTickPosition: (api as any)?.tickPosition ?? null,
+                                        resolvedBeatTick: tick,
+                                        resolvedBeatBarIdx: curBeat?.voice?.bar?.masterBar?.index ?? null,
+                                        s1AnchorIdx: anchorIdx,
+                                        s1SysIdx: sysIdx,
+                                        s1TargetScrollTop: tweenTo,
+                                        currentScrollTop: tweenFrom,
+                                        lastLandscapeVisibleBar: lastLandscapeVisibleBarRef.current,
+                                    });
+                                }
+
                                 if (Math.abs(tweenDelta) < 2) {
                                     // Already there — skip tween
                                     scrollElEl.scrollTop = tweenTo;
@@ -2341,6 +2453,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     };
                     (window as any).__maestroManualSeek = Date.now();
                     (window as any).__maestroCursor?.requestSnap?.('loop-play-start');
+                    if (ORIENTATION_ANCHOR_DEBUG) {
+                        console.log('[orientation-cursor-probe]', {
+                            reason: 'loop-play-start-prime',
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            primeT,
+                            isLandscape: isDeviceLandscape(),
+                            wantStrip: forceHorizontalRef.current,
+                            lastLandscapeVisibleBar: lastLandscapeVisibleBarRef.current,
+                        });
+                    }
                 }
                 // ── END loop-start cursor re-prime ────────────────────────────────────────
 
