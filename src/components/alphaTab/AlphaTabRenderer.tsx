@@ -2,8 +2,8 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V121
- * Date: June 6th, 2026
+ * Current version: V122
+ * Date: June 7th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
  * V120 LOOP/CURSOR LOCKS:
@@ -41,6 +41,11 @@
  *         position (one-shot override via __maestroLoopPlayStartOverrideTick).
  *         Override clears on loop-move and after first Play use; stale values
  *         are range-validated before use.
+ *
+ * ✅ [LoopOverlayRebuild] BeatCustomLoopOverlay self-heals after renderFinished/
+ *         resize/track switch via rescue useEffect: if loopEnabled && rects empty
+ *         && api.playbackRange exists, rebuilds rects in double-RAF. Deduplicated
+ *         by rescueRafPendingRef. Do not remove this rescue path.
  *
  * V119 LOCKS:
  * 🔒 [TH] AlphaTab score palette — applied via api.settings.display.resources on theme change.
@@ -726,8 +731,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const previousWantStrip = lastWantStripRef.current;
             const stripTransition =
                 previousWantStrip === true && wantStrip === false ? 'strip-to-page' :
-                previousWantStrip === false && wantStrip === true ? 'page-to-strip' :
-                'none';
+                    previousWantStrip === false && wantStrip === true ? 'page-to-strip' :
+                        'none';
             lastWantStripRef.current = wantStrip;
             const wantLayout = wantStrip
                 ? (at as any).LayoutMode?.Horizontal
@@ -1380,7 +1385,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
 
-
+                    console.log('[loop-render-probe]', {
+                        reason: 'renderFinished-stable',
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRangeRef: playbackRangeRef.current,
+                        apiPlaybackRange: (api.playbackRange as any) ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: (api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
+                    });
 
                     // ── Maestro lyric overlay ─────────────────────────────────
                     requestAnimationFrame(() => {
@@ -2126,6 +2138,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         init().catch(console.error);
 
+        (window as any).__maestroProbeRendererLoop = () => {
+            const _api = apiRef.current;
+            console.log('[loop-render-probe]', {
+                reason: 'manual',
+                loopEnabled: loopEnabledRef.current,
+                playbackRangeRef: playbackRangeRef.current,
+                apiPlaybackRange: (_api?.playbackRange as any) ?? null,
+                systemsLength: _api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                firstSystemBars: (_api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
+            });
+        };
+
         return () => {
             destroyed = true;
             ++initTokenRef.current;
@@ -2165,6 +2189,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 cancelAnimationFrame(s1AnimRafRef.current);
                 s1AnimRafRef.current = null;
             }
+            delete (window as any).__maestroProbeRendererLoop;
         };
     }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, resetKey]);
 

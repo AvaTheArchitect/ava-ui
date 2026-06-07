@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.4 — Loop Reseat Global Flag
- * Date: May 29th, 2026
+ * BeatCustomLoopOverlay v1.8.5 — Loop Reseat Global Flag
+ * Date: June 7th, 2026
  *
  * 🔥 V1.8.4 CHANGES:
  * ✅ Loop reseat global flag: commitBarSnap sets window.__maestroLoopReseat
@@ -179,6 +179,7 @@ export default function BeatCustomLoopOverlay({
     const downYRef = useRef<number>(0);
     const downTickRef = useRef<number | null>(null);
     const beatCrossedRef = useRef(false);
+    const rescueRafPendingRef = useRef(false);
 
     // Click/drag discriminator shared by onMove and onUp.
     // Prevents micro-drift from painting beat-level preview before onUp bar-snaps.
@@ -194,6 +195,10 @@ export default function BeatCustomLoopOverlay({
     // If it returns the first beat of the next bar while the pointer is still left
     // of that beat, end handles should prefer the previous bar.
     const LOOP_HANDLE_BARLINE_MAGNET = true;
+
+    // Gate for verbose loop overlay diagnostics. Set true to re-enable.
+    // [loop-overlay-rebuild] is always on — it confirms self-heal in production.
+    const LOOP_OVERLAY_DEBUG = false;
 
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
@@ -227,13 +232,14 @@ export default function BeatCustomLoopOverlay({
         // Tray Loop OFF (or any external disable) → clear all overlay state.
         // Mirrors the internal clearLoop() path so the tray button and the
         // Clear button produce identical results.
-        setRects([]);
+        setRectsWithReason([], 'loopEnabled-false-clear');
         startBeat.current = null;
         endBeat.current = null;
         beatCrossedRef.current = false;
         isDragging.current = false;
         // api.playbackRange and api.isLooping are cleared by the page/renderer
         // via onLoopClear / loopEnabled=false prop — this hook only owns the visual state.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loopEnabled]);
 
     // ─────────────────────────────────────────
@@ -623,8 +629,9 @@ export default function BeatCustomLoopOverlay({
             });
         }
 
-        setRects(buildBarRects(barIdx));
+        setRectsWithReason(buildBarRects(barIdx), `commitBarSnap:${source}`);
         onLoopChange?.(startTick, endTick);
+        logLoopOverlayState(`commitBarSnap:${source}`);
         return true;
     };
 
@@ -699,6 +706,39 @@ export default function BeatCustomLoopOverlay({
         return results;
     };
 
+    const logLoopOverlayState = (reason: string) => {
+        if (!LOOP_OVERLAY_DEBUG) return;
+        const apiRange = api?.playbackRange ?? null;
+        const loopEl = (container ?? document).querySelector('.beat-loop-highlight') as HTMLElement | null;
+        const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+        const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+        console.log('[loop-overlay-probe]', {
+            reason,
+            loopEnabled,
+            apiRange,
+            previewRange: previewRangeRef?.current ?? null,
+            rectsCount: rects?.length ?? null,
+            hasLoopEl: !!loopEl,
+            loopDisplay: loopEl ? getComputedStyle(loopEl).display : null,
+            loopOpacity: loopEl ? getComputedStyle(loopEl).opacity : null,
+            surfaceFound: !!surface,
+            surfaceW: surface?.scrollWidth ?? null,
+            systemsLength: systems.length,
+            firstSystemBars: (systems?.[0] as any)?.bars?.length ?? null,
+        });
+    };
+
+    const setRectsWithReason = (next: typeof rects, reason: string) => {
+        if (LOOP_OVERLAY_DEBUG) {
+            console.log('[loop-overlay-setRects]', {
+                reason,
+                nextCount: next.length,
+                loopEnabled: loopRef.current,
+                apiRange: api?.playbackRange ?? null,
+            });
+        }
+        setRects(next);
+    };
 
     // ─────────────────────────────────────────
     // Beat resolver (unchanged from v1.6)
@@ -867,7 +907,7 @@ export default function BeatCustomLoopOverlay({
             if (!beatCrossedRef.current) return;
 
             const [lo, hi] = loHi(startBeat.current, result.beat);
-            setRects(buildRects(lo, hi));
+            setRectsWithReason(buildRects(lo, hi), 'onMove-drag-preview');
         };
 
         // ── onUp — SOLE AUTHORITY (v1.7.3+ architecture) ─────
@@ -928,7 +968,7 @@ export default function BeatCustomLoopOverlay({
 
             api.playbackRange = { startTick, endTick };
             api.isLooping = true;
-            setRects(buildRects(lo, hi));
+            setRectsWithReason(buildRects(lo, hi), 'onUp-drag-commit');
             onLoopChange?.(startTick, endTick);
         };
 
@@ -941,6 +981,7 @@ export default function BeatCustomLoopOverlay({
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [api, container]);
 
     // ─────────────────────────────────────────
@@ -988,6 +1029,66 @@ export default function BeatCustomLoopOverlay({
     // Re-render sync — rebuild rects after AlphaTab layout changes
     // ─────────────────────────────────────────
 
+    const rebuildFromPlaybackRange = (reason = 'unknown') => {
+        const range = api.playbackRange;
+        if (!range) return;
+
+        const tickCache = (api as any)?.tickCache;
+        if (!tickCache) return;
+
+        // Guard: skip if boundsLookup is in a partial/transitional state
+        const systems = api?.renderer?.boundsLookup?.staffSystems;
+        if (!systems?.length) return;
+
+        const trackIndices = api.tracks
+            ? new Set(api.tracks.map((t: any) => t.index))
+            : new Set([0]);
+
+        const startResult = tickCache.findBeat(trackIndices, range.startTick);
+        const endResult = tickCache.findBeat(trackIndices, range.endTick - 1);
+        if (!startResult?.beat || !endResult?.beat) return;
+
+        const startBarIdx = startResult.beat?.voice?.bar?.index
+            ?? startResult.beat?.voice?.bar?.masterBar?.index;
+        const endBarIdx = endResult.beat?.voice?.bar?.index
+            ?? endResult.beat?.voice?.bar?.masterBar?.index;
+
+        const rectsCountBefore = rectsRef.current.length;
+        let resolvedRects: HighlightRect[] = [];
+
+        // Full-bar selection → buildBarRects (clean, no midpoint math)
+        if (startBarIdx != null && startBarIdx === endBarIdx
+            && isFirstBeatInBar(startResult.beat)
+            && isLastBeatInBar(endResult.beat)) {
+            const barRects = buildBarRects(startBarIdx);
+            if (barRects.length && barRects.every(r => r.w > 0)) {
+                resolvedRects = barRects;
+            }
+        }
+
+        // Beat-level fallback: not a full-bar selection, or barRects were zero-width
+        if (!resolvedRects.length) {
+            const [lo, hi] = loHi(startResult.beat, endResult.beat);
+            const beatRects = buildRects(lo, hi);
+            if (beatRects.length && beatRects.every(r => r.w > 0)) {
+                resolvedRects = beatRects;
+            }
+        }
+
+        console.log('[loop-overlay-rebuild]', {
+            reason,
+            startTick: range.startTick,
+            endTick: range.endTick,
+            rectsCountBefore,
+            rectsCountAfter: resolvedRects.length,
+            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? 0,
+        });
+
+        if (resolvedRects.length) {
+            setRectsWithReason(resolvedRects, `rebuildFromPlaybackRange:${reason}`);
+        }
+    };
+
     /**
      * V1.7.5 — When AlphaTab re-renders (dev tools open/close, window resize,
      * fullscreen toggle, container width change), all internal coordinates shift
@@ -1000,50 +1101,6 @@ export default function BeatCustomLoopOverlay({
      */
     useEffect(() => {
         if (!api) return;
-
-        const rebuildFromPlaybackRange = () => {
-            const range = api.playbackRange;
-            if (!range) return;
-
-            const tickCache = (api as any)?.tickCache;
-            if (!tickCache) return;
-
-            // Guard: skip if boundsLookup is in a partial/transitional state
-            const systems = api?.renderer?.boundsLookup?.staffSystems;
-            if (!systems?.length) return;
-
-            const trackIndices = api.tracks
-                ? new Set(api.tracks.map((t: any) => t.index))
-                : new Set([0]);
-
-            const startResult = tickCache.findBeat(trackIndices, range.startTick);
-            const endResult = tickCache.findBeat(trackIndices, range.endTick - 1);
-            if (!startResult?.beat || !endResult?.beat) return;
-
-            const startBarIdx = startResult.beat?.voice?.bar?.index
-                ?? startResult.beat?.voice?.bar?.masterBar?.index;
-            const endBarIdx = endResult.beat?.voice?.bar?.index
-                ?? endResult.beat?.voice?.bar?.masterBar?.index;
-
-            // Full-bar selection → buildBarRects (clean, no midpoint math)
-            if (startBarIdx != null && startBarIdx === endBarIdx
-                && isFirstBeatInBar(startResult.beat)
-                && isLastBeatInBar(endResult.beat)) {
-                const barRects = buildBarRects(startBarIdx);
-                // Guard: skip if geometry produced zero-width rects (transitional)
-                if (barRects.length && barRects.every(r => r.w > 0)) {
-                    setRects(barRects);
-                    return;
-                }
-            }
-
-            // Beat-level selection → buildRects (midpoint trimming)
-            const [lo, hi] = loHi(startResult.beat, endResult.beat);
-            const newRects = buildRects(lo, hi);
-            if (newRects.length && newRects.every(r => r.w > 0)) {
-                setRects(newRects);
-            }
-        };
 
         const handleRenderFinished = () => {
             // 🔥 Cancel any in-progress drag — layout changes invalidate all
@@ -1062,7 +1119,17 @@ export default function BeatCustomLoopOverlay({
             // causing rects to "fall down" or stick at wrong bar edges.
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    rebuildFromPlaybackRange();
+                    if (LOOP_OVERLAY_DEBUG) console.log('[loop-overlay-renderFinished-gate]', {
+                        loopRef: !!loopRef.current,
+                        loopEnabled,
+                        hasApiRange: !!api.playbackRange,
+                        apiRange: api.playbackRange ?? null,
+                        rectsCount: rectsRef?.current?.length ?? rects.length,
+                    });
+                    if (api.playbackRange) {
+                        rebuildFromPlaybackRange('renderFinished');
+                    }
+                    logLoopOverlayState('renderFinished-rebuild');
                 });
             });
         };
@@ -1071,7 +1138,45 @@ export default function BeatCustomLoopOverlay({
         return () => {
             api.renderer.renderFinished.off(handleRenderFinished);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [api]);
+
+    useEffect(() => {
+        if (!loopEnabled || rects.length > 0 || !api?.playbackRange) return;
+        logLoopOverlayState('loopEnabled-but-rectsEmpty');
+        if (rescueRafPendingRef.current) return;
+        rescueRafPendingRef.current = true;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                rescueRafPendingRef.current = false;
+                if (!api?.playbackRange) return;
+                if ((rectsRef?.current?.length ?? rects.length) > 0) return;
+                rebuildFromPlaybackRange('loopEnabled-but-rectsEmpty-rescue');
+            });
+        });
+    }, [loopEnabled, rects.length, api]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!LOOP_OVERLAY_DEBUG) return;
+        console.log('[loop-overlay-loopEnabled-change]', {
+            loopEnabled,
+            apiRange: api?.playbackRange ?? null,
+        });
+    }, [loopEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!LOOP_OVERLAY_DEBUG) return;
+        console.log('[loop-overlay-rects-change]', {
+            rectsCount: rects.length,
+            loopEnabled,
+            apiRange: api?.playbackRange ?? null,
+        });
+    }, [rects.length, loopEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        (window as any).__maestroProbeLoopOverlay = () => logLoopOverlayState('manual');
+        return () => { delete (window as any).__maestroProbeLoopOverlay; };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ─────────────────────────────────────────
     // Fix D — Diagnostic gutter offset
@@ -1293,7 +1398,7 @@ export default function BeatCustomLoopOverlay({
                     const [lo, hi] = loHi(previewBeat, endResult.beat);
                     const preview = buildRects(lo, hi);
                     previewRectsRef.current = preview;
-                    setRects(preview);
+                    setRectsWithReason(preview, 'handleDragMove-start-preview');
                 }
             }
         } else {
@@ -1306,7 +1411,7 @@ export default function BeatCustomLoopOverlay({
                     const [lo, hi] = loHi(startResult.beat, beat);
                     const preview = buildRects(lo, hi);
                     previewRectsRef.current = preview;
-                    setRects(preview);
+                    setRectsWithReason(preview, 'handleDragMove-end-preview');
                 }
             }
         }
@@ -1341,6 +1446,7 @@ export default function BeatCustomLoopOverlay({
             api.playbackRange = finalRange;
             api.isLooping = true;
             onLoopChange?.(finalRange.startTick, finalRange.endTick);
+            logLoopOverlayState('handleDragEnd-committed');
             // ── End handle fresh-attack reseat ───────────────────────────────────────────
             const endReseat = resolveEndHandleFreshAttack(
                 finalRange.endTick,
@@ -1444,7 +1550,7 @@ export default function BeatCustomLoopOverlay({
         api.playbackRange = null;
         startBeat.current = null;
         endBeat.current = null;
-        setRects([]);
+        setRectsWithReason([], 'clearLoop');
         onLoopClear?.();
     };
 
