@@ -254,6 +254,15 @@ function hideRepeatedTabClef(svg: SVGSVGElement): void {
     const cp = raw.codePointAt(0) ?? 0;
     if (cp >= 0xe080 && cp <= 0xe089) return; // SMuFL time-sig digits
     if (cp === 0xe044) return; // barline-structure glyph
+    // SMuFL tuplet brackets: (3), (5), (6), (7) etc.
+    // Range 0xe1f0–0xe20f covers tuplet numerals and brackets.
+    // Also guard 0xe1b0–0xe1df (note flags/beams) and any glyph that
+    // contains an ASCII digit inside parentheses — these are notation
+    // elements, not repeated TAB clef glyphs.
+    if (cp >= 0xe1b0 && cp <= 0xe20f) return; // SMuFL tuplet / flag range
+    // Additional guard: if the raw text contains a digit (tuplet number),
+    // it is never a TAB clef — skip it regardless of code point.
+    if (/\d/.test(raw)) return;
     g.setAttribute("display", "none");
     hidden++;
   });

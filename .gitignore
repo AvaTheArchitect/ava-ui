@@ -121,7 +121,6 @@ src/components/alphaTab/MaestroCursor*.v*.tsx
 *.Phase*
 *.PHASE*
 *.GP8PHASE*
-src/lib/alphaTab/useAlphaTabLayoutProfile.ts
 src/components/alphaTab/AlphaTabRenderer_V102.tsx*
 src/components/alphaTab/AlphaTabRenderer_V104.tsx*
 src/components/alphaTab/AlphaTabRenderer_V105.tsx*

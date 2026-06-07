@@ -2,9 +2,39 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V119
- * Date: May 29th, 2026
- * Cloned from V118 — full sprint locked.
+ * Current version: V121
+ * Date: June 6th, 2026
+ * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V120 LOOP/CURSOR LOCKS:
+ * 🔒 [LoopClick] Click-to-move is Songsterr-style: loop snaps bar-to-bar but
+ *         cursor parks at clickedTick. Do not force cursor back to barStartTick.
+ *         Toggle ON remains the exception: still reseats to startTick.
+ *
+ * 🔒 [LoopPlayStart] Play-start primes to live api.playbackRange.startTick
+ *         immediately before api.play(). Prevents cursor catch-up delay after
+ *         click-to-move parks cursor inside the loop range.
+ *
+ * 🔒 [LoopLeadIn] loop-play-start preserves tied/slide lead-in beats at the
+ *         loop boundary. Do not replace the protected start beat with the first
+ *         visible/fresh attack during loop-play-start reseat.
+ *
+ * 🔒 [LoopReseatReasonBridge] activeLoopReseatReasonRef and
+ *         loopPlayStartPreserveAbsRef preserve the original reseat reason/beat
+ *         after window.__maestroLoopReseat is cleared by the reseat guard.
+ *         Required: AlphaTab may resolve the same boundary beat across many
+ *         cursor passes before playback advances off it.
+ *
+ * 🔒 [LoopVisibleBeatReplacement] Zero-width/tie → first-visible-attack
+ *         replacement is valid for loop-reseat/loop-wrap paths, but must be
+ *         skipped while curBeat.absolutePlaybackStart matches
+ *         loopPlayStartPreserveAbsRef. Never remove this beat-identity guard.
+ *
+ * 🔒 [LoopEndXClamp] MaestroCursor2 loopEndX is a visual-only interpolation cap.
+ *         It must only be active when the loop end is mid-bar AND on the same
+ *         visual row as the current beat. Never apply it to barline-to-barline
+ *         endings or intermediate rows — cursor will pause/bounce at row ends.
+ *         Guard: sameRow && !loopEndsOnBarline (repeat-safe via tickCache.getBeatStart).
  *
  * V119 LOCKS:
  * 🔒 [TH] AlphaTab score palette — applied via api.settings.display.resources on theme change.
@@ -102,6 +132,7 @@ import { runGp8VibratoOverlay, type Gp8VibratoOverlayHandle } from '@/lib/alphaT
 import { runGp8VibratoSuppression } from '@/lib/alphaTab/gp8VibratoSuppression';
 import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+import { runAlphaTabLyricsOverlay, type AlphaTabLyricsOverlayHandle } from '@/lib/alphaTab/alphaTabLyricsOverlay';
 
 // ─── [P1] Props interface ─────────────────────────────────────────────────────
 export interface AlphaTabRendererV102Props {
@@ -172,6 +203,7 @@ type MaestroCursorLike = {
         nextExpandedBeatStart?: number | null,
         expandedBeatStart?: number | null,
     ) => void;
+    setLoopEndX: (x: number | null) => void;
     setTick: (
         tick: number,
         nextBeat?: any | null,
@@ -336,20 +368,6 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
     return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
 }
 
-// ── [TH-notationFix] Re-suppress notation.elements before every updateSettings ──
-// api.updateSettings() resets the notation.elements Map to AlphaTab defaults,
-// re-enabling the TAB clef on every system + shifting bar-1 right of the clef.
-// Called in renderStarted (catches all render paths) and again in applyThemePalette
-// immediately before updateSettings (extra guard for the theme-triggered render).
-function suppressNotationElements(api: any): void {
-    const notationElements = api?.settings?.notation?.elements;
-    if (notationElements instanceof Map) {
-        notationElements.forEach((_: boolean, key: unknown) =>
-            notationElements.set(key, false)
-        );
-    }
-}
-
 // ── [S1] Snap debug — activate: localStorage.setItem('maestro_snap_debug','1') ──
 function isSnapDebugEnabled(): boolean {
     if (typeof window === 'undefined') return false;
@@ -462,10 +480,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const gp8PmOverlayHandleRef = useRef<Gp8PmOverlayHandle | null>(null);
     const gp8ChordOverlayHandleRef = useRef<Gp8ChordOverlayHandle | null>(null);
     const gp8VibratoOverlayHandleRef = useRef<Gp8VibratoOverlayHandle | null>(null);
+    const lyricsOverlayHandleRef = useRef<AlphaTabLyricsOverlayHandle | null>(null);
 
     const targetScrollLeftRef = useRef<number>(0);
     const landscapeScrollRafRef = useRef<number | null>(null);
     const isDraggingRef = useRef<boolean>(false);
+    const trackHasLyricsRef = useRef<boolean>(false);
 
     const landscapeScrollStateRef = useRef<{
         curBeatX: number;
@@ -483,7 +503,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     useEffect(() => { scoreBytesRef.current = null; }, [fileUrl]);
 
     const forceHorizontalRef = useRef<boolean>(!!forceHorizontal);
-    useEffect(() => { forceHorizontalRef.current = !!forceHorizontal; }, [forceHorizontal]);
 
     const playerModeRef = useRef(playerMode);
     const externalMediaHandlerRef = useRef(externalMediaHandler);
@@ -495,6 +514,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const activeProfileRef = useRef<LayoutProfileName | null>(null);
     const baseTrackProfileRef = useRef<LayoutProfileName | null>(null);
     const isApplyingProfileRef = useRef(false);
+    const lastWantStripRef = useRef<boolean | null>(null);
 
     const reassertRafRef = useRef<number | null>(null);
     const lastReassertTokenRef = useRef<number | null>(null);
@@ -555,6 +575,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
     const reseatMinBarUntilRef = useRef<number>(0);
+    // [LoopReseatReasonBridge] — do not remove these two refs together.
+    // loop-play-start reason is cleared from window.__maestroLoopReseat before the
+    // visible-beat resolver runs. These refs bridge the reason and protected boundary
+    // beat across repeated AlphaTab cursor passes at the same absolutePlaybackStart.
+    const activeLoopReseatReasonRef = useRef<string | null>(null);
+    const loopPlayStartPreserveAbsRef = useRef<number | null>(null);
 
     const resetBeatAcceptance = () => {
         lastAcceptedBeatStartRef.current = -1;
@@ -620,6 +646,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }
     }, []);
 
+    // ── Stuck horizontal strip helper ─────────────────────────────────────────
+    const checkStuckHorizontalStrip = useCallback((api: any, el: HTMLElement) => {
+        const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
+        const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+        const firstBars = (systems?.[0] as any)?.bars?.length ?? 0;
+        const surface = el.querySelector('.at-surface') as HTMLElement | null;
+        const surfaceW = surface?.scrollWidth ?? 0;
+        const vv = window.visualViewport;
+        const viewportW = vv?.width ?? window.innerWidth;
+        const viewportH = vv?.height ?? window.innerHeight;
+        const isTouchDevice = typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0;
+        const isSmallMobileViewport = Math.min(viewportW, viewportH) <= 600;
+        const isMobileLandscapeCandidate = isTouchDevice && isSmallMobileViewport && isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W;
+        const wantStrip = forceHorizontalRef.current || isMobileLandscapeCandidate;
+        return {
+            stuck: !wantStrip && (firstBars > 40 || surfaceW > containerW * 3),
+            wantStrip, firstBars, containerW, surfaceW,
+        };
+    }, []);
+
     const hardReset = useCallback(() => {
         if (isHardResettingRef.current) return;
         const now = Date.now();
@@ -638,6 +684,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
         gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
         gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
+        lyricsOverlayHandleRef.current?.destroy(); lyricsOverlayHandleRef.current = null;
         if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
         collapseFixAttemptsRef.current = 0;
         lastReassertTokenRef.current = null;
@@ -661,31 +708,124 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (!api || !at || !el) return;
             if (activeRendersRef.current !== 0) return;
             if (isApplyingProfileRef.current) return;
+
             const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
-            const wantStrip = forceHorizontalRef.current || (isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W);
+            const vv = window.visualViewport;
+            const viewportW = vv?.width ?? window.innerWidth;
+            const viewportH = vv?.height ?? window.innerHeight;
+            const isTouchDevice = typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0;
+            const isSmallMobileViewport = Math.min(viewportW, viewportH) <= 600;
+            const isMobileLandscapeCandidate = isTouchDevice && isSmallMobileViewport && isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W;
+            const wantStrip = forceHorizontalRef.current || isMobileLandscapeCandidate;
+            const previousWantStrip = lastWantStripRef.current;
+            const stripTransition =
+                previousWantStrip === true && wantStrip === false ? 'strip-to-page' :
+                previousWantStrip === false && wantStrip === true ? 'page-to-strip' :
+                'none';
+            lastWantStripRef.current = wantStrip;
             const wantLayout = wantStrip
                 ? (at as any).LayoutMode?.Horizontal
                 : (at as any).LayoutMode?.Page;
             if (wantLayout == null) return;
+
             const currentLayout = api.settings.display.layoutMode;
             const needsFlip = currentLayout !== wantLayout;
             const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
             const firstBars = (systems?.[0] as any)?.bars?.length ?? 0;
+
+            // ── Stuck horizontal strip detection ─────────────────────────────
+            // Symptom: wantStrip=false but DOM is still in giant horizontal mode.
+            // Indicators: firstBars > 40 OR surface scrollWidth >> containerWidth.
+            // This happens when rotation/resize fires before AlphaTab finishes
+            // transitioning, leaving a stale landscape strip in page mode.
+            const surface = el.querySelector('.at-surface') as HTMLElement | null;
+            const surfaceW = surface?.scrollWidth ?? 0;
+            const stuckHorizontalStrip =
+                !wantStrip &&
+                (firstBars > 40 || surfaceW > containerW * 3);
+
             const looksCollapsed = !wantStrip
                 && currentLayout === (at as any).LayoutMode?.Page
                 && systems.length === 1
                 && firstBars > 40;
-            if (!needsFlip && !looksCollapsed) return;
+
+            // Log every reassertLayout decision for diagnostics.
+            console.warn('[V117] reassertLayout', {
+                needsFlip,
+                looksCollapsed,
+                stuckHorizontalStrip,
+                wantStrip,
+                forceHorizontal: forceHorizontalRef.current,
+                isTouchDevice,
+                viewportW,
+                viewportH,
+                isSmallMobileViewport,
+                isMobileLandscapeCandidate,
+                previousWantStrip,
+                stripTransition,
+                isDeviceLandscape: isDeviceLandscape(),
+                containerW,
+                windowInnerWidth: window.innerWidth,
+                windowInnerHeight: window.innerHeight,
+                visualViewportWidth: vv?.width,
+                visualViewportHeight: vv?.height,
+                mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                firstBars,
+                surfaceW,
+                currentLayout,
+            });
+
+            if (!needsFlip && !looksCollapsed && !stuckHorizontalStrip) return;
+
+            // ── Wait for stable container width (2 RAF frames) ────────────────
+            // iOS/Chrome viewport dimensions can be unstable during rotation.
+            // Firing recovery on an unstable width picks the wrong profile.
+            const w1 = el.clientWidth;
+            await new Promise<void>(resolve => requestAnimationFrame(() => {
+                requestAnimationFrame(() => resolve());
+            }));
+
+            // Re-read after settling — bail if another render started.
+            if (activeRendersRef.current !== 0) return;
+            if (isApplyingProfileRef.current) return;
+            const w3 = el.clientWidth;
+            if (Math.abs(w3 - w1) > 4) {
+                // Width still moving — defer; resize handler will re-trigger.
+                console.warn('[V117] reassertLayout deferred — width unstable', { w1, w3 });
+                return;
+            }
+
             isApplyingProfileRef.current = false;
             if (activeRendersRef.current > 1) activeRendersRef.current = 0;
-            console.warn('[V117] reassertLayout', { needsFlip, looksCollapsed, wantStrip, firstBars });
+
+            if (stuckHorizontalStrip) {
+                // ── Strip-stuck recovery ──────────────────────────────────────
+                // Destroy landscape artifacts before forcing page mode.
+                console.warn('[V117] stuckHorizontalStrip recovery — forcing Page mode');
+                stopLandscapeScrollLoop();
+                landscapeScrollStateRef.current = null;
+                if (landscapeCursorRef.current) {
+                    landscapeCursorRef.current.destroy();
+                    landscapeCursorRef.current = null;
+                }
+                api.settings.display.layoutMode = (at as any).LayoutMode.Page;
+                if ((at as any).SystemsLayoutMode) {
+                    (api.settings.display as any).systemsLayoutMode =
+                        (at as any).SystemsLayoutMode.Automatic;
+                }
+                await api.updateSettings();
+                api.render();
+                applyAxisLock(el, api);
+                return;
+            }
+
+            // ── Normal flip / collapse recovery ──────────────────────────────
             api.settings.display.layoutMode = wantLayout;
             if (!wantStrip && (at as any).SystemsLayoutMode) {
                 (api.settings.display as any).systemsLayoutMode =
                     (at as any).SystemsLayoutMode.Automatic;
             }
             await api.updateSettings();
-            suppressNotationElements(api); // [TH-notationFix] re-suppress after reassertLayout updateSettings
             api.render();
             applyAxisLock(el, api);
             if (!wantStrip) {
@@ -697,7 +837,40 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             }
         });
-    }, [stopLandscapeScrollLoop]);
+    }, [stopLandscapeScrollLoop, checkStuckHorizontalStrip]);
+
+    // ── forceHorizontal transition — pre-clear landscape on strip→page ────────────
+    useEffect(() => {
+        const previous = forceHorizontalRef.current;
+        const next = !!forceHorizontal;
+        forceHorizontalRef.current = next;
+        if (previous === true && next === false) {
+            console.warn('[V117] forceHorizontal strip-to-page preclear');
+            stopLandscapeScrollLoop();
+            landscapeScrollStateRef.current = null;
+            if (landscapeCursorRef.current) {
+                landscapeCursorRef.current.destroy();
+                landscapeCursorRef.current = null;
+            }
+            void (async () => {
+                const api = apiRef.current;
+                const at = alphaTabModuleRef.current;
+                const el = containerRef.current;
+                if (api && at && el) {
+                    api.settings.display.layoutMode = (at as any).LayoutMode.Page;
+                    if ((at as any).SystemsLayoutMode) {
+                        (api.settings.display as any).systemsLayoutMode =
+                            (at as any).SystemsLayoutMode.Automatic;
+                    }
+                    await api.updateSettings();
+                    api.render();
+                    applyAxisLock(el, api);
+                } else {
+                    requestAnimationFrame(() => reassertLayout());
+                }
+            })();
+        }
+    }, [forceHorizontal, reassertLayout, stopLandscapeScrollLoop]);
 
     // ── Scroll mode ownership ─────────────────────────────────────────────────
     // Portrait/page mode: ScrollMode.Off — S1 owns all vertical row snapping.
@@ -754,6 +927,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 scrollMode: 'off',
                 scrollContainer: scrollContainer ?? undefined,
                 layoutProfile: initProfile,
+                hasLyrics: false,
             });
             if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
 
@@ -836,6 +1010,58 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 if (isRendererDebugEnabled()) console.log('[profile]', { primaryTrackName, trackProfile, forceHorizontal: forceHorizontalRef.current });
 
+                // ── Lyric detection → conditional basement spacing ────────────────────────
+                // Scan the selected track's score model for any beat with lyric data.
+                // If found, apply expanded basement padding so AlphaTab's SVG row bounds
+                // include the HTML lyric overlay area (alphaTabLyricsOverlay.ts).
+                // Uses api.updateSettings() + renderTracks — no re-init needed.
+                // ── Lyric detection → conditional basement spacing ────────────────────────
+                const selectedTrack = score.tracks[winnerIdx] as any;
+                const trackHasLyrics = selectedTrack?.staves?.some((stave: any) =>
+                    stave.bars?.some((bar: any) =>
+                        bar.voices?.[0]?.beats?.some((beat: any) =>
+                            Array.isArray(beat.lyrics) && (beat.lyrics[0] ?? "").trim() !== ""
+                        )
+                    )
+                ) ?? false;
+
+                trackHasLyricsRef.current = trackHasLyrics;
+
+                if (trackHasLyrics /* or changedTrackHasLyrics */) {
+                    // Small top clearance so loop highlight doesn't scrape section names.
+                    (api.settings.display as any).notationStaffPaddingTop = 7;
+                    (api.settings.display as any).firstNotationStaffPaddingTop = 7;
+                    // Lyric basement spacing — probe-confirmed June 2026.
+                    (api.settings.display as any).notationStaffPaddingBottom = 20;
+                    (api.settings.display as any).lastNotationStaffPaddingBottom = 20;
+                    (api.settings.display as any).effectStaffPaddingBottom = 8;
+                    (api.settings.display as any).effectBandPaddingBottom = 6;
+                    (api.settings.display as any).systemPaddingBottom = 10;
+                    (api.settings.display as any).lastSystemPaddingBottom = 10;
+                } else {
+                    // Guitar-only baseline — no lyric basement expansion.
+                    (api.settings.display as any).notationStaffPaddingTop = 0;
+                    (api.settings.display as any).firstNotationStaffPaddingTop = 0;
+                    (api.settings.display as any).notationStaffPaddingBottom = 0;
+                    (api.settings.display as any).lastNotationStaffPaddingBottom = 0;
+                    (api.settings.display as any).effectStaffPaddingBottom = 0;
+                    (api.settings.display as any).effectBandPaddingBottom = 2;
+                    (api.settings.display as any).systemPaddingBottom = 10;
+                    (api.settings.display as any).lastSystemPaddingBottom = 5;
+                }
+
+                console.log('[lyrics-spacing]', {
+                    winnerIdx,
+                    trackName: primaryTrackName,
+                    selectedTrackName: selectedTrack?.name,
+                    trackHasLyrics,
+                    notationStaffPaddingTop: (api.settings.display as any).notationStaffPaddingTop,
+                    firstNotationStaffPaddingTop: (api.settings.display as any).firstNotationStaffPaddingTop,
+                    notationStaffPaddingBottom: (api.settings.display as any).notationStaffPaddingBottom,
+                    systemPaddingBottom: (api.settings.display as any).systemPaddingBottom,
+                });
+                // ── END lyric detection ───────────────────────────────────────────────────
+
                 if (ENABLE_REDUNDANT_REST_STRIP) stripRedundantRests(api.score);
 
                 api.renderTracks(tr);
@@ -851,7 +1077,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             });
 
             api.renderStarted.on(() => {
-                suppressNotationElements(api); // [TH-notationFix] re-suppress before every render
                 activeRendersRef.current += 1;
                 renderTokenRef.current += 1;
                 forceRevealCancelRef.current += 1;
@@ -866,6 +1091,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
                 gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
                 gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
+                lyricsOverlayHandleRef.current?.destroy(); lyricsOverlayHandleRef.current = null;
             });
 
             const waitForPaintableSurface = (host: HTMLElement, tok: number): Promise<boolean> =>
@@ -1070,6 +1296,46 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     collapseFixAttemptsRef.current = 0;
 
+                    // ── Post-render stuck-strip check ─────────────────────────
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(async () => {
+                            const _api = apiRef.current;
+                            const _at = alphaTabModuleRef.current;
+                            const _el = containerRef.current;
+                            if (!_api || !_at || !_el) return;
+                            if (activeRendersRef.current !== 0) return;
+                            const strip = checkStuckHorizontalStrip(_api, _el);
+                            console.warn('[V117] post-render strip check', {
+                                ...strip,
+                                forceHorizontal: forceHorizontalRef.current,
+                                isDeviceLandscape: isDeviceLandscape(),
+                                windowInnerWidth: window.innerWidth,
+                                windowInnerHeight: window.innerHeight,
+                                visualViewportWidth: window.visualViewport?.width,
+                                visualViewportHeight: window.visualViewport?.height,
+                                mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                            });
+                            if (strip.stuck) {
+                                console.warn('[V117] stuckHorizontalStrip recovery — post-render');
+                                stopLandscapeScrollLoop();
+                                landscapeScrollStateRef.current = null;
+                                if (landscapeCursorRef.current) {
+                                    landscapeCursorRef.current.destroy();
+                                    landscapeCursorRef.current = null;
+                                }
+                                _api.settings.display.layoutMode = (_at as any).LayoutMode.Page;
+                                if ((_at as any).SystemsLayoutMode) {
+                                    (_api.settings.display as any).systemsLayoutMode =
+                                        (_at as any).SystemsLayoutMode.Automatic;
+                                }
+                                await _api.updateSettings();
+                                _api.render();
+                                applyAxisLock(_el, _api);
+                            }
+                        });
+                    });
+                    // ── END post-render strip check ───────────────────────────
+
                     forceRevealSurface(h, forceRevealCancelRef);
                     h.getBoundingClientRect();
                     (h.querySelector('.at-surface') as HTMLElement | null)?.getBoundingClientRect();
@@ -1107,6 +1373,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     onRendered?.();
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
+
+
+
+                    // ── Maestro lyric overlay ─────────────────────────────────
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            const contentHost =
+                                containerRef.current?.closest('.alphatab-content-host') as HTMLElement | null
+                                ?? containerRef.current;
+                            if (contentHost) {
+                                lyricsOverlayHandleRef.current?.destroy();
+                                lyricsOverlayHandleRef.current = runAlphaTabLyricsOverlay(
+                                    contentHost,
+                                    api,
+                                    theme,
+                                );
+                            }
+                        });
+                    });
+                    // ── END lyric overlay ─────────────────────────────────────
 
                     if (isStripRender) {
                         requestAnimationFrame(() => {
@@ -1226,11 +1512,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) return;
                 }
 
-                const range = playbackRangeRef.current;
-                if (loopEnabledRef.current && range) {
-                    if (tickRaw >= range.endTick - 120) {
+                // ── [loop-wrap] Live range + safety margin ────────────────────
+                // Use live api.playbackRange as fallback in case React state
+                // (playbackRangeRef) is stale — BeatCustomLoopOverlay writes
+                // directly to api.playbackRange, not through React state.
+                // Restore -120 margin (Labs strategy) so we wrap before the
+                // final tick rather than at/after it — prevents overshoot on
+                // both cursors.
+                const liveRange = playbackRangeRef.current ?? (api.playbackRange as { startTick: number; endTick: number } | null);
+                const LOOP_WRAP_MARGIN = 30; // reduced from 120 — 120 was too aggressive for 60-tick slide subdivisions
+                if (loopEnabledRef.current && liveRange) {
+                    if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
                         cursorRef.current.requestSnap('loop-wrap');
-                        api.tickPosition = range.startTick;
+                        resetBeatAcceptance();
+                        stableCurBeatRef.current = null;
+                        stableExpandedBeatStartRef.current = 0;
+                        stableNextBeatRef.current = null;
+                        stableNextExpandedBeatStartRef.current = null;
+                        stableVisualKeyRef.current = null;
+                        lastTickRef.current = null;
+                        allowBacktrackUntilRef.current = Date.now() + 300;
+                        const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                        if (seekTicks) seekTicks(liveRange.startTick);
+                        api.tickPosition = liveRange.startTick;
                         return;
                     }
                 }
@@ -1254,12 +1558,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         Date.now() - reseatFlag.at < RESEAT_WINDOW_MS &&
                         Math.abs(tick - reseatFlag.tick) < RESEAT_TICK_SLOP
                     ) {
+                        activeLoopReseatReasonRef.current = reseatFlag.reason ?? null;
+                        if (reseatFlag.reason === 'loop-play-start') {
+                            loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
+                        }
                         (window as any).__maestroLoopReseat = null;
                         console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
                             liveTick: tick,
                             reseatTick: reseatFlag.tick,
                         });
-                        cursorRef.current?.requestSnap('loop-reseat');
+                        cursorRef.current?.requestSnap(reseatFlag.reason ?? 'loop-reseat');
                         stableCurBeatRef.current = null;
                         stableVisualKeyRef.current = null;
                         stableExpandedBeatStartRef.current = 0;
@@ -1269,6 +1577,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastAcceptedBeatStartRef.current = -1;
                         allowBacktrackUntilRef.current = Date.now() + 600;
                         reAnchorCountRef.current = { beat: -1, count: 0 };
+                        // [reseat-bar-gate] Resolve the loop start bar index so we can
+                        // reject any continuation beat from the previous measure during
+                        // the reseat window (pick/finger-slide tails park the cursor back).
+                        try {
+                            const reseatTickCache = (api as any).tickCache;
+                            const reseatTrackSet = getTrackSet(api);
+                            const reseatResult = reseatTickCache?.findBeat?.(reseatTrackSet, reseatFlag.tick);
+                            const reseatBeat = reseatResult?.beat ?? null;
+                            const reseatBarIdx = reseatBeat?.voice?.bar?.masterBar?.index
+                                ?? reseatBeat?.voice?.bar?.index
+                                ?? null;
+                            reseatMinBarIdxRef.current =
+                                typeof reseatBarIdx === 'number' ? reseatBarIdx : null;
+                            reseatMinBarUntilRef.current = Date.now() + 900;
+                            if (isRendererDebugEnabled()) console.log('[reseat-bar-gate] set', { reseatBarIdx, tick: reseatFlag.tick });
+                        } catch {
+                            reseatMinBarIdxRef.current = null;
+                            reseatMinBarUntilRef.current = 0;
+                        }
                         // Do not return — let normal logic continue with clean refs
                         // so the cursor primes correctly from the current loop start tick.
                     }
@@ -1349,6 +1676,98 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const r = tickCache.findBeat(trackSet, tick);
                     if (!r?.beat) return;
                     curBeat = r.beat;
+                }
+
+                // ── [loop-start-visible-beat] Replace zero-width tie beat ────
+                // During the reseat window, AlphaTab may resolve the loop start
+                // tick to a tied continuation beat (vbW=0, all notes isTieDestination).
+                // This makes the cursor park on an invisible/zero-width position.
+                // Example: M24 tick 88320 → vbW=0, tied 3s6T 3s5T.
+                // First visible attack is at 89280 → vbW=6.8, notes 0s4 0s3.
+                //
+                // Fix: scan forward inside the loop range for the first beat that:
+                //   - has visualBounds.w > 0
+                //   - has at least one non-tie-destination note
+                //   - absolutePlaybackStart >= loopStartTick
+                // Only runs during reseat window — does not affect normal playback,
+                // loop OFF, or click-to-seek.
+                if (
+                    reseatMinBarIdxRef.current != null &&
+                    Date.now() < reseatMinBarUntilRef.current
+                ) {
+                    const loopStartTick = liveRange?.startTick ?? playbackRangeRef.current?.startTick ?? tick;
+                    const loopEndTick = liveRange?.endTick ?? playbackRangeRef.current?.endTick ?? (loopStartTick + 99999);
+                    const bounds = api?.renderer?.boundsLookup;
+
+                    const beatIsVisible = (b: any): boolean => {
+                        if (!b) return false;
+                        const bb = bounds?.findBeat?.(b);
+                        const vbW = bb?.visualBounds?.w ?? 0;
+                        if (vbW <= 0) return false;
+                        const hasAttack = b.notes?.some((n: any) => !n.isTieDestination);
+                        return !!hasAttack;
+                    };
+
+                    // [LoopLeadIn] Preserve boundary beat while AlphaTab keeps resolving the same
+                    // absolutePlaybackStart. Prevents tied/slide lead-ins jumping to first visible
+                    // attack on first play pass. Clears naturally when playback advances.
+                    const curBeatAbs = curBeat?.absolutePlaybackStart ?? null;
+                    const preservedLoopStartAbs = loopPlayStartPreserveAbsRef.current;
+                    const activeReseatReason =
+                        activeLoopReseatReasonRef.current ??
+                        (preservedLoopStartAbs != null && curBeatAbs === preservedLoopStartAbs
+                            ? 'loop-play-start'
+                            : null) ??
+                        (window as any).__maestroLoopReseat?.reason ??
+                        null;
+                    const isLoopPlayStart =
+                        activeReseatReason === 'loop-play-start' &&
+                        preservedLoopStartAbs != null &&
+                        curBeatAbs === preservedLoopStartAbs;
+
+                    // Clear once playback advances past the protected beat
+                    if (preservedLoopStartAbs != null && curBeatAbs !== preservedLoopStartAbs) {
+                        loopPlayStartPreserveAbsRef.current = null;
+                    }
+
+                    if (isLoopPlayStart) {
+                        // Do not replace loop start beat with first visible attack.
+                        // Tied/slide lead-in beats at loop boundary should be visually honored.
+                        activeLoopReseatReasonRef.current = null;
+                        // Skip the replacement — fall through to normal cursor logic with original curBeat
+                    } else {
+                        if (!beatIsVisible(curBeat)) {
+                            const originalAbs = curBeat?.absolutePlaybackStart;
+                            const originalVbW = bounds?.findBeat?.(curBeat)?.visualBounds?.w ?? 0;
+                            let replacement: any = null;
+
+                            // Scan forward up to 1920 ticks (one bar) inside the loop
+                            for (let probe = loopStartTick + 1; probe <= Math.min(loopStartTick + 1920, loopEndTick); probe++) {
+                                const r = tickCache?.findBeat?.(trackSet, probe);
+                                if (!r?.beat) continue;
+                                const bAbs = r.beat?.absolutePlaybackStart ?? probe;
+                                if (bAbs < loopStartTick) continue;
+                                if (beatIsVisible(r.beat)) {
+                                    replacement = r.beat;
+                                    break;
+                                }
+                            }
+
+                            if (replacement) {
+                                const repBb = bounds?.findBeat?.(replacement);
+                                console.log('[loop-start-visible-beat]', {
+                                    loopStartTick,
+                                    originalAbs,
+                                    originalVbW,
+                                    replacementAbs: replacement?.absolutePlaybackStart,
+                                    replacementVbW: repBb?.visualBounds?.w,
+                                    reason: 'zero-width tie beat replaced with first visible attack',
+                                });
+                                curBeat = replacement;
+                            }
+                        }
+                        activeLoopReseatReasonRef.current = null;
+                    } // end isLoopPlayStart else
                 }
 
                 const isSameBeat = (a: any, b: any): boolean =>
@@ -1432,6 +1851,48 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     stableExpandedBeatStartRef.current = guardedStart;
                     stableNextBeatRef.current = resolvedNextBeat;
                     stableNextExpandedBeatStartRef.current = typeof nextExpandedStart === 'number' ? nextExpandedStart : null;
+
+                    if (loopEnabledRef.current && liveRange?.endTick != null) {
+                        const endBeatResult = tickCache.findBeat(trackSet, liveRange.endTick - 1);
+                        const endBb = endBeatResult?.beat
+                            ? api?.renderer?.boundsLookup?.findBeat?.(endBeatResult.beat)
+                            : null;
+                        const endVb = endBb?.visualBounds ?? null;
+                        const loopEndVisualX = endVb
+                            ? endVb.x + endVb.w
+                            : null;
+                        // Only clamp when curBeat is on the same visual row as the loop end beat.
+                        // Cross-row: loopEndX from a different row causes pause/backward interpolation.
+                        const curBb = api?.renderer?.boundsLookup?.findBeat?.(curBeat);
+                        const curVb = curBb?.visualBounds ?? null;
+                        const sameRow = curVb && endVb && Math.abs(curVb.y - endVb.y) < 5;
+
+                        // Only clamp mid-bar loop endings.
+                        // Barline-to-barline: liveRange.endTick - 1 is the last beat before the barline.
+                        // Clamping there pauses the cursor on the final chord instead of drifting to barline.
+                        // Uses tickCache.getBeatStart for repeat-safe expanded tick; absolutePlaybackStart
+                        // as fallback. Bar index check on nextBeat confirms true bar boundary.
+                        const endBeat = endBeatResult?.beat ?? null;
+                        const endBeatStart = endBeat
+                            ? ((api as any)?.tickCache?.getBeatStart?.(endBeat) ?? endBeat?.absolutePlaybackStart ?? null)
+                            : null;
+                        const endBeatDur = endBeat?.playbackDuration ?? endBeat?.duration ?? null;
+                        const endBeatNext = endBeat?.nextBeat ?? null;
+                        const endBeatBarIdx = endBeat?.voice?.bar?.index ?? endBeat?.voice?.bar?.masterBar?.index;
+                        const nextBeatBarIdx = endBeatNext?.voice?.bar?.index ?? endBeatNext?.voice?.bar?.masterBar?.index;
+                        const loopEndsOnBarline =
+                            endBeat != null &&
+                            endBeatStart != null &&
+                            endBeatDur != null &&
+                            (endBeatStart + endBeatDur) === liveRange.endTick &&
+                            (endBeatNext == null || nextBeatBarIdx !== endBeatBarIdx);
+
+                        cursorRef.current.setLoopEndX(
+                            sameRow && !loopEndsOnBarline ? loopEndVisualX : null
+                        );
+                    } else {
+                        cursorRef.current.setLoopEndX(null);
+                    }
 
                     cursorRef.current.setBeat(curBeat, resolvedNextBeat, nextExpandedStart ?? null, guardedStart);
                 }
@@ -1684,6 +2145,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             stableVisualKeyRef.current = null;
             lastAnchorSysRef.current = -1;
             lastThemeRef.current = null; // [TH] force palette re-apply on next reveal
+            reseatMinBarIdxRef.current = null;  // [reseat-bar-gate] clear on unmount
+            reseatMinBarUntilRef.current = 0;
+            activeLoopReseatReasonRef.current = null;
+            loopPlayStartPreserveAbsRef.current = null;
             if (s1AnimRafRef.current !== null) {
                 cancelAnimationFrame(s1AnimRafRef.current);
                 s1AnimRafRef.current = null;
@@ -1745,8 +2210,51 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             showCurtain(curtainRef.current);
             cursorRef.current?.requestSnap('track-change');
 
+            // ── Lyric detection → conditional basement spacing (track change) ──────
+            const changedTrack = tr[0] as any;
+            const changedTrackHasLyrics = changedTrack?.staves?.some((stave: any) =>
+                stave.bars?.some((bar: any) =>
+                    bar.voices?.[0]?.beats?.some((beat: any) =>
+                        Array.isArray(beat.lyrics) && (beat.lyrics[0] ?? "").trim() !== ""
+                    )
+                )
+            ) ?? false;
+
+            trackHasLyricsRef.current = changedTrackHasLyrics;
+
+            if (changedTrackHasLyrics) {
+                (api.settings.display as any).notationStaffPaddingTop = 7;
+                (api.settings.display as any).firstNotationStaffPaddingTop = 7;
+                (api.settings.display as any).notationStaffPaddingBottom = 20;
+                (api.settings.display as any).lastNotationStaffPaddingBottom = 20;
+                (api.settings.display as any).effectStaffPaddingBottom = 8;
+                (api.settings.display as any).effectBandPaddingBottom = 6;
+                (api.settings.display as any).systemPaddingBottom = 10;
+                (api.settings.display as any).lastSystemPaddingBottom = 10;
+            } else {
+                (api.settings.display as any).notationStaffPaddingTop = 0;
+                (api.settings.display as any).firstNotationStaffPaddingTop = 0;
+                (api.settings.display as any).notationStaffPaddingBottom = 0;
+                (api.settings.display as any).lastNotationStaffPaddingBottom = 0;
+                (api.settings.display as any).effectStaffPaddingBottom = 0;
+                (api.settings.display as any).effectBandPaddingBottom = 2;
+                (api.settings.display as any).systemPaddingBottom = 10;
+                (api.settings.display as any).lastSystemPaddingBottom = 5;
+            }
+
+            console.log('[lyrics-spacing track-change]', {
+                trackName: primaryTrackName,
+                changedTrackHasLyrics,
+                notationStaffPaddingTop: (api.settings.display as any).notationStaffPaddingTop,
+                firstNotationStaffPaddingTop: (api.settings.display as any).firstNotationStaffPaddingTop,
+                notationStaffPaddingBottom: (api.settings.display as any).notationStaffPaddingBottom,
+                systemPaddingBottom: (api.settings.display as any).systemPaddingBottom,
+            });
+            // ── END lyric detection (track change) ────────────────────────────────
+
             try {
                 api.renderTracks(tr);
+
             } catch (err) {
                 console.error('[V117] renderTracks failed', err, { safeIndices });
             }
@@ -1767,6 +2275,30 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (isPlaying) {
                 await applyScrollMode(true);
                 if (cancelled) return;
+
+                // ── Loop-start cursor re-prime ────────────────────────────────────────────
+                // When loop is ON, re-prime cursor to playbackRange.startTick before play.
+                // Without this, cursor sits at the last clicked/parked position until the
+                // first playerPositionChanged fires — causing a visible catch-up delay.
+                // Uses live api.playbackRange (not React state) so BeatCustomLoopOverlay
+                // writes are always respected even if React state is stale.
+                const liveLoopRange = loopEnabledRef.current
+                    ? (api.playbackRange as { startTick: number; endTick: number } | null)
+                    : null;
+                if (liveLoopRange?.startTick != null) {
+                    const primeT = liveLoopRange.startTick;
+                    if (api.tickPosition !== undefined) api.tickPosition = primeT;
+                    api.player?.seekTicks?.(primeT);
+                    (window as any).__maestroLoopReseat = {
+                        tick: primeT,
+                        at: Date.now(),
+                        reason: 'loop-play-start',
+                    };
+                    (window as any).__maestroManualSeek = Date.now();
+                    (window as any).__maestroCursor?.requestSnap?.('loop-play-start');
+                }
+                // ── END loop-start cursor re-prime ────────────────────────────────────────
+
                 api.play();
             } else {
                 api.pause();
@@ -2262,7 +2794,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 resources.barNumberColor = new Color(102, 102, 102, 255);
             }
             await api.updateSettings();
-            suppressNotationElements(api); // [TH-notationFix] re-suppress AFTER updateSettings resets the Map
             api.render();
             if (isRendererDebugEnabled()) console.log('[TH] palette applied:', theme);
         };

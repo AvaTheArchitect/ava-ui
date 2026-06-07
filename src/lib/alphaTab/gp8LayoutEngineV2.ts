@@ -40,7 +40,7 @@ import { applyTempoClusterForSvg } from "@/lib/alphaTab/TempoClusterManager";
 // ─── Mode flag ────────────────────────────────────────────────────────────────
 
 type EngineMode = "diagnose" | "lyricsOnly" | "full";
-const MODE: EngineMode = "lyricsOnly"; // 👈 promote when each layer is confirmed correct
+const MODE: EngineMode = "diagnose"; // 🔬 baseline test — zero DOM writes
 
 // ─── Lyric guards (ported from gp8LayoutEngine v6.1) ─────────────────────────
 
@@ -52,7 +52,8 @@ const TRACK_LABELS = /^[a-z]\..*\.|^s\.guit\.|^t\.bass\.|^voc\.|^drum/i;
 const NOT_LYRIC =
   /^Guitar\s|^Bass\s|^Drum|^Vocal|^Piano|^Standard\s|^Drop\s|^Tuning|^Tune\s|^half\s|^step|^standard|Eb|Bb|Gb|Db|Ab|= Eb|= Bb/i;
 
-const LYRIC_MARGIN = 14;
+const LYRIC_FROM_STAFF_BOTTOM = 28; // px below staffBottomY — primary lyric placement dial
+const LYRIC_BOTTOM_GUARD = 10; // minimum px above SVG bottom edge (clamp safety)
 
 // ─── Lyric helpers ────────────────────────────────────────────────────────────
 
@@ -146,7 +147,10 @@ function fixLyrics(svg: SVGSVGElement, anchors: RowAnchors): number {
   const { svgHeight } = anchors;
   if (svgHeight < 40) return 0;
 
-  const targetY = svgHeight - LYRIC_MARGIN;
+  const targetY = Math.min(
+    anchors.staffBottomY + LYRIC_FROM_STAFF_BOTTOM,
+    svgHeight - LYRIC_BOTTOM_GUARD,
+  );
   let moved = 0;
   const before: { txt: string; y: string | null }[] = [];
 
@@ -290,7 +294,7 @@ export function runGp8LayoutEngineV2(containerEl: HTMLElement): Promise<void> {
         const lyricsMoved = fixLyrics(svg, anchors);
         if (lyricsMoved)
           console.log(
-            `[GP8] row[${i}] lyrics pinned: ${lyricsMoved} nodes → y=${(anchors.svgHeight - LYRIC_MARGIN).toFixed(1)}`,
+            `[GP8] row[${i}] lyrics pinned: ${lyricsMoved} nodes → y=${(anchors.staffBottomY + LYRIC_FROM_STAFF_BOTTOM).toFixed(1)}`,
           );
 
         const allTextNodes = Array.from(

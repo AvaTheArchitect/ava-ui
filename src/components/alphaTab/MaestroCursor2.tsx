@@ -1,77 +1,44 @@
 'use client';
 
 /**
- * Last Updated April 29th, 2026
- * Version V1.2 
+ * Last Updated May 30th, 2026
+ * Version V1.3 
  * File: components/alphaTab/MaestroCursor2.tsx
  * 
+ * V1.2 patch (loop-reseat out-of-order guard fix):
+ *   ✅ requestSnap() now fully resets the out-of-order guard state:
+ *      lastX, lastY reset to -9999 so the next setBeat() is never rejected
+ *      as "out-of-order" after a loop reseat or seek.
+ *      Root cause: on loop-reseat, CursorV2 still had stale lastX from the
+ *      previous pass. The first valid beat in M24 (newNoteX ~923) was behind
+ *      stale lastX, so it was discarded as out-of-order. Subsequent passes
+ *      worked because lastX had naturally advanced past that point.
+ *      Fix: requestSnap() is the correct reset boundary — it already clears
+ *      lastTickApplied; now it also clears lastX/lastY so the order guard
+ *      starts fresh. hasInitialPosition is NOT reset — the cursor remains
+ *      visible between loop passes.
+ *
  * v1.1 changes (V105 renderer compat):
  *   ✅ Renderer D1 gate now blocks out-of-order beats upstream — cursor
  *      out-of-order guard is defense-in-depth, not primary filter.
  *   ✅ stayPutMode: hard freeze → micro-drift (4px over beat duration).
- *      Eliminates visible pause on bend clusters sharing same onNotesX.
- *      AlphaTab internal anchor bias on shuffle beats (filed to Daniel)
- *      amplifies hard-freeze perception — micro-drift masks it cleanly.
- *   ✅ lastValidRatio: ratio memory now only updates from clean scans
- *      (expandedDur >= MIN_PRIMARY_BEAT_TICKS AND ratio in [0.5, 3.0]).
- * MaestroCursor2.tsx — "Songsterr Edition" v1.1
- * 
+ *   ✅ lastValidRatio: ratio memory only updates from clean scans.
+ *
  * V1.1 patch (V115 renderer compat):
- *   ✅ requestSnap(_reason?: string) — optional reason arg for interface
- *      parity with MaestroCursor v1 (V1). Reason is intentionally ignored
- *      in V2 — V2's direct-render model doesn't need per-reason branching.
- *      Eliminates TS error: "Expected 0 arguments, but got 1".
+ *   ✅ requestSnap(_reason?: string) — optional reason arg for interface parity.
  *
  * Philosophy: ANCHOR-LERP, not hitbox-math.
- *   Cursor walks from onNotesX(beat N) → onNotesX(beat N+1) over the
- *   expanded beat duration. Zero knowledge of visual box widths required.
- *
- * A/B TEST SETUP:
- *   Import attachMaestroCursorV2 in page.tsx, swap one line, compare live.
- *   When satisfied, delete MaestroCursor.tsx and promote this to primary.
- *
- * Three "Mole Killers" (per Gemini blueprint):
+ * Three "Mole Killers":
  *   [M1] onNotesX Priority     — anchors on note head, not box center
  *   [M2] Hard Snap on tick≤0   — forces M1 position, kills measure-1 skip
- *   [M3] LERP is invincible     — constant walk speed ignores SVG box widths
- *
- * Ported invariants from v4.6.1 that are genre-agnostic:
- *   ✅ MIN_PRIMARY_BEAT_TICKS  — grace note / pick-scrap guard (X skip, Y update)
- *   ✅ expandedBeatDuration    — scan truth denominator (SRV shuffle fix)
- *   ✅ Monotonic tick gate     — kills AlphaTab worker jitter
- *   ✅ requestSnap()           — resets lastTickApplied for backward seeks
- *   ✅ SOFT backstep clamp     — no freeze-then-lurch on phantom backward ticks
- *
- * requestSnap() should ONLY be called for explicit user actions:
- *   - click-to-seek    → requestSnap('click-seek')
- *   - loop wrap/drag   → requestSnap('loop-wrap')
- *   - song/track load  → requestSnap('song-load')
- *   - huge tick jump   → requestSnap('huge-jump')
- *   NOT for: barlines, repeats, normal playback quantization gaps.
- *
- * Visual: Songsterr-style teal semi-transparent bar + thin solid spine.
- *   Use CSS var(--at-cursor-color) if present, else teal fallback.
- *   Width: 14px (matches Songsterr bar width at default zoom).
+ *   [M3] LERP is invincible    — constant walk speed ignores SVG box widths
  */
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Min tick duration to be treated as a primary (anchoring) beat.
- *  Below this → true grace note ornament → skip X anchor, update Y only.
- *  30 ticks = 1/64 note at 480 PPQ. Intentionally lower than v4.6.1's 120
- *  so that pick slides (60 ticks = 1/32) and finger slides anchor correctly.
- *  True AlphaTab grace notes carry beat.graceType != null — a tick guard
- *  alone is too coarse for slides at fast tempos. */
 const MIN_PRIMARY_BEAT_TICKS = 30;
-
-/** Soft backward-step tolerance in px. Allows minor float noise (Rise)
- *  but blocks phantom backward jumps (SRV jitter). DO NOT set to 0. */
 const BACKSTEP_PX = 2;
-
-/** Cursor bar visual width in px (centered on anchor via transform). */
 const BAR_WIDTH = 14;
-
-/** Teal fill — Songsterr green-teal. Swap to purple to match v4.6.1. */
 const BAR_COLOR = 'rgba(0, 204, 170, 0.42)';
 const SPINE_COLOR = 'rgba(0, 220, 185, 0.85)';
 
@@ -81,34 +48,27 @@ export class MaestroCursorV2 {
     public element: HTMLElement;
     private api: any;
 
-    // Current beat geometry
-    private currentNoteX = 0;   // onNotesX of active beat (left edge of walk)
+    private currentNoteX = 0;
     private currentY = 0;
     private currentH = 0;
 
-    // LERP targets
-    private nextNoteX: number | null = null;  // onNotesX of next primary beat
-    // True when next beat exists + same row but same X (bend cluster, stacked notes).
-    // PARK MODE uses this to stay put rather than glide to barline.
+    private nextNoteX: number | null = null;
     private stayPutMode = false;
+    // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
+    // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
+    // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
+    private loopEndX: number | null = null;
 
-    // Timing (scan truth — not structural)
     private beatStart = 0;
     private expandedBeatDuration = 0;
-    // Last valid shuffle ratio — preserved across beats so a bad scan on one
-    // beat can fall back to the ratio established by the beats around it.
-    // Resets to 1.0 on requestSnap(). Range clamped to [0.5, 3.0].
     private lastValidRatio = 1.0;
 
-    // Monotonic tick gate
     private lastTickApplied = -1;
 
-    // Transform cache (skip redundant DOM writes)
     private lastX = -9999;
     private lastY = -9999;
     private lastH = -1;
 
-    // State flags
     private hasInitialPosition = false;
     private snapPending = false;
 
@@ -125,7 +85,7 @@ export class MaestroCursorV2 {
             left: '0',
             width: `${BAR_WIDTH}px`,
             pointerEvents: 'none',
-            zIndex: '99998',          // one below v4.6.1 for A/B layering
+            zIndex: '99998',
             willChange: 'transform',
             overflow: 'visible',
             visibility: 'hidden',
@@ -134,21 +94,12 @@ export class MaestroCursorV2 {
         });
 
         container.appendChild(this.element);
-        this._renderBarSVG(80); // placeholder height until first setBeat
+        this._renderBarSVG(80);
         console.log('✅ MaestroCursorV2 (Songsterr Edition): Ready');
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
-    /**
-     * Called by renderer on every beat entry (activeBeatsChanged / playerPositionChanged).
-     *
-     * Signature mirrors v4.6.1 for drop-in renderer compat:
-     *   setBeat(beat, nextBeat?, nextExpandedBeatStart?, expandedBeatStart?)
-     *
-     * [M1] Uses onNotesX as the walk origin. Falls back to vb.x if absent.
-     * [Grace] beatDuration < MIN_PRIMARY_BEAT_TICKS → Y update only, X untouched.
-     */
     setBeat(
         beat: any | null,
         preScannedNextBeat: any | null = null,
@@ -163,8 +114,6 @@ export class MaestroCursorV2 {
         const vb = bb.visualBounds;
 
         // ── Grace note guard ─────────────────────────────────────────────────
-        // Pick-scraps, rakes, ornaments: update Y position but NEVER mutate
-        // the X anchors — current LERP glide continues uninterrupted.
         if (dur < MIN_PRIMARY_BEAT_TICKS && this.hasInitialPosition) {
             this.currentY = vb.y;
             this.currentH = vb.h;
@@ -179,34 +128,25 @@ export class MaestroCursorV2 {
 
         this.beatStart = scanStart;
 
-        // [SRV Fix] expandedBeatDuration = scan delta, not structural notation value.
-        // SRV shuffle: structural=320, expanded=640 → without this, progress hits 1.0
-        // early and the cursor parks + snaps = pendulum. Rise: delta ≈ structural → safe.
         const computedDur = nextExpandedBeatStart != null
             ? nextExpandedBeatStart - scanStart
             : dur;
         const computedRatio = dur > 0 ? computedDur / dur : 1;
 
         if (computedDur >= MIN_PRIMARY_BEAT_TICKS && computedRatio >= 0.5 && computedRatio <= 3.0) {
-            // Valid scan result — update ratio memory and use it.
-            // SRV beat 600: computedDur=40, ratio=0.05 → FAILS this branch correctly.
             this.expandedBeatDuration = computedDur;
             this.lastValidRatio = computedRatio;
         } else {
-            // Bad scan: negative, sub-threshold, or implausible ratio.
-            // Use last known shuffle ratio so the cursor walks at the right tempo.
-            // SRV beat 600: lastValidRatio=1.25 → fallback = 840×1.25 = 1050.
             this.expandedBeatDuration = Math.round(dur * this.lastValidRatio);
             if (this.expandedBeatDuration < MIN_PRIMARY_BEAT_TICKS) {
-                this.expandedBeatDuration = dur; // final safety net
+                this.expandedBeatDuration = dur;
             }
         }
 
-        // [Out-of-order guard] If this beat's anchor is behind lastX on the same
-        // row and no requestSnap() was called, it's a late-arriving slide/grace
-        // pickup from the renderer. Discard entirely — don't overwrite the good
-        // state (expandedDur, nextNoteX, stayPutMode) set by the beat that already
-        // fired. The cursor continues its current walk uninterrupted.
+        // ── Out-of-order guard ───────────────────────────────────────────────
+        // Defense-in-depth: renderer D1 gate is primary filter.
+        // lastX is reset to -9999 by requestSnap() on loop-reseat/seek,
+        // so this guard never fires on the first beat after a reseat.
         const newNoteX = typeof bb.onNotesX === 'number' ? bb.onNotesX : vb.x;
         const sameRowAsLast = Math.abs(vb.y - this.lastY) < 5;
         const isOutOfOrder = sameRowAsLast && this.lastX > -9000
@@ -221,10 +161,6 @@ export class MaestroCursorV2 {
         this.currentH = vb.h;
 
         // ── Resolve next anchor (LERP target) ────────────────────────────────
-        // Renderer is responsible for supplying a sane preScannedNextBeat.
-        // Cursor must NOT fall back to beat.nextBeat (structural) — that would
-        // fight the renderer contract and cause skips on slide pickups (SRV M1).
-        // If preScannedNextBeat is behind or missing → PARK MODE for this beat.
         this.nextNoteX = null;
         this.stayPutMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
@@ -241,17 +177,14 @@ export class MaestroCursorV2 {
                     if (sameRow && nx > this.currentNoteX + 0.5) {
                         this.nextNoteX = nx;
                     } else if (sameRow && nx <= this.currentNoteX + 0.5) {
-                        // Next beat same row, same X — bend cluster / stacked notes.
                         this.stayPutMode = true;
                     }
                 }
             }
         }
 
-        // Store beat ref for PARK MODE masterBar lookup in setTick()
         (this as any)._currentBeat = beat;
 
-        // Snap to beat origin — forward-only guard on same row.
         const finalX = this.currentNoteX - BAR_WIDTH / 2;
         const finalY = this.currentY;
         const sameRow = Math.abs(finalY - this.lastY) < 5;
@@ -269,14 +202,10 @@ export class MaestroCursorV2 {
         });
     }
 
-    /**
-     * Called on every playerPositionChanged. Direct render — NO RAF.
-     *
-     * Signature mirrors v4.6.1 (3-arg) for drop-in compat.
-     *
-     * [M3] LERP is invincible: interpolated position is purely geometric
-     *   (onNotesX A → onNotesX B). Box widths, vb.w, hitbox math: irrelevant.
-     */
+    setLoopEndX(x: number | null): void {
+        this.loopEndX = x;
+    }
+
     setTick(
         tick: number,
         _nextBeat: any | null = null,
@@ -284,8 +213,6 @@ export class MaestroCursorV2 {
     ): void {
         if (!this.hasInitialPosition || this.expandedBeatDuration <= 0) return;
 
-        // Monotonic tick gate — kills worker jitter (e.g. 5282→5281→5283).
-        // Reset by requestSnap() so backward seeks (loop wrap, click) still work.
         if (this.lastTickApplied >= 0 && tick < this.lastTickApplied) return;
         this.lastTickApplied = tick;
 
@@ -293,22 +220,15 @@ export class MaestroCursorV2 {
         let progress = (tick - beatStart) / this.expandedBeatDuration;
         progress = Math.max(0, Math.min(1, progress));
 
-        // ── [M3] LERP walk ───────────────────────────────────────────────────
         let interpolatedX: number;
 
         if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
-            // WALK MODE: note-to-note LERP — the "Mole Killer."
             interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
             interpolatedX = Math.min(interpolatedX, this.nextNoteX);
         } else if (this.stayPutMode) {
-            // STAY PUT: next beat same row, same X (bend cluster / stacked notes).
-            // Micro-drift 4px max over the beat duration — avoids hard-freeze
-            // perception on clusters where AlphaTab's anchor bias is visible.
             const STAY_DRIFT_PX = 4;
             interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
         } else {
-            // PARK MODE: no valid next anchor (last beat in system / cross-row).
-            // Glide to the right edge of the masterbar — same as v4.6.1 Mode B legacy.
             const masterBar = this.currentBeat?.voice?.bar?.masterBar;
             const mbBounds = masterBar
                 ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
@@ -316,10 +236,12 @@ export class MaestroCursorV2 {
             const barRight = mbBounds?.visualBounds
                 ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
                 : this.currentNoteX + 24;
-            interpolatedX = this.currentNoteX + (barRight - this.currentNoteX) * progress;
+            const effectiveRight = this.loopEndX !== null
+                ? Math.min(barRight, this.loopEndX)
+                : barRight;
+            interpolatedX = this.currentNoteX + (effectiveRight - this.currentNoteX) * progress;
         }
 
-        // Pause clamp — don't drift to barline while paused at loop end.
         const isPlaying = this.api?.player?.isPlaying ?? false;
         if (!isPlaying && progress >= 0.999) {
             interpolatedX = this.currentNoteX;
@@ -330,27 +252,24 @@ export class MaestroCursorV2 {
     }
 
     /**
-     * Call before seeks, loop wraps, song switch, and tick === 0.
-     * Resets monotonic gate so backward ticks are accepted again.
+     * requestSnap — resets all order-tracking state so the next setBeat()
+     * is never rejected as out-of-order after a seek or loop reseat.
      *
-     * ✅ Accepts optional reason string for interface parity with MaestroCursor v1.
-     *    Reason is intentionally not acted on in V2 — V2's direct-render model
-     *    doesn't need per-reason branching. Eliminates TS "Expected 0 arguments" error.
+     * V1.2: lastX and lastY are now reset to -9999 here (previously only
+     * reset at construction). This is the fix for CursorV2 rejecting the
+     * first valid M24 beat after a loop-reseat because lastX still pointed
+     * to a position from the previous loop pass.
      *
-     * Only call from explicit user actions:
-     *   requestSnap('click-seek')   — click-to-seek
-     *   requestSnap('loop-wrap')    — loop drag end / wrap
-     *   requestSnap('song-load')    — song/track reload
-     *   requestSnap('huge-jump')    — tick delta > 30k (coda/D.S.)
-     * NOT for: barlines, repeats, normal playback quantization gaps.
+     * hasInitialPosition is intentionally NOT reset — the cursor bar stays
+     * visible between loop passes rather than flickering hidden.
      */
     public requestSnap(_reason?: string): void {
         this.nextNoteX = null;
         this.stayPutMode = false;
-        this.lastValidRatio = 1.0; // reset ratio on seek/loop/song-switch
+        this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
-        this.lastX = -9999;
-        this.lastY = -9999;
+        this.lastX = -9999;   // [V1.2] reset out-of-order guard on seek/reseat
+        this.lastY = -9999;   // [V1.2] reset out-of-order guard on seek/reseat
         console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
     }
 
@@ -369,11 +288,9 @@ export class MaestroCursorV2 {
             x = this.lastX;
         }
 
-        // Half-pixel quantization — kills subpixel shimmer
         x = Math.round(x * 2) / 2;
         y = Math.round(y * 2) / 2;
 
-        // Deadband — skip DOM write when movement is imperceptible
         if (
             Math.abs(x - this.lastX) < 0.5 &&
             Math.abs(y - this.lastY) < 0.8 &&
@@ -403,10 +320,6 @@ export class MaestroCursorV2 {
         this.element.style.opacity = '0';
     }
 
-    /**
-     * Songsterr-style teal vertical bar SVG.
-     * Semi-transparent fill bar + 1px solid spine centered at x=BAR_WIDTH/2.
-     */
     private _renderBarSVG(h: number): void {
         const w = BAR_WIDTH;
         const spineX = w / 2;

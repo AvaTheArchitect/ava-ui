@@ -180,6 +180,21 @@ export default function BeatCustomLoopOverlay({
     const downTickRef = useRef<number | null>(null);
     const beatCrossedRef = useRef(false);
 
+    // Click/drag discriminator shared by onMove and onUp.
+    // Prevents micro-drift from painting beat-level preview before onUp bar-snaps.
+    const LOOP_CLICK_INTENT_DIST = 24;
+
+    // TEMP diagnostic for handle drag snap sensitivity near barlines.
+    // Set false after tuning handle forecast behavior.
+    const LOOP_HANDLE_DRAG_DIAG = true;
+
+    // Barline magnet for loop handle drags.
+    // If the resolver returns the last beat of the previous bar while the pointer
+    // is already to the right of that beat, start handles should prefer the next bar.
+    // If it returns the first beat of the next bar while the pointer is still left
+    // of that beat, end handles should prefer the previous bar.
+    const LOOP_HANDLE_BARLINE_MAGNET = true;
+
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<'start' | 'end' | null>(null);
@@ -198,6 +213,11 @@ export default function BeatCustomLoopOverlay({
     const tickCacheWarnedRef = useRef(false);
 
     const [rects, setRects] = useState<HighlightRect[]>([]);
+    const rectsRef = useRef<HighlightRect[]>([]);
+
+    useEffect(() => {
+        rectsRef.current = rects;
+    }, [rects]);
 
     useEffect(() => { loopRef.current = loopEnabled; }, [loopEnabled]);
 
@@ -242,6 +262,114 @@ export default function BeatCustomLoopOverlay({
         const curBar = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
         const nextBar = next?.voice?.bar?.index ?? next?.voice?.bar?.masterBar?.index;
         return curBar !== nextBar;
+    };
+
+    const adjustHandleBeatNearBarline = (
+        beat: any,
+        mouseX: number,
+        target: 'start' | 'end' | null,
+    ): any => {
+        if (!LOOP_HANDLE_BARLINE_MAGNET || !beat || !target) return beat;
+        const vb = getBeatVB(beat);
+        if (!vb) return beat;
+
+        if (target === 'start' && isLastBeatInBar(beat) && beat.nextBeat) {
+            const beatRight = vb.x + vb.w;
+            const nextVb = getBeatVB(beat.nextBeat);
+            const nextBeatLeft = nextVb ? nextVb.x : null;
+            const START_BARLINE_RELEASE_ZONE = 35;
+
+            // Pull the start handle forward to the next barline once the pointer
+            // has clearly moved past the previous bar's last beat. Do not wait
+            // for the next bar's first beat visualBounds — that can sit well to
+            // the right of the actual barline and makes the left handle miss
+            // barline snaps when the pointer is visually centered on the barline.
+            if (
+                mouseX >= beatRight + START_BARLINE_RELEASE_ZONE
+            ) {
+                const nextBarIdx = beat.nextBeat?.voice?.bar?.index
+                    ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
+                const curBarIdx = beat?.voice?.bar?.index
+                    ?? beat?.voice?.bar?.masterBar?.index;
+                if (nextBarIdx != null && nextBarIdx !== curBarIdx) {
+                    console.log('[loop-handle-barline-magnet]', {
+                        target,
+                        action: 'last-beat-to-next-bar',
+                        fromTick: tickOf(beat),
+                        toTick: tickOf(beat.nextBeat),
+                        mouseX: Number(mouseX.toFixed(1)),
+                        beatRight: Number(beatRight.toFixed(1)),
+                        nextBeatLeft: nextBeatLeft == null ? null : Number(nextBeatLeft.toFixed(1)),
+                        releaseZone: START_BARLINE_RELEASE_ZONE,
+                    });
+                    return beat.nextBeat;
+                }
+            }
+        }
+
+        if (target === 'start' && isFirstBeatInBar(beat) && beat.nextBeat) {
+            const beatRight = vb.x + vb.w;
+            const nextBarIdx = beat.nextBeat?.voice?.bar?.index
+                ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
+            const curBarIdx = beat?.voice?.bar?.index
+                ?? beat?.voice?.bar?.masterBar?.index;
+            const START_FIRST_BEAT_RELEASE_ZONE = 18;
+
+            // Once the pointer is clearly past the first beat/rest of the bar,
+            // let the start preview release from the barline and forecast toward
+            // the next beat. This mirrors the right-handle feel in reverse.
+            if (
+                nextBarIdx === curBarIdx &&
+                mouseX >= beatRight + START_FIRST_BEAT_RELEASE_ZONE
+            ) {
+                console.log('[loop-handle-barline-magnet]', {
+                    target,
+                    action: 'first-beat-to-next-beat',
+                    fromTick: tickOf(beat),
+                    toTick: tickOf(beat.nextBeat),
+                    mouseX: Number(mouseX.toFixed(1)),
+                    beatRight: Number(beatRight.toFixed(1)),
+                    releaseZone: START_FIRST_BEAT_RELEASE_ZONE,
+                });
+                return beat.nextBeat;
+            }
+        }
+
+        if (target === 'end' && isFirstBeatInBar(beat) && beat.previousBeat) {
+            const beatLeft = vb.x;
+            const prevVb = getBeatVB(beat.previousBeat);
+            const prevBeatRight = prevVb ? prevVb.x + prevVb.w : null;
+            const END_BARLINE_HOLD_ZONE = 18;
+
+            // Only hold the end handle back to the previous bar while the pointer
+            // is still near the previous bar's last visible beat. Once the pointer
+            // has clearly moved into the new bar, allow the preview to forecast
+            // into the first beat instead of sticking to the barline until beatLeft.
+            if (
+                mouseX <= beatLeft &&
+                (prevBeatRight == null || mouseX <= prevBeatRight + END_BARLINE_HOLD_ZONE)
+            ) {
+                const prevBarIdx = beat.previousBeat?.voice?.bar?.index
+                    ?? beat.previousBeat?.voice?.bar?.masterBar?.index;
+                const curBarIdx = beat?.voice?.bar?.index
+                    ?? beat?.voice?.bar?.masterBar?.index;
+                if (prevBarIdx != null && prevBarIdx !== curBarIdx) {
+                    console.log('[loop-handle-barline-magnet]', {
+                        target,
+                        action: 'first-beat-to-previous-bar',
+                        fromTick: tickOf(beat),
+                        toTick: tickOf(beat.previousBeat),
+                        mouseX: Number(mouseX.toFixed(1)),
+                        beatLeft: Number(beatLeft.toFixed(1)),
+                        prevBeatRight: prevBeatRight == null ? null : Number(prevBeatRight.toFixed(1)),
+                        holdZone: END_BARLINE_HOLD_ZONE,
+                    });
+                    return beat.previousBeat;
+                }
+            }
+        }
+
+        return beat;
     };
 
     // ─────────────────────────────────────────
@@ -357,6 +485,58 @@ export default function BeatCustomLoopOverlay({
         return results;
     };
 
+    // ── Fresh-attack resolver for end handle reseat ───────────────────────────────
+    const isFreshAttackBeat = (beat: any): boolean => {
+        if (!beat) return false;
+        if (beat.isRest) return false;
+        const notes: any[] = beat.notes ?? [];
+        if (!notes.length) return false;
+        return !notes.every((n: any) =>
+            n.isTieDestination === true ||
+            n.tieDestination === true ||
+            n.isGhost === true ||
+            n.isLetRingDestination === true
+        );
+    };
+
+    const resolveEndHandleFreshAttack = (
+        endTick: number,
+        loopStartTick: number,
+    ): { beat: any; tick: number } | null => {
+        const tickCache = (api as any)?.tickCache;
+        const trackSet = api?.tracks
+            ? new Set(api.tracks.map((t: any) => t.index as number))
+            : new Set([0]);
+        if (!tickCache?.findBeat) return null;
+        for (let t = endTick - 1; t >= loopStartTick; t--) {
+            const r = tickCache.findBeat(trackSet, t);
+            if (!r?.beat) continue;
+            if (isFreshAttackBeat(r.beat)) {
+                return { beat: r.beat, tick: r.beat.absolutePlaybackStart ?? t };
+            }
+        }
+        return null;
+    };
+
+    const resolveStartHandleFreshAttack = (
+        startTick: number,
+        loopEndTick: number,
+    ): { beat: any; tick: number } | null => {
+        const tickCache = (api as any)?.tickCache;
+        const trackSet = api?.tracks
+            ? new Set(api.tracks.map((t: any) => t.index as number))
+            : new Set([0]);
+        if (!tickCache?.findBeat) return null;
+        for (let t = startTick; t < loopEndTick; t++) {
+            const r = tickCache.findBeat(trackSet, t);
+            if (!r?.beat) continue;
+            if (isFreshAttackBeat(r.beat)) {
+                return { beat: r.beat, tick: r.beat.absolutePlaybackStart ?? t };
+            }
+        }
+        return null;
+    };
+
     /**
      * V1.7.5 — Unified bar-snap commit. Accepts a BEAT OBJECT.
      * Uses buildBarRects for geometry (direct bar bounds — no midpoint math).
@@ -364,6 +544,7 @@ export default function BeatCustomLoopOverlay({
      * Returns true on success, false if helpers fail (falls through to beat-level).
      */
     const commitBarSnap = (beat: any, source: string): boolean => {
+        const clickedTick = tickOf(beat);
         // 🔥 V1.7.6: Grace-skip — applies to ALL callers (click + toggle-ON).
         // graceType===2 beats are pre-bar slide-in anchors whose ticks fall
         // inside the PREVIOUS bar's playback range. Walk forward same-bar to
@@ -402,11 +583,10 @@ export default function BeatCustomLoopOverlay({
         api.playbackRange = { startTick, endTick };
         api.isLooping = true;
 
-        // V1.8.3 / V1.8.4: cursor reseat — always park at startTick for click-to-move.
-        // Do NOT use smartCursorSnap here (nearest-boundary can park outside loop).
-        // getExpandedBarRange gives the true expanded bar start, so tied/continuation
-        // notes at bar entry are never used as the park tick.
-        if (source === 'click' || source === 'toggle ON') {
+        // Toggle ON has no mouse-click target, so keep the proven startTick reseat.
+        // Click-to-move is Songsterr-style: loop snaps bar-to-bar, but the cursor
+        // stays at the clicked beat/tick instead of being forced to the bar start.
+        if (source === 'toggle ON') {
             if (api.tickPosition !== undefined) {
                 api.tickPosition = startTick;
             }
@@ -425,7 +605,20 @@ export default function BeatCustomLoopOverlay({
 
             (window as any).__maestroManualSeek = Date.now();
             const cursor = (window as any).__maestroCursor;
-            cursor?.requestSnap?.('loop-click-move');
+            cursor?.requestSnap?.('loop-toggle-on');
+        } else if (source === 'click') {
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = clickedTick;
+            }
+            api.player?.seekTicks?.(clickedTick);
+            (window as any).__maestroManualSeek = Date.now();
+            const cursor = (window as any).__maestroCursor;
+            cursor?.requestSnap?.('loop-click-cursor');
+            console.log('🎼 BeatLoop click cursor preserved:', {
+                clickedTick,
+                barStartTick: startTick,
+                barEndTick: endTick,
+            });
         }
 
         setRects(buildBarRects(barIdx));
@@ -504,6 +697,7 @@ export default function BeatCustomLoopOverlay({
         return results;
     };
 
+
     // ─────────────────────────────────────────
     // Beat resolver (unchanged from v1.6)
     // ─────────────────────────────────────────
@@ -568,6 +762,26 @@ export default function BeatCustomLoopOverlay({
     };
 
     // ─────────────────────────────────────────
+    // Helper: Check if pointer is inside loop highlight area
+    // ─────────────────────────────────────────
+
+    const isPointerInsideLoopHighlight = (e: MouseEvent): boolean => {
+        const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+        if (!surface || !rectsRef.current.length) return false;
+
+        const domRect = surface.getBoundingClientRect();
+        const x = (e.clientX - domRect.left) + (surface.scrollLeft ?? 0) - LOOP_X_OFFSET;
+        const y = (e.clientY - domRect.top) + (surface.scrollTop ?? 0);
+
+        return rectsRef.current.some(r =>
+            x >= r.x &&
+            x <= r.x + r.w &&
+            y >= r.y - 60 &&
+            y <= r.y + r.h + 60
+        );
+    };
+
+    // ─────────────────────────────────────────
     // Mouse handlers — v1.7.5: beatCrossed gate + zero fan-out
     // ─────────────────────────────────────────
 
@@ -582,6 +796,9 @@ export default function BeatCustomLoopOverlay({
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
             if (!loopRef.current) return;
+            // Clicking the existing loop highlight should not move/recreate the loop.
+            // Handles stop propagation separately, so handle drags still work.
+            if (isPointerInsideLoopHighlight(e)) return;
             const result = resolveBeatWithX(e);
             if (!result) return;
 
@@ -609,14 +826,24 @@ export default function BeatCustomLoopOverlay({
 
             endBeat.current = result.beat;
 
-            // Track whether the user ever crossed a beat boundary
+            // Track whether the user ever crossed a beat boundary, but only
+            // promote to drag intent after the pointer moves beyond click-drift.
+            // This prevents a micro beat-level preview flash before onUp later
+            // reclassifies the gesture as click-intent and bar-snaps.
             const curTick = tickOf(result.beat);
-            if (downTickRef.current != null && curTick !== downTickRef.current) {
+            const dx = e.clientX - downXRef.current;
+            const dy = e.clientY - downYRef.current;
+            const pixelDist = Math.sqrt(dx * dx + dy * dy);
+            if (
+                downTickRef.current != null &&
+                curTick !== downTickRef.current &&
+                pixelDist > LOOP_CLICK_INTENT_DIST
+            ) {
                 beatCrossedRef.current = true;
             }
 
-            // Only paint rects once a real drag is confirmed (beat crossed).
-            // Paints immediately on the same event that flips the flag.
+            // Only paint rects once a real drag is confirmed (beat crossed + beyond click drift).
+            // Clean clicks now paint only once from onUp via commitBarSnap.
             if (!beatCrossedRef.current) return;
 
             const [lo, hi] = loHi(startBeat.current, result.beat);
@@ -646,15 +873,20 @@ export default function BeatCustomLoopOverlay({
             const dx = (e?.clientX ?? downXRef.current) - downXRef.current;
             const dy = (e?.clientY ?? downYRef.current) - downYRef.current;
             const pixelDist = Math.sqrt(dx * dx + dy * dy);
+            const isClickIntent = pixelDist <= LOOP_CLICK_INTENT_DIST;
 
             // ── Click → bar-snap ───────────────────────────────
-            // V1.7.5: beatCrossedRef is the sole click discriminator.
-            // Pixel distance removed — trackpads generate 20–30px drift on
-            // steady clicks, making any fixed threshold unreliable.
-            // beatCrossedRef is the musical truth: if no onMove ever resolved
-            // a different beat tick, the user never made a musical drag.
-            // Worst case: within-beat drag → bar-snap (better than single-beat loop).
-            if (!beatCrossedRef.current) {
+            // Treat small pointer movement as click intent even if the beat resolver
+            // briefly crosses into an adjacent beat. Real-world click drift can hit
+            // ~17–21px on trackpad/mouse release, so this guard prevents rare
+            // one-beat loop commits during normal bar-to-bar click moves.
+            if (!beatCrossedRef.current || isClickIntent) {
+                console.log('🎼 BeatLoop click-intent bar-snap:', {
+                    pixelDist: pixelDist.toFixed(1),
+                    clickIntent: isClickIntent,
+                    clickIntentDist: LOOP_CLICK_INTENT_DIST,
+                    beatCrossed: beatCrossedRef.current,
+                });
                 if (commitBarSnap(sb, 'click')) return;
                 // If bar-snap helpers fail, fall through to beat-level
             }
@@ -915,11 +1147,90 @@ export default function BeatCustomLoopOverlay({
         const result = resolveBeatWithX(syntheticEvent);
         if (!result?.beat) return;
 
-        const beat = result.beat;
+        const rawBeat = result.beat;
+        let beat = adjustHandleBeatNearBarline(rawBeat, result.mouseX, dragTargetRef.current);
+
+        // ── Handle forecast smoothing (start handle: prefer next beat only after pointer passes midpoint) ──
+        // AlphaTab's getBeatAtPos can hand us the next beat before the pointer
+        // visually feels close enough to it. For handle drags, re-check the
+        // pointer against the inter-beat midpoint so the preview forecast stays
+        // within a small visual lead instead of jumping a full beat ahead.
+        const HANDLE_FORECAST_LEAD = 12;
+        if (dragTargetRef.current === 'start' && beat?.nextBeat) {
+            const curCenter = beatCenter(beat);
+            const nextCenter = beatCenter(beat.nextBeat);
+            const curBarIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+            const nextBarIdx = beat.nextBeat?.voice?.bar?.index
+                ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
+            if (curCenter != null && nextCenter != null && curBarIdx === nextBarIdx) {
+                const switchX = ((curCenter + nextCenter) / 2) - HANDLE_FORECAST_LEAD;
+                if (result.mouseX > switchX) {
+                    beat = beat.nextBeat;
+                    if (LOOP_HANDLE_DRAG_DIAG) {
+                        console.log('[loop-handle-forecast-smooth]', {
+                            target: dragTargetRef.current,
+                            action: 'hold-next-beat-until-pushed-left',
+                            mouseX: Number(result.mouseX.toFixed(1)),
+                            switchX: Number(switchX.toFixed(1)),
+                            toTick: tickOf(beat),
+                        });
+                    }
+                }
+            }
+        }
+        if (dragTargetRef.current === 'end' && beat?.nextBeat) {
+            const curCenter = beatCenter(beat);
+            const nextCenter = beatCenter(beat.nextBeat);
+            const curBarIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+            const nextBarIdx = beat.nextBeat?.voice?.bar?.index
+                ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
+            if (curCenter != null && nextCenter != null && curBarIdx === nextBarIdx) {
+                const switchX = ((curCenter + nextCenter) / 2) + HANDLE_FORECAST_LEAD;
+                if (result.mouseX > switchX) {
+                    beat = beat.nextBeat;
+                    if (LOOP_HANDLE_DRAG_DIAG) {
+                        console.log('[loop-handle-forecast-smooth]', {
+                            target: dragTargetRef.current,
+                            action: 'advance-next-beat',
+                            mouseX: Number(result.mouseX.toFixed(1)),
+                            switchX: Number(switchX.toFixed(1)),
+                            toTick: tickOf(beat),
+                        });
+                    }
+                }
+            }
+        }
+
         const beatTick = tickOf(beat);
         const beatDur = durOf(beat);
         const current = previewRangeRef.current ?? api?.playbackRange;
         if (!current) return;
+
+        // 🔬 TEMP handle-drag resolver probe — used to tune barline magnet/dead-zone.
+        // This is diagnostic only; it does not affect previewRange or playbackRange.
+        if (LOOP_HANDLE_DRAG_DIAG) {
+            const vb = getBeatVB(beat);
+            const barIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+            const edges = getBarEdgesFromBeat(beat);
+            console.log('[loop-handle-drag-resolve]', {
+                dragTarget: dragTargetRef.current,
+                clientX: Number(clientX.toFixed(1)),
+                mouseX: Number(result.mouseX.toFixed(1)),
+                beatTick,
+                beatDur,
+                barIdx,
+                rawBeatTick: tickOf(rawBeat),
+                adjusted: rawBeat !== beat,
+                isFirstBeatInBar: isFirstBeatInBar(beat),
+                isLastBeatInBar: isLastBeatInBar(beat),
+                firstTickInBar: edges?.first ? tickOf(edges.first) : null,
+                lastTickInBar: edges?.last ? tickOf(edges.last) : null,
+                vbX: vb ? Number(vb.x.toFixed(1)) : null,
+                vbW: vb ? Number(vb.w.toFixed(1)) : null,
+                currentStartTick: current.startTick,
+                currentEndTick: current.endTick,
+            });
+        }
 
         let nextPreview: { startTick: number; endTick: number };
         const trackIndices = api.tracks
@@ -928,13 +1239,38 @@ export default function BeatCustomLoopOverlay({
         const tickCache = (api as any)?.tickCache;
 
         if (dragTargetRef.current === 'start') {
-            const newStart = beatTick;
-            if (newStart >= current.endTick - beatDur) return;
+            let previewBeat = beat;
+            let newStart = beatTick;
+
+            if (tickCache && newStart >= current.endTick - beatDur) {
+                const clampResult = tickCache.findBeat(trackIndices, Math.max(0, current.endTick - 1));
+                const clampBeat = clampResult?.beat;
+                if (clampBeat) {
+                    const clampTick = tickOf(clampBeat);
+                    const clampDur = durOf(clampBeat);
+                    const previous = clampBeat.previousBeat;
+                    const previousTick = previous ? tickOf(previous) : null;
+                    if (previous && previousTick != null && previousTick < current.endTick - clampDur) {
+                        previewBeat = previous;
+                        newStart = previousTick;
+                    } else {
+                        previewBeat = clampBeat;
+                        newStart = Math.max(current.startTick, current.endTick - clampDur);
+                    }
+                    console.log('[loop-handle-start-clamp]', {
+                        requestedTick: beatTick,
+                        clampedTick: newStart,
+                        currentEndTick: current.endTick,
+                    });
+                }
+            }
+
+            if (newStart >= current.endTick) return;
             nextPreview = { startTick: newStart, endTick: current.endTick };
             if (tickCache) {
                 const endResult = tickCache.findBeat(trackIndices, current.endTick - 1);
                 if (endResult?.beat) {
-                    const [lo, hi] = loHi(beat, endResult.beat);
+                    const [lo, hi] = loHi(previewBeat, endResult.beat);
                     const preview = buildRects(lo, hi);
                     previewRectsRef.current = preview;
                     setRects(preview);
@@ -966,6 +1302,7 @@ export default function BeatCustomLoopOverlay({
     const handleDragEnd = (e: MouseEvent | TouchEvent) => {
         if (!dragTargetRef.current) return;
         e.preventDefault();
+        const releasedHandle = dragTargetRef.current;
 
         // Fix E: commit preview → api only on release
         const finalRange = previewRangeRef.current;
@@ -973,6 +1310,46 @@ export default function BeatCustomLoopOverlay({
             api.playbackRange = finalRange;
             api.isLooping = true;
             onLoopChange?.(finalRange.startTick, finalRange.endTick);
+            // ── End handle fresh-attack reseat ───────────────────────────────────────────
+            const endReseat = resolveEndHandleFreshAttack(
+                finalRange.endTick,
+                finalRange.startTick,
+            );
+            const resolvedEndBeat = endReseat?.beat ?? null;
+            const originalResult = (api as any)?.tickCache?.findBeat?.(
+                api?.tracks ? new Set(api.tracks.map((t: any) => t.index)) : new Set([0]),
+                finalRange.endTick - 1,
+            );
+            const originalBeat = originalResult?.beat ?? null;
+            console.log('[loop-end-fresh-attack]', {
+                loopEndTick: finalRange.endTick,
+                originalTick: originalBeat?.absolutePlaybackStart,
+                originalIsRest: !!originalBeat?.isRest,
+                originalNotesLength: (originalBeat?.notes ?? []).length,
+                replacementTick: endReseat?.tick,
+                replacementBeat: !!resolvedEndBeat,
+                replacementIsFresh: resolvedEndBeat ? isFreshAttackBeat(resolvedEndBeat) : null,
+            });
+            // ── Handle-release fresh-attack candidate only ────────────────────────────────
+            // Diagnostic only: during handle drag release, do not force cursor parking.
+            // Songsterr-style behavior keeps cursor movement separate from loop handle moves.
+            {
+                const startCandidate = releasedHandle === 'start'
+                    ? resolveStartHandleFreshAttack(finalRange.startTick, finalRange.endTick)
+                    : null;
+                const endCandidate = releasedHandle === 'end'
+                    ? endReseat
+                    : null;
+                console.log('[loop-handle-reseat-candidate]', {
+                    releasedHandle,
+                    startTick: finalRange.startTick,
+                    endTick: finalRange.endTick,
+                    startCandidateTick: startCandidate?.tick ?? null,
+                    endCandidateTick: endCandidate?.tick ?? null,
+                    note: 'candidate only; cursor not moved during handle release',
+                });
+            }
+            // ── END handle-release fresh-attack candidate only ────────────────────────────
         }
 
         previewRangeRef.current = null;
@@ -1055,7 +1432,8 @@ export default function BeatCustomLoopOverlay({
         const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
         if (!surface) return null;
         const rect = surface.getBoundingClientRect();
-        return (activeHandleX - rect.left) + LOOP_X_OFFSET;
+        const overlayX = (activeHandleX - rect.left) + LOOP_X_OFFSET;
+        return Math.min(Math.max(overlayX, 0), rect.width);
     };
     const activeOverlayX = getActiveHandleOverlayX();
 
@@ -1070,7 +1448,62 @@ export default function BeatCustomLoopOverlay({
     // Only shadow/color transitions are allowed on handles.
     const handleColorTransition = 'background-color 150ms ease-in-out, box-shadow 150ms ease-in-out';
 
-    const EXTEND = 50;
+    const LOOP_ROW_PAD_Y = 7;
+    const LOOP_HANDLE_INSET_Y = 10;
+    const FALLBACK_EXTEND = 50;
+
+    // ── [V1.8.5] Row-aware geometry helper — DOM-rect-based ──────────────────
+    // r.y is the AlphaTab bar visual top in the same rendered surface space
+    // used by the overlay divs. getBoundingClientRect() gives real DOM positions
+    // relative to .at-surface, which is what the overlay needs.
+    // SVG attributes (y, height, viewBox) are NOT used — they are in SVG internal
+    // coordinates, not DOM/surface coordinates.
+    const getRowGeometryForRect = (r: HighlightRect): { top: number; height: number } => {
+        const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+        if (!surface) {
+            return {
+                top: r.y - FALLBACK_EXTEND,
+                height: r.h + FALLBACK_EXTEND * 2,
+            };
+        }
+        const surfaceRect = surface.getBoundingClientRect();
+        const surfaceScrollTop = surface.scrollTop ?? 0;
+        const svgs = Array.from(
+            surface.querySelectorAll<SVGSVGElement>('svg.at-surface-svg')
+        );
+        if (!svgs.length) {
+            return {
+                top: r.y - FALLBACK_EXTEND,
+                height: r.h + FALLBACK_EXTEND * 2,
+            };
+        }
+        const rows = svgs.map(svg => {
+            const rect = svg.getBoundingClientRect();
+            const top = (rect.top - surfaceRect.top) + surfaceScrollTop;
+            const height = rect.height;
+            return { svg, top, height, bottom: top + height };
+        }).filter(row => row.height > 0);
+        // Pick the DOM SVG row that contains r.y, or closest if slightly outside
+        // (bar visual top can sit near an effect lane at the row boundary).
+        let match = rows.find(row => r.y >= row.top - 4 && r.y <= row.bottom + 4);
+        if (!match) {
+            match = rows.reduce((best, row) => {
+                const d = Math.min(Math.abs(r.y - row.top), Math.abs(r.y - row.bottom));
+                const bestD = Math.min(Math.abs(r.y - best.top), Math.abs(r.y - best.bottom));
+                return d < bestD ? row : best;
+            }, rows[0]);
+        }
+        if (!match || match.height <= 0) {
+            return {
+                top: r.y - FALLBACK_EXTEND,
+                height: r.h + FALLBACK_EXTEND * 2,
+            };
+        }
+        return {
+            top: match.top + LOOP_ROW_PAD_Y,
+            height: Math.max(20, match.height - LOOP_ROW_PAD_Y * 2),
+        };
+    };
 
     return (
         <>
@@ -1078,8 +1511,11 @@ export default function BeatCustomLoopOverlay({
                 const isFirst = i === 0;
                 const isLast = i === rects.length - 1;
 
-                // v1.8.2: active handle rendered at pointer X (not rect edge)
-                // inactive handle stays anchored to opposite rect edge
+                const rowGeom = getRowGeometryForRect(r);
+                const hlTop = rowGeom.top;
+                const hlHeight = rowGeom.height;
+                const handleHeight = Math.max(20, hlHeight - LOOP_HANDLE_INSET_Y * 2);
+
                 const startIsDragging = handleDragging && dragTarget === 'start';
                 const endIsDragging = handleDragging && dragTarget === 'end';
 
@@ -1089,17 +1525,16 @@ export default function BeatCustomLoopOverlay({
                         className="beat-loop-highlight"
                         style={{
                             position: 'absolute',
-                            left: r.x + LOOP_X_OFFSET,  // Fix D: diagnostic gutter offset
-                            top: r.y - EXTEND,
+                            left: r.x + LOOP_X_OFFSET,
+                            top: hlTop,
                             width: r.w,
-                            height: r.h + EXTEND * 2,
+                            height: hlHeight,
                             background: overlayColor,
                             borderTop: `1px solid ${borderColor}`,
                             borderBottom: `1px solid ${borderColor}`,
                             pointerEvents: 'none',
                             zIndex: 900,
                             boxSizing: 'border-box',
-                            // Fix A: no transition on position/size
                         }}
                     >
                         {/* ── Start handle ── */}
@@ -1109,16 +1544,22 @@ export default function BeatCustomLoopOverlay({
                                 onTouchStart={e => handleDragStart(e, 'start')}
                                 style={{
                                     position: 'absolute',
-                                    // v1.8.2: if this handle is active, position from pointer X
-                                    // otherwise anchor to left edge of rect as normal
                                     ...(startIsDragging && activeOverlayX !== null
-                                        ? { left: activeOverlayX - r.x - 13.5 }
+                                        ? (() => {
+                                            const HANDLE_HALF_W = 13.5;
+                                            const rawActiveLeft = activeOverlayX - r.x - HANDLE_HALF_W;
+                                            const clampedActiveLeft = Math.min(
+                                                Math.max(rawActiveLeft, -HANDLE_HALF_W),
+                                                r.w - HANDLE_HALF_W,
+                                            );
+                                            return { left: clampedActiveLeft };
+                                        })()
                                         : { left: '-13.5px' }
                                     ),
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
+                                    top: LOOP_HANDLE_INSET_Y,
+                                    transform: 'none',
                                     width: '27px',
-                                    height: '60px',
+                                    height: handleHeight,
                                     cursor: 'ew-resize',
                                     zIndex: 1001,
                                     pointerEvents: 'auto',
@@ -1129,18 +1570,18 @@ export default function BeatCustomLoopOverlay({
                                     userSelect: 'none',
                                 }}
                             >
-                                {/* Vertical glowing bar */}
+                                {/* Vertical glowing bar — spans full handle height */}
                                 <div style={{
                                     position: 'absolute',
                                     left: '12px',
-                                    top: '-50px',
+                                    top: 0,
                                     width: '3px',
-                                    height: '160px',
+                                    height: '100%',
                                     backgroundColor: handleColor,
                                     boxShadow: `0 0 8px ${handleColor}`,
                                     transition: handleColorTransition,
                                 }} />
-                                {/* Arrow tab */}
+                                {/* Arrow tab — centered on vertical bar */}
                                 <div style={{
                                     position: 'absolute',
                                     left: '0',
@@ -1170,16 +1611,22 @@ export default function BeatCustomLoopOverlay({
                                 onTouchStart={e => handleDragStart(e, 'end')}
                                 style={{
                                     position: 'absolute',
-                                    // v1.8.2: if this handle is active, position from pointer X
-                                    // otherwise anchor to right edge of rect as normal
                                     ...(endIsDragging && activeOverlayX !== null
-                                        ? { left: activeOverlayX - r.x - 13.5, right: 'unset' }
+                                        ? (() => {
+                                            const HANDLE_HALF_W = 13.5;
+                                            const rawActiveLeft = activeOverlayX - r.x - HANDLE_HALF_W;
+                                            const clampedActiveLeft = Math.min(
+                                                Math.max(rawActiveLeft, -HANDLE_HALF_W),
+                                                r.w - HANDLE_HALF_W,
+                                            );
+                                            return { left: clampedActiveLeft, right: 'unset' };
+                                        })()
                                         : { right: '-13.5px' }
                                     ),
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
+                                    top: LOOP_HANDLE_INSET_Y,
+                                    transform: 'none',
                                     width: '27px',
-                                    height: '60px',
+                                    height: handleHeight,
                                     cursor: 'ew-resize',
                                     zIndex: 1001,
                                     pointerEvents: 'auto',
@@ -1190,18 +1637,18 @@ export default function BeatCustomLoopOverlay({
                                     userSelect: 'none',
                                 }}
                             >
-                                {/* Vertical glowing bar */}
+                                {/* Vertical glowing bar — spans full handle height */}
                                 <div style={{
                                     position: 'absolute',
                                     left: '12px',
-                                    top: '-50px',
+                                    top: 0,
                                     width: '3px',
-                                    height: '160px',
+                                    height: '100%',
                                     backgroundColor: handleColor,
                                     boxShadow: `0 0 8px ${handleColor}`,
                                     transition: handleColorTransition,
                                 }} />
-                                {/* Arrow tab */}
+                                {/* Arrow tab — centered on vertical bar */}
                                 <div style={{
                                     position: 'absolute',
                                     right: '0',

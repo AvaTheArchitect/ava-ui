@@ -291,7 +291,7 @@ export class MaestroCursor {
     }
 
     // ── [v4.7] requestSnap: arm instant jump in RAF loop (seek only) ─────────
-    public requestSnap(reason: string): void {
+    public requestSnap(reason?: string): void {
         this.nextBeatCenterX = null;
         this.beatStartToUse = this.beatStart;
         this.lastFinalX = -1;
