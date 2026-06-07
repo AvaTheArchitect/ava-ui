@@ -36,6 +36,12 @@
  *         endings or intermediate rows — cursor will pause/bounce at row ends.
  *         Guard: sameRow && !loopEndsOnBarline (repeat-safe via tickCache.getBeatStart).
  *
+ * ✅ [LoopHighlightClick] Clicking inside existing loop highlight seeks cursor
+ *         to clicked beat. Loop range unchanged. Next Play starts from clicked
+ *         position (one-shot override via __maestroLoopPlayStartOverrideTick).
+ *         Override clears on loop-move and after first Play use; stale values
+ *         are range-validated before use.
+ *
  * V119 LOCKS:
  * 🔒 [TH] AlphaTab score palette — applied via api.settings.display.resources on theme change.
  *         Gated on !isSettling. lastThemeRef dedupes + resets to null on score reload.
@@ -1794,12 +1800,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (stableCurBeatRef.current) {
                         const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
                         if (incomingStart >= 0 && prevAbs >= 0 && incomingStart < prevAbs) {
-                            const regKey = `${incomingStart}:${prevAbs}`;
-                            if (lastRegressionLogRef.current !== regKey) {
-                                lastRegressionLogRef.current = regKey;
-                                console.warn('[V117] structural regression discarded');
+                            const allowBacktrack =
+                                Date.now() < ((window as any).__maestroAllowBacktrackUntil ?? 0);
+                            if (allowBacktrack) {
+                                console.log('[V117] structural regression allowed — manual backtrack seek');
+                            } else {
+                                const regKey = `${incomingStart}:${prevAbs}`;
+                                if (lastRegressionLogRef.current !== regKey) {
+                                    lastRegressionLogRef.current = regKey;
+                                    console.warn('[V117] structural regression discarded');
+                                }
+                                return;
                             }
-                            return;
                         }
                     }
 
@@ -2286,7 +2298,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     ? (api.playbackRange as { startTick: number; endTick: number } | null)
                     : null;
                 if (liveLoopRange?.startTick != null) {
-                    const primeT = liveLoopRange.startTick;
+                    const overrideTick = (window as any).__maestroLoopPlayStartOverrideTick;
+                    const hasValidOverride =
+                        typeof overrideTick === 'number' &&
+                        overrideTick >= liveLoopRange.startTick &&
+                        overrideTick < liveLoopRange.endTick;
+                    const primeT = hasValidOverride ? overrideTick : liveLoopRange.startTick;
+                    if (hasValidOverride) {
+                        (window as any).__maestroLoopPlayStartOverrideTick = null;
+                    }
                     if (api.tickPosition !== undefined) api.tickPosition = primeT;
                     api.player?.seekTicks?.(primeT);
                     (window as any).__maestroLoopReseat = {

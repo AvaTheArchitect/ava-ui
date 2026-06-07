@@ -582,6 +582,8 @@ export default function BeatCustomLoopOverlay({
 
         api.playbackRange = { startTick, endTick };
         api.isLooping = true;
+        // Clear override when loop is moved — new loop start takes precedence
+        (window as any).__maestroLoopPlayStartOverrideTick = null;
 
         // Toggle ON has no mouse-click target, so keep the proven startTick reseat.
         // Click-to-move is Songsterr-style: loop snaps bar-to-bar, but the cursor
@@ -798,7 +800,25 @@ export default function BeatCustomLoopOverlay({
             if (!loopRef.current) return;
             // Clicking the existing loop highlight should not move/recreate the loop.
             // Handles stop propagation separately, so handle drags still work.
-            if (isPointerInsideLoopHighlight(e)) return;
+            if (isPointerInsideLoopHighlight(e)) {
+                // Click inside existing loop highlight — seek cursor only, do not move loop.
+                const result = resolveBeatWithX(e);
+                if (result?.beat) {
+                    const seekTick = tickOf(result.beat);
+                    (window as any).__maestroAllowBacktrackUntil = Date.now() + 300;
+                    if (api.tickPosition !== undefined) api.tickPosition = seekTick;
+                    api.player?.seekTicks?.(seekTick);
+                    (window as any).__maestroManualSeek = Date.now();
+                    (window as any).__maestroLoopPlayStartOverrideTick = seekTick;
+                    (window as any).__maestroCursor?.requestSnap?.('loop-highlight-click-cursor');
+                    console.log('[loop-highlight-click-cursor]', {
+                        seekTick,
+                        loopStartTick: (api.playbackRange as any)?.startTick,
+                        loopEndTick: (api.playbackRange as any)?.endTick,
+                    });
+                }
+                return;
+            }
             const result = resolveBeatWithX(e);
             if (!result) return;
 
@@ -1295,6 +1315,17 @@ export default function BeatCustomLoopOverlay({
         setPreviewRange(nextPreview);
     };
 
+    // TODO [LoopCursorFreezeDuringHandleDrag]:
+    // Songsterr-style polish: while user drags a loop handle, freeze the visible
+    // cursor at its current position and visually mark it inactive/gray. Do not
+    // reseat cursor during drag preview. On mouseup:
+    //   - if cursor is still inside the new playbackRange, keep it parked there
+    //   - if cursor is outside the new playbackRange, decide whether to keep it
+    //     outside until Play or reseat to loop start
+    //   - next Play should follow existing rules:
+    //       highlight-click override starts from clicked tick once
+    //       otherwise loop starts from playbackRange.startTick
+    // This is visual/UX polish only. Do not change loop range math or handle snap.
     /**
      * handleDragEnd — Fix E: commits previewRange to api.playbackRange on release.
      * Nothing is written to api during drag — only on mouseup/touchend.
