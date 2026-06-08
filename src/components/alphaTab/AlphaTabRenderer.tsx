@@ -782,6 +782,129 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }
     }, []);
 
+    // ── [S1-prime] One-shot S1 portrait snap — called after orientation change ──
+    // setBeat/setTick do NOT fire playerPositionChanged, so S1 never auto-fires
+    // after strip-to-page. This helper runs the same math and tween so the page
+    // lands at the correct row immediately after cursor prime.
+    const snapPortraitToBeatRow = useCallback((reason: string, beat: any): void => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        // Mirror playerPositionChanged isStripMode guard — skip in landscape/strip
+        const isStripMode = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+        if (isStripMode) return;
+
+        const snapBounds = api.renderer?.boundsLookup;
+        const snapSystems = snapBounds?.staffSystems ?? [];
+        const snapBb = snapBounds?.findBeat?.(beat);
+        const beatY = snapBb?.visualBounds?.y;
+        if (beatY == null || snapSystems.length === 0) return;
+
+        const sysIdx = findSystemIndexForY(snapSystems, beatY);
+        if (sysIdx < 0) return;
+        const anchorIdx = Math.max(0, sysIdx - 1);
+
+        // Always update lastAnchorSysRef — prevents next playerPositionChanged from
+        // double-firing or skipping the snap for the same row.
+        lastAnchorSysRef.current = anchorIdx;
+
+        const scrollEl = (api.settings.player as any).scrollElement
+            ?? scrollContainer
+            ?? containerRef.current;
+        if (!scrollEl) return;
+
+        const scrollElEl = scrollEl as HTMLElement;
+        const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
+        const isPlayingNow = (api.playerState ?? 0) === 1;
+        const headerH = (!isPlayingNow && header && getComputedStyle(header).display !== 'none')
+            ? header.getBoundingClientRect().height : 0;
+        const GAP = 8;
+        const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
+        const scrollRect = scrollElEl.getBoundingClientRect();
+
+        const allSvgs = Array.from(scrollElEl.querySelectorAll<SVGElement>('.at-surface svg'));
+        const staffRows = allSvgs.filter(el => {
+            const r = el.getBoundingClientRect();
+            return r.height > 100 && r.width > 500;
+        });
+
+        let target: number;
+        if (anchorIdx === 0) {
+            target = 0;
+        } else if (staffRows.length > anchorIdx) {
+            const rowRect = staffRows[anchorIdx].getBoundingClientRect();
+            target = Math.max(0, scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP);
+        } else {
+            const anchorVb = (snapSystems[anchorIdx] as any)?.visualBounds;
+            target = Math.max(0, (anchorVb?.y ?? 0) - headerH - GAP);
+        }
+
+        const currentVb = (snapSystems[sysIdx] as any)?.visualBounds;
+        const currentTop = currentVb?.y ?? 0;
+        target = Math.min(target, Math.max(0, currentTop - headerH - GAP));
+
+        // Previous-row clearance — same absolute-coordinate prediction as S1
+        {
+            const safeOffset = headerH + GAP;
+            const prevRow = anchorIdx > 0 ? (staffRows[anchorIdx - 1] ?? null) : null;
+            if (prevRow) {
+                const prevRect = prevRow.getBoundingClientRect();
+                const prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
+                const safeTopAbsAfterTarget = target + safeOffset;
+                const danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
+                if (danglingAfterTarget > 0.5) {
+                    target = Math.max(0, target + danglingAfterTarget + 3);
+                }
+            }
+        }
+
+        target = Math.min(target, maxScroll);
+
+        if (ORIENTATION_ANCHOR_DEBUG) {
+            console.log('[orientation-s1-prime-snap]', {
+                reason,
+                curBeatAbs: beat?.absolutePlaybackStart ?? null,
+                curBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+                sysIdx,
+                anchorIdx,
+                fromScroll: Math.round(scrollElEl.scrollTop),
+                target: Math.round(target),
+                delta: Math.round(target - scrollElEl.scrollTop),
+            });
+        }
+
+        if (s1AnimRafRef.current !== null) {
+            cancelAnimationFrame(s1AnimRafRef.current);
+            s1AnimRafRef.current = null;
+        }
+
+        const tweenFrom = scrollElEl.scrollTop;
+        const tweenTo = target;
+        const tweenDelta = tweenTo - tweenFrom;
+        const TWEEN_MS = 150;
+        const snapAnchor = anchorIdx;
+
+        if (Math.abs(tweenDelta) < 2) {
+            scrollElEl.scrollTop = tweenTo;
+        } else {
+            const startTime = performance.now();
+            const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+            const step = (now: number) => {
+                if (lastAnchorSysRef.current !== snapAnchor) return;
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / TWEEN_MS, 1);
+                scrollElEl.scrollTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                if (progress < 1) {
+                    s1AnimRafRef.current = requestAnimationFrame(step);
+                } else {
+                    scrollElEl.scrollTop = tweenTo;
+                    s1AnimRafRef.current = null;
+                }
+            };
+            s1AnimRafRef.current = requestAnimationFrame(step);
+        }
+    }, [scrollContainer]);
+
     // ── Stuck horizontal strip helper ─────────────────────────────────────────
     const checkStuckHorizontalStrip = useCallback((api: any, el: HTMLElement) => {
         const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
@@ -1306,6 +1429,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 s1WouldFireOnNextPositionChanged: false,
                             });
                         }
+                        snapPortraitToBeatRow('song-load-prime', r.beat);
                         resolve(true);
                     };
                     requestAnimationFrame(step);
@@ -2366,7 +2490,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             delete (window as any).__maestroProbeRendererLoop;
         };
-    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, resetKey]);
+    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, resetKey]);
 
     useEffect(() => {
         const api = apiRef.current;
