@@ -13,6 +13,16 @@
  *     orientation-cursor-probe (song-load, loop-play-start).
  *     lastLandscapeVisibleBarRef: diagnostic ref only — not wired to behavior.
  *
+ * V123.1 DIAGNOSTIC PATCH:
+ * 🔍 [orientation-bar-shape-probe] Multi-path mbb resolver for mostVisibleBarIdx.
+ *     Fires (throttled 1s) only when all paths return null — reveals actual AlphaTab
+ *     bar bounds object shape so the correct property path can be hard-coded.
+ *     barIdxResolved field added to landscape-scroll probe for at-a-glance status.
+ * 🔍 [orientation-s1-gap-probe] Confirms that setBeat/setTick inside
+ *     ensureCursorAndAnchorOnce do NOT trigger playerPositionChanged — S1 vertical
+ *     snap will not fire after strip-to-page. currentScrollTop vs expectedAnchorIdx
+ *     will quantify the gap.
+ *
  * V120 LOOP/CURSOR LOCKS:
  * 🔒 [LoopClick] Click-to-move is Songsterr-style: loop snaps bar-to-bar but
  *         cursor parks at clickedTick. Do not force cursor back to barStartTick.
@@ -656,9 +666,35 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 const overlap = Math.max(0, Math.min(barR, viewR) - Math.max(barL, viewL));
                                 if (overlap > bestOverlap) {
                                     bestOverlap = overlap;
-                                    mostVisibleBarIdx = (mbb as any)?.masterBar?.index ?? null;
+                                    // Try all plausible AlphaTab bar bounds object shapes
+                                    const resolvedIdx =
+                                        (mbb as any)?.masterBar?.index ??
+                                        (mbb as any)?.bar?.masterBar?.index ??
+                                        (mbb as any)?.bar?.index ??
+                                        (mbb as any)?.masterBarBounds?.masterBar?.index ??
+                                        (mbb as any)?.index ??
+                                        null;
+                                    mostVisibleBarIdx = resolvedIdx;
                                     mostVisibleBarX = vb.x;
                                     mostVisibleBarW = vb.w;
+
+                                    if (resolvedIdx === null) {
+                                        const now = Date.now();
+                                        const lastShapeLog = (container as any).__lastBarShapeLogAt ?? 0;
+                                        if (now - lastShapeLog > 1000) {
+                                            (container as any).__lastBarShapeLogAt = now;
+                                            console.log('[orientation-bar-shape-probe]', {
+                                                keys: Object.keys(mbb ?? {}),
+                                                masterBarIndex: (mbb as any)?.masterBar?.index ?? null,
+                                                barIndex: (mbb as any)?.bar?.index ?? null,
+                                                barMasterBarIndex: (mbb as any)?.bar?.masterBar?.index ?? null,
+                                                masterBarBoundsIndex: (mbb as any)?.masterBarBounds?.masterBar?.index ?? null,
+                                                index: (mbb as any)?.index ?? null,
+                                                visualBounds: vb,
+                                            });
+                                        }
+                                    }
+
                                     try {
                                         const mbArr = ((api as any).tickCache as any)?.masterBars ?? [];
                                         const match = mbArr.find((mb: any) => mb?.masterBar?.index === mostVisibleBarIdx);
@@ -689,6 +725,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         mostVisibleBarStartTick,
                         mostVisibleBarX,
                         mostVisibleBarW,
+                        barIdxResolved: mostVisibleBarIdx !== null,
                     });
                 });
             }, { passive: true });
@@ -1243,6 +1280,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                         cursorRef.current?.setBeat(r.beat);
                         cursorRef.current?.setTick(tick);
+                        // ── [orientation-s1-gap-probe] Does song-load-prime trigger S1 snap? ──
+                        if (ORIENTATION_ANCHOR_DEBUG) {
+                            // Match exactly what S1 uses in playerPositionChanged
+                            const scrollEl = (apiRef.current?.settings?.player as any)?.scrollElement
+                                ?? (apiRef.current?.renderer?.framer?.scrollElement as HTMLElement | null | undefined)
+                                ?? scrollContainer
+                                ?? containerRef.current;
+                            const currentScrollTop = (scrollEl as HTMLElement | null)?.scrollTop ?? null;
+                            const snapBounds = apiRef.current?.renderer?.boundsLookup;
+                            const snapSystems = snapBounds?.staffSystems ?? [];
+                            const snapBb = snapBounds?.findBeat?.(r.beat);
+                            const beatY = snapBb?.visualBounds?.y ?? null;
+                            const sysIdx = beatY != null ? findSystemIndexForY(snapSystems as any[], beatY) : null;
+                            console.log('[orientation-s1-gap-probe]', {
+                                reason: 'song-load-prime-no-s1',
+                                note: 'setBeat/setTick do NOT fire playerPositionChanged — S1 snap will NOT run here',
+                                apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
+                                curBeatAbs: r?.beat?.absolutePlaybackStart ?? null,
+                                curBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                                beatY,
+                                resolvedSysIdx: sysIdx,
+                                expectedAnchorIdx: sysIdx != null ? Math.max(0, sysIdx - 1) : null,
+                                currentScrollTop,
+                                s1WouldFireOnNextPositionChanged: false,
+                            });
+                        }
                         resolve(true);
                     };
                     requestAnimationFrame(step);
