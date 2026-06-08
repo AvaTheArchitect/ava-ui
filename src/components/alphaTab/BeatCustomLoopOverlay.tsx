@@ -636,6 +636,11 @@ export default function BeatCustomLoopOverlay({
             }
             api.player?.seekTicks?.(clickedTick);
             (window as any).__maestroManualSeek = Date.now();
+            // V1.8.5: Tell AlphaTabRenderer's seek-freeze gate which tick to
+            // expect. Without this, a stale seekTargetTickRef (e.g. 0 from a
+            // prior touch/landscape seek) would filter out the clickedTick event
+            // and both AlphaTab-internal startTick seeks, leaving cursor frozen.
+            (window as any).__maestroManualSeekTargetTick = clickedTick;
             const cursor = (window as any).__maestroCursor;
             cursor?.requestSnap?.('loop-click-cursor');
             if (MOBILE_LOOP_TAP_DEBUG) {
@@ -650,9 +655,10 @@ export default function BeatCustomLoopOverlay({
                     calledRequestSnapReason: 'loop-click-cursor',
                     hasCursor: !!(window as any).__maestroCursor,
                     manualSeekFlag: (window as any).__maestroManualSeek ?? null,
+                    manualSeekTargetTick: (window as any).__maestroManualSeekTargetTick ?? null,
                     loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
                     loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
-                    note: '__maestroLoopReseat is NOT set on click path — only on toggle-ON',
+                    note: '__maestroLoopReseat NOT set on click — only toggle-ON. __maestroManualSeekTargetTick set to clickedTick.',
                 });
             }
             console.log('🎼 BeatLoop click cursor preserved:', {

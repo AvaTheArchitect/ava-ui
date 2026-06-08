@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V124
- * Date: June 7th, 2026
+ * Current version: V125
+ * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V125 LOCKS (mobile loop tap cursor fix):
+ * ✅ [LoopClickSeekFreeze] __maestroManualSeekTargetTick global bridge.
+ *         BeatCustomLoopOverlay commitBarSnap (click path) sets target tick.
+ *         AlphaTabRenderer playerPositionChanged consumes it on the first event,
+ *         updates seekTargetTickRef, and resets seekFreezeUntilRef to a fresh
+ *         300ms window. Fixes mobile loop tap cursor park blocked by stale
+ *         seekTargetTickRef=0 from prior touch-seek freeze. AlphaTab's internal
+ *         api.playbackRange startTick-seek is also correctly filtered
+ *         (|7681-8160|=479 > FAR_TICKS=240). Do not remove.
  *
  * V124 LOCKS (orientation rotation fixes confirmed):
  * ✅ [OrientationPrimeSnap] snapPortraitToBeatRow() — one-shot S1 vertical
@@ -1823,6 +1833,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 // ── Portrait cursor engine ────────────────────────────────────
                 if (!cursorRef.current) return;
+
+                // V1.8.5: Consume loop-click seek target from BeatCustomLoopOverlay.
+                // commitBarSnap (click path) sets __maestroManualSeekTargetTick = clickedTick
+                // alongside __maestroManualSeek. If seekTargetTickRef is stale (e.g. 0 from
+                // a prior touch/landscape seek still inside its 300ms freeze window), the gate
+                // below would filter out clickedTick events because |tickRaw - 0| >> FAR_TICKS.
+                // Updating seekTargetTickRef here ensures the gate targets the correct tick.
+                {
+                    const pendingTarget = (window as any).__maestroManualSeekTargetTick;
+                    const manualSeekTs = (window as any).__maestroManualSeek;
+                    if (pendingTarget != null && manualSeekTs && Date.now() - manualSeekTs < 500) {
+                        seekTargetTickRef.current = pendingTarget;
+                        seekFreezeUntilRef.current = Date.now() + 300;
+                        (window as any).__maestroManualSeekTargetTick = null;
+                    }
+                }
 
                 const FAR_TICKS = 240;
                 if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
