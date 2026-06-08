@@ -204,7 +204,9 @@ export class MaestroCursorV2 {
             expandedDur: this.expandedBeatDuration,
             ratio: dur > 0 ? (this.expandedBeatDuration / dur).toFixed(2) : 'n/a',
             currentNoteX: this.currentNoteX.toFixed(1),
+            currentY: Number(this.currentY.toFixed(1)),
             nextNoteX: (this.nextNoteX as number | null)?.toFixed(1) ?? '—',
+            beatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
         });
     }
 

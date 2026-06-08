@@ -203,6 +203,12 @@ export default function BeatCustomLoopOverlay({
     // Mobile loop tap diagnostic. Set false to silence after root cause confirmed.
     const MOBILE_LOOP_TAP_DEBUG = true;
 
+    // Sprint A: Page-mode loop/cursor row mismatch diagnostic.
+    const PAGE_ROW_DEBUG = true;
+
+    // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
+    const LANDSCAPE_LOOP_DEBUG = true;
+
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<'start' | 'end' | null>(null);
@@ -641,6 +647,43 @@ export default function BeatCustomLoopOverlay({
             // prior touch/landscape seek) would filter out the clickedTick event
             // and both AlphaTab-internal startTick seeks, leaving cursor frozen.
             (window as any).__maestroManualSeekTargetTick = clickedTick;
+            if (PAGE_ROW_DEBUG) {
+                const surfaceEl = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+                const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
+                const vbProbe = getBeatVB(snapBeat);
+                const systems: any[] = api?.renderer?.boundsLookup?.staffSystems ?? [];
+                const resolvedBeatSystemIndex = systems.findIndex((sys: any) =>
+                    (sys?.bars ?? []).some((mbb: any) =>
+                        (mbb?.masterBar?.index ?? mbb?.index) === barIdx
+                    )
+                );
+                const barRectsProbe = buildBarRects(barIdx);
+                console.log('[page-loop-cursor-row-probe]', {
+                    reason: 'commitBarSnap-click',
+                    clickedTick,
+                    clickedBarIdx: barIdx,
+                    startTick,
+                    endTick,
+                    clientX: downXRef.current,
+                    clientY: downYRef.current,
+                    surfaceRectTop: surfaceRect?.top ?? null,
+                    surfaceRectLeft: surfaceRect?.left ?? null,
+                    surfaceScrollTop: surfaceEl?.scrollTop ?? 0,
+                    windowScrollY: typeof window !== 'undefined' ? window.scrollY : null,
+                    visualViewportOffsetTop: typeof window !== 'undefined' ? (window.visualViewport?.offsetTop ?? 0) : null,
+                    visualViewportHeight: typeof window !== 'undefined' ? (window.visualViewport?.height ?? null) : null,
+                    resolvedBeatX: vbProbe ? vbProbe.x + vbProbe.w / 2 : null,
+                    resolvedBeatY: vbProbe?.y ?? null,
+                    resolvedBeatSystemIndex,
+                    resolvedBeatBarIdx: barIdx,
+                    firstBarRectX: barRectsProbe[0]?.x ?? null,
+                    firstBarRectY: barRectsProbe[0]?.y ?? null,
+                    isStripRender: isLandscape,
+                    manualSeekTargetTick: (window as any).__maestroManualSeekTargetTick ?? null,
+                    manualSeekAge: (window as any).__maestroManualSeek
+                        ? Date.now() - (window as any).__maestroManualSeek : null,
+                });
+            }
             const cursor = (window as any).__maestroCursor;
             cursor?.requestSnap?.('loop-click-cursor');
             if (MOBILE_LOOP_TAP_DEBUG) {
@@ -1187,6 +1230,44 @@ export default function BeatCustomLoopOverlay({
 
         if (resolvedRects.length) {
             setRectsWithReason(resolvedRects, `rebuildFromPlaybackRange:${reason}`);
+        }
+
+        if (LANDSCAPE_LOOP_DEBUG && isLandscape) {
+            const firstR = resolvedRects[0] ?? null;
+            const systems: any[] = api?.renderer?.boundsLookup?.staffSystems ?? [];
+            const firstRectSystemIndex = firstR == null ? -1 : systems.findIndex((sys: any) =>
+                (sys?.bars ?? []).some((mbb: any) => {
+                    const b = mbb?.visualBounds ?? mbb?.bars?.[0]?.visualBounds;
+                    return b && Math.abs(b.y - firstR.y) < 4;
+                })
+            );
+            const surfaceEl = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+            console.log('[landscape-loop-overlay-rects]', {
+                reason: 'landscape-loop-overlay-rects',
+                isLandscape: true,
+                overlayReturnsNull: true,
+                rectsCount: resolvedRects.length,
+                firstRectTop: firstR?.y ?? null,
+                firstRectLeft: firstR?.x ?? null,
+                firstRectWidth: firstR?.w ?? null,
+                firstRectSystemIndex,
+                startBarIdx,
+                endBarIdx,
+                surfaceScrollWidth: surfaceEl?.scrollWidth ?? null,
+                surfaceScrollLeft: surfaceEl?.scrollLeft ?? null,
+            });
+        }
+        if (PAGE_ROW_DEBUG && !isLandscape) {
+            const firstR = resolvedRects[0] ?? null;
+            console.log('[page-loop-cursor-row-probe]', {
+                reason: 'loop-overlay-rebuild-after-click',
+                startTick: range.startTick,
+                endTick: range.endTick,
+                rectsCount: resolvedRects.length,
+                firstRectTop: firstR?.y ?? null,
+                firstRectLeft: firstR?.x ?? null,
+                firstRectBarIdx: startBarIdx,
+            });
         }
     };
 

@@ -230,6 +230,10 @@ const HARD_RESET_COOLDOWN_MS = 4000;
 const ORIENTATION_ANCHOR_DEBUG = false;
 // [loop-click-reseat-probe] Diagnostic flag — set false to silence after root cause confirmed
 const LOOP_CLICK_RESEAT_DEBUG = true;
+// Sprint A: Page-mode loop/cursor row mismatch diagnostic.
+const PAGE_ROW_DEBUG = true;
+// Sprint B: Landscape loop overlay + cursor-prime diagnostic.
+const LANDSCAPE_LOOP_DEBUG = true;
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -298,18 +302,60 @@ function landscapeInitialAnchor(
         const cursorSurfaceX = getCursorSurfaceX(container);
         const reachableFloor = cursorSurfaceX + 4;
         const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[landscape-cursor-prime-probe]', {
+                reason: 'landscapeInitialAnchor-start',
+                currentApiTick: api.tickPosition,
+                playbackRange: api?.playbackRange ?? null,
+                loopEnabled: !!(api?.playbackRange),
+                probeTicks: PROBE_TICKS,
+                reachableFloor,
+                cursorSurfaceX,
+                currentScrollLeft: container.scrollLeft,
+            });
+        }
         for (const probe of PROBE_TICKS) {
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
-            if (!bb?.visualBounds) continue;
+            if (!bb?.visualBounds) {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-cursor-prime-probe]', {
+                        reason: 'landscapeInitialAnchor-probe',
+                        probeTick: probe,
+                        beatX: null,
+                        reachableFloor,
+                        wouldSnap: false,
+                        currentApiTick: api.tickPosition,
+                    });
+                }
+                continue;
+            }
             const beatX = typeof bb.onNotesX === 'number'
                 ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.log('[landscape-cursor-prime-probe]', {
+                    reason: 'landscapeInitialAnchor-probe',
+                    probeTick: probe,
+                    beatX: Number(beatX.toFixed(1)),
+                    reachableFloor,
+                    wouldSnap: beatX >= reachableFloor,
+                    currentApiTick: api.tickPosition,
+                });
+            }
             if (beatX >= reachableFloor) {
                 const snap = Math.max(0, beatX - cursorSurfaceX);
                 container.scrollLeft = snap;
                 targetScrollLeftRef.current = snap;
                 return;
             }
+        }
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[landscape-cursor-prime-probe]', {
+                reason: 'landscapeInitialAnchor-fallthrough',
+                note: 'no probe tick matched reachableFloor — scrollLeft set to 0',
+                currentApiTick: api.tickPosition,
+                playbackRange: api?.playbackRange ?? null,
+            });
         }
         container.scrollLeft = 0;
         targetScrollLeftRef.current = 0;
@@ -1476,6 +1522,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!tickCache?.findBeat || !bounds?.findBeat) return;
                 const trackSet = getTrackSet(api);
                 const tick = api.tickPosition ?? 0;
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-cursor-prime-probe]', {
+                        reason: 'primeLandscapeState-start',
+                        inputTick: tick,
+                        apiTickPosition: api.tickPosition,
+                        playbackRange: api?.playbackRange ?? null,
+                        loopEnabled: loopEnabledRef.current,
+                        currentScrollLeft: ctr.scrollLeft,
+                    });
+                }
                 const r = tickCache.findBeat(trackSet, tick);
                 const bb = r?.beat ? bounds.findBeat(r.beat) : null;
                 if (!bb?.visualBounds) return;
@@ -1503,6 +1559,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 };
                 const cursorSurfaceX = getCursorSurfaceX(ctr);
                 const snap = Math.max(0, curBeatX - cursorSurfaceX);
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-cursor-prime-probe]', {
+                        reason: 'primeLandscapeState-end',
+                        inputTick: tick,
+                        resolvedBeatTick: beat.absolutePlaybackStart ?? tick,
+                        resolvedBeatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
+                        resolvedBeatX: Number(curBeatX.toFixed(1)),
+                        scrollLeftBefore: ctr.scrollLeft,
+                        scrollLeftAfter: snap,
+                        targetScrollLeft: snap,
+                    });
+                }
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
             };
@@ -1606,6 +1674,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             landscapeCursorRef.current = new FixedLandscapeCursor(
                                 wrapper, h, () => getFixedCursorX(h)
                             );
+                        }
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+                            console.log('[landscape-cursor-prime-probe]', {
+                                reason: 'landscape-cursor-created',
+                                apiTickPosition: api.tickPosition,
+                                playbackRange: api?.playbackRange ?? null,
+                                loopEnabled: loopEnabledRef.current,
+                                systemsLength: systems.length,
+                                firstSystemBars: (systems[0] as any)?.bars?.length ?? null,
+                                surfaceW: h.querySelector('.at-surface')?.scrollWidth ?? null,
+                                containerW: h.clientWidth,
+                                containerScrollLeft: h.scrollLeft,
+                            });
                         }
                         h.querySelectorAll('.at-cursor-bar, .at-cursor-beat, .at-cursor')
                             .forEach(n => {
@@ -2207,6 +2289,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         liveRangeStartTick: liveRange?.startTick ?? null,
                                         manualSeekAge: (window as any).__maestroManualSeek
                                             ? Date.now() - (window as any).__maestroManualSeek : null,
+                                    });
+                                }
+                                if (PAGE_ROW_DEBUG) {
+                                    console.log('[page-loop-cursor-row-probe]', {
+                                        reason: 'V117-regression-blocked-cursor',
+                                        incomingStart,
+                                        prevAbs,
+                                        incomingBarIdx: curBeat?.voice?.bar?.index
+                                            ?? curBeat?.voice?.bar?.masterBar?.index ?? null,
+                                        prevBarIdx: stableCurBeatRef.current?.voice?.bar?.index
+                                            ?? stableCurBeatRef.current?.voice?.bar?.masterBar?.index ?? null,
+                                        tick,
+                                        liveRangeStartTick: liveRange?.startTick ?? null,
+                                        manualSeekAge: (window as any).__maestroManualSeek
+                                            ? Date.now() - (window as any).__maestroManualSeek : null,
+                                        allowBacktrackUntil: (window as any).__maestroAllowBacktrackUntil ?? null,
+                                        allowBacktrackActive: Date.now()
+                                            < ((window as any).__maestroAllowBacktrackUntil ?? 0),
+                                        note: 'cursor blocked — loop click did not set __maestroAllowBacktrackUntil',
                                     });
                                 }
                                 return;
