@@ -2,13 +2,25 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V123
+ * Current version: V124
  * Date: June 7th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
- * V123 DIAGNOSTIC:
+ * V124 LOCKS (orientation rotation fixes confirmed):
+ * ✅ [OrientationPrimeSnap] snapPortraitToBeatRow() — one-shot S1 vertical
+ *     snap after strip-to-page renderFinished. Called from
+ *     ensureCursorAndAnchorOnce after setBeat/setTick. Fixes Landscape scroll
+ *     → Portrait page anchor mismatch (scrollTop stayed at 0 while cursor
+ *     was correctly primed to the live tick). Do not remove.
+ *
+ * ✅ [CursorBeatOrdering] lastBeatX/lastBeatY added to MaestroCursor2.
+ *     Separates beat ordering guard from _applyTransform animation floor-clamp.
+ *     Fixes active-playback Landscape → Portrait cursor barline pause caused
+ *     by setTick LERP advancing lastX past same-row note-heads after prime.
+ *     Do not remove.
+ *
+ * V123 DIAGNOSTIC (probes confirmed, ORIENTATION_ANCHOR_DEBUG now false):
  * 🔍 [orientation-anchor-probe] Landscape scroll → Portrait anchor diagnostic.
- *     ORIENTATION_ANCHOR_DEBUG = true (temporary). Remove after root cause confirmed.
  *     Probes: landscape-scroll, orientation-change, portrait-s1-snap,
  *     orientation-cursor-probe (song-load, loop-play-start).
  *     lastLandscapeVisibleBarRef: diagnostic ref only — not wired to behavior.
@@ -193,8 +205,8 @@ const CURSOR_BIAS_PX = 0;
 const SCROLL_EASE = 0.18;
 const MOBILE_LANDSCAPE_MAX_W = 900;
 const HARD_RESET_COOLDOWN_MS = 4000;
-// [orientation-anchor-probe] V123 diagnostic flag — set false to silence probes
-const ORIENTATION_ANCHOR_DEBUG = true;
+// [orientation-anchor-probe] V123 diagnostic flag — probes confirmed, silenced for V124
+const ORIENTATION_ANCHOR_DEBUG = false;
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
