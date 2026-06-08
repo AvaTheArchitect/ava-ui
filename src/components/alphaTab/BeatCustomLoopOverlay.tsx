@@ -200,6 +200,9 @@ export default function BeatCustomLoopOverlay({
     // [loop-overlay-rebuild] is always on — it confirms self-heal in production.
     const LOOP_OVERLAY_DEBUG = false;
 
+    // Mobile loop tap diagnostic. Set false to silence after root cause confirmed.
+    const MOBILE_LOOP_TAP_DEBUG = true;
+
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<'start' | 'end' | null>(null);
@@ -551,6 +554,19 @@ export default function BeatCustomLoopOverlay({
      */
     const commitBarSnap = (beat: any, source: string): boolean => {
         const clickedTick = tickOf(beat);
+        if (MOBILE_LOOP_TAP_DEBUG) {
+            console.log('[mobile-loop-commit-probe]', {
+                reason: 'commitBarSnap-entry',
+                source,
+                clickedTick,
+                beatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
+                apiTickBefore: (api as any)?.tickPosition ?? null,
+                playbackRange: api?.playbackRange ?? null,
+                loopEnabled: loopRef.current,
+                hasPlayer: !!(api as any)?.player,
+                hasSeekTicks: typeof (api as any)?.player?.seekTicks === 'function',
+            });
+        }
         // 🔥 V1.7.6: Grace-skip — applies to ALL callers (click + toggle-ON).
         // graceType===2 beats are pre-bar slide-in anchors whose ticks fall
         // inside the PREVIOUS bar's playback range. Walk forward same-bar to
@@ -622,6 +638,23 @@ export default function BeatCustomLoopOverlay({
             (window as any).__maestroManualSeek = Date.now();
             const cursor = (window as any).__maestroCursor;
             cursor?.requestSnap?.('loop-click-cursor');
+            if (MOBILE_LOOP_TAP_DEBUG) {
+                console.log('[mobile-loop-cursor-probe]', {
+                    reason: 'commitBarSnap-click-cursor',
+                    source,
+                    clickedTick,
+                    startTick,
+                    endTick,
+                    apiTickAfter: (api as any)?.tickPosition ?? null,
+                    calledSeekTicks: typeof (api as any)?.player?.seekTicks === 'function',
+                    calledRequestSnapReason: 'loop-click-cursor',
+                    hasCursor: !!(window as any).__maestroCursor,
+                    manualSeekFlag: (window as any).__maestroManualSeek ?? null,
+                    loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                    loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
+                    note: '__maestroLoopReseat is NOT set on click path — only on toggle-ON',
+                });
+            }
             console.log('🎼 BeatLoop click cursor preserved:', {
                 clickedTick,
                 barStartTick: startTick,
@@ -838,6 +871,26 @@ export default function BeatCustomLoopOverlay({
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
             if (!loopRef.current) return;
+            if (MOBILE_LOOP_TAP_DEBUG) {
+                const diagBeat = resolveBeatWithX(e);
+                console.log('[mobile-loop-tap-probe]', {
+                    reason: 'onDown',
+                    eventType: 'mousedown',
+                    pointerType: (e as any).pointerType ?? null,
+                    clientX: Number(e.clientX.toFixed(1)),
+                    clientY: Number(e.clientY.toFixed(1)),
+                    mouseX: diagBeat?.mouseX != null ? Number(diagBeat.mouseX.toFixed(1)) : null,
+                    resolvedBeatTick: diagBeat?.beat ? tickOf(diagBeat.beat) : null,
+                    resolvedBeatBarIdx: diagBeat?.beat?.voice?.bar?.index
+                        ?? diagBeat?.beat?.voice?.bar?.masterBar?.index ?? null,
+                    wasInsideHighlight: rectsRef.current.length > 0 && isPointerInsideLoopHighlight(e),
+                    loopEnabled: loopRef.current,
+                    apiTickBefore: (api as any)?.tickPosition ?? null,
+                    playbackRange: api?.playbackRange ?? null,
+                    targetTagName: (e.target as HTMLElement)?.tagName ?? null,
+                    targetInAtSurface: !!(e.target as HTMLElement)?.closest?.('.at-surface'),
+                });
+            }
             // Clicking the existing loop highlight should not move/recreate the loop.
             // Handles stop propagation separately, so handle drags still work.
             if (isPointerInsideLoopHighlight(e)) {
@@ -935,6 +988,25 @@ export default function BeatCustomLoopOverlay({
             const pixelDist = Math.sqrt(dx * dx + dy * dy);
             const isClickIntent = pixelDist <= LOOP_CLICK_INTENT_DIST;
 
+            if (MOBILE_LOOP_TAP_DEBUG) {
+                console.log('[mobile-loop-tap-probe]', {
+                    reason: 'onUp',
+                    eventType: 'mouseup',
+                    pointerType: (e as any).pointerType ?? null,
+                    clientX: Number(e.clientX.toFixed(1)),
+                    clientY: Number(e.clientY.toFixed(1)),
+                    pixelDist: Number(pixelDist.toFixed(1)),
+                    isClickIntent,
+                    beatCrossed: beatCrossedRef.current,
+                    willBarSnap: !beatCrossedRef.current || isClickIntent,
+                    startBeatTick: sb ? tickOf(sb) : null,
+                    startBeatBarIdx: sb?.voice?.bar?.index ?? sb?.voice?.bar?.masterBar?.index ?? null,
+                    apiTickBefore: (api as any)?.tickPosition ?? null,
+                    playbackRange: api?.playbackRange ?? null,
+                    loopEnabled: loopRef.current,
+                });
+            }
+
             // ── Click → bar-snap ───────────────────────────────
             // Treat small pointer movement as click intent even if the beat resolver
             // briefly crosses into an adjacent beat. Real-world click drift can hit
@@ -972,12 +1044,35 @@ export default function BeatCustomLoopOverlay({
             onLoopChange?.(startTick, endTick);
         };
 
+        // ── [mobile-loop-tap-probe] Touch diagnostic — no behavior change ──────
+        // Confirms whether touchstart reaches the surface on mobile/PWA.
+        // If this log never fires, iOS is absorbing the touch upstream (AlphaTab SVG).
+        // If it fires but [mobile-loop-tap-probe] reason:'onDown' never fires,
+        // iOS is not synthesizing mousedown (touch was preventDefault'd upstream).
+        const onTouchDiag = (e: TouchEvent) => {
+            if (!MOBILE_LOOP_TAP_DEBUG || !loopRef.current) return;
+            const t = e.touches[0] ?? e.changedTouches?.[0] ?? null;
+            console.log('[mobile-loop-tap-probe]', {
+                reason: 'touchstart-surface',
+                eventType: 'touchstart',
+                clientX: t ? Number(t.clientX.toFixed(1)) : null,
+                clientY: t ? Number(t.clientY.toFixed(1)) : null,
+                loopEnabled: loopRef.current,
+                apiTickBefore: (api as any)?.tickPosition ?? null,
+                playbackRange: api?.playbackRange ?? null,
+                targetTagName: (e.target as HTMLElement)?.tagName ?? null,
+                targetInAtSurface: !!(e.target as HTMLElement)?.closest?.('.at-surface'),
+            });
+        };
+
         surface.addEventListener('mousedown', onDown);
+        surface.addEventListener('touchstart', onTouchDiag, { passive: true });
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
 
         return () => {
             surface.removeEventListener('mousedown', onDown);
+            surface.removeEventListener('touchstart', onTouchDiag);
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
