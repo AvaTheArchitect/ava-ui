@@ -207,6 +207,8 @@ const MOBILE_LANDSCAPE_MAX_W = 900;
 const HARD_RESET_COOLDOWN_MS = 4000;
 // [orientation-anchor-probe] V123 diagnostic flag — probes confirmed, silenced for V124
 const ORIENTATION_ANCHOR_DEBUG = false;
+// [loop-click-reseat-probe] Diagnostic flag — set false to silence after root cause confirmed
+const LOOP_CLICK_RESEAT_DEBUG = true;
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -1824,7 +1826,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const FAR_TICKS = 240;
                 if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
-                    if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) return;
+                    if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) {
+                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                            console.log('[loop-click-reseat-probe]', {
+                                reason: 'seekFreeze-gate-return',
+                                tickRaw,
+                                seekTargetTick: seekTargetTickRef.current,
+                                diff: Math.abs(tickRaw - seekTargetTickRef.current),
+                                FAR_TICKS,
+                                playbackRangeStartTick: (playbackRangeRef.current ?? (api?.playbackRange as any))?.startTick ?? null,
+                                manualSeekAge: (window as any).__maestroManualSeek
+                                    ? Date.now() - (window as any).__maestroManualSeek : null,
+                            });
+                        }
+                        return;
+                    }
                 }
 
                 // ── [loop-wrap] Live range + safety margin ────────────────────
@@ -1837,7 +1853,33 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const liveRange = playbackRangeRef.current ?? (api.playbackRange as { startTick: number; endTick: number } | null);
                 const LOOP_WRAP_MARGIN = 30; // reduced from 120 — 120 was too aggressive for 60-tick slide subdivisions
                 if (loopEnabledRef.current && liveRange) {
+                    // ── [loop-click-reseat-probe] below-startTick diagnostic ──────────────
+                    if (LOOP_CLICK_RESEAT_DEBUG && tickRaw < liveRange.startTick) {
+                        console.log('[loop-click-reseat-probe]', {
+                            reason: 'tick-below-loop-startTick',
+                            tickRaw,
+                            liveRangeStartTick: liveRange.startTick,
+                            liveRangeEndTick: liveRange.endTick,
+                            delta: liveRange.startTick - tickRaw,
+                            isPlaying: (api.playerState ?? 0) === 1,
+                            manualSeekAge: (window as any).__maestroManualSeek
+                                ? Date.now() - (window as any).__maestroManualSeek : null,
+                            loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                        });
+                    }
                     if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
+                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                            console.log('[loop-click-reseat-probe]', {
+                                reason: 'loop-wrap-guard-fired',
+                                tickRaw,
+                                liveRangeStartTick: liveRange.startTick,
+                                liveRangeEndTick: liveRange.endTick,
+                                endTickMinusMargin: liveRange.endTick - LOOP_WRAP_MARGIN,
+                                isPlaying: (api.playerState ?? 0) === 1,
+                                manualSeekAge: (window as any).__maestroManualSeek
+                                    ? Date.now() - (window as any).__maestroManualSeek : null,
+                            });
+                        }
                         cursorRef.current.requestSnap('loop-wrap');
                         resetBeatAcceptance();
                         stableCurBeatRef.current = null;
@@ -2119,6 +2161,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     lastRegressionLogRef.current = regKey;
                                     console.warn('[V117] structural regression discarded');
                                 }
+                                if (LOOP_CLICK_RESEAT_DEBUG) {
+                                    console.log('[loop-click-reseat-probe]', {
+                                        reason: 'V117-regression-return',
+                                        incomingStart,
+                                        prevAbs,
+                                        tick,
+                                        liveRangeStartTick: liveRange?.startTick ?? null,
+                                        manualSeekAge: (window as any).__maestroManualSeek
+                                            ? Date.now() - (window as any).__maestroManualSeek : null,
+                                    });
+                                }
                                 return;
                             }
                         }
@@ -2127,6 +2180,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!isActuallyPlaying || inBypassWindow) {
                         lastAcceptedBeatStartRef.current = incomingStart;
                     } else if (lastAcceptedBeatStartRef.current >= 0 && incomingStart < lastAcceptedBeatStartRef.current - MIN_BACKTRACK_TICKS) {
+                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                            console.log('[loop-click-reseat-probe]', {
+                                reason: 'D1-backtrack-guard-return',
+                                incomingStart,
+                                lastAcceptedBeatStart: lastAcceptedBeatStartRef.current,
+                                diff: lastAcceptedBeatStartRef.current - incomingStart,
+                                MIN_BACKTRACK_TICKS,
+                                tick,
+                                liveRangeStartTick: liveRange?.startTick ?? null,
+                                inBypassWindow,
+                                manualSeekAge: (window as any).__maestroManualSeek
+                                    ? Date.now() - (window as any).__maestroManualSeek : null,
+                            });
+                        }
                         return;
                     } else {
                         lastAcceptedBeatStartRef.current = incomingStart;
@@ -2642,6 +2709,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const primeT = hasValidOverride ? overrideTick : liveLoopRange.startTick;
                     if (hasValidOverride) {
                         (window as any).__maestroLoopPlayStartOverrideTick = null;
+                    }
+                    if (LOOP_CLICK_RESEAT_DEBUG) {
+                        console.log('[loop-click-reseat-probe]', {
+                            reason: 'playerStateChanged-loop-prime',
+                            isPlaying,
+                            primeT,
+                            hasValidOverride,
+                            overrideTick,
+                            liveLoopRangeStartTick: liveLoopRange.startTick,
+                            liveLoopRangeEndTick: liveLoopRange.endTick,
+                            apiTickBefore: (api as any)?.tickPosition ?? null,
+                            manualSeekAge: (window as any).__maestroManualSeek
+                                ? Date.now() - (window as any).__maestroManualSeek : null,
+                            loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                            loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
+                        });
                     }
                     if (api.tickPosition !== undefined) api.tickPosition = primeT;
                     api.player?.seekTicks?.(primeT);
