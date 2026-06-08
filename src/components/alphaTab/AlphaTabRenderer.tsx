@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V125
+ * Current version: V126
  * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V126 LOCKS (portrait touch-seek interference fix):
+ * ✅ [PortraitTouchEndGuard] handleTouchEnd else-branch (drag-seek) is now
+ *         gated on isStripEnd (landscape/strip mode only), matching handleTouchStart
+ *         and handleTouchMove. In portrait, handleTouchStart returns early so
+ *         touchState.startX stays 0 → dx = -clientX (always large) → wasTap = false
+ *         → else-branch ran on every portrait touchend → seeked to tick 0 →
+ *         poisoned seekTargetTickRef 300ms before BeatCustomLoopOverlay's
+ *         synthesized mousedown. Fix: wrap seek block in if (isStripEnd).
+ *         Cleanup lines (isDraggingRef, __isUserDragging, touchState.isDragging)
+ *         remain unconditional. Do not remove.
  *
  * V125 LOCKS (mobile loop tap cursor fix):
  * ✅ [LoopClickSeekFreeze] __maestroManualSeekTargetTick global bridge.
@@ -3013,46 +3024,54 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                 } else {
                     const api = apiRef.current;
-                    targetScrollLeftRef.current = container.scrollLeft;
-                    if (api?.isReadyForPlayback) {
-                        const tickCache = (api as any)?.tickCache;
-                        const bounds = api?.renderer?.boundsLookup;
-                        if (tickCache?.findBeat && bounds?.findBeat) {
-                            const cursorSurfaceX = getCursorSurfaceX(container);
-                            const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
-                            const trackSet = getTrackSet(api);
-                            const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
-                            let bestBeat: any = null, bestX = -Infinity, bestTick = 0;
-                            const BEAT_EPSILON = 2;
-                            for (const mb of masterBarsArr) {
-                                const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
-                                const stepSize = Math.max(1, Math.floor(mbDur / 32));
-                                for (let t = mb.start; t < mb.start + mbDur; t += stepSize) {
-                                    const r = tickCache.findBeat(trackSet, t);
-                                    const b = r?.beat;
-                                    if (!b) continue;
-                                    const bb = bounds.findBeat(b);
-                                    if (!bb?.visualBounds) continue;
-                                    const bx = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
-                                    if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) { bestX = bx; bestBeat = b; bestTick = mb.start + (b.playbackStart ?? 0); }
+                    // Portrait mode: handleTouchStart returns early so touchState.startX
+                    // stays 0, making dx always large and wasTap always false. Without
+                    // this guard the drag-seek branch ran on every portrait touchend,
+                    // seeked to tick 0 (bestBeat fallback), and poisoned seekTargetTickRef
+                    // 300ms before BeatCustomLoopOverlay's synthesized mousedown.
+                    const isStripEnd = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                    if (isStripEnd) {
+                        targetScrollLeftRef.current = container.scrollLeft;
+                        if (api?.isReadyForPlayback) {
+                            const tickCache = (api as any)?.tickCache;
+                            const bounds = api?.renderer?.boundsLookup;
+                            if (tickCache?.findBeat && bounds?.findBeat) {
+                                const cursorSurfaceX = getCursorSurfaceX(container);
+                                const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
+                                const trackSet = getTrackSet(api);
+                                const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
+                                let bestBeat: any = null, bestX = -Infinity, bestTick = 0;
+                                const BEAT_EPSILON = 2;
+                                for (const mb of masterBarsArr) {
+                                    const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
+                                    const stepSize = Math.max(1, Math.floor(mbDur / 32));
+                                    for (let t = mb.start; t < mb.start + mbDur; t += stepSize) {
+                                        const r = tickCache.findBeat(trackSet, t);
+                                        const b = r?.beat;
+                                        if (!b) continue;
+                                        const bb = bounds.findBeat(b);
+                                        if (!bb?.visualBounds) continue;
+                                        const bx = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+                                        if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) { bestX = bx; bestBeat = b; bestTick = mb.start + (b.playbackStart ?? 0); }
+                                    }
                                 }
-                            }
-                            if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) { bestTick = 0; bestBeat = true; }
-                            if (bestBeat) {
-                                seekTargetTickRef.current = bestTick;
-                                seekFreezeUntilRef.current = Date.now() + 300;
-                                const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
-                                if (seekTicks) seekTicks(bestTick);
-                                api.tickPosition = bestTick;
+                                if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) { bestTick = 0; bestBeat = true; }
+                                if (bestBeat) {
+                                    seekTargetTickRef.current = bestTick;
+                                    seekFreezeUntilRef.current = Date.now() + 300;
+                                    const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                                    if (seekTicks) seekTicks(bestTick);
+                                    api.tickPosition = bestTick;
+                                    resetBeatAcceptance();
+                                    landscapeScrollStateRef.current = null;
+                                }
+                                cursorRef.current?.requestSnap('touch-seek');
                                 resetBeatAcceptance();
-                                landscapeScrollStateRef.current = null;
+                                targetScrollLeftRef.current = container.scrollLeft;
+                                if ((api.playerState ?? 0) === 1) startLandscapeScrollLoop(container, api);
+                            } else {
+                                startLandscapeScrollLoop(container, api);
                             }
-                            cursorRef.current?.requestSnap('touch-seek');
-                            resetBeatAcceptance();
-                            targetScrollLeftRef.current = container.scrollLeft;
-                            if ((api.playerState ?? 0) === 1) startLandscapeScrollLoop(container, api);
-                        } else {
-                            startLandscapeScrollLoop(container, api);
                         }
                     }
                 }

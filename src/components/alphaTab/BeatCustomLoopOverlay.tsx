@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.5 — Loop Reseat Global Flag
- * Date: June 7th, 2026
+ * BeatCustomLoopOverlay v1.8.6 — Loop Reseat Global Flag
+ * Date: June 8th, 2026
  *
  * 🔥 V1.8.4 CHANGES:
  * ✅ Loop reseat global flag: commitBarSnap sets window.__maestroLoopReseat
