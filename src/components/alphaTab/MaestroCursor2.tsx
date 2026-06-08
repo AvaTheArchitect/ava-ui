@@ -69,6 +69,9 @@ export class MaestroCursorV2 {
     private lastY = -9999;
     private lastH = -1;
 
+    private lastBeatX = -9999;   // note-head X of last accepted setBeat (ordering guard only)
+    private lastBeatY = -9999;   // vb.y of last accepted setBeat (ordering guard only)
+
     private hasInitialPosition = false;
     private snapPending = false;
 
@@ -145,12 +148,12 @@ export class MaestroCursorV2 {
 
         // ── Out-of-order guard ───────────────────────────────────────────────
         // Defense-in-depth: renderer D1 gate is primary filter.
-        // lastX is reset to -9999 by requestSnap() on loop-reseat/seek,
-        // so this guard never fires on the first beat after a reseat.
+        // lastBeatX/lastBeatY track only setBeat-accepted positions; setTick
+        // interpolation advancing lastX cannot contaminate this guard.
         const newNoteX = typeof bb.onNotesX === 'number' ? bb.onNotesX : vb.x;
-        const sameRowAsLast = Math.abs(vb.y - this.lastY) < 5;
-        const isOutOfOrder = sameRowAsLast && this.lastX > -9000
-            && (newNoteX - BAR_WIDTH / 2) < this.lastX - BACKSTEP_PX;
+        const sameRowAsLast = Math.abs(vb.y - this.lastBeatY) < 5;
+        const isOutOfOrder = sameRowAsLast && this.lastBeatX > -9000
+            && newNoteX < this.lastBeatX - BACKSTEP_PX;
         if (isOutOfOrder) {
             console.log('[CursorV2] out-of-order beat discarded', { scanStart, newNoteX: newNoteX.toFixed(1) });
             return;
@@ -187,10 +190,13 @@ export class MaestroCursorV2 {
 
         const finalX = this.currentNoteX - BAR_WIDTH / 2;
         const finalY = this.currentY;
-        const sameRow = Math.abs(finalY - this.lastY) < 5;
-        const isBackward = sameRow && this.lastX > -9000 && finalX < this.lastX - BACKSTEP_PX;
+        const sameRow = Math.abs(finalY - this.lastBeatY) < 5;
+        const isBackward = sameRow && this.lastBeatX > -9000
+            && finalX < (this.lastBeatX - BAR_WIDTH / 2) - BACKSTEP_PX;
         this._applyTransform(finalX, finalY, this.currentH, /* snap */ !isBackward);
         this.hasInitialPosition = true;
+        this.lastBeatX = this.currentNoteX;
+        this.lastBeatY = this.currentY;
         this._show();
 
         console.log('[CursorV2] setBeat', {
@@ -268,8 +274,10 @@ export class MaestroCursorV2 {
         this.stayPutMode = false;
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
-        this.lastX = -9999;   // [V1.2] reset out-of-order guard on seek/reseat
-        this.lastY = -9999;   // [V1.2] reset out-of-order guard on seek/reseat
+        this.lastX = -9999;     // [V1.2] reset animation floor-clamp on seek/reseat
+        this.lastY = -9999;     // [V1.2] reset animation floor-clamp on seek/reseat
+        this.lastBeatX = -9999; // reset ordering guard
+        this.lastBeatY = -9999; // reset ordering guard
         console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
     }
 
