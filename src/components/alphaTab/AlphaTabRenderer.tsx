@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V130
- * Date: June 8th, 2026
+ * Current version: V131
+ * Date: June 9th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V131 LOCKS (landscape playback anchor scope):
+ * ✅ [LandscapePlaybackAnchorScope] primeLandscapeState uses live
+ *         api.tickPosition during active playback instead of stale
+ *         getIntentionalTick(). getIntentionalTick() remains for
+ *         rotation/render anchoring only when not actively playing.
+ *         Prevents Landscape scroll state from freezing at a parked
+ *         cursor tick while audio plays from loop startTick.
+ *         __maestroLoopPlayStartOverrideTick is cleared after first
+ *         Play use or re-verified as already one-shot. Do not remove
+ *         the active-playback tick guard.
  *
  * V130 LOCKS (landscape loop click guard):
  * ✅ [LandscapeLoopClickGuard] BeatCustomLoopOverlay onDown is gated on
@@ -272,6 +283,8 @@ const HARD_RESET_COOLDOWN_MS = 4000;
 const ORIENTATION_ANCHOR_DEBUG = false;
 // [loop-click-reseat-probe] Diagnostic flag — set false to silence after root cause confirmed
 const LOOP_CLICK_RESEAT_DEBUG = true;
+// Sprint C: Every Maestro-originated seek — labels call site, exposes getIntentionalTick() leak.
+const SEEK_DIAGNOSTIC_DEBUG = true;
 // Sprint A: Page-mode loop/cursor row mismatch diagnostic.
 const PAGE_ROW_DEBUG = true;
 // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
@@ -1574,7 +1587,41 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const bounds = api?.renderer?.boundsLookup;
                 if (!tickCache?.findBeat || !bounds?.findBeat) return;
                 const trackSet = getTrackSet(api);
-                const tick = getIntentionalTick() ?? api.tickPosition ?? 0;
+                // [LandscapePlaybackAnchorScope] Use live api.tickPosition while playing;
+                // fall back to getIntentionalTick() only when paused/stopped so rotation
+                // and render anchoring still land on the last intended beat.
+                const isActivelyPlaying = isPlayingRef.current || (api as any)?.playerState === 1;
+                const tick = isActivelyPlaying
+                    ? ((api as any)?.tickPosition ?? 0)
+                    : (getIntentionalTick() ?? (api as any)?.tickPosition ?? 0);
+                if (SEEK_DIAGNOSTIC_DEBUG) {
+                    const intentionalT = getIntentionalTick();
+                    const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                    console.log('[maestro-seek-diagnostic]', {
+                        reason: 'primeLandscapeState-SCROLL-NOT-A-SEEK',
+                        callSite: 'primeLandscapeState',
+                        targetTick: tick,
+                        isActivelyPlaying,
+                        tickSource: isActivelyPlaying ? 'api.tickPosition' : 'getIntentionalTick()',
+                        isLandscape: isLandscapeNow,
+                        isPlaying: (api?.playerState ?? 0) === 1,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRangeRef: playbackRangeRef.current,
+                        apiPlaybackRange: api?.playbackRange ?? null,
+                        liveLoopRangeRef: loopEnabledRef.current ? (api?.playbackRange ?? null) : null,
+                        loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                        lastIntentionalTick: intentionalT,
+                        manualSeekAge: (window as any).__maestroManualSeek
+                            ? Date.now() - (window as any).__maestroManualSeek : null,
+                        apiTickPosition: api.tickPosition,
+                        scrollDivergence: tick - (api?.tickPosition ?? 0),
+                        note: !isActivelyPlaying && intentionalT !== null && Math.abs(intentionalT - (api?.tickPosition ?? 0)) > 240
+                            ? 'paused — intentional tick used for anchor (ok when not playing)'
+                            : isActivelyPlaying
+                                ? 'playing — using live api.tickPosition (scroll will track audio)'
+                                : 'ok',
+                    });
+                }
                 if (LANDSCAPE_LOOP_DEBUG) {
                     console.log('[landscape-cursor-prime-probe]', {
                         reason: 'primeLandscapeState-start',
@@ -2062,6 +2109,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastTickRef.current = null;
                         allowBacktrackUntilRef.current = Date.now() + 300;
                         const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                        if (SEEK_DIAGNOSTIC_DEBUG) {
+                            const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                            console.log('[maestro-seek-diagnostic]', {
+                                reason: 'loop-wrap',
+                                callSite: 'playerPositionChanged-loop-wrap-guard',
+                                targetTick: liveRange.startTick,
+                                isLandscape: isLandscapeNow,
+                                isPlaying: (api?.playerState ?? 0) === 1,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRangeRef: playbackRangeRef.current,
+                                apiPlaybackRange: api?.playbackRange ?? null,
+                                liveLoopRangeRef: liveRange,
+                                loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                                lastIntentionalTick: getIntentionalTick(),
+                                manualSeekAge: (window as any).__maestroManualSeek
+                                    ? Date.now() - (window as any).__maestroManualSeek : null,
+                                tickRaw,
+                                LOOP_WRAP_MARGIN,
+                                playbackRangeRefMatchesApi:
+                                    playbackRangeRef.current?.startTick === (api?.playbackRange as any)?.startTick &&
+                                    playbackRangeRef.current?.endTick === (api?.playbackRange as any)?.endTick,
+                            });
+                        }
                         if (seekTicks) seekTicks(liveRange.startTick);
                         api.tickPosition = liveRange.startTick;
                         return;
@@ -2898,8 +2968,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         overrideTick >= liveLoopRange.startTick &&
                         overrideTick < liveLoopRange.endTick;
                     const primeT = hasValidOverride ? overrideTick : liveLoopRange.startTick;
+                    // [LandscapePlaybackAnchorScope] One-shot: clear override after first Play use.
+                    // Also clears the timestamp companion so BeatCustomLoopOverlay TTL checks
+                    // don't resurrect a stale override after it was consumed here.
                     if (hasValidOverride) {
                         (window as any).__maestroLoopPlayStartOverrideTick = null;
+                        (window as any).__maestroLoopPlayStartOverrideTickAt = null;
                     }
                     if (LOOP_CLICK_RESEAT_DEBUG) {
                         console.log('[loop-click-reseat-probe]', {
@@ -2915,6 +2989,33 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 ? Date.now() - (window as any).__maestroManualSeek : null,
                             loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
                             loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
+                        });
+                    }
+                    if (SEEK_DIAGNOSTIC_DEBUG) {
+                        const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                        console.log('[maestro-seek-diagnostic]', {
+                            reason: 'loop-play-start',
+                            callSite: 'isPlaying-useEffect',
+                            targetTick: primeT,
+                            isLandscape: isLandscapeNow,
+                            isPlaying: (api?.playerState ?? 0) === 1,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRangeRef: playbackRangeRef.current,
+                            apiPlaybackRange: api?.playbackRange ?? null,
+                            liveLoopRangeRef: liveLoopRange,
+                            loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                            lastIntentionalTick: getIntentionalTick(),
+                            loopPlayStartOverrideTick: overrideTick,
+                            hasValidOverride,
+                            manualSeekAge: (window as any).__maestroManualSeek
+                                ? Date.now() - (window as any).__maestroManualSeek : null,
+                            // KEY QUESTION: is primeT driven by intentional tick or loop start?
+                            primeTSource: hasValidOverride ? '__maestroLoopPlayStartOverrideTick' : 'liveLoopRange.startTick',
+                            primeTMatchesIntentionalTick: primeT === getIntentionalTick(),
+                            primeTMatchesLoopStart: primeT === liveLoopRange.startTick,
+                            note: hasValidOverride && primeT !== liveLoopRange.startTick
+                                ? 'OVERRIDE ACTIVE — seekTicks will go to override, not loop start. This is the likely source of seek-to-7201.'
+                                : 'seeking to loop start (correct)',
                         });
                     }
                     if (api.tickPosition !== undefined) api.tickPosition = primeT;
@@ -3214,6 +3315,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     seekTargetTickRef.current = bestTick;
                                     seekFreezeUntilRef.current = Date.now() + 300;
                                     const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                                    if (SEEK_DIAGNOSTIC_DEBUG) {
+                                        const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                                        console.log('[maestro-seek-diagnostic]', {
+                                            reason: 'touch-drag-seek',
+                                            callSite: 'handleTouchEnd',
+                                            targetTick: bestTick,
+                                            isLandscape: isLandscapeNow,
+                                            isPlaying: (api?.playerState ?? 0) === 1,
+                                            loopEnabled: loopEnabledRef.current,
+                                            playbackRangeRef: playbackRangeRef.current,
+                                            apiPlaybackRange: api?.playbackRange ?? null,
+                                            liveLoopRangeRef: loopEnabledRef.current
+                                                ? (api?.playbackRange ?? null) : null,
+                                            loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                                            lastIntentionalTick: getIntentionalTick(),
+                                            manualSeekAge: (window as any).__maestroManualSeek
+                                                ? Date.now() - (window as any).__maestroManualSeek : null,
+                                            scrollLeft: container.scrollLeft,
+                                            beatXUnderCursor,
+                                            bestX,
+                                        });
+                                    }
                                     if (seekTicks) seekTicks(bestTick);
                                     api.tickPosition = bestTick;
                                     resetBeatAcceptance();
