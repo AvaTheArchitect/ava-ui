@@ -2,9 +2,22 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V126
+ * Current version: V127
  * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V127 LOCKS (page loop cursor regression + landscape anchor):
+ * ✅ [LoopClickBacktrack] commitBarSnap click path sets
+ *         __maestroAllowBacktrackUntil = Date.now() + 600. Allows
+ *         playerPositionChanged regression guard to accept intentional cursor
+ *         movement to an earlier tapped beat/bar. Matches manual handleClick
+ *         pattern. Do not remove.
+ *
+ * ✅ [LandscapeAnchorCurrentTick] landscapeInitialAnchor prepends
+ *         api.tickPosition to PROBE_TICKS. Ensures current beat position is
+ *         tried before early-song fallback probes, preventing Landscape
+ *         rotation from degrading exact beat position to bar start/scrollLeft=0.
+ *         Do not remove.
  *
  * V126 LOCKS (portrait touch-seek interference fix):
  * ✅ [PortraitTouchEndGuard] handleTouchEnd else-branch (drag-seek) is now
@@ -301,7 +314,11 @@ function landscapeInitialAnchor(
             : new Set([0]);
         const cursorSurfaceX = getCursorSurfaceX(container);
         const reachableFloor = cursorSurfaceX + 4;
-        const PROBE_TICKS = [0, 60, 120, 240, 480, 720, 960];
+        // V127: prepend live tick so current beat position is tried first.
+        // Previously only probed early-song ticks — any position past tick 960
+        // fell through to scrollLeft=0, degrading exact beat to bar start.
+        const liveTick = (api as any)?.tickPosition ?? 0;
+        const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[landscape-cursor-prime-probe]', {
                 reason: 'landscapeInitialAnchor-start',

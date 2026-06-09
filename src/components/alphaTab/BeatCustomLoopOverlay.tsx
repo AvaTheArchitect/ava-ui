@@ -647,6 +647,10 @@ export default function BeatCustomLoopOverlay({
             // prior touch/landscape seek) would filter out the clickedTick event
             // and both AlphaTab-internal startTick seeks, leaving cursor frozen.
             (window as any).__maestroManualSeekTargetTick = clickedTick;
+            // V1.8.6: Allow playerPositionChanged regression guard to accept
+            // intentional cursor movement to an earlier tapped beat/bar.
+            // Matches the manual handleClick pattern in AlphaTabRenderer.
+            (window as any).__maestroAllowBacktrackUntil = Date.now() + 600;
             if (PAGE_ROW_DEBUG) {
                 const surfaceEl = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
                 const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
