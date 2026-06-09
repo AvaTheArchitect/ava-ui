@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V129
+ * Current version: V130
  * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V130 LOCKS (landscape loop click guard):
+ * ✅ [LandscapeLoopClickGuard] BeatCustomLoopOverlay onDown is gated on
+ *         !isLandscapeRef.current. Landscape overlay rendering is intentionally
+ *         suppressed, so Landscape pointer/click interaction must also be
+ *         suppressed. Prevents invisible Landscape overlay interactions from
+ *         reaching commitBarSnap or beat-level fallback and overwriting a correct
+ *         Page-view bar-to-bar playbackRange with a tiny single-beat range
+ *         (~221 ticks). Matches existing if (isLandscape) return null render
+ *         suppress pattern. Do not remove.
  *
  * V129 LOCKS (cursor transition curtain):
  * ✅ [CursorTransitionCurtain] FixedLandscapeCursor is below the transition curtain.

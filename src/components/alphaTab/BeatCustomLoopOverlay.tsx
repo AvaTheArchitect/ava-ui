@@ -172,6 +172,7 @@ export default function BeatCustomLoopOverlay({
 }: Props) {
 
     const loopRef = useRef(loopEnabled);
+    const isLandscapeRef = useRef(isLandscape);
     const isDragging = useRef(false);
     const startBeat = useRef<any>(null);
     const endBeat = useRef<any>(null);
@@ -234,6 +235,7 @@ export default function BeatCustomLoopOverlay({
     }, [rects]);
 
     useEffect(() => { loopRef.current = loopEnabled; }, [loopEnabled]);
+    useEffect(() => { isLandscapeRef.current = isLandscape; }, [isLandscape]);
 
 
     useEffect(() => {
@@ -926,6 +928,7 @@ export default function BeatCustomLoopOverlay({
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
             if (!loopRef.current) return;
+            if (isLandscapeRef.current) return;
             if (MOBILE_LOOP_TAP_DEBUG) {
                 const diagBeat = resolveBeatWithX(e);
                 console.log('[mobile-loop-tap-probe]', {
