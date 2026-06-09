@@ -651,6 +651,8 @@ export default function BeatCustomLoopOverlay({
             // intentional cursor movement to an earlier tapped beat/bar.
             // Matches the manual handleClick pattern in AlphaTabRenderer.
             (window as any).__maestroAllowBacktrackUntil = Date.now() + 600;
+            (window as any).__maestroLastIntentionalTick = clickedTick;
+            (window as any).__maestroLastIntentionalTickAt = Date.now();
             if (PAGE_ROW_DEBUG) {
                 const surfaceEl = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
                 const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
@@ -952,6 +954,8 @@ export default function BeatCustomLoopOverlay({
                 if (result?.beat) {
                     const seekTick = tickOf(result.beat);
                     (window as any).__maestroAllowBacktrackUntil = Date.now() + 300;
+                    (window as any).__maestroLastIntentionalTick = seekTick;
+                    (window as any).__maestroLastIntentionalTickAt = Date.now();
                     if (api.tickPosition !== undefined) api.tickPosition = seekTick;
                     api.player?.seekTicks?.(seekTick);
                     (window as any).__maestroManualSeek = Date.now();

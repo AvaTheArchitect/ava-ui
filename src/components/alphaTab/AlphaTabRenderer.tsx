@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V127
+ * Current version: V128
  * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V128 LOCKS (rotation intentional tick anchor):
+ * ✅ [RotationIntentionalTickAnchor] Durable last-intentional cursor tick.
+ *     BeatCustomLoopOverlay writes __maestroLastIntentionalTick and
+ *     __maestroLastIntentionalTickAt on loop click and inside-highlight
+ *     cursor click. AlphaTabRenderer getIntentionalTick() prefers this
+ *     recent user-intended beat before api.tickPosition during
+ *     landscapeInitialAnchor, ensureCursorAndAnchorOnce / snapPortraitToBeatRow,
+ *     and primeLandscapeState. Prevents rotation from trusting AlphaTab's
+ *     playbackRange/startTick bounce after the visible cursor was correctly
+ *     parked on a later beat. TTL: 10 seconds. Do not remove.
  *
  * V127 LOCKS (page loop cursor regression + landscape anchor):
  * ✅ [LoopClickBacktrack] commitBarSnap click path sets
@@ -293,6 +304,12 @@ type MaestroCursorLike = {
     ) => void;
 };
 
+function getIntentionalTick(): number | null {
+    const t = (window as any).__maestroLastIntentionalTick;
+    const at = (window as any).__maestroLastIntentionalTickAt ?? 0;
+    return typeof t === 'number' && Date.now() - at < 10000 ? t : null;
+}
+
 // ── [L8-fix] Landscape initial anchor — retry-until-ready ────────────────────
 function landscapeInitialAnchor(
     container: HTMLElement,
@@ -317,7 +334,7 @@ function landscapeInitialAnchor(
         // V127: prepend live tick so current beat position is tried first.
         // Previously only probed early-song ticks — any position past tick 960
         // fell through to scrollLeft=0, degrading exact beat to bar start.
-        const liveTick = (api as any)?.tickPosition ?? 0;
+        const liveTick = getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
         const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[landscape-cursor-prime-probe]', {
@@ -1484,7 +1501,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const tickCache = (api as any).tickCache;
                         const bounds = api.renderer?.boundsLookup;
                         if (!tickCache || !bounds) { requestAnimationFrame(step); return; }
-                        const tick = api.tickPosition ?? 0;
+                        const tick = getIntentionalTick() ?? api.tickPosition ?? 0;
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
@@ -1538,7 +1555,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const bounds = api?.renderer?.boundsLookup;
                 if (!tickCache?.findBeat || !bounds?.findBeat) return;
                 const trackSet = getTrackSet(api);
-                const tick = api.tickPosition ?? 0;
+                const tick = getIntentionalTick() ?? api.tickPosition ?? 0;
                 if (LANDSCAPE_LOOP_DEBUG) {
                     console.log('[landscape-cursor-prime-probe]', {
                         reason: 'primeLandscapeState-start',
