@@ -161,7 +161,7 @@ export class FixedLandscapeCursor {
             width: `${CURSOR_WIDTH}px`,
             transform: 'translateX(-50%)',
             pointerEvents: 'none',
-            zIndex: '20000',
+            zIndex: '4000',
             background: 'transparent',
             overflow: 'visible',
             willChange: 'left, top, height',

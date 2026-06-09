@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V128
+ * Current version: V129
  * Date: June 8th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V129 LOCKS (cursor transition curtain):
+ * ✅ [CursorTransitionCurtain] FixedLandscapeCursor is below the transition curtain.
+ *     FixedLandscapeCursor z-index is 4000, below curtain z-index 5000 but above
+ *     score/loop layers during normal playback. Strip-to-page preclear now calls
+ *     showCurtain(curtainRef.current) before cursor teardown/render flip. Prevents
+ *     body-mounted landscape cursor from visibly sliding/floating above the score
+ *     while AlphaTab switches between HorizontalScreen and PageView. Do not remove.
  *
  * V128 LOCKS (rotation intentional tick anchor):
  * ✅ [RotationIntentionalTickAnchor] Durable last-intentional cursor tick.
@@ -1220,6 +1228,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         forceHorizontalRef.current = next;
         if (previous === true && next === false) {
             console.warn('[V117] forceHorizontal strip-to-page preclear');
+            showCurtain(curtainRef.current);
             stopLandscapeScrollLoop();
             landscapeScrollStateRef.current = null;
             if (landscapeCursorRef.current) {
