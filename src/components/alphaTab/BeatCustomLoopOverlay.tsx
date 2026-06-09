@@ -1,8 +1,20 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.6 — Loop Reseat Global Flag
- * Date: June 8th, 2026
+ * BeatCustomLoopOverlay v1.8.7 — Cross-Mode Gesture Guards
+ * Date: June 9th, 2026
+ *
+ * 🔥 V1.8.7 CHANGES:
+ * ✅ [LandscapeOnUpGuard] onUp clears isDragging/startBeat/endBeat and returns
+ *    early when isLandscapeRef.current. Prevents cross-mode gesture race where
+ *    onDown fires in Page mode, device rotates, and onUp fires in Landscape
+ *    committing a single-beat range over the full bar-to-bar range. Do not remove.
+ * ✅ [LandscapeDragEndGuard] handleDragEnd returns early and clears dragTargetRef
+ *    when isLandscapeRef.current. Prevents handle drag interrupted by rotation
+ *    from writing a contaminated range. Do not remove.
+ * ✅ [LandscapeToggleOnGuard] toggle-on useEffect returns early when
+ *    isLandscapeRef.current. Prevents toggle-on recovery from writing a single-bar
+ *    range during Landscape session while overlay render is suppressed. Do not remove.
  *
  * 🔥 V1.8.4 CHANGES:
  * ✅ Loop reseat global flag: commitBarSnap sets window.__maestroLoopReseat
@@ -1037,6 +1049,12 @@ export default function BeatCustomLoopOverlay({
         //   ever resolved a different beat, it's a click. Period.
         const onUp = (e: MouseEvent) => {
             if (!isDragging.current) return;
+            if (isLandscapeRef.current) {
+                isDragging.current = false;
+                startBeat.current = null;
+                endBeat.current = null;
+                return;
+            }
             isDragging.current = false;
 
             const sb = startBeat.current;
@@ -1145,6 +1163,7 @@ export default function BeatCustomLoopOverlay({
 
     useEffect(() => {
         if (!loopEnabled || !api) return;
+        if (isLandscapeRef.current) return;
         if (api.playbackRange) return;
 
         const tick = (api as any).tickPosition ?? 0;
@@ -1630,6 +1649,10 @@ export default function BeatCustomLoopOverlay({
      */
     const handleDragEnd = (e: MouseEvent | TouchEvent) => {
         if (!dragTargetRef.current) return;
+        if (isLandscapeRef.current) {
+            dragTargetRef.current = null;
+            return;
+        }
         e.preventDefault();
         const releasedHandle = dragTargetRef.current;
 

@@ -2,9 +2,31 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V131
+ * Current version: V132
  * Date: June 9th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V132 LOCKS (cross-mode gesture guards + intentional tick TTL):
+ * ✅ [LandscapeOnUpGuard] onUp clears isDragging/startBeat/endBeat
+ *         and returns early when isLandscapeRef.current. Prevents
+ *         cross-mode gesture race where onDown in Page mode sets
+ *         isDragging=true, device rotates, and onUp fires in Landscape
+ *         committing a single-beat range over the full bar-to-bar range.
+ *         Do not remove.
+ *
+ * ✅ [LandscapeDragEndGuard] handleDragEnd returns early and clears
+ *         dragTargetRef when isLandscapeRef.current. Prevents handle drag
+ *         interrupted by rotation from writing a contaminated range.
+ *         Do not remove.
+ *
+ * ✅ [LandscapeToggleOnGuard] toggle-on useEffect returns early when
+ *         isLandscapeRef.current. Prevents toggle-on recovery from writing
+ *         a single-bar range during Landscape session while overlay render
+ *         is suppressed. Do not remove.
+ *
+ * ✅ [IntentionalTickTTL30s] getIntentionalTick() TTL extended from
+ *         10s to 30s. Covers normal click → wait → rotate usage pattern.
+ *         Do not reduce below 15s.
  *
  * V131 LOCKS (landscape playback anchor scope):
  * ✅ [LandscapePlaybackAnchorScope] primeLandscapeState uses live
@@ -338,7 +360,7 @@ type MaestroCursorLike = {
 function getIntentionalTick(): number | null {
     const t = (window as any).__maestroLastIntentionalTick;
     const at = (window as any).__maestroLastIntentionalTickAt ?? 0;
-    return typeof t === 'number' && Date.now() - at < 10000 ? t : null;
+    return typeof t === 'number' && Date.now() - at < 30000 ? t : null;
 }
 
 // ── [L8-fix] Landscape initial anchor — retry-until-ready ────────────────────
