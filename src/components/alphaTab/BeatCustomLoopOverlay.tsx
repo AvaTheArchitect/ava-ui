@@ -1930,35 +1930,45 @@ export default function BeatCustomLoopOverlay({
                 surfaceW,
                 firstRenderedRect: null,
                 isDisplayOnly: true,
-                geometryMode: 'landscape-direct-rect',
+                geometryMode: 'landscape-direct-rect-y-band-filter',
                 note: 'no range or no rects',
             });
             return null;
         }
 
-        // Group by y-band; take the first (topmost) staff row for MVP safety.
-        const Y_BAND = 4;
-        const firstY = rects[0].y;
-        const primaryRects = rects.filter(r => Math.abs(r.y - firstY) < Y_BAND);
+        // Sort by y then x to ensure topmost band is selected reliably.
+        // NOTE: FixedLandscapeCursor is NOT responsible for horizontal scrolling.
+        //   Landscape scroll is owned by AlphaTabRenderer.tsx via
+        //   startLandscapeScrollLoop, landscapeScrollStateRef, primeLandscapeState.
+        //   FixedLandscapeCursor is body-mounted and fixed at viewport X; it only
+        //   updates top/height. Do not touch AlphaTabRenderer or FixedLandscapeCursor
+        //   for scrollLeft tracking — use landscapeScrollLeft state here.
+        const sorted = [...rects].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+        const firstBandY = sorted[0]?.y ?? 0;
+        const bandTolerance = 8;
+        const bandRects = sorted.filter(r => Math.abs(r.y - firstBandY) <= bandTolerance);
 
-        // Clip to viewport (with buffer so edge rects are not missed).
-        const VIEWPORT_BUFFER = 60;
-        const visibleRects = primaryRects.filter(r =>
-            r.x + r.w > scrollLeft - VIEWPORT_BUFFER &&
-            r.x < scrollLeft + containerWidth + VIEWPORT_BUFFER
-        );
+        // Clip to visible viewport in viewport space (score x → viewport x via scrollLeft).
+        const visibleRects = bandRects.filter(r => {
+            const left = r.x + LOOP_X_OFFSET - scrollLeft;
+            const right = left + r.w;
+            return right >= -60 && left <= containerWidth + 60;
+        });
 
         console.log('[landscape-loop-highlight-render]', {
             startTick: lsRange.startTick,
             endTick: lsRange.endTick,
             rectsCount: rects.length,
+            bandRectsCount: bandRects.length,
             renderedRectsCount: visibleRects.length,
+            firstBandY,
+            bandTolerance,
             scrollLeft,
             containerW: containerWidth,
             surfaceW,
             firstRenderedRect: visibleRects[0] ?? null,
             isDisplayOnly: true,
-            geometryMode: 'landscape-direct-rect',
+            geometryMode: 'landscape-direct-rect-y-band-filter',
         });
 
         if (!visibleRects.length) return null;
