@@ -15,6 +15,12 @@
  *    Deduplicates to the first y-band (topmost staff row) for MVP safety.
  *    TODO: match the y-band of FixedLandscapeCursor (active track row).
  *    Diagnostic: [landscape-loop-highlight-render] on every Landscape render.
+ * ✅ LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28 — probe-confirmed vertical
+ *    alignment on iPhone 16 Pro Max + Chrome emulator June 2026.
+ *    r.y is score-space while the Landscape overlay render path needs
+ *    a small visual Y correction relative to the overlay host.
+ *    -28 is probe-confirmed. Tune if GP8 lane compaction changes row
+ *    geometry. Do not hardcode raw number.
  *
  * 🔥 V1.8.7 CHANGES:
  * ✅ [LandscapeOnUpGuard] onUp clears isDragging/startBeat/endBeat and returns
@@ -233,6 +239,10 @@ export default function BeatCustomLoopOverlay({
 
     // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
     const LANDSCAPE_LOOP_DEBUG = true;
+
+    // ── Landscape highlight geometry constants ────────────────────────
+    const LOOP_X_OFFSET = 0;                    // ← change to 55 to test gutter alignment
+    const LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28;   // probe-confirmed June 2026 iPhone 16 Pro Max
 
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
@@ -1437,13 +1447,6 @@ export default function BeatCustomLoopOverlay({
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ─────────────────────────────────────────
-    // Fix D — Diagnostic gutter offset
-    // Set to 55 to test coordinate-space alignment with 55px reading gutter.
-    // Set to 0 once the alphatab-content-host fix is confirmed correct.
-    // ─────────────────────────────────────────
-    const LOOP_X_OFFSET = 0; // ← change to 55 to test gutter alignment
-
-    // ─────────────────────────────────────────
     // Stage 1 — smartCursorSnap (ported as-is from V99.8)
     // ─────────────────────────────────────────
 
@@ -1957,7 +1960,6 @@ export default function BeatCustomLoopOverlay({
 
         const representativeRect = visibleRects[0] ?? null;
         const renderRects = representativeRect ? [representativeRect] : [];
-        const LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28; // probe-confirmed June 2026, tune if GP8 lane compaction changes row geometry
         console.log('[landscape-loop-highlight-render]', {
             startTick: lsRange.startTick,
             endTick: lsRange.endTick,
