@@ -1957,7 +1957,7 @@ export default function BeatCustomLoopOverlay({
 
         const representativeRect = visibleRects[0] ?? null;
         const renderRects = representativeRect ? [representativeRect] : [];
-
+        const LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28; // probe-confirmed June 2026, tune if GP8 lane compaction changes row geometry
         console.log('[landscape-loop-highlight-render]', {
             startTick: lsRange.startTick,
             endTick: lsRange.endTick,
@@ -1971,12 +1971,12 @@ export default function BeatCustomLoopOverlay({
             scrollLeft,
             containerW: containerWidth,
             surfaceW,
+            landscapeHighlightYOffset: LANDSCAPE_HIGHLIGHT_Y_OFFSET,
             geometryMode: 'landscape-direct-rect-single-representative',
             isDisplayOnly: true,
         });
 
         if (!renderRects.length) return null;
-
         return (
             <>
                 {renderRects.map((r, i) => (
@@ -1986,7 +1986,7 @@ export default function BeatCustomLoopOverlay({
                         style={{
                             position: 'absolute',
                             left: r.x + LOOP_X_OFFSET - scrollLeft,
-                            top: r.y,
+                            top: r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET,
                             width: r.w,
                             height: r.h,
                             background: overlayColor,
