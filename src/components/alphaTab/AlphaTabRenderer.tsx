@@ -796,6 +796,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const landscapeScrollProbeRafRef = useRef<number | null>(null);
     const lastLoggedExpandedStartRef = useRef<number>(-1);
     const lastGoodLandscapeVisualDeltaXRef = useRef<number>(37);
+    const loopWrapInProgressRef = useRef<boolean>(false);
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
     const reseatMinBarUntilRef = useRef<number>(0);
@@ -1646,6 +1647,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 });
 
             const primeLandscapeState = (ctr: HTMLElement) => {
+                if (loopWrapInProgressRef.current) {
+                    if (LANDSCAPE_LOOP_DEBUG) console.log(
+                        '[landscape-loop-wrap-visual-snap]',
+                        { reason: 'primeLandscapeState-blocked-during-wrap' }
+                    );
+                    return;
+                }
                 const tickCache = (api as any).tickCache;
                 const bounds = api?.renderer?.boundsLookup;
                 if (!tickCache?.findBeat || !bounds?.findBeat) return;
@@ -2362,6 +2370,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                     if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
+                        loopWrapInProgressRef.current = true;
                         if (LANDSCAPE_LOOP_DEBUG) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'loop-wrap-guard-enter',
@@ -2447,6 +2456,60 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 playbackRange: api?.playbackRange ?? null,
                             });
                         }
+                        const isStripNow = forceHorizontalRef.current ||
+                            (api?.settings?.display?.layoutMode === 1);
+                        const wrapContainer = containerRef.current;
+                        if (isStripNow && wrapContainer) {
+                            const wrapTickCache = (api as any).tickCache;
+                            const wrapBounds = api?.renderer?.boundsLookup;
+                            const wrapTrackSet = getTrackSet(api);
+                            if (wrapTickCache?.findBeat && wrapBounds?.findBeat) {
+                                const wrapR = wrapTickCache.findBeat(wrapTrackSet, liveRange.startTick);
+                                const wrapBb = wrapR?.beat ? wrapBounds.findBeat(wrapR.beat) : null;
+                                if (wrapBb?.visualBounds) {
+                                    const wrapCurBeatX = typeof wrapBb.onNotesX === 'number'
+                                        ? wrapBb.onNotesX
+                                        : wrapBb.visualBounds.x + wrapBb.visualBounds.w / 2;
+                                    const { nextBeat: wrapNextBeat } = resolveNextBeatExpanded(
+                                        api, wrapTrackSet, liveRange.startTick, wrapR.beat
+                                    );
+                                    let wrapNextBeatX = wrapCurBeatX;
+                                    if (wrapNextBeat) {
+                                        const wnBb = wrapBounds.findBeat(wrapNextBeat);
+                                        if (wnBb?.visualBounds) {
+                                            const wnx = typeof wnBb.onNotesX === 'number'
+                                                ? wnBb.onNotesX
+                                                : wnBb.visualBounds.x + wnBb.visualBounds.w / 2;
+                                            if (wnx > wrapCurBeatX) wrapNextBeatX = wnx;
+                                        }
+                                    }
+                                    landscapeScrollStateRef.current = {
+                                        curBeatX: wrapCurBeatX,
+                                        nextBeatX: wrapNextBeatX,
+                                        beatStart: liveRange.startTick,
+                                        beatDur: wrapR.beat?.playbackDuration ?? 480,
+                                        lastTick: liveRange.startTick,
+                                    };
+                                    const wrapSnap = Math.max(0, wrapCurBeatX - getCursorSurfaceX(wrapContainer));
+                                    const scrollLeftBefore = wrapContainer.scrollLeft;
+                                    targetScrollLeftRef.current = wrapSnap;
+                                    wrapContainer.scrollLeft = wrapSnap;
+                                    if (LANDSCAPE_LOOP_DEBUG) {
+                                        console.log('[landscape-loop-wrap-visual-snap]', {
+                                            reason: 'loop-wrap-visual-snap',
+                                            targetTick: liveRange.startTick,
+                                            curBeatX: wrapCurBeatX,
+                                            nextBeatX: wrapNextBeatX,
+                                            snap: wrapSnap,
+                                            scrollLeftBefore,
+                                            scrollLeftAfter: wrapContainer.scrollLeft,
+                                            playbackRange: api?.playbackRange ?? null,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        loopWrapInProgressRef.current = false;
                         return;
                     }
                 }
