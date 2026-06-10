@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V136
+ * Current version: V137
  * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V137 LOCKS (landscape page-layout mismatch + stable anchor poison guard):
+ * ✅ [StableAnchorPoisonGuard] prevents lastStableRotationAnchorTickRef from
+ *         being overwritten by beginning-of-song tick 0/1 drift when a larger
+ *         trusted stable or intentional tick exists.
+ * ✅ [LandscapePageMismatchRecovery] detects the real iPhone failure where
+ *         the viewport is Landscape but AlphaTab remains in Page layout
+ *         (layoutMode 0, scrollMode 0, firstSystemBars <= 2). It reasserts
+ *         Horizontal/Continuous layout and preserves the V136 stable anchor
+ *         before re-rendering. Do not remove. Visual curtain/bounce smoothing
+ *         remains a separate Phase 2 polish step.
  *
  * V136 LOCKS (rotation stable anchor):
  * ✅ [RotationStableAnchorRef] lastStableRotationAnchorTickRef remembers
@@ -867,6 +878,36 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // Must not be called during settling or from passive AlphaTab drift.
     const setLastStableRotationAnchorTick = useCallback((tick: number | null | undefined, source: string) => {
         if (typeof tick !== 'number' || !Number.isFinite(tick) || tick <= 0) return;
+        // [StableAnchorPoisonGuard] Reject tick <= 1 if a larger known-good anchor or intentional tick exists.
+        const existing = lastStableRotationAnchorTickRef.current;
+        const intentional = getIntentionalTick?.() ?? null;
+        const manualIntentional =
+            typeof window !== 'undefined'
+                ? ((window as any).__maestroLastIntentionalTick ?? null)
+                : null;
+        const isBeginningPoison =
+            tick <= 1 &&
+            (
+                (existing != null && existing > 1) ||
+                (intentional != null && intentional > 1) ||
+                (manualIntentional != null && manualIntentional > 1)
+            );
+        if (isBeginningPoison) {
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.warn('[rotation-stable-anchor]', {
+                    reason: 'stable-anchor-poison-rejected',
+                    source,
+                    rejectedTick: tick,
+                    existingStableTick: existing,
+                    intentionalTick: intentional,
+                    manualIntentionalTick: manualIntentional,
+                    apiTickPosition: apiRef.current?.tickPosition ?? null,
+                    rotationGateActive: rotationGateActiveRef.current,
+                    isSettling: isSettlingRef.current,
+                });
+            }
+            return;
+        }
         lastStableRotationAnchorTickRef.current = tick;
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[rotation-stable-anchor]', {
@@ -1362,6 +1403,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             setResetKey(k => k + 1);
         });
     }, [stopLandscapeScrollLoop]);
+
+    // [LandscapePageMismatchRecovery] Helpers to detect viewport/layout desync.
+    const isLandscapeViewport = (): boolean => {
+        if (typeof window === 'undefined') return false;
+        const vv = window.visualViewport;
+        const w = vv?.width ?? window.innerWidth;
+        const h = vv?.height ?? window.innerHeight;
+        return w > h;
+    };
+    const isAlphaTabPageLayoutWhileLandscape = (api: any): boolean => {
+        const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+        const firstBars = systems?.[0]?.bars?.length ?? null;
+        const layoutMode = api?.settings?.display?.layoutMode ?? null;
+        const scrollMode = api?.settings?.player?.scrollMode ?? null;
+        return (
+            isLandscapeViewport() &&
+            layoutMode === 0 &&
+            scrollMode === 0 &&
+            systems.length > 0 &&
+            firstBars != null &&
+            firstBars <= 2
+        );
+    };
 
     const reassertLayout = useCallback(() => {
         if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
@@ -2180,7 +2244,31 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
                 // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
-                setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
+                // [StableAnchorPoisonGuard] Only write if tick is confirmed trusted (not passive api.tickPosition drift).
+                const trustedPrimeTick =
+                    tick > 1 &&
+                    (
+                        preRotationAnchorTickRef.current === tick ||
+                        lastStableRotationAnchorTickRef.current === tick ||
+                        getIntentionalTick() === tick ||
+                        ((window as any).__maestroLastIntentionalTick === tick)
+                    );
+                if (trustedPrimeTick) {
+                    setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
+                } else if (LANDSCAPE_LOOP_DEBUG) {
+                    console.warn('[rotation-stable-anchor]', {
+                        reason: 'primeLandscapeState-stable-update-skipped',
+                        tick,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        intentionalTick: getIntentionalTick(),
+                        manualIntentionalTick: (window as any).__maestroLastIntentionalTick ?? null,
+                        apiTickPosition: api?.tickPosition ?? null,
+                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    });
+                }
             };
 
             api.renderFinished.on(() => {
@@ -2211,6 +2299,54 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                 });
+                // [LandscapePageMismatchRecovery] If viewport is Landscape but AlphaTab is still in Page layout,
+                // reassert Horizontal/Continuous and re-render before any further processing.
+                if (isAlphaTabPageLayoutWhileLandscape(api)) {
+                    const _manualIntentional: number | null =
+                        typeof window !== 'undefined'
+                            ? ((window as any).__maestroLastIntentionalTick as number | null | undefined) ?? null
+                            : null;
+                    const rescueTick =
+                        lastStableRotationAnchorTickRef.current ??
+                        getIntentionalTick() ??
+                        _manualIntentional ??
+                        preRotationAnchorTickRef.current ??
+                        0;
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.warn('[rotation-layout-mismatch]', {
+                            reason: 'landscape-viewport-page-layout-detected',
+                            rescueTick,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            scrollMode: api?.settings?.player?.scrollMode ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            surfaceW: document.querySelector('.at-surface')?.scrollWidth ?? null,
+                            surfaceH: document.querySelector('.at-surface')?.scrollHeight ?? null,
+                        });
+                    }
+                    if (rescueTick > 1) {
+                        preRotationAnchorTickRef.current = rescueTick;
+                        lastStableRotationAnchorTickRef.current = rescueTick;
+                    }
+                    rotationGateActiveRef.current = true;
+                    const at = alphaTabModuleRef.current;
+                    if (!at) return;
+                    api.settings.display.layoutMode = (at as any).LayoutMode.Horizontal;
+                    api.settings.player.scrollMode = (at as any).ScrollMode.Continuous;
+                    api.updateSettings();
+                    api.render();
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.warn('[rotation-layout-mismatch]', {
+                            reason: 'landscape-layout-reasserted',
+                            rescueTick,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            scrollMode: api?.settings?.player?.scrollMode ?? null,
+                        });
+                    }
+                    return;
+                }
                 activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
                 const tokenAtFinish = renderTokenRef.current;
                 if (activeRendersRef.current !== 0) return;
