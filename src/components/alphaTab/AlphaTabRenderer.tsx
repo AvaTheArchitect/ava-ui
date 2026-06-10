@@ -794,6 +794,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         scrollLeft: number;
     } | null>(null);
     const landscapeScrollProbeRafRef = useRef<number | null>(null);
+    const lastLoggedExpandedStartRef = useRef<number>(-1);
+    const lastGoodLandscapeVisualDeltaXRef = useRef<number>(37);
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
     const reseatMinBarUntilRef = useRef<number>(0);
@@ -944,6 +946,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     interpolatedX - cursorSurfaceX,
                     maxScroll
                 ));
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    const now = Date.now();
+                    const lastLog = (container as any).__lastLandscapeLoopSyncRafLogAt ?? 0;
+                    if (now - lastLog >= 200) {
+                        (container as any).__lastLandscapeLoopSyncRafLogAt = now;
+                        console.log('[landscape-visual-loop-sync]', {
+                            reason: 'raf-read',
+                            liveTick,
+                            playerState: (api as any)?.playerState ?? null,
+                            playbackRange: api?.playbackRange ?? null,
+                            stateBeatStart: state?.beatStart ?? null,
+                            stateBeatDur: state?.beatDur ?? null,
+                            stateLastTick: state?.lastTick ?? null,
+                            curBeatX: state?.curBeatX ?? null,
+                            nextBeatX: state?.nextBeatX ?? null,
+                            rawProgress: (liveTick - state.beatStart) / state.beatDur,
+                            clampedProgress: progress,
+                            interpolatedX,
+                            targetScrollLeft: targetScrollLeftRef.current,
+                            currentScrollLeft: container.scrollLeft,
+                        });
+                    }
+                }
             }
             const target = targetScrollLeftRef.current;
             const current = container.scrollLeft;
@@ -1695,6 +1720,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     beatDur: structuralDur,
                     lastTick: tick,
                 };
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-visual-loop-sync]', {
+                        reason: 'write-primeLandscapeState',
+                        apiTickPosition: api?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        isActivelyPlaying,
+                        tickUsed: tick,
+                        tickSource: isActivelyPlaying ? 'api.tickPosition' : 'getIntentionalTick-or-api.tickPosition',
+                        playbackRange: api?.playbackRange ?? null,
+                        loopEnabled: loopEnabledRef.current,
+                        resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                        resolvedBeatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
+                        curBeatX,
+                        nextBeatX,
+                        beatStart: beat?.absolutePlaybackStart ?? null,
+                        beatDur: structuralDur,
+                        scrollLeftBefore: ctr.scrollLeft,
+                        targetScrollLeft: Math.max(0, curBeatX - getCursorSurfaceX(ctr)),
+                    });
+                }
                 const cursorSurfaceX = getCursorSurfaceX(ctr);
                 const snap = Math.max(0, curBeatX - cursorSurfaceX);
                 if (LANDSCAPE_LOOP_DEBUG) {
@@ -1976,6 +2022,36 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-playback-state-sync]', {
+                        reason: 'playerStateChanged-raw',
+                        rawEvent: e,
+                        state: e?.state ?? e ?? null,
+                        apiPlayerState: (api as any)?.playerState ?? null,
+                        apiTickPosition: (api as any)?.tickPosition ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                        callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                    });
+                }
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[landscape-playback-state-sync]', {
+                        reason: 'playerStateChanged',
+                        state: e?.state ?? e ?? null,
+                        apiPlayerState: (api as any)?.playerState ?? null,
+                        apiTickPosition: (api as any)?.tickPosition ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        liveLoopRangeRef: loopEnabledRef.current ? (api?.playbackRange ?? null) : null,
+                        landscapeScrollState: landscapeScrollStateRef.current,
+                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                        loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
+                        loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
+                    });
+                }
                 if ((e.state ?? 0) === 1 && hasRevealedRef.current && isSettlingRef.current) {
                     console.warn('[V117] isSettling stuck on play — force clearing');
                     isSettlingRef.current = false;
@@ -1985,7 +2061,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 clearTimeout(stateDebounce);
                 stateDebounce = setTimeout(() => {
                     const playing = (e.state ?? 0) === 1;
-                    if (playing !== isPlayingRef.current) onPlayStateChange(playing);
+                    if (playing !== isPlayingRef.current) {
+                        if (LANDSCAPE_LOOP_DEBUG && !playing) {
+                            console.log('[landscape-playback-state-sync]', {
+                                reason: 'onPlayStateChange-false-call',
+                                apiPlayerState: (api as any)?.playerState ?? null,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                            });
+                        }
+                        onPlayStateChange(playing);
+                    }
                 }, 50);
                 const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                 if ((e.state ?? 0) === 1 && isStripNow) {
@@ -2001,6 +2089,34 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             // 🔒🔒🔒 CURSOR / SCROLL ENGINE ───────────────────────────────────
             api.playerPositionChanged.on((e: any) => {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    const isStripModeProbe = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                    if (isStripModeProbe || loopEnabledRef.current) {
+                        console.log('[landscape-visual-loop-sync]', {
+                            reason: 'playerPositionChanged-entry',
+                            tickRaw: e.currentTick ?? e.tickPosition ?? null,
+                            isSettling: isSettlingRef.current,
+                            isStripMode: isStripModeProbe,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            existingLandscapeScrollState: landscapeScrollStateRef.current,
+                        });
+                    }
+                }
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    const isStripProbe = forceHorizontalRef.current ||
+                        (api?.settings?.display?.layoutMode === 1);
+                    if (isStripProbe && (api?.playerState ?? 0) === 1) {
+                        console.log('[landscape-visual-loop-sync]', {
+                            reason: 'playerPositionChanged-settling-gate',
+                            tickRaw: e.currentTick ?? e.tickPosition ?? null,
+                            isSettling: isSettlingRef.current,
+                            playerState: (api as any)?.playerState ?? null,
+                            willReturn: isSettlingRef.current,
+                        });
+                    }
+                }
                 if (isSettlingRef.current) return;
 
                 const tickRaw = e.currentTick ?? e.tickPosition;
@@ -2049,8 +2165,129 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
 
+                    if (LANDSCAPE_LOOP_DEBUG && expandedStart !== lastLoggedExpandedStartRef.current) {
+                        lastLoggedExpandedStartRef.current = expandedStart;
+                        console.log('[landscape-visual-segment-map]', {
+                            tickRaw,
+                            playbackRange: api?.playbackRange ?? null,
+                            beatAbsStart,
+                            expandedStart,
+                            structuralDur,
+                            expandedDur,
+                            resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                            resolvedBeatBarIdx: beat?.voice?.bar?.index ??
+                                beat?.voice?.bar?.masterBar?.index ?? null,
+                            curBeatX,
+                            nextBeatX,
+                            visualDeltaX: nextBeatX - curBeatX,
+                            beatDurUsed: Math.max(
+                                structuralDur * 0.75,
+                                Math.min(expandedDur, structuralDur * 2.5)
+                            ),
+                            notesCount: beat?.notes?.length ?? null,
+                            hasVisualMovement: Math.abs(nextBeatX - curBeatX) > 1,
+                        });
+                    }
+
+                    if (LANDSCAPE_LOOP_DEBUG && loopEnabledRef.current &&
+                        api?.playbackRange && nextBeatX <= curBeatX + 1) {
+
+                        const liveRange = api.playbackRange as { startTick: number; endTick: number };
+                        const probeTicksArr = [
+                            tickRaw + 60, tickRaw + 120, tickRaw + 240, tickRaw + 480,
+                            liveRange.endTick
+                        ];
+                        const lookAheadResults = probeTicksArr.map(probeTick => {
+                            try {
+                                const pr = tickCache.findBeat(trackSet, probeTick);
+                                const pb = pr?.beat ? bounds.findBeat(pr.beat) : null;
+                                const px = pb?.visualBounds
+                                    ? (typeof pb.onNotesX === 'number'
+                                        ? pb.onNotesX
+                                        : pb.visualBounds.x + pb.visualBounds.w / 2)
+                                    : null;
+                                return {
+                                    probeTick,
+                                    beatAbsStart: pr?.beat?.absolutePlaybackStart ?? null,
+                                    beatBarIdx: pr?.beat?.voice?.bar?.index ??
+                                        pr?.beat?.voice?.bar?.masterBar?.index ?? null,
+                                    x: px,
+                                    deltaFromCur: px != null ? px - curBeatX : null,
+                                };
+                            } catch { return { probeTick, error: true }; }
+                        });
+
+                        console.log('[landscape-zero-delta-segment-probe]', {
+                            tickRaw,
+                            playbackRange: api?.playbackRange ?? null,
+                            beatAbsStart,
+                            expandedStart,
+                            structuralDur,
+                            expandedDur,
+                            curBeatX,
+                            nextBeatX,
+                            visualDeltaX: nextBeatX - curBeatX,
+                            loopEndTick: liveRange.endTick,
+                            lookAheadResults,
+                        });
+                    }
+
+                    let effectiveNextBeatX = nextBeatX;
+                    const visualDeltaX = nextBeatX - curBeatX;
+
+                    if (visualDeltaX > 1) {
+                        lastGoodLandscapeVisualDeltaXRef.current = visualDeltaX;
+                    } else if (
+                        loopEnabledRef.current &&
+                        api?.playbackRange &&
+                        nextBeatX <= curBeatX + 1
+                    ) {
+                        effectiveNextBeatX = curBeatX + lastGoodLandscapeVisualDeltaXRef.current;
+
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[landscape-zero-delta-fallback]', {
+                                tickRaw,
+                                playbackRange: api?.playbackRange ?? null,
+                                beatAbsStart,
+                                expandedStart,
+                                structuralDur,
+                                expandedDur,
+                                curBeatX,
+                                originalNextBeatX: nextBeatX,
+                                effectiveNextBeatX,
+                                fallbackDeltaX: lastGoodLandscapeVisualDeltaXRef.current,
+                            });
+                        }
+                    }
+
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.log('[landscape-visual-loop-sync]', {
+                            reason: 'write-playerPositionChanged-live',
+                            tickRaw,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            loopEnabled: loopEnabledRef.current,
+                            previousLandscapeScrollState: landscapeScrollStateRef.current,
+                            beatAbsStart,
+                            expandedStart,
+                            structuralDur,
+                            expandedDur,
+                            resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                            resolvedBeatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
+                            curBeatX,
+                            nextBeatX,
+                            originalNextBeatX: nextBeatX,
+                            effectiveNextBeatX,
+                            usedZeroDeltaFallback: effectiveNextBeatX !== nextBeatX,
+                            lastGoodLandscapeVisualDeltaX: lastGoodLandscapeVisualDeltaXRef.current,
+                            beatStart: expandedStart,
+                            beatDur: Math.max(structuralDur * 0.75, Math.min(expandedDur, structuralDur * 2.5)),
+                        });
+                    }
                     landscapeScrollStateRef.current = {
-                        curBeatX, nextBeatX,
+                        curBeatX, nextBeatX: effectiveNextBeatX,
                         beatStart: expandedStart,
                         beatDur: Math.max(structuralDur * 0.75, Math.min(expandedDur, structuralDur * 2.5)),
                         lastTick: tickRaw,
@@ -2125,6 +2362,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                     if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[landscape-playback-state-sync]', {
+                                reason: 'loop-wrap-guard-enter',
+                                tickRaw,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                apiPlayerState: (api as any)?.playerState ?? null,
+                                liveRange: liveRange ?? null,
+                                shouldWrap: liveRange ? tickRaw >= liveRange.endTick : false,
+                                loopEnabled: loopEnabledRef.current,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                            });
+                        }
                         if (LOOP_CLICK_RESEAT_DEBUG) {
                             console.log('[loop-click-reseat-probe]', {
                                 reason: 'loop-wrap-guard-fired',
@@ -2176,8 +2425,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         // inside-highlight click override (e.g. 7201 within [3840, 7680]).
                         (window as any).__maestroLoopPlayStartOverrideTick = null;
                         (window as any).__maestroLoopPlayStartOverrideTickAt = null;
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[landscape-playback-state-sync]', {
+                                reason: 'loop-wrap-seek-start',
+                                targetTick: liveRange.startTick,
+                                tickRaw,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                apiPlayerState: (api as any)?.playerState ?? null,
+                                playbackRange: api?.playbackRange ?? null,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                            });
+                        }
                         if (seekTicks) seekTicks(liveRange.startTick);
                         api.tickPosition = liveRange.startTick;
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[landscape-playback-state-sync]', {
+                                reason: 'loop-wrap-seek-after',
+                                targetTick: liveRange.startTick,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                apiPlayerState: (api as any)?.playerState ?? null,
+                                playbackRange: api?.playbackRange ?? null,
+                            });
+                        }
                         return;
                     }
                 }
@@ -3295,7 +3564,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (Math.abs(dx) >= TAP_THRESHOLD) {
                     if (!touchState.isDragging) {
                         const api = apiRef.current;
-                        if ((api?.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
+                        if ((api?.playerState ?? 0) === 1) {
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.log('[landscape-playback-state-sync]', {
+                                    reason: 'onPlayStateChange-false-call',
+                                    apiPlayerState: (api as any)?.playerState ?? null,
+                                    apiTickPosition: (api as any)?.tickPosition ?? null,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    landscapeScrollState: landscapeScrollStateRef.current,
+                                });
+                            }
+                            api.pause(); onPlayStateChange(false);
+                        }
                     }
                     touchState.isDragging = true;
                     isDraggingRef.current = true;
@@ -3316,8 +3597,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
                     if (!isStrip) return;
                     try {
-                        if ((api.playerState ?? 0) === 1) { api.pause(); onPlayStateChange(false); }
-                        else { api.play(); onPlayStateChange(true); }
+                        if ((api.playerState ?? 0) === 1) {
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.log('[landscape-playback-state-sync]', {
+                                    reason: 'onPlayStateChange-false-call',
+                                    apiPlayerState: (api as any)?.playerState ?? null,
+                                    apiTickPosition: (api as any)?.tickPosition ?? null,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    landscapeScrollState: landscapeScrollStateRef.current,
+                                });
+                            }
+                            api.pause(); onPlayStateChange(false);
+                        } else { api.play(); onPlayStateChange(true); }
                     } catch (e) {
                         console.warn('[V117] tap play/pause swallowed AudioWorklet error', e);
                     }
@@ -3552,8 +3844,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const handleDblClick = () => {
                 const api = apiRef.current;
                 if (!api?.isReadyForPlayback) return;
-                if (api.playerState !== 0) { api.pause(); onPlayStateChange(false); }
-                else { api.play(); onPlayStateChange(true); }
+                if (api.playerState !== 0) {
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.log('[landscape-playback-state-sync]', {
+                            reason: 'onPlayStateChange-false-call',
+                            apiPlayerState: (api as any)?.playerState ?? null,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            landscapeScrollState: landscapeScrollStateRef.current,
+                        });
+                    }
+                    api.pause(); onPlayStateChange(false);
+                } else { api.play(); onPlayStateChange(true); }
             };
 
             surface.addEventListener('click', handleClick);
