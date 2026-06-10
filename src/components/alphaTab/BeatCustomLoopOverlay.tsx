@@ -1321,7 +1321,7 @@ export default function BeatCustomLoopOverlay({
             console.log('[landscape-loop-overlay-rects]', {
                 reason: 'landscape-loop-overlay-rects',
                 isLandscape: true,
-                overlayReturnsNull: true,
+                landscapeDisplayRendererEnabled: true,
                 rectsCount: resolvedRects.length,
                 firstRectTop: firstR?.y ?? null,
                 firstRectLeft: firstR?.x ?? null,
@@ -1412,7 +1412,7 @@ export default function BeatCustomLoopOverlay({
                 rebuildFromPlaybackRange('loopEnabled-but-rectsEmpty-rescue');
             });
         });
-    }, [loopEnabled, rects.length, api]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loopEnabled, rects.length, api, isLandscape]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!LOOP_OVERLAY_DEBUG) return;
@@ -1930,6 +1930,7 @@ export default function BeatCustomLoopOverlay({
                 surfaceW,
                 firstRenderedRect: null,
                 isDisplayOnly: true,
+                geometryMode: 'landscape-direct-rect',
                 note: 'no range or no rects',
             });
             return null;
@@ -1957,34 +1958,32 @@ export default function BeatCustomLoopOverlay({
             surfaceW,
             firstRenderedRect: visibleRects[0] ?? null,
             isDisplayOnly: true,
+            geometryMode: 'landscape-direct-rect',
         });
 
         if (!visibleRects.length) return null;
 
         return (
             <>
-                {visibleRects.map((r, i) => {
-                    const rowGeom = getRowGeometryForRect(r);
-                    return (
-                        <div
-                            key={i}
-                            className="beat-loop-highlight-landscape"
-                            style={{
-                                position: 'absolute',
-                                left: r.x + LOOP_X_OFFSET - scrollLeft,
-                                top: rowGeom.top,
-                                width: r.w,
-                                height: rowGeom.height,
-                                background: overlayColor,
-                                borderTop: `1px solid ${borderColor}`,
-                                borderBottom: `1px solid ${borderColor}`,
-                                pointerEvents: 'none',
-                                zIndex: 900,
-                                boxSizing: 'border-box' as const,
-                            }}
-                        />
-                    );
-                })}
+                {visibleRects.map((r, i) => (
+                    <div
+                        key={i}
+                        className="beat-loop-highlight-landscape"
+                        style={{
+                            position: 'absolute',
+                            left: r.x + LOOP_X_OFFSET - scrollLeft,
+                            top: r.y,
+                            width: r.w,
+                            height: r.h,
+                            background: overlayColor,
+                            borderTop: `1px solid ${borderColor}`,
+                            borderBottom: `1px solid ${borderColor}`,
+                            pointerEvents: 'none',
+                            zIndex: 900,
+                            boxSizing: 'border-box' as const,
+                        }}
+                    />
+                ))}
             </>
         );
     }
