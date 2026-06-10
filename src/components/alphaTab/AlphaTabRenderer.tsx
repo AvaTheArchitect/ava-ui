@@ -465,6 +465,45 @@ function landscapeInitialAnchor(
             }
             if (beatX >= reachableFloor) {
                 const snap = Math.max(0, beatX - cursorSurfaceX);
+                console.log('[rotation-anchor-resolution]', {
+                    reason: 'landscapeInitialAnchor-snap',
+                    source: 'landscapeInitialAnchor',
+                    requestedTick: liveTick,
+                    resolvedBeatTick: r?.beat?.absolutePlaybackStart ?? null,
+                    resolvedBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                    resolvedBeatX: Number(beatX.toFixed(1)),
+                    resolvedBeatY: bb?.visualBounds?.y ?? null,
+                    containerScrollLeft: container.scrollLeft,
+                    containerScrollTop: container.scrollTop,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
+                // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (landscapeInitialAnchor)
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'before-scrollLeft-snap-landscapeInitialAnchor',
+                    rotationGateActive: null,
+                    preRotationAnchorTick: null,
+                    isLandscape: true,
+                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: api?.tickPosition ?? null,
+                    playerState: (api as any)?.playerState ?? null,
+                    isPlayingRef: null,
+                    loopEnabled: null,
+                    playbackRange: api?.playbackRange ?? null,
+                    intentionalTick: liveTick,
+                    landscapeScrollState: null,
+                    containerScrollLeft: container.scrollLeft,
+                    containerScrollTop: container.scrollTop,
+                    containerClientW: container.clientWidth,
+                    containerClientH: container.clientHeight,
+                    containerScrollW: container.scrollWidth,
+                    containerScrollH: container.scrollHeight,
+                    surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    snapTarget: snap,
+                });
                 container.scrollLeft = snap;
                 targetScrollLeftRef.current = snap;
                 return;
@@ -478,6 +517,32 @@ function landscapeInitialAnchor(
                 playbackRange: api?.playbackRange ?? null,
             });
         }
+        // [rotation-anchor-gate-probe] Point 10: before scrollLeft=0 fallthrough (landscapeInitialAnchor)
+        console.log('[rotation-anchor-gate-probe]', {
+            reason: 'before-scrollLeft-zero-fallthrough-landscapeInitialAnchor',
+            rotationGateActive: null,
+            preRotationAnchorTick: null,
+            isLandscape: true,
+            layoutMode: api?.settings?.display?.layoutMode ?? null,
+            apiTickPosition: api?.tickPosition ?? null,
+            playerState: (api as any)?.playerState ?? null,
+            isPlayingRef: null,
+            loopEnabled: null,
+            playbackRange: api?.playbackRange ?? null,
+            intentionalTick: liveTick,
+            landscapeScrollState: null,
+            containerScrollLeft: container.scrollLeft,
+            containerScrollTop: container.scrollTop,
+            containerClientW: container.clientWidth,
+            containerClientH: container.clientHeight,
+            containerScrollW: container.scrollWidth,
+            containerScrollH: container.scrollHeight,
+            surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
+            surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
+            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+            note: 'no probe tick matched — snapping to 0',
+        });
         container.scrollLeft = 0;
         targetScrollLeftRef.current = 0;
     };
@@ -747,6 +812,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const baseTrackProfileRef = useRef<LayoutProfileName | null>(null);
     const isApplyingProfileRef = useRef(false);
     const lastWantStripRef = useRef<boolean | null>(null);
+
+    // [rotation-anchor-gate-probe] Diagnostic scaffolding — not wired to behavior yet.
+    const rotationGateActiveRef = useRef<boolean>(false);
+    const preRotationAnchorTickRef = useRef<number | null>(null);
+    const lastOrientationModeRef = useRef<'page' | 'landscape' | null>(null);
 
     const reassertRafRef = useRef<number | null>(null);
     const lastReassertTokenRef = useRef<number | null>(null);
@@ -1112,6 +1182,51 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const TWEEN_MS = 150;
         const snapAnchor = anchorIdx;
 
+        // [rotation-anchor-resolution] snapPortraitToBeatRow — resolved scroll target
+        console.log('[rotation-anchor-resolution]', {
+            reason: 'snapPortraitToBeatRow-snap',
+            source: 'snapPortraitToBeatRow',
+            requestedTick: (apiRef.current as any)?.tickPosition ?? null,
+            resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+            resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+            resolvedBeatX: null,
+            resolvedBeatY: (snapBb as any)?.visualBounds?.y ?? null,
+            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+            containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
+            systemsLength: snapSystems.length,
+            firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
+            sysIdx,
+            anchorIdx,
+            tweenFrom: Math.round(tweenFrom),
+            tweenTo: Math.round(tweenTo),
+        });
+        // [rotation-anchor-gate-probe] Point 10: before scrollTop snap (snapPortraitToBeatRow)
+        console.log('[rotation-anchor-gate-probe]', {
+            reason: 'before-scrollTop-snap-snapPortraitToBeatRow',
+            rotationGateActive: rotationGateActiveRef.current,
+            preRotationAnchorTick: preRotationAnchorTickRef.current,
+            isLandscape: forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1),
+            layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
+            apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
+            playerState: (apiRef.current as any)?.playerState ?? null,
+            isPlayingRef: isPlayingRef.current,
+            loopEnabled: loopEnabledRef.current,
+            playbackRange: apiRef.current?.playbackRange ?? null,
+            intentionalTick: getIntentionalTick(),
+            landscapeScrollState: landscapeScrollStateRef.current ?? null,
+            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+            containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
+            containerClientW: containerRef.current?.clientWidth ?? null,
+            containerClientH: containerRef.current?.clientHeight ?? null,
+            containerScrollW: containerRef.current?.scrollWidth ?? null,
+            containerScrollH: containerRef.current?.scrollHeight ?? null,
+            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+            systemsLength: snapSystems.length,
+            firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
+            snapTarget: Math.round(tweenTo),
+        });
+
         if (Math.abs(tweenDelta) < 2) {
             scrollElEl.scrollTop = tweenTo;
         } else {
@@ -1264,6 +1379,36 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             if (!needsFlip && !looksCollapsed && !stuckHorizontalStrip) return;
 
+            // [rotation-anchor-gate-probe] Point 1: orientation flip confirmed
+            rotationGateActiveRef.current = true;
+            preRotationAnchorTickRef.current = getIntentionalTick() ?? api.tickPosition ?? null;
+            lastOrientationModeRef.current = wantStrip ? 'landscape' : 'page';
+            console.log('[rotation-anchor-gate-probe]', {
+                reason: 'orientation-flip-start',
+                rotationGateActive: rotationGateActiveRef.current,
+                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                lastOrientationMode: lastOrientationModeRef.current,
+                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                apiTickPosition: api?.tickPosition ?? null,
+                playerState: (api as any)?.playerState ?? null,
+                isPlayingRef: isPlayingRef.current,
+                loopEnabled: loopEnabledRef.current,
+                playbackRange: api?.playbackRange ?? null,
+                intentionalTick: getIntentionalTick(),
+                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                containerScrollLeft: el?.scrollLeft ?? null,
+                containerScrollTop: el?.scrollTop ?? null,
+                containerClientW: el?.clientWidth ?? null,
+                containerClientH: el?.clientHeight ?? null,
+                containerScrollW: el?.scrollWidth ?? null,
+                containerScrollH: el?.scrollHeight ?? null,
+                surfaceW: el?.querySelector('.at-surface')?.scrollWidth ?? null,
+                surfaceH: el?.querySelector('.at-surface')?.scrollHeight ?? null,
+                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+            });
+
             // ── Wait for stable container width (2 RAF frames) ────────────────
             // iOS/Chrome viewport dimensions can be unstable during rotation.
             // Firing recovery on an unstable width picks the wrong profile.
@@ -1333,6 +1478,35 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         forceHorizontalRef.current = next;
         if (previous === true && next === false) {
             console.warn('[V117] forceHorizontal strip-to-page preclear');
+            // [rotation-anchor-gate-probe] Point 1: strip-to-page flip via forceHorizontal
+            rotationGateActiveRef.current = true;
+            preRotationAnchorTickRef.current = getIntentionalTick() ?? apiRef.current?.tickPosition ?? null;
+            lastOrientationModeRef.current = 'landscape';
+            console.log('[rotation-anchor-gate-probe]', {
+                reason: 'orientation-flip-start-forceHorizontal',
+                rotationGateActive: rotationGateActiveRef.current,
+                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                lastOrientationMode: lastOrientationModeRef.current,
+                isLandscape: true,
+                layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
+                apiTickPosition: apiRef.current?.tickPosition ?? null,
+                playerState: (apiRef.current as any)?.playerState ?? null,
+                isPlayingRef: isPlayingRef.current,
+                loopEnabled: loopEnabledRef.current,
+                playbackRange: apiRef.current?.playbackRange ?? null,
+                intentionalTick: getIntentionalTick(),
+                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                containerScrollTop: containerRef.current?.scrollTop ?? null,
+                containerClientW: containerRef.current?.clientWidth ?? null,
+                containerClientH: containerRef.current?.clientHeight ?? null,
+                containerScrollW: containerRef.current?.scrollWidth ?? null,
+                containerScrollH: containerRef.current?.scrollHeight ?? null,
+                surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                systemsLength: apiRef.current?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                firstSystemBars: apiRef.current?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+            });
             showCurtain(curtainRef.current);
             stopLandscapeScrollLoop();
             landscapeScrollStateRef.current = null;
@@ -1565,6 +1739,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             });
 
             api.renderStarted.on(() => {
+                // [rotation-anchor-gate-probe] Point 2: renderStarted
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'renderStarted',
+                    rotationGateActive: rotationGateActiveRef.current,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastOrientationMode: lastOrientationModeRef.current,
+                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: api?.tickPosition ?? null,
+                    playerState: (api as any)?.playerState ?? null,
+                    isPlayingRef: isPlayingRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: api?.playbackRange ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                    containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                    containerScrollTop: containerRef.current?.scrollTop ?? null,
+                    containerClientW: containerRef.current?.clientWidth ?? null,
+                    containerClientH: containerRef.current?.clientHeight ?? null,
+                    containerScrollW: containerRef.current?.scrollWidth ?? null,
+                    containerScrollH: containerRef.current?.scrollHeight ?? null,
+                    surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
                 activeRendersRef.current += 1;
                 renderTokenRef.current += 1;
                 forceRevealCancelRef.current += 1;
@@ -1658,7 +1858,59 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 s1WouldFireOnNextPositionChanged: false,
                             });
                         }
+                        // [rotation-anchor-gate-probe] Point 8: before snapPortraitToBeatRow
+                        console.log('[rotation-anchor-gate-probe]', {
+                            reason: 'before-snapPortraitToBeatRow',
+                            rotationGateActive: rotationGateActiveRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            intentionalTick: getIntentionalTick(),
+                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                            containerScrollTop: containerRef.current?.scrollTop ?? null,
+                            containerClientW: containerRef.current?.clientWidth ?? null,
+                            containerClientH: containerRef.current?.clientHeight ?? null,
+                            containerScrollW: containerRef.current?.scrollWidth ?? null,
+                            containerScrollH: containerRef.current?.scrollHeight ?? null,
+                            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                        });
                         snapPortraitToBeatRow('song-load-prime', r.beat);
+                        // [rotation-anchor-gate-probe] Point 9: after snapPortraitToBeatRow (tween may still be in progress)
+                        console.log('[rotation-anchor-gate-probe]', {
+                            reason: 'after-snapPortraitToBeatRow',
+                            rotationGateActive: rotationGateActiveRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            intentionalTick: getIntentionalTick(),
+                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                            containerScrollTop: containerRef.current?.scrollTop ?? null,
+                            containerClientW: containerRef.current?.clientWidth ?? null,
+                            containerClientH: containerRef.current?.clientHeight ?? null,
+                            containerScrollW: containerRef.current?.scrollWidth ?? null,
+                            containerScrollH: containerRef.current?.scrollHeight ?? null,
+                            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        });
                         resolve(true);
                     };
                     requestAnimationFrame(step);
@@ -1781,11 +2033,76 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         targetScrollLeft: snap,
                     });
                 }
+                console.log('[rotation-anchor-resolution]', {
+                    reason: 'primeLandscapeState-snap',
+                    source: 'primeLandscapeState',
+                    requestedTick: tick,
+                    resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                    resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+                    resolvedBeatX: Number(curBeatX.toFixed(1)),
+                    resolvedBeatY: bb?.visualBounds?.y ?? null,
+                    containerScrollLeft: ctr.scrollLeft,
+                    containerScrollTop: ctr.scrollTop,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
+                // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (primeLandscapeState)
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'before-scrollLeft-snap-primeLandscapeState',
+                    rotationGateActive: rotationGateActiveRef.current,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: api?.tickPosition ?? null,
+                    playerState: (api as any)?.playerState ?? null,
+                    isPlayingRef: isPlayingRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: api?.playbackRange ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                    containerScrollLeft: ctr?.scrollLeft ?? null,
+                    containerScrollTop: ctr?.scrollTop ?? null,
+                    containerClientW: ctr?.clientWidth ?? null,
+                    containerClientH: ctr?.clientHeight ?? null,
+                    containerScrollW: ctr?.scrollWidth ?? null,
+                    containerScrollH: ctr?.scrollHeight ?? null,
+                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    snapTarget: snap,
+                });
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
             };
 
             api.renderFinished.on(() => {
+                // [rotation-anchor-gate-probe] Point 3: renderFinished
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'renderFinished',
+                    rotationGateActive: rotationGateActiveRef.current,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastOrientationMode: lastOrientationModeRef.current,
+                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: api?.tickPosition ?? null,
+                    playerState: (api as any)?.playerState ?? null,
+                    isPlayingRef: isPlayingRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: api?.playbackRange ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                    containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                    containerScrollTop: containerRef.current?.scrollTop ?? null,
+                    containerClientW: containerRef.current?.clientWidth ?? null,
+                    containerClientH: containerRef.current?.clientHeight ?? null,
+                    containerScrollW: containerRef.current?.scrollWidth ?? null,
+                    containerScrollH: containerRef.current?.scrollHeight ?? null,
+                    surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
                 activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
                 const tokenAtFinish = renderTokenRef.current;
                 if (activeRendersRef.current !== 0) return;
@@ -1904,7 +2221,57 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 (n as HTMLElement).style.display = 'none';
                                 (n as HTMLElement).style.opacity = '0';
                             });
+                        // [rotation-anchor-gate-probe] Point 4: before landscapeInitialAnchor
+                        console.log('[rotation-anchor-gate-probe]', {
+                            reason: 'before-landscapeInitialAnchor',
+                            rotationGateActive: rotationGateActiveRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            intentionalTick: getIntentionalTick(),
+                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                            containerScrollLeft: h?.scrollLeft ?? null,
+                            containerScrollTop: h?.scrollTop ?? null,
+                            containerClientW: h?.clientWidth ?? null,
+                            containerClientH: h?.clientHeight ?? null,
+                            containerScrollW: h?.scrollWidth ?? null,
+                            containerScrollH: h?.scrollHeight ?? null,
+                            surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
+                            surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        });
                         landscapeInitialAnchor(h, api, targetScrollLeftRef);
+                        // [rotation-anchor-gate-probe] Point 5: after landscapeInitialAnchor called (async RAF — snap not yet applied)
+                        console.log('[rotation-anchor-gate-probe]', {
+                            reason: 'after-landscapeInitialAnchor-called',
+                            rotationGateActive: rotationGateActiveRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            isPlayingRef: isPlayingRef.current,
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRange: api?.playbackRange ?? null,
+                            intentionalTick: getIntentionalTick(),
+                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                            containerScrollLeft: h?.scrollLeft ?? null,
+                            containerScrollTop: h?.scrollTop ?? null,
+                            containerClientW: h?.clientWidth ?? null,
+                            containerClientH: h?.clientHeight ?? null,
+                            containerScrollW: h?.scrollWidth ?? null,
+                            containerScrollH: h?.scrollHeight ?? null,
+                            surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
+                            surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        });
                         startLandscapeScrollLoop(h, api);
                     }
 
@@ -2027,7 +2394,59 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (isStripRender) {
                         requestAnimationFrame(() => {
                             const ctr = containerRef.current;
-                            if (ctr) primeLandscapeState(ctr);
+                            if (ctr) {
+                                // [rotation-anchor-gate-probe] Point 6: before primeLandscapeState (renderFinished RAF)
+                                console.log('[rotation-anchor-gate-probe]', {
+                                    reason: 'before-primeLandscapeState-renderFinished',
+                                    rotationGateActive: rotationGateActiveRef.current,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    playerState: (api as any)?.playerState ?? null,
+                                    isPlayingRef: isPlayingRef.current,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    intentionalTick: getIntentionalTick(),
+                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                    containerScrollLeft: ctr?.scrollLeft ?? null,
+                                    containerScrollTop: ctr?.scrollTop ?? null,
+                                    containerClientW: ctr?.clientWidth ?? null,
+                                    containerClientH: ctr?.clientHeight ?? null,
+                                    containerScrollW: ctr?.scrollWidth ?? null,
+                                    containerScrollH: ctr?.scrollHeight ?? null,
+                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                });
+                                primeLandscapeState(ctr);
+                                // [rotation-anchor-gate-probe] Point 7: after primeLandscapeState (renderFinished RAF)
+                                console.log('[rotation-anchor-gate-probe]', {
+                                    reason: 'after-primeLandscapeState-renderFinished',
+                                    rotationGateActive: rotationGateActiveRef.current,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    playerState: (api as any)?.playerState ?? null,
+                                    isPlayingRef: isPlayingRef.current,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    intentionalTick: getIntentionalTick(),
+                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                    containerScrollLeft: ctr?.scrollLeft ?? null,
+                                    containerScrollTop: ctr?.scrollTop ?? null,
+                                    containerClientW: ctr?.clientWidth ?? null,
+                                    containerClientH: ctr?.clientHeight ?? null,
+                                    containerScrollW: ctr?.scrollWidth ?? null,
+                                    containerScrollH: ctr?.scrollHeight ?? null,
+                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                });
+                            }
                         });
                     }
                 }, QUIET_MS);
@@ -2106,7 +2525,57 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const ctr = containerRef.current;
                     if (ctr) {
                         requestAnimationFrame(() => {
+                            // [rotation-anchor-gate-probe] Point 6: before primeLandscapeState (playerStateChanged play-start)
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'before-primeLandscapeState-playerStateChanged',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: ctr?.scrollLeft ?? null,
+                                containerScrollTop: ctr?.scrollTop ?? null,
+                                containerClientW: ctr?.clientWidth ?? null,
+                                containerClientH: ctr?.clientHeight ?? null,
+                                containerScrollW: ctr?.scrollWidth ?? null,
+                                containerScrollH: ctr?.scrollHeight ?? null,
+                                surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            });
                             primeLandscapeState(ctr);
+                            // [rotation-anchor-gate-probe] Point 7: after primeLandscapeState (playerStateChanged play-start)
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'after-primeLandscapeState-playerStateChanged',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: ctr?.scrollLeft ?? null,
+                                containerScrollTop: ctr?.scrollTop ?? null,
+                                containerClientW: ctr?.clientWidth ?? null,
+                                containerClientH: ctr?.clientHeight ?? null,
+                                containerScrollW: ctr?.scrollWidth ?? null,
+                                containerScrollH: ctr?.scrollHeight ?? null,
+                                surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            });
                             startLandscapeScrollLoop(ctr, api);
                         });
                     }
