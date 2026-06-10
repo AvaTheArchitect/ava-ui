@@ -1955,27 +1955,31 @@ export default function BeatCustomLoopOverlay({
             return right >= -60 && left <= containerWidth + 60;
         });
 
+        const representativeRect = visibleRects[0] ?? null;
+        const renderRects = representativeRect ? [representativeRect] : [];
+
         console.log('[landscape-loop-highlight-render]', {
             startTick: lsRange.startTick,
             endTick: lsRange.endTick,
             rectsCount: rects.length,
             bandRectsCount: bandRects.length,
-            renderedRectsCount: visibleRects.length,
+            visibleRectsCount: visibleRects.length,
+            renderedRectsCount: renderRects.length,
             firstBandY,
             bandTolerance,
+            firstRenderedRect: renderRects[0] ?? null,
             scrollLeft,
             containerW: containerWidth,
             surfaceW,
-            firstRenderedRect: visibleRects[0] ?? null,
+            geometryMode: 'landscape-direct-rect-single-representative',
             isDisplayOnly: true,
-            geometryMode: 'landscape-direct-rect-y-band-filter',
         });
 
-        if (!visibleRects.length) return null;
+        if (!renderRects.length) return null;
 
         return (
             <>
-                {visibleRects.map((r, i) => (
+                {renderRects.map((r, i) => (
                     <div
                         key={i}
                         className="beat-loop-highlight-landscape"
