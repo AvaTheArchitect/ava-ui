@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V135
+ * Current version: V136
  * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V136 LOCKS (rotation stable anchor):
+ * ✅ [RotationStableAnchorRef] lastStableRotationAnchorTickRef remembers
+ *         the last trusted visible/intentional anchor tick before AlphaTab
+ *         enters hybrid rotation/render states. It updates only from trusted
+ *         sources: accepted non-settling beats, successful portrait snap,
+ *         and successful landscape prime. orientation-flip-start now prefers
+ *         this stable anchor before api.tickPosition or landscapeScrollState,
+ *         preventing poisoned bar-start drift from being frozen as the
+ *         rotation anchor. Do not remove. Phase 2 visual curtain/bounce
+ *         suppression is separate.
  *
  * V135 LOCKS (rotation anchor freeze phase 1):
  * ✅ [RotationAnchorFreeze] Phase 1: preRotationAnchorTickRef captures
@@ -495,6 +506,7 @@ function landscapeInitialAnchor(
                     reason: 'before-scrollLeft-snap-landscapeInitialAnchor',
                     rotationGateActive: null,
                     preRotationAnchorTick: null,
+                    lastStableRotationAnchorTick: null,
                     isLandscape: true,
                     layoutMode: api?.settings?.display?.layoutMode ?? null,
                     apiTickPosition: api?.tickPosition ?? null,
@@ -534,6 +546,7 @@ function landscapeInitialAnchor(
             reason: 'before-scrollLeft-zero-fallthrough-landscapeInitialAnchor',
             rotationGateActive: null,
             preRotationAnchorTick: null,
+            lastStableRotationAnchorTick: null,
             isLandscape: true,
             layoutMode: api?.settings?.display?.layoutMode ?? null,
             apiTickPosition: api?.tickPosition ?? null,
@@ -829,13 +842,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const rotationGateActiveRef = useRef<boolean>(false);
     const preRotationAnchorTickRef = useRef<number | null>(null);
     const lastOrientationModeRef = useRef<'page' | 'landscape' | null>(null);
+    // [RotationStableAnchorRef] V136: proactive memory of the last trusted anchor tick,
+    // updated only from stable/accepted sources (never from settling/rotation drift).
+    const lastStableRotationAnchorTickRef = useRef<number | null>(null);
 
-    // [RotationAnchorFreeze] Returns the best tick to use during rotation/render anchoring.
-    // While the gate is active, returns the frozen pre-rotation tick so AlphaTab's degraded
-    // bar-start tick cannot overwrite the user's actual cursor position.
+    // [RotationAnchorFreeze / RotationStableAnchorRef] Returns the best tick for rotation anchoring.
+    // Priority: frozen pre-rotation tick (gate active) → last stable anchor → intentional → landscapeState → api.tickPosition
     const getRotationAnchorTick = useCallback((api: any): number => {
         if (rotationGateActiveRef.current && preRotationAnchorTickRef.current != null) {
             return preRotationAnchorTickRef.current;
+        }
+        if (lastStableRotationAnchorTickRef.current != null) {
+            return lastStableRotationAnchorTickRef.current;
         }
         const intentional = getIntentionalTick();
         if (intentional != null) return intentional;
@@ -843,6 +861,23 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (landscapeState?.lastTick != null) return landscapeState.lastTick;
         if (landscapeState?.beatStart != null) return landscapeState.beatStart;
         return (api as any)?.tickPosition ?? 0;
+    }, []);
+
+    // [RotationStableAnchorRef] Records a trusted anchor tick from stable sources only.
+    // Must not be called during settling or from passive AlphaTab drift.
+    const setLastStableRotationAnchorTick = useCallback((tick: number | null | undefined, source: string) => {
+        if (typeof tick !== 'number' || !Number.isFinite(tick) || tick <= 0) return;
+        lastStableRotationAnchorTickRef.current = tick;
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[rotation-stable-anchor]', {
+                reason: 'stable-anchor-updated',
+                source,
+                tick,
+                apiTickPosition: apiRef.current?.tickPosition ?? null,
+                rotationGateActive: rotationGateActiveRef.current,
+                isSettling: isSettlingRef.current,
+            });
+        }
     }, []);
 
     const reassertRafRef = useRef<number | null>(null);
@@ -1232,6 +1267,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             reason: 'before-scrollTop-snap-snapPortraitToBeatRow',
             rotationGateActive: rotationGateActiveRef.current,
             preRotationAnchorTick: preRotationAnchorTickRef.current,
+            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
             isLandscape: forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1),
             layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
             apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
@@ -1406,15 +1442,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             if (!needsFlip && !looksCollapsed && !stuckHorizontalStrip) return;
 
-            // [RotationAnchorFreeze] One-shot capture: only record the anchor tick if no
-            // active gate already holds a valid tick. Repeated orientation/render cycles
-            // must not overwrite a good pre-rotation anchor with AlphaTab's degraded tick.
+            // [RotationStableAnchorRef] Prefer the proactively-recorded stable anchor
+            // over any passive source. One-shot guard unchanged from V135.
             const nextAnchorTick =
-                preRotationAnchorTickRef.current ??
-                getIntentionalTick() ??
-                landscapeScrollStateRef.current?.lastTick ??
-                landscapeScrollStateRef.current?.beatStart ??
-                ((api as any)?.tickPosition ?? 0);
+                (lastStableRotationAnchorTickRef.current != null && lastStableRotationAnchorTickRef.current > 0)
+                    ? lastStableRotationAnchorTickRef.current
+                    : preRotationAnchorTickRef.current
+                    ?? getIntentionalTick()
+                    ?? landscapeScrollStateRef.current?.lastTick
+                    ?? landscapeScrollStateRef.current?.beatStart
+                    ?? ((api as any)?.tickPosition ?? 0);
             if (!rotationGateActiveRef.current || preRotationAnchorTickRef.current == null) {
                 preRotationAnchorTickRef.current = nextAnchorTick;
             }
@@ -1424,6 +1461,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 reason: 'orientation-flip-start',
                 rotationGateActive: rotationGateActiveRef.current,
                 preRotationAnchorTick: preRotationAnchorTickRef.current,
+                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                 lastOrientationMode: lastOrientationModeRef.current,
                 isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                 layoutMode: api?.settings?.display?.layoutMode ?? null,
@@ -1515,13 +1553,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         forceHorizontalRef.current = next;
         if (previous === true && next === false) {
             console.warn('[V117] forceHorizontal strip-to-page preclear');
-            // [RotationAnchorFreeze] One-shot capture for forceHorizontal flip path.
+            // [RotationStableAnchorRef] forceHorizontal flip — same stable-first priority.
             const nextAnchorTickFH =
-                preRotationAnchorTickRef.current ??
-                getIntentionalTick() ??
-                landscapeScrollStateRef.current?.lastTick ??
-                landscapeScrollStateRef.current?.beatStart ??
-                ((apiRef.current as any)?.tickPosition ?? 0);
+                (lastStableRotationAnchorTickRef.current != null && lastStableRotationAnchorTickRef.current > 0)
+                    ? lastStableRotationAnchorTickRef.current
+                    : preRotationAnchorTickRef.current
+                    ?? getIntentionalTick()
+                    ?? landscapeScrollStateRef.current?.lastTick
+                    ?? landscapeScrollStateRef.current?.beatStart
+                    ?? ((apiRef.current as any)?.tickPosition ?? 0);
             if (!rotationGateActiveRef.current || preRotationAnchorTickRef.current == null) {
                 preRotationAnchorTickRef.current = nextAnchorTickFH;
             }
@@ -1531,6 +1571,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 reason: 'orientation-flip-start-forceHorizontal',
                 rotationGateActive: rotationGateActiveRef.current,
                 preRotationAnchorTick: preRotationAnchorTickRef.current,
+                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                 lastOrientationMode: lastOrientationModeRef.current,
                 isLandscape: true,
                 layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
@@ -1789,6 +1830,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     reason: 'renderStarted',
                     rotationGateActive: rotationGateActiveRef.current,
                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                     lastOrientationMode: lastOrientationModeRef.current,
                     isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                     layoutMode: api?.settings?.display?.layoutMode ?? null,
@@ -1909,6 +1951,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             reason: 'before-snapPortraitToBeatRow',
                             rotationGateActive: rotationGateActiveRef.current,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                             isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
                             apiTickPosition: api?.tickPosition ?? null,
@@ -1932,6 +1975,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
                         });
                         snapPortraitToBeatRow('song-load-prime', r.beat);
+                        // [RotationStableAnchorRef] Portrait snap resolved — record as stable anchor.
+                        setLastStableRotationAnchorTick(tick, 'snapPortraitToBeatRow-success');
                         // [RotationAnchorFreeze] Portrait snap committed — clear gate so playback
                         // tick tracking resumes normally.
                         console.log('[rotation-anchor-gate-probe]', {
@@ -1940,6 +1985,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             finalTick: tick,
                             apiTickPosition: api?.tickPosition ?? null,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                         });
                         rotationGateActiveRef.current = false;
                         preRotationAnchorTickRef.current = null;
@@ -1948,6 +1994,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             reason: 'after-snapPortraitToBeatRow',
                             rotationGateActive: rotationGateActiveRef.current,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                             isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
                             apiTickPosition: api?.tickPosition ?? null,
@@ -2108,6 +2155,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     reason: 'before-scrollLeft-snap-primeLandscapeState',
                     rotationGateActive: rotationGateActiveRef.current,
                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                     isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                     layoutMode: api?.settings?.display?.layoutMode ?? null,
                     apiTickPosition: api?.tickPosition ?? null,
@@ -2131,6 +2179,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 });
                 targetScrollLeftRef.current = snap;
                 ctr.scrollLeft = snap;
+                // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
+                setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
             };
 
             api.renderFinished.on(() => {
@@ -2139,6 +2189,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     reason: 'renderFinished',
                     rotationGateActive: rotationGateActiveRef.current,
                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                     lastOrientationMode: lastOrientationModeRef.current,
                     isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                     layoutMode: api?.settings?.display?.layoutMode ?? null,
@@ -2283,6 +2334,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             reason: 'before-landscapeInitialAnchor',
                             rotationGateActive: rotationGateActiveRef.current,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                             isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
                             apiTickPosition: api?.tickPosition ?? null,
@@ -2316,6 +2368,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             reason: 'after-landscapeInitialAnchor-called',
                             rotationGateActive: rotationGateActiveRef.current,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                             isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
                             apiTickPosition: api?.tickPosition ?? null,
@@ -2464,6 +2517,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     reason: 'before-primeLandscapeState-renderFinished',
                                     rotationGateActive: rotationGateActiveRef.current,
                                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                                     isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                                     layoutMode: api?.settings?.display?.layoutMode ?? null,
                                     apiTickPosition: api?.tickPosition ?? null,
@@ -2492,6 +2546,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     finalTick: preRotationAnchorTickRef.current,
                                     apiTickPosition: api?.tickPosition ?? null,
                                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                                 });
                                 rotationGateActiveRef.current = false;
                                 preRotationAnchorTickRef.current = null;
@@ -2500,6 +2555,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     reason: 'after-primeLandscapeState-renderFinished',
                                     rotationGateActive: rotationGateActiveRef.current,
                                     preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                                     isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                                     layoutMode: api?.settings?.display?.layoutMode ?? null,
                                     apiTickPosition: api?.tickPosition ?? null,
@@ -2604,6 +2660,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 reason: 'before-primeLandscapeState-playerStateChanged',
                                 rotationGateActive: rotationGateActiveRef.current,
                                 preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                                 isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                                 layoutMode: api?.settings?.display?.layoutMode ?? null,
                                 apiTickPosition: api?.tickPosition ?? null,
@@ -2630,6 +2687,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 reason: 'after-primeLandscapeState-playerStateChanged',
                                 rotationGateActive: rotationGateActiveRef.current,
                                 preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
                                 isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
                                 layoutMode: api?.settings?.display?.layoutMode ?? null,
                                 apiTickPosition: api?.tickPosition ?? null,
@@ -3434,6 +3492,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     stableCurBeatRef.current = curBeat;
                     stableVisualKeyRef.current = curVisualKey;
 
+                    // [RotationStableAnchorRef] Record accepted beat as last stable anchor.
+                    // Guard: skip during settling or while rotation gate is active.
+                    if (!rotationGateActiveRef.current && !isSettlingRef.current) {
+                        setLastStableRotationAnchorTick(curBeat?.absolutePlaybackStart ?? tick, 'playerPositionChanged-accepted-beat');
+                    }
+
                     const beatId = curBeat.absolutePlaybackStart ?? 0;
                     if (beatId === reAnchorCountRef.current.beat) { reAnchorCountRef.current.count++; }
                     else { reAnchorCountRef.current = { beat: beatId, count: 1 }; }
@@ -3796,6 +3860,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             reseatMinBarUntilRef.current = 0;
             activeLoopReseatReasonRef.current = null;
             loopPlayStartPreserveAbsRef.current = null;
+            lastStableRotationAnchorTickRef.current = null;
             if (s1AnimRafRef.current !== null) {
                 cancelAnimationFrame(s1AnimRafRef.current);
                 s1AnimRafRef.current = null;
@@ -3803,7 +3868,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             delete (window as any).__maestroProbeRendererLoop;
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, getRotationAnchorTick, resetKey]);
+    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, getRotationAnchorTick, setLastStableRotationAnchorTick, resetKey]);
 
     useEffect(() => {
         const api = apiRef.current;
