@@ -2268,6 +2268,41 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
 
+                    {
+                        const previousLandscapeState = landscapeScrollStateRef.current;
+                        const previousTick = previousLandscapeState?.lastTick ?? null;
+                        const range = api?.playbackRange as { startTick: number; endTick: number } | null;
+                        const nativeLoopWrapped =
+                            loopEnabledRef.current &&
+                            range != null &&
+                            previousTick != null &&
+                            previousTick > range.startTick + 240 &&
+                            tickRaw <= range.startTick + 120;
+
+                        if (nativeLoopWrapped) {
+                            console.log('[landscape-native-loop-wrap-detected]', {
+                                tickRaw,
+                                previousTick,
+                                playbackRange: range,
+                                previousLandscapeState,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                            });
+                            const snap = Math.max(0, curBeatX - getCursorSurfaceX(container));
+                            targetScrollLeftRef.current = snap;
+                            container.scrollLeft = snap;
+                            console.log('[landscape-native-loop-wrap-visual-snap]', {
+                                tickRaw,
+                                previousTick,
+                                snap,
+                                scrollLeftAfter: container.scrollLeft,
+                                curBeatX,
+                                effectiveNextBeatX,
+                                playbackRange: range,
+                            });
+                        }
+                    }
+
                     if (LANDSCAPE_LOOP_DEBUG) {
                         console.log('[landscape-visual-loop-sync]', {
                             reason: 'write-playerPositionChanged-live',
