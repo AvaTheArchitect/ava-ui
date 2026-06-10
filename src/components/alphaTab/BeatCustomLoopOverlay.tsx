@@ -1,8 +1,20 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.7 — Cross-Mode Gesture Guards
+ * BeatCustomLoopOverlay v1.8.8 — Landscape Display-Only Highlight
  * Date: June 9th, 2026
+ *
+ * 🔥 V1.8.8 CHANGES:
+ * ✅ Landscape display-only loop highlight: replaces the unconditional
+ *    `if (isLandscape) return null` with a dedicated Landscape render path.
+ *    Shows the committed loop range as a translucent highlight behind the tab.
+ *    No handles, no drag, no api.playbackRange writes. Uses rects already
+ *    computed by rebuildFromPlaybackRange (rectsCount: 13 confirmed in logs).
+ *    Rects are scrollLeft-adjusted to viewport space (score coords 0–35000+,
+ *    container is the scroll element, overlay wrapper is a sibling outside it).
+ *    Deduplicates to the first y-band (topmost staff row) for MVP safety.
+ *    TODO: match the y-band of FixedLandscapeCursor (active track row).
+ *    Diagnostic: [landscape-loop-highlight-render] on every Landscape render.
  *
  * 🔥 V1.8.7 CHANGES:
  * ✅ [LandscapeOnUpGuard] onUp clears isDragging/startBeat/endBeat and returns
@@ -240,6 +252,11 @@ export default function BeatCustomLoopOverlay({
     const tickCacheWarnedRef = useRef(false);
 
     const [rects, setRects] = useState<HighlightRect[]>([]);
+
+    // Landscape display-only highlight: tracks container scrollLeft to position
+    // rects in viewport space (score x-coords span 0–35000+, container is viewport-wide).
+    const [landscapeScrollLeft, setLandscapeScrollLeft] = useState(0);
+    const scrollRafRef = useRef<number | null>(null);
     const rectsRef = useRef<HighlightRect[]>([]);
 
     useEffect(() => {
@@ -248,6 +265,35 @@ export default function BeatCustomLoopOverlay({
 
     useEffect(() => { loopRef.current = loopEnabled; }, [loopEnabled]);
     useEffect(() => { isLandscapeRef.current = isLandscape; }, [isLandscape]);
+
+    // Landscape display-only highlight: sync scrollLeft so rects are positioned
+    // in viewport space. container (alphatab-container) is the scroll element in
+    // Landscape (overflow-x: auto). The overlay wrapper is a sibling outside the
+    // scroll container, so left: r.x - scrollLeft converts score coords to viewport.
+    useEffect(() => {
+        if (!isLandscape || !api) {
+            setLandscapeScrollLeft(0);
+            return;
+        }
+        const scrollEl = container as HTMLElement | null;
+        if (!scrollEl) return;
+        const sync = () => {
+            if (scrollRafRef.current !== null) return;
+            scrollRafRef.current = requestAnimationFrame(() => {
+                scrollRafRef.current = null;
+                setLandscapeScrollLeft(scrollEl.scrollLeft ?? 0);
+            });
+        };
+        sync();
+        scrollEl.addEventListener('scroll', sync, { passive: true });
+        return () => {
+            scrollEl.removeEventListener('scroll', sync);
+            if (scrollRafRef.current !== null) {
+                cancelAnimationFrame(scrollRafRef.current);
+                scrollRafRef.current = null;
+            }
+        };
+    }, [isLandscape, api, container]);
 
 
     useEffect(() => {
@@ -1790,8 +1836,6 @@ export default function BeatCustomLoopOverlay({
     };
     const activeOverlayX = getActiveHandleOverlayX();
 
-    if (isLandscape) return null;
-
     // ── V99.8-matched color palette ──────────────────────────────────────────
     const handleColor = '#9333ea';
     const tabColor = '#9c47f0';
@@ -1857,6 +1901,93 @@ export default function BeatCustomLoopOverlay({
             height: Math.max(20, match.height - LOOP_ROW_PAD_Y * 2),
         };
     };
+
+    // ── Landscape display-only loop highlight ────────────────────────────────
+    // Stage 4 extended: shows the committed loop range in Landscape as a
+    // translucent highlight behind the tab. No handles, no drag, no writes to
+    // api.playbackRange. Rects are in score coordinate space (0–surfaceScrollWidth);
+    // left: r.x - scrollLeft converts them to viewport-relative position.
+    //
+    // Deduplication: groups rects by y-band and picks the first (topmost) staff
+    // row. Multiple rects arise because each instrument/staff in the score
+    // produces one rect per bar — e.g. 6 tracks × 2 bars = 12 rects.
+    // TODO: match the y-band used by FixedLandscapeCursor (active track row).
+    if (isLandscape) {
+        const lsRange = api?.playbackRange as { startTick: number; endTick: number } | null;
+        const scrollLeft = landscapeScrollLeft;
+        const containerWidth = (container as HTMLElement | null)?.clientWidth ?? 390;
+        const surfaceEl = (container ?? document).querySelector?.('.at-surface') as HTMLElement | null;
+        const surfaceW = surfaceEl?.scrollWidth ?? 0;
+
+        if (!lsRange || !rects.length) {
+            console.log('[landscape-loop-highlight-render]', {
+                startTick: lsRange?.startTick ?? null,
+                endTick: lsRange?.endTick ?? null,
+                rectsCount: rects.length,
+                renderedRectsCount: 0,
+                scrollLeft,
+                containerW: containerWidth,
+                surfaceW,
+                firstRenderedRect: null,
+                isDisplayOnly: true,
+                note: 'no range or no rects',
+            });
+            return null;
+        }
+
+        // Group by y-band; take the first (topmost) staff row for MVP safety.
+        const Y_BAND = 4;
+        const firstY = rects[0].y;
+        const primaryRects = rects.filter(r => Math.abs(r.y - firstY) < Y_BAND);
+
+        // Clip to viewport (with buffer so edge rects are not missed).
+        const VIEWPORT_BUFFER = 60;
+        const visibleRects = primaryRects.filter(r =>
+            r.x + r.w > scrollLeft - VIEWPORT_BUFFER &&
+            r.x < scrollLeft + containerWidth + VIEWPORT_BUFFER
+        );
+
+        console.log('[landscape-loop-highlight-render]', {
+            startTick: lsRange.startTick,
+            endTick: lsRange.endTick,
+            rectsCount: rects.length,
+            renderedRectsCount: visibleRects.length,
+            scrollLeft,
+            containerW: containerWidth,
+            surfaceW,
+            firstRenderedRect: visibleRects[0] ?? null,
+            isDisplayOnly: true,
+        });
+
+        if (!visibleRects.length) return null;
+
+        return (
+            <>
+                {visibleRects.map((r, i) => {
+                    const rowGeom = getRowGeometryForRect(r);
+                    return (
+                        <div
+                            key={i}
+                            className="beat-loop-highlight-landscape"
+                            style={{
+                                position: 'absolute',
+                                left: r.x + LOOP_X_OFFSET - scrollLeft,
+                                top: rowGeom.top,
+                                width: r.w,
+                                height: rowGeom.height,
+                                background: overlayColor,
+                                borderTop: `1px solid ${borderColor}`,
+                                borderBottom: `1px solid ${borderColor}`,
+                                pointerEvents: 'none',
+                                zIndex: 900,
+                                boxSizing: 'border-box' as const,
+                            }}
+                        />
+                    );
+                })}
+            </>
+        );
+    }
 
     return (
         <>

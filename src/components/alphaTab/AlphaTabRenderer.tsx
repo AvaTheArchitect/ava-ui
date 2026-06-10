@@ -2,9 +2,25 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V132
+ * Current version: V133
  * Date: June 9th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V133 LOCKS (loop-wrap override clear + Landscape loop highlight):
+ * ✅ [LoopWrapOverrideClear] __maestroLoopPlayStartOverrideTick and
+ *         OverrideTickAt cleared at loop-wrap guard in playerPositionChanged
+ *         before seekTicks(liveRange.startTick). Prevents stale inside-highlight
+ *         click override (e.g. 7201) from being consumed as primeT when
+ *         playerStateChanged re-fires isPlaying useEffect after internal
+ *         AlphaTab pause→resume. Do not remove.
+ *
+ * ✅ [LandscapeLoopHighlight] BeatCustomLoopOverlay v1.8.8 — display-only
+ *         Landscape loop highlight. landscapeScrollLeft state synced via
+ *         RAF-throttled scroll listener. Deduplicates to first y-band (topmost
+ *         staff row). Clips to scrollLeft viewport. pointerEvents: none.
+ *         No handles, no drag, no api.playbackRange writes.
+ *         [landscape-loop-highlight-render] diagnostic on every Landscape render.
+ *         Do not add interaction without separate review. Do not remove.
  *
  * V132 LOCKS (cross-mode gesture guards + intentional tick TTL):
  * ✅ [LandscapeOnUpGuard] onUp clears isDragging/startBeat/endBeat
@@ -2154,6 +2170,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     playbackRangeRef.current?.endTick === (api?.playbackRange as any)?.endTick,
                             });
                         }
+                        // [LandscapeWrapOverrideClear] Clear pending play-start override
+                        // before wrap seek. If seekTicks triggers an internal pause→resume,
+                        // the isPlaying useEffect must use liveRange.startTick, not a stale
+                        // inside-highlight click override (e.g. 7201 within [3840, 7680]).
+                        (window as any).__maestroLoopPlayStartOverrideTick = null;
+                        (window as any).__maestroLoopPlayStartOverrideTickAt = null;
                         if (seekTicks) seekTicks(liveRange.startTick);
                         api.tickPosition = liveRange.startTick;
                         return;
