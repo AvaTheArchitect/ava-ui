@@ -2,9 +2,21 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V134
- * Date: June 9th, 2026
+ * Current version: V135
+ * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V135 LOCKS (rotation anchor freeze phase 1):
+ * ✅ [RotationAnchorFreeze] Phase 1: preRotationAnchorTickRef captures
+ *         the intended cursor tick at orientation-flip-start. While
+ *         rotationGateActiveRef is true, landscapeInitialAnchor,
+ *         primeLandscapeState, and ensureCursorAndAnchorOnce prefer this
+ *         ref over api.tickPosition / getIntentionalTick(). The capture is
+ *         one-shot per active rotation gate so repeated orientation/render
+ *         cycles cannot overwrite a good anchor with AlphaTab's degraded
+ *         bar-start tick. Prevents rotation from snapping to beat 1 of the
+ *         same bar/loop measure. Do not remove. Phase 2 visual curtain /
+ *         bounce suppression is separate.
  *
  * V134 LOCKS (Landscape loop visual completion):
  * ✅ [LandscapeZeroDeltaFallback] lastGoodLandscapeVisualDeltaXRef
@@ -403,6 +415,7 @@ function landscapeInitialAnchor(
     api: any,
     targetScrollLeftRef: React.MutableRefObject<number>,
     maxMs = 1000,
+    overrideTick?: number,
 ): void {
     const deadline = performance.now() + maxMs;
     const step = () => {
@@ -418,10 +431,9 @@ function landscapeInitialAnchor(
             : new Set([0]);
         const cursorSurfaceX = getCursorSurfaceX(container);
         const reachableFloor = cursorSurfaceX + 4;
-        // V127: prepend live tick so current beat position is tried first.
-        // Previously only probed early-song ticks — any position past tick 960
-        // fell through to scrollLeft=0, degrading exact beat to bar start.
-        const liveTick = getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
+        // [RotationAnchorFreeze] overrideTick is the frozen pre-rotation anchor;
+        // fall back to getIntentionalTick() then api.tickPosition if not provided.
+        const liveTick = overrideTick ?? getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
         const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[landscape-cursor-prime-probe]', {
@@ -813,10 +825,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const isApplyingProfileRef = useRef(false);
     const lastWantStripRef = useRef<boolean | null>(null);
 
-    // [rotation-anchor-gate-probe] Diagnostic scaffolding — not wired to behavior yet.
+    // [RotationAnchorFreeze] V135: one-shot pre-rotation anchor gate.
     const rotationGateActiveRef = useRef<boolean>(false);
     const preRotationAnchorTickRef = useRef<number | null>(null);
     const lastOrientationModeRef = useRef<'page' | 'landscape' | null>(null);
+
+    // [RotationAnchorFreeze] Returns the best tick to use during rotation/render anchoring.
+    // While the gate is active, returns the frozen pre-rotation tick so AlphaTab's degraded
+    // bar-start tick cannot overwrite the user's actual cursor position.
+    const getRotationAnchorTick = useCallback((api: any): number => {
+        if (rotationGateActiveRef.current && preRotationAnchorTickRef.current != null) {
+            return preRotationAnchorTickRef.current;
+        }
+        const intentional = getIntentionalTick();
+        if (intentional != null) return intentional;
+        const landscapeState = landscapeScrollStateRef.current;
+        if (landscapeState?.lastTick != null) return landscapeState.lastTick;
+        if (landscapeState?.beatStart != null) return landscapeState.beatStart;
+        return (api as any)?.tickPosition ?? 0;
+    }, []);
 
     const reassertRafRef = useRef<number | null>(null);
     const lastReassertTokenRef = useRef<number | null>(null);
@@ -1379,9 +1406,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             if (!needsFlip && !looksCollapsed && !stuckHorizontalStrip) return;
 
-            // [rotation-anchor-gate-probe] Point 1: orientation flip confirmed
+            // [RotationAnchorFreeze] One-shot capture: only record the anchor tick if no
+            // active gate already holds a valid tick. Repeated orientation/render cycles
+            // must not overwrite a good pre-rotation anchor with AlphaTab's degraded tick.
+            const nextAnchorTick =
+                preRotationAnchorTickRef.current ??
+                getIntentionalTick() ??
+                landscapeScrollStateRef.current?.lastTick ??
+                landscapeScrollStateRef.current?.beatStart ??
+                ((api as any)?.tickPosition ?? 0);
+            if (!rotationGateActiveRef.current || preRotationAnchorTickRef.current == null) {
+                preRotationAnchorTickRef.current = nextAnchorTick;
+            }
             rotationGateActiveRef.current = true;
-            preRotationAnchorTickRef.current = getIntentionalTick() ?? api.tickPosition ?? null;
             lastOrientationModeRef.current = wantStrip ? 'landscape' : 'page';
             console.log('[rotation-anchor-gate-probe]', {
                 reason: 'orientation-flip-start',
@@ -1478,9 +1515,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         forceHorizontalRef.current = next;
         if (previous === true && next === false) {
             console.warn('[V117] forceHorizontal strip-to-page preclear');
-            // [rotation-anchor-gate-probe] Point 1: strip-to-page flip via forceHorizontal
+            // [RotationAnchorFreeze] One-shot capture for forceHorizontal flip path.
+            const nextAnchorTickFH =
+                preRotationAnchorTickRef.current ??
+                getIntentionalTick() ??
+                landscapeScrollStateRef.current?.lastTick ??
+                landscapeScrollStateRef.current?.beatStart ??
+                ((apiRef.current as any)?.tickPosition ?? 0);
+            if (!rotationGateActiveRef.current || preRotationAnchorTickRef.current == null) {
+                preRotationAnchorTickRef.current = nextAnchorTickFH;
+            }
             rotationGateActiveRef.current = true;
-            preRotationAnchorTickRef.current = getIntentionalTick() ?? apiRef.current?.tickPosition ?? null;
             lastOrientationModeRef.current = 'landscape';
             console.log('[rotation-anchor-gate-probe]', {
                 reason: 'orientation-flip-start-forceHorizontal',
@@ -1815,7 +1860,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const tickCache = (api as any).tickCache;
                         const bounds = api.renderer?.boundsLookup;
                         if (!tickCache || !bounds) { requestAnimationFrame(step); return; }
-                        const tick = getIntentionalTick() ?? api.tickPosition ?? 0;
+                        // [RotationAnchorFreeze] Prefer frozen pre-rotation tick while gate is active.
+                        const tick = getRotationAnchorTick(api);
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
@@ -1886,6 +1932,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
                         });
                         snapPortraitToBeatRow('song-load-prime', r.beat);
+                        // [RotationAnchorFreeze] Portrait snap committed — clear gate so playback
+                        // tick tracking resumes normally.
+                        console.log('[rotation-anchor-gate-probe]', {
+                            reason: 'rotation-gate-cleared',
+                            clearedAt: 'ensureCursorAndAnchorOnce',
+                            finalTick: tick,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        });
+                        rotationGateActiveRef.current = false;
+                        preRotationAnchorTickRef.current = null;
                         // [rotation-anchor-gate-probe] Point 9: after snapPortraitToBeatRow (tween may still be in progress)
                         console.log('[rotation-anchor-gate-probe]', {
                             reason: 'after-snapPortraitToBeatRow',
@@ -1928,13 +1985,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const bounds = api?.renderer?.boundsLookup;
                 if (!tickCache?.findBeat || !bounds?.findBeat) return;
                 const trackSet = getTrackSet(api);
-                // [LandscapePlaybackAnchorScope] Use live api.tickPosition while playing;
-                // fall back to getIntentionalTick() only when paused/stopped so rotation
-                // and render anchoring still land on the last intended beat.
+                // [LandscapePlaybackAnchorScope] Use live api.tickPosition while playing.
+                // [RotationAnchorFreeze] While paused/stopped, prefer the frozen pre-rotation
+                // anchor tick so rotation cannot degrade to AlphaTab's bar-start tick.
                 const isActivelyPlaying = isPlayingRef.current || (api as any)?.playerState === 1;
                 const tick = isActivelyPlaying
                     ? ((api as any)?.tickPosition ?? 0)
-                    : (getIntentionalTick() ?? (api as any)?.tickPosition ?? 0);
+                    : getRotationAnchorTick(api);
                 if (SEEK_DIAGNOSTIC_DEBUG) {
                     const intentionalT = getIntentionalTick();
                     const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -2246,7 +2303,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                             firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                         });
-                        landscapeInitialAnchor(h, api, targetScrollLeftRef);
+                        landscapeInitialAnchor(
+                            h,
+                            api,
+                            targetScrollLeftRef,
+                            1000,
+                            // [RotationAnchorFreeze] Pass frozen pre-rotation tick as override.
+                            rotationGateActiveRef.current ? preRotationAnchorTickRef.current ?? undefined : undefined,
+                        );
                         // [rotation-anchor-gate-probe] Point 5: after landscapeInitialAnchor called (async RAF — snap not yet applied)
                         console.log('[rotation-anchor-gate-probe]', {
                             reason: 'after-landscapeInitialAnchor-called',
@@ -2421,6 +2485,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                                 });
                                 primeLandscapeState(ctr);
+                                // [RotationAnchorFreeze] Landscape snap committed — clear gate.
+                                console.log('[rotation-anchor-gate-probe]', {
+                                    reason: 'rotation-gate-cleared',
+                                    clearedAt: 'renderFinished-landscape',
+                                    finalTick: preRotationAnchorTickRef.current,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                });
+                                rotationGateActiveRef.current = false;
+                                preRotationAnchorTickRef.current = null;
                                 // [rotation-anchor-gate-probe] Point 7: after primeLandscapeState (renderFinished RAF)
                                 console.log('[rotation-anchor-gate-probe]', {
                                     reason: 'after-primeLandscapeState-renderFinished',
@@ -3728,7 +3802,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             delete (window as any).__maestroProbeRendererLoop;
         };
-    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, resetKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, getRotationAnchorTick, resetKey]);
 
     useEffect(() => {
         const api = apiRef.current;
