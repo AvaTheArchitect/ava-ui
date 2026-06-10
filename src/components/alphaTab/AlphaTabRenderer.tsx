@@ -2,9 +2,27 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V133
+ * Current version: V134
  * Date: June 9th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V134 LOCKS (Landscape loop visual completion):
+ * ✅ [LandscapeZeroDeltaFallback] lastGoodLandscapeVisualDeltaXRef
+ *         stores the last positive visualDeltaX from normal Landscape
+ *         beat-to-beat movement. When AlphaTab returns a zero-width
+ *         visual segment during loop playback (nextBeatX <= curBeatX + 1),
+ *         effectiveNextBeatX is synthesized from the last good delta.
+ *         Confirmed: AlphaTab returns the same X for all ticks 7200→7680
+ *         and null at loop end 7680. Prevents final loop beat from
+ *         visually freezing while audio continues. Do not remove.
+ *
+ * ✅ [LandscapeNativeLoopWrapSnap] Detects native AlphaTab loop wrap
+ *         inside the live playerPositionChanged strip path using
+ *         previousTick near playbackRange.endTick and tickRaw near
+ *         playbackRange.startTick. Hard-snaps container.scrollLeft and
+ *         targetScrollLeftRef to the loop start immediately. Prevents
+ *         the first beat after wrap from being visually skipped while
+ *         scroll easing catches up. Do not remove.
  *
  * V133 LOCKS (loop-wrap override clear + Landscape loop highlight):
  * ✅ [LoopWrapOverrideClear] __maestroLoopPlayStartOverrideTick and
@@ -2276,7 +2294,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             loopEnabledRef.current &&
                             range != null &&
                             previousTick != null &&
-                            previousTick > range.startTick + 240 &&
+                            previousTick >= range.endTick - 240 &&
                             tickRaw <= range.startTick + 120;
 
                         if (nativeLoopWrapped) {
