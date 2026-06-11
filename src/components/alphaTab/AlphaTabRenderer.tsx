@@ -2,9 +2,18 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V139
+ * Current version: V140
  * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V140 LOCKS:
+ * ✅ [LandscapeTrailingScrollPadding] adds a dedicated horizontal trailing
+ *         spacer inside the AlphaTab scroll container during Landscape mode.
+ *         This expands scrollWidth beyond the AlphaTab surface width,
+ *         preventing browser scrollLeft clamping and allowing late-song
+ *         measures like M128/M129 to scroll completely under the fixed
+ *         Landscape cursor line. Does not alter playbackRange, AlphaSynth,
+ *         or loop range mapping.
  *
  * V139 LOCKS:
  * ✅ [DeferredLandscapeMismatchRecovery] detects Landscape viewport stuck in
@@ -1519,10 +1528,55 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     api.settings.player.scrollMode = (at as any).ScrollMode.Continuous;
                     await api.updateSettings();
                     api.render();
+                    // renderFinished will handle padding via healthyLandscapeStrip; belt-and-suspenders call here.
+                    requestAnimationFrame(() => ensureLandscapeTrailingScrollPadding('deferred-landscape-recovery'));
                 });
             });
         }, 80);
     }, []); // isAlphaTabPageLayoutWhileLandscape reads only refs/window — all deps stable
+
+    // [LandscapeTrailingScrollPadding] Inserts/updates a spacer that expands scrollWidth beyond
+    // the AlphaTab surface so late-song measures can scroll under the fixed Landscape cursor.
+    const ensureLandscapeTrailingScrollPadding = useCallback((reason: string) => {
+        if (typeof document === 'undefined') return;
+        const api = apiRef.current;
+        const container = document.querySelector('.alphatab-container.alphaTab') as HTMLElement | null;
+        const surface = document.querySelector('.at-surface') as HTMLElement | null;
+        if (!api || !container || !surface) return;
+        const isHorizontal = api?.settings?.display?.layoutMode === 1;
+        if (!forceHorizontalRef.current && !isHorizontal) return;
+        const surfaceW = surface.scrollWidth || Math.round(surface.getBoundingClientRect().width);
+        const containerW = container.clientWidth;
+        if (!surfaceW || !containerW || surfaceW <= containerW) return;
+        const trailingPad = Math.max(400, Math.round(containerW * 0.5));
+        let spacer = container.querySelector('.maestro-landscape-scroll-spacer') as HTMLElement | null;
+        if (!spacer) {
+            spacer = document.createElement('div');
+            spacer.className = 'maestro-landscape-scroll-spacer';
+            spacer.setAttribute('aria-hidden', 'true');
+            container.appendChild(spacer);
+        }
+        Object.assign(spacer.style, {
+            position: 'absolute',
+            left: `${surfaceW}px`,
+            top: '0px',
+            width: `${trailingPad}px`,
+            height: '1px',
+            pointerEvents: 'none',
+            opacity: '0',
+            zIndex: '-1',
+        });
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[landscape-trailing-padding-probe]', {
+                reason,
+                containerW,
+                surfaceW,
+                scrollW: container.scrollWidth,
+                maxScrollLeft: container.scrollWidth - container.clientWidth,
+                trailingPad,
+            });
+        }
+    }, []);
 
     const reassertLayout = useCallback(() => {
         if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
@@ -2407,6 +2461,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         _rfFirstBars > 2;
                     if (healthyLandscapeStrip) {
                         landscapeMismatchRecoveryAttemptsRef.current = 0;
+                        ensureLandscapeTrailingScrollPadding('renderFinished-healthy');
                     }
                 }
                 // [LandscapePageMismatchRecoveryDiagnosticOnly] V138/V139: detect viewport/layout desync,
@@ -2808,6 +2863,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                                 });
+                                ensureLandscapeTrailingScrollPadding('primeLandscapeState-renderFinished');
                             }
                         });
                     }
@@ -4070,6 +4126,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
             if (pendingLandscapeMismatchRecoveryRef.current != null) { window.clearTimeout(pendingLandscapeMismatchRecoveryRef.current); pendingLandscapeMismatchRecoveryRef.current = null; }
             landscapeMismatchRecoveryAttemptsRef.current = 0;
+            document.querySelector('.maestro-landscape-scroll-spacer')?.remove();
             setIsLoading(true);
             setIsSettling(true);
             showCurtain(curtainRef.current);
