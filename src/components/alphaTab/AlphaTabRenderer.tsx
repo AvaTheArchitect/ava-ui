@@ -2,20 +2,23 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V137
+ * Current version: V138
  * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V138 HOTFIX:
+ * ✅ [LandscapePageMismatchRecoveryDiagnosticOnly] keeps detection and
+ *         rescueTick preservation, but disables active updateSettings/render
+ *         inside renderFinished after real iPhone blank-canvas regression.
+ *         StableAnchorPoisonGuard remains active. Active layout recovery must
+ *         be reintroduced later outside AlphaTab renderFinished lifecycle.
  *
  * V137 LOCKS (landscape page-layout mismatch + stable anchor poison guard):
  * ✅ [StableAnchorPoisonGuard] prevents lastStableRotationAnchorTickRef from
  *         being overwritten by beginning-of-song tick 0/1 drift when a larger
  *         trusted stable or intentional tick exists.
- * ✅ [LandscapePageMismatchRecovery] detects the real iPhone failure where
- *         the viewport is Landscape but AlphaTab remains in Page layout
- *         (layoutMode 0, scrollMode 0, firstSystemBars <= 2). It reasserts
- *         Horizontal/Continuous layout and preserves the V136 stable anchor
- *         before re-rendering. Do not remove. Visual curtain/bounce smoothing
- *         remains a separate Phase 2 polish step.
+ * ✅ [LandscapePageMismatchRecovery] — detection helpers and rescueTick
+ *         preservation remain. Active reassert disabled in V138 (see above).
  *
  * V136 LOCKS (rotation stable anchor):
  * ✅ [RotationStableAnchorRef] lastStableRotationAnchorTickRef remembers
@@ -2299,22 +2302,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                 });
-                // [LandscapePageMismatchRecovery] If viewport is Landscape but AlphaTab is still in Page layout,
-                // reassert Horizontal/Continuous and re-render before any further processing.
+                // [LandscapePageMismatchRecoveryDiagnosticOnly] V138: detect viewport/layout desync and
+                // preserve the rescue tick, but do NOT call updateSettings/render inside renderFinished.
                 if (isAlphaTabPageLayoutWhileLandscape(api)) {
-                    const _manualIntentional: number | null =
-                        typeof window !== 'undefined'
-                            ? ((window as any).__maestroLastIntentionalTick as number | null | undefined) ?? null
+                    const manualIntentional: number | null =
+                        typeof window !== 'undefined' && typeof (window as any).__maestroLastIntentionalTick === 'number'
+                            ? (window as any).__maestroLastIntentionalTick
                             : null;
                     const rescueTick =
                         lastStableRotationAnchorTickRef.current ??
                         getIntentionalTick() ??
-                        _manualIntentional ??
+                        manualIntentional ??
                         preRotationAnchorTickRef.current ??
                         0;
                     if (LANDSCAPE_LOOP_DEBUG) {
                         console.warn('[rotation-layout-mismatch]', {
-                            reason: 'landscape-viewport-page-layout-detected',
+                            reason: 'landscape-viewport-page-layout-detected-diagnostic-only',
                             rescueTick,
                             apiTickPosition: api?.tickPosition ?? null,
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
@@ -2326,26 +2329,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                     if (rescueTick > 1) {
+                        // V138: preserve the good tick, but do not force a render here.
                         preRotationAnchorTickRef.current = rescueTick;
                         lastStableRotationAnchorTickRef.current = rescueTick;
                     }
-                    rotationGateActiveRef.current = true;
-                    const at = alphaTabModuleRef.current;
-                    if (!at) return;
-                    api.settings.display.layoutMode = (at as any).LayoutMode.Horizontal;
-                    api.settings.player.scrollMode = (at as any).ScrollMode.Continuous;
-                    api.updateSettings();
-                    api.render();
-                    if (LANDSCAPE_LOOP_DEBUG) {
-                        console.warn('[rotation-layout-mismatch]', {
-                            reason: 'landscape-layout-reasserted',
-                            rescueTick,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            layoutMode: api?.settings?.display?.layoutMode ?? null,
-                            scrollMode: api?.settings?.player?.scrollMode ?? null,
-                        });
-                    }
-                    return;
+                    // V138 HOTFIX:
+                    // Do NOT call api.updateSettings() here.
+                    // Do NOT call api.render() here.
+                    // Do NOT return early. Allow the rest of renderFinished to execute.
                 }
                 activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
                 const tokenAtFinish = renderTokenRef.current;
