@@ -2,9 +2,18 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V143.1
+ * Current version: V143.3
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V143.3 LOCKS:
+ * ✅ [PageScrollResetRecovery] re-applies the correct Page scroll target if
+ *         MAIN.scrollTop is reset after top-padding/layout restoration. Checks
+ *         at 250ms and 750ms after the final snap write; only fires when not in
+ *         Landscape, targetTop > 1000, and actualScrollTop has collapsed < 100.
+ * ✅ [LowTickAnchorPoisonGuard] prevents early-song ticks (< 5000) from
+ *         replacing a valid late-song rotation anchor when api.tickPosition is
+ *         far later (diff > 10000). Fixes tick 1921 replacing anchor 487683.
  *
  * V143.1 LOCKS:
  * ✅ [V139-MisfireGuard] scheduleLandscapeMismatchRecovery is now gated at
@@ -1117,6 +1126,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             return;
         }
+        // [LowTickAnchorPoisonGuard] V143.3: Reject early-song ticks that would overwrite a
+        // far-later valid anchor. Guards against e.g. tick 1921 replacing anchor 487683.
+        const _apiTick = (apiRef.current as any)?.tickPosition ?? null;
+        const _isLowTickPoison =
+            tick < 5000 &&
+            typeof _apiTick === 'number' &&
+            _apiTick > 10000 &&
+            (_apiTick - tick) > 10000;
+        if (_isLowTickPoison) {
+            console.warn('[rotation-stable-anchor] low-tick-anchor-poison-rejected', {
+                source,
+                candidateTick: tick,
+                apiTickPosition: _apiTick,
+                existingStableTick: lastStableRotationAnchorTickRef.current ?? null,
+                reason: 'candidate-low-but-api-far-later',
+            });
+            return;
+        }
         lastStableRotationAnchorTickRef.current = tick;
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[rotation-stable-anchor]', {
@@ -1629,6 +1656,45 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         });
 
         const _snapAnchorTick = beat?.absolutePlaybackStart ?? (apiRef.current as any)?.tickPosition ?? null;
+
+        // [PageScrollResetRecovery] V143.3: re-apply scroll if MAIN.scrollTop is reset by top-padding restore.
+        const restorePageScrollIfReset = (phase: string) => {
+            const currentTop = _snapContainerScrollable
+                ? scrollElEl.scrollTop
+                : getPageAuthorityScrollTop(_snapAuthority);
+            const shouldRestore =
+                !isDeviceLandscape() &&
+                tweenTo > 1000 &&
+                currentTop < 100;
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.log('[page-scroll-authority-restore]', {
+                    reason: 'snapPortraitToBeatRow',
+                    phase,
+                    anchorTick: beat?.absolutePlaybackStart ?? (apiRef.current as any)?.tickPosition ?? null,
+                    targetTop: tweenTo,
+                    currentTop,
+                    shouldRestore,
+                    authorityKind: _snapAuthority.kind,
+                    containerScrollTop: scrollElEl.scrollTop,
+                    containerIsScrollable: _snapContainerScrollable,
+                });
+            }
+            if (!shouldRestore) return;
+            if (_snapContainerScrollable) {
+                scrollElEl.scrollTop = tweenTo;
+            } else {
+                setPageAuthorityScrollTop(_snapAuthority, tweenTo);
+            }
+            logPageScrollApplyResult({
+                reason: 'snapPortraitToBeatRow',
+                phase: `${phase}-after-restore`,
+                authority: _snapAuthority,
+                targetTop: tweenTo,
+                container: scrollElEl,
+                anchorTick: beat?.absolutePlaybackStart ?? (apiRef.current as any)?.tickPosition ?? null,
+            });
+        };
+
         if (Math.abs(tweenDelta) < 2) {
             if (_snapContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
             else { setPageAuthorityScrollTop(_snapAuthority, tweenTo); }
@@ -1649,6 +1715,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     container: scrollElEl,
                     anchorTick: _snapAnchorTick,
                 });
+                restorePageScrollIfReset('after-250ms-reset-check');
             }, 250);
             window.setTimeout(() => {
                 logPageScrollApplyResult({
@@ -1659,6 +1726,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     container: scrollElEl,
                     anchorTick: _snapAnchorTick,
                 });
+                restorePageScrollIfReset('after-750ms-reset-check');
             }, 750);
         } else {
             const startTime = performance.now();
@@ -1696,6 +1764,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     container: scrollElEl,
                     anchorTick: _snapAnchorTick,
                 });
+                restorePageScrollIfReset('after-250ms-reset-check');
             }, 250);
             window.setTimeout(() => {
                 logPageScrollApplyResult({
@@ -1706,6 +1775,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     container: scrollElEl,
                     anchorTick: _snapAnchorTick,
                 });
+                restorePageScrollIfReset('after-750ms-reset-check');
             }, 750);
         }
     }, [scrollContainer]);
