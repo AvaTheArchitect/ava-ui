@@ -2,9 +2,18 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V138
+ * Current version: V139
  * Date: June 10th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V139 LOCKS:
+ * ✅ [DeferredLandscapeMismatchRecovery] detects Landscape viewport stuck in
+ *         AlphaTab Page geometry and schedules a one-shot delayed recovery
+ *         outside renderFinished using setTimeout + double RAF. Prevents the
+ *         V137 blank-canvas regression while still recovering from layoutMode 0 /
+ *         firstSystemBars <= 2 mismatch.
+ * ✅ [TickOneSnapGuard] prevents snap success paths from writing tick 0/1 into
+ *         lastStableRotationAnchorTickRef during rotation/settling.
  *
  * V138 HOTFIX:
  * ✅ [LandscapePageMismatchRecoveryDiagnosticOnly] keeps detection and
@@ -859,6 +868,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // [RotationStableAnchorRef] V136: proactive memory of the last trusted anchor tick,
     // updated only from stable/accepted sources (never from settling/rotation drift).
     const lastStableRotationAnchorTickRef = useRef<number | null>(null);
+    // [DeferredLandscapeMismatchRecovery] V139: one-shot deferred recovery state.
+    const pendingLandscapeMismatchRecoveryRef = useRef<number | null>(null);
+    const landscapeMismatchRecoveryAttemptsRef = useRef<number>(0);
 
     // [RotationAnchorFreeze / RotationStableAnchorRef] Returns the best tick for rotation anchoring.
     // Priority: frozen pre-rotation tick (gate active) → last stable anchor → intentional → landscapeState → api.tickPosition
@@ -904,6 +916,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     existingStableTick: existing,
                     intentionalTick: intentional,
                     manualIntentionalTick: manualIntentional,
+                    apiTickPosition: apiRef.current?.tickPosition ?? null,
+                    rotationGateActive: rotationGateActiveRef.current,
+                    isSettling: isSettlingRef.current,
+                });
+            }
+            return;
+        }
+        // [TickOneSnapGuard] Reject tick <= 1 from snap sources while rotation or settling is active.
+        const isRotationOrSettling = rotationGateActiveRef.current || isSettlingRef.current;
+        const isSnapSource =
+            source === 'snapPortraitToBeatRow-success' ||
+            source === 'primeLandscapeState-success';
+        if (tick <= 1 && isSnapSource && isRotationOrSettling) {
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.warn('[rotation-stable-anchor]', {
+                    reason: 'stable-anchor-tick-one-snap-rejected-during-rotation',
+                    source,
+                    rejectedTick: tick,
+                    existingStableTick: lastStableRotationAnchorTickRef.current,
+                    intentionalTick: getIntentionalTick(),
+                    manualIntentionalTick:
+                        typeof window !== 'undefined' ? ((window as any).__maestroLastIntentionalTick ?? null) : null,
                     apiTickPosition: apiRef.current?.tickPosition ?? null,
                     rotationGateActive: rotationGateActiveRef.current,
                     isSettling: isSettlingRef.current,
@@ -1369,8 +1403,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const isSmallMobileViewport = Math.min(viewportW, viewportH) <= 600;
         const isMobileLandscapeCandidate = isTouchDevice && isSmallMobileViewport && isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W;
         const wantStrip = forceHorizontalRef.current || isMobileLandscapeCandidate;
+        const stuckPageLayoutInLandscape =
+            wantStrip &&
+            isDeviceLandscape() &&
+            forceHorizontalRef.current &&
+            firstBars != null &&
+            firstBars <= 2 &&
+            surfaceW <= containerW * 2;
         return {
-            stuck: !wantStrip && (firstBars > 40 || surfaceW > containerW * 3),
+            stuck: (!wantStrip && (firstBars > 40 || surfaceW > containerW * 3)) || stuckPageLayoutInLandscape,
+            stuckPageLayoutInLandscape,
             wantStrip, firstBars, containerW, surfaceW,
         };
     }, []);
@@ -1429,6 +1471,58 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             firstBars <= 2
         );
     };
+
+    // [DeferredLandscapeMismatchRecovery] One-shot debounced recovery scheduled outside renderFinished.
+    // isAlphaTabPageLayoutWhileLandscape is a plain helper reading only refs/window — stable, omitted from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const scheduleLandscapeMismatchRecovery = useCallback((source: string, rescueTick: number) => {
+        if (pendingLandscapeMismatchRecoveryRef.current != null) return;
+        pendingLandscapeMismatchRecoveryRef.current = window.setTimeout(() => {
+            pendingLandscapeMismatchRecoveryRef.current = null;
+            requestAnimationFrame(() => {
+                requestAnimationFrame(async () => {
+                    const api = apiRef.current;
+                    const at = alphaTabModuleRef.current;
+                    if (!api || !at) return;
+                    if (!isAlphaTabPageLayoutWhileLandscape(api)) return;
+                    if (landscapeMismatchRecoveryAttemptsRef.current >= 2) {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.warn('[rotation-layout-mismatch]', {
+                                reason: 'deferred-landscape-recovery-max-attempts',
+                                source,
+                                rescueTick,
+                                attempts: landscapeMismatchRecoveryAttemptsRef.current,
+                            });
+                        }
+                        return;
+                    }
+                    landscapeMismatchRecoveryAttemptsRef.current += 1;
+                    if (rescueTick > 1) {
+                        preRotationAnchorTickRef.current = rescueTick;
+                        lastStableRotationAnchorTickRef.current = rescueTick;
+                    }
+                    rotationGateActiveRef.current = true;
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.warn('[rotation-layout-mismatch]', {
+                            reason: 'deferred-landscape-layout-reassert',
+                            source,
+                            rescueTick,
+                            attempts: landscapeMismatchRecoveryAttemptsRef.current,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            scrollMode: api?.settings?.player?.scrollMode ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        });
+                    }
+                    api.settings.display.layoutMode = (at as any).LayoutMode.Horizontal;
+                    api.settings.player.scrollMode = (at as any).ScrollMode.Continuous;
+                    await api.updateSettings();
+                    api.render();
+                });
+            });
+        }, 80);
+    }, []); // isAlphaTabPageLayoutWhileLandscape reads only refs/window — all deps stable
 
     const reassertLayout = useCallback(() => {
         if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
@@ -2302,8 +2396,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                 });
-                // [LandscapePageMismatchRecoveryDiagnosticOnly] V138: detect viewport/layout desync and
-                // preserve the rescue tick, but do NOT call updateSettings/render inside renderFinished.
+                // [DeferredLandscapeMismatchRecovery] V139: reset attempt counter when healthy.
+                {
+                    const _rfSystems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+                    const _rfFirstBars = (_rfSystems?.[0] as any)?.bars?.length ?? null;
+                    const healthyLandscapeStrip =
+                        isLandscapeViewport() &&
+                        api?.settings?.display?.layoutMode === 1 &&
+                        _rfFirstBars != null &&
+                        _rfFirstBars > 2;
+                    if (healthyLandscapeStrip) {
+                        landscapeMismatchRecoveryAttemptsRef.current = 0;
+                    }
+                }
+                // [LandscapePageMismatchRecoveryDiagnosticOnly] V138/V139: detect viewport/layout desync,
+                // preserve rescue tick, and schedule deferred recovery outside renderFinished.
                 if (isAlphaTabPageLayoutWhileLandscape(api)) {
                     const manualIntentional: number | null =
                         typeof window !== 'undefined' && typeof (window as any).__maestroLastIntentionalTick === 'number'
@@ -2329,14 +2436,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                     if (rescueTick > 1) {
-                        // V138: preserve the good tick, but do not force a render here.
+                        // Preserve the good tick before the deferred render.
                         preRotationAnchorTickRef.current = rescueTick;
                         lastStableRotationAnchorTickRef.current = rescueTick;
                     }
-                    // V138 HOTFIX:
-                    // Do NOT call api.updateSettings() here.
-                    // Do NOT call api.render() here.
-                    // Do NOT return early. Allow the rest of renderFinished to execute.
+                    // V139: schedule layout recovery outside renderFinished lifecycle (no early return).
+                    scheduleLandscapeMismatchRecovery('renderFinished-diagnostic-mismatch', rescueTick);
                 }
                 activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
                 const tokenAtFinish = renderTokenRef.current;
@@ -3963,6 +4068,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             isDraggingRef.current = false;
             if (revealTimerRef.current !== null) { window.clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
             if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
+            if (pendingLandscapeMismatchRecoveryRef.current != null) { window.clearTimeout(pendingLandscapeMismatchRecoveryRef.current); pendingLandscapeMismatchRecoveryRef.current = null; }
+            landscapeMismatchRecoveryAttemptsRef.current = 0;
             setIsLoading(true);
             setIsSettling(true);
             showCurtain(curtainRef.current);
