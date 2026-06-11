@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V143.4
+ * Current version: V144
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144 LOCKS:
+ * ✅ [LandscapePlaybackNoiseGuard] skips expensive Landscape state rewrites for
+ *         2–6 tick micro-deltas while RAF owns smooth playback.
+ * ✅ [SameBeatBackwardResetGuard] rejects noisy same-beat backward resets like
+ *         489239 → 487681 when Loop is off.
+ * ✅ [EndResetTickGuard] rejects bogus tick 0/1 resets near the end when no
+ *         loop/playbackRange is active.
  *
  * V143.4 LOCKS:
  * ✅ [LandscapeRightRunwayFix] ensures the horizontal strip has enough trailing
@@ -3665,6 +3673,78 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (isStripMode) {
                     const container = containerRef.current;
                     if (!container) return;
+
+                    // ── [LandscapePlaybackNoiseGuard] V144 ────────────────────
+                    const _existingState = landscapeScrollStateRef.current;
+                    const _playerState = (api as any)?.playerState ?? 0;
+                    const _playbackRange = api?.playbackRange ?? null;
+                    const _noLoop = !loopEnabledRef.current && _playbackRange == null;
+                    const _noGate = !rotationGateActiveRef.current && !isSettlingRef.current;
+
+                    // Part 3 — End-reset tick guard: reject bogus tick 0/1 near end of song.
+                    if (
+                        _noLoop &&
+                        _noGate &&
+                        _existingState != null &&
+                        _existingState.lastTick > 10000 &&
+                        tickRaw <= 1
+                    ) {
+                        console.warn('[landscape-playback-noise-guard]', {
+                            reason: 'end-reset-tick-skipped',
+                            tickRaw,
+                            lastTick: _existingState.lastTick,
+                            playerState: _playerState,
+                            playbackRange: _playbackRange,
+                            loopEnabled: loopEnabledRef.current,
+                        });
+                        return;
+                    }
+
+                    // Part 2 — Same-beat backward reset guard: reject noisy rewinds to beat start.
+                    if (
+                        _noLoop &&
+                        _noGate &&
+                        _existingState != null &&
+                        tickRaw < _existingState.lastTick &&
+                        tickRaw <= _existingState.beatStart + 4 &&
+                        _existingState.lastTick > _existingState.beatStart + 120
+                    ) {
+                        console.warn('[landscape-playback-noise-guard]', {
+                            reason: 'same-beat-backward-reset-skipped',
+                            tickRaw,
+                            lastTick: _existingState.lastTick,
+                            beatStart: _existingState.beatStart,
+                            beatDur: _existingState.beatDur,
+                            playerState: _playerState,
+                            playbackRange: _playbackRange,
+                            loopEnabled: loopEnabledRef.current,
+                        });
+                        return;
+                    }
+
+                    // Part 1 — Micro-tick throttle: skip expensive sync for 2–6 tick deltas.
+                    if (
+                        _noLoop &&
+                        _noGate &&
+                        _existingState != null &&
+                        Math.abs(tickRaw - _existingState.lastTick) <= 6
+                    ) {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[landscape-playback-noise-guard]', {
+                                reason: 'micro-delta-skipped',
+                                tickRaw,
+                                lastTick: _existingState.lastTick,
+                                delta: Math.abs(tickRaw - _existingState.lastTick),
+                                beatStart: _existingState.beatStart,
+                                playerState: _playerState,
+                                playbackRange: _playbackRange,
+                                loopEnabled: loopEnabledRef.current,
+                            });
+                        }
+                        return;
+                    }
+                    // ── END LandscapePlaybackNoiseGuard ───────────────────────
+
                     const tickCache = (api as any).tickCache;
                     const bounds = api?.renderer?.boundsLookup;
                     if (!tickCache || !bounds) return;
