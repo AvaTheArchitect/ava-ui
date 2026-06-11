@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V143
+ * Current version: V143.1
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V143.1 LOCKS:
+ * ✅ [V139-MisfireGuard] scheduleLandscapeMismatchRecovery is now gated at
+ *         three sites: (1) call site in renderFinished only schedules if device
+ *         is still in intended strip mode, (2) execution body re-checks strip
+ *         intent at deferred-timeout fire time (device may have rotated since
+ *         schedule), (3) Page render path cancels any pending recovery timeout
+ *         immediately via clearTimeout on pendingLandscapeMismatchRecoveryRef.
+ *         Fixes double-render / tray-disappear / scroll-bounce sequence seen
+ *         during Landscape → Page rotation. Do not remove any of the three sites.
  *
  * V143 LOCKS:
  * ✅ [PageScrollAuthorityFix] Page view snap/drift positioning now detects
@@ -1680,6 +1690,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const api = apiRef.current;
                     const at = alphaTabModuleRef.current;
                     if (!api || !at) return;
+                    // [V139-MisfireGuard] V143.1: Re-check strip intent at execution time.
+                    // The deferred timeout may fire after the user has already rotated to Portrait.
+                    const _execIntendedStrip =
+                        forceHorizontalRef.current === true &&
+                        isDeviceLandscape() === true;
+                    if (!_execIntendedStrip) {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[rotation-layout-mismatch]', {
+                                reason: 'deferred-landscape-recovery-cancelled-not-strip',
+                                forceHorizontal: forceHorizontalRef.current,
+                                isDeviceLandscape: isDeviceLandscape(),
+                                apiTickPosition: api?.tickPosition ?? null,
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                note: 'device no longer in strip mode at execution time — cancelling',
+                            });
+                        }
+                        return;
+                    }
                     if (!isAlphaTabPageLayoutWhileLandscape(api)) return;
                     if (landscapeMismatchRecoveryAttemptsRef.current >= 2) {
                         if (LANDSCAPE_LOOP_DEBUG) {
@@ -2751,8 +2779,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         preRotationAnchorTickRef.current = rescueTick;
                         lastStableRotationAnchorTickRef.current = rescueTick;
                     }
-                    // V139: schedule layout recovery outside renderFinished lifecycle (no early return).
-                    scheduleLandscapeMismatchRecovery('renderFinished-diagnostic-mismatch', rescueTick);
+                    // [V139-MisfireGuard] V143.1: Only schedule recovery if we are still intentionally
+                    // in Landscape strip mode. Do NOT fire during intentional return to Page/portrait.
+                    const _intendedStrip =
+                        forceHorizontalRef.current === true &&
+                        isDeviceLandscape() === true;
+                    if (_intendedStrip) {
+                        scheduleLandscapeMismatchRecovery('renderFinished-diagnostic-mismatch', rescueTick);
+                    } else {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[rotation-layout-mismatch]', {
+                                reason: 'landscape-recovery-skipped-not-in-strip-mode',
+                                rescueTick,
+                                forceHorizontal: forceHorizontalRef.current,
+                                isDeviceLandscape: isDeviceLandscape(),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                note: 'intentional Page return — V139 recovery suppressed',
+                            });
+                        }
+                    }
                 }
                 activeRendersRef.current = Math.max(0, activeRendersRef.current - 1);
                 const tokenAtFinish = renderTokenRef.current;
@@ -2839,6 +2884,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     if (!isStripRender) {
                         removeLandscapeTrailingPadding('renderFinished-not-landscape-strip');
+                        // [V139-MisfireGuard] V143.1: Cancel any pending Landscape mismatch recovery
+                        // when we are confirmed rendering Page mode. Prevents the deferred timeout
+                        // from firing after we've already committed to Portrait/Page layout.
+                        if (pendingLandscapeMismatchRecoveryRef.current != null) {
+                            window.clearTimeout(pendingLandscapeMismatchRecoveryRef.current);
+                            pendingLandscapeMismatchRecoveryRef.current = null;
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.log('[rotation-layout-mismatch]', {
+                                    reason: 'cancel-landscape-recovery-on-page-render',
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    note: 'Page render confirmed — pending V139 recovery cancelled',
+                                });
+                            }
+                        }
                         if (LANDSCAPE_LOOP_DEBUG) {
                             const _c = h;
                             console.log('[page-scroll-authority-probe]', {
