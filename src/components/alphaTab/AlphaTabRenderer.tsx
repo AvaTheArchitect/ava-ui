@@ -2,9 +2,18 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V143.3
+ * Current version: V143.4
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V143.4 LOCKS:
+ * ✅ [LandscapeRightRunwayFix] ensures the horizontal strip has enough trailing
+ *         scrollable width to center final measures during rotation/prime snaps.
+ *         ensureLandscapeRunwayForSnap() is called at both landscapeInitialAnchor
+ *         and primeLandscapeState snap-write sites; scrollLeft is deferred one RAF
+ *         so the browser processes the expanded scrollWidth before the write.
+ *         Fixes browser-clamped containerScrollLeft: 34966 when targetScrollLeft
+ *         is 35406.85 during M128/M129 Landscape rotation.
  *
  * V143.3 LOCKS:
  * ✅ [PageScrollResetRecovery] re-applies the correct Page scroll target if
@@ -499,6 +508,47 @@ function getIntentionalTick(): number | null {
     return typeof t === 'number' && Date.now() - at < 30000 ? t : null;
 }
 
+// ─── [LandscapeRightRunwayFix] V143.4 ────────────────────────────────────────
+// Ensures .maestro-landscape-scroll-spacer gives the container enough right-edge
+// scrollable runway to reach targetScrollLeft without browser clamping.
+// Bypasses the healthyStrip guard intentionally — callers are already confirmed
+// in Landscape strip mode. Returns beforeScrollW and addedRunwayPx for logging.
+function ensureLandscapeRunwayForSnap(
+    container: HTMLElement,
+    targetScrollLeft: number,
+    _reason: string,
+): { beforeScrollW: number; addedRunwayPx: number } {
+    const beforeScrollW = container.scrollWidth;
+    const clientW = container.clientWidth;
+    const neededScrollW = Math.ceil(targetScrollLeft) + clientW;
+    if (beforeScrollW >= neededScrollW) {
+        return { beforeScrollW, addedRunwayPx: 0 };
+    }
+    const surface = container.querySelector('.at-surface') as HTMLElement | null;
+    const surfaceW = surface ? (surface.scrollWidth || Math.round(surface.getBoundingClientRect().width)) : 0;
+    if (!surfaceW) return { beforeScrollW, addedRunwayPx: 0 };
+    const shortage = neededScrollW - surfaceW;
+    const runwayPx = Math.max(clientW, Math.ceil(shortage) + 16);
+    let spacer = container.querySelector('.maestro-landscape-scroll-spacer') as HTMLElement | null;
+    if (!spacer) {
+        spacer = document.createElement('div');
+        spacer.className = 'maestro-landscape-scroll-spacer';
+        spacer.setAttribute('aria-hidden', 'true');
+        container.appendChild(spacer);
+    }
+    Object.assign(spacer.style, {
+        position: 'absolute',
+        left: `${surfaceW}px`,
+        top: '0px',
+        width: `${runwayPx}px`,
+        height: '1px',
+        pointerEvents: 'none',
+        opacity: '0',
+        zIndex: '0',
+    });
+    return { beforeScrollW, addedRunwayPx: runwayPx };
+}
+
 // ── [L8-fix] Landscape initial anchor — retry-until-ready ────────────────────
 function landscapeInitialAnchor(
     container: HTMLElement,
@@ -607,8 +657,25 @@ function landscapeInitialAnchor(
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                     snapTarget: snap,
                 });
-                container.scrollLeft = snap;
-                targetScrollLeftRef.current = snap;
+                // [LandscapeRightRunwayFix] V143.4: ensure runway before write, then defer one RAF.
+                const { beforeScrollW: _liaBefore, addedRunwayPx: _liaAdded } =
+                    ensureLandscapeRunwayForSnap(container, snap, 'landscapeInitialAnchor');
+                requestAnimationFrame(() => {
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.log('[landscape-right-runway]', {
+                            reason: 'landscapeInitialAnchor',
+                            targetScrollLeft: snap,
+                            beforeScrollW: _liaBefore,
+                            afterScrollW: container.scrollWidth,
+                            clientW: container.clientWidth,
+                            beforeMaxScrollLeft: _liaBefore - container.clientWidth,
+                            afterMaxScrollLeft: container.scrollWidth - container.clientWidth,
+                            addedRunwayPx: _liaAdded,
+                        });
+                    }
+                    container.scrollLeft = snap;
+                    targetScrollLeftRef.current = snap;
+                });
                 return;
             }
         }
@@ -2861,34 +2928,51 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                     snapTarget: snap,
                 });
-                targetScrollLeftRef.current = snap;
-                ctr.scrollLeft = snap;
-                // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
-                // [StableAnchorPoisonGuard] Only write if tick is confirmed trusted (not passive api.tickPosition drift).
-                const trustedPrimeTick =
-                    tick > 1 &&
-                    (
-                        preRotationAnchorTickRef.current === tick ||
-                        lastStableRotationAnchorTickRef.current === tick ||
-                        getIntentionalTick() === tick ||
-                        ((window as any).__maestroLastIntentionalTick === tick)
-                    );
-                if (trustedPrimeTick) {
-                    setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
-                } else if (LANDSCAPE_LOOP_DEBUG) {
-                    console.warn('[rotation-stable-anchor]', {
-                        reason: 'primeLandscapeState-stable-update-skipped',
-                        tick,
-                        preRotationAnchorTick: preRotationAnchorTickRef.current,
-                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                        intentionalTick: getIntentionalTick(),
-                        manualIntentionalTick: (window as any).__maestroLastIntentionalTick ?? null,
-                        apiTickPosition: api?.tickPosition ?? null,
-                        layoutMode: api?.settings?.display?.layoutMode ?? null,
-                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                    });
-                }
+                // [LandscapeRightRunwayFix] V143.4: ensure runway before write, then defer one RAF.
+                const { beforeScrollW: _primeBefore, addedRunwayPx: _primeAdded } =
+                    ensureLandscapeRunwayForSnap(ctr, snap, 'primeLandscapeState');
+                requestAnimationFrame(() => {
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.log('[landscape-right-runway]', {
+                            reason: 'primeLandscapeState',
+                            targetScrollLeft: snap,
+                            beforeScrollW: _primeBefore,
+                            afterScrollW: ctr.scrollWidth,
+                            clientW: ctr.clientWidth,
+                            beforeMaxScrollLeft: _primeBefore - ctr.clientWidth,
+                            afterMaxScrollLeft: ctr.scrollWidth - ctr.clientWidth,
+                            addedRunwayPx: _primeAdded,
+                        });
+                    }
+                    targetScrollLeftRef.current = snap;
+                    ctr.scrollLeft = snap;
+                    // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
+                    // [StableAnchorPoisonGuard] Only write if tick is confirmed trusted (not passive api.tickPosition drift).
+                    const trustedPrimeTick =
+                        tick > 1 &&
+                        (
+                            preRotationAnchorTickRef.current === tick ||
+                            lastStableRotationAnchorTickRef.current === tick ||
+                            getIntentionalTick() === tick ||
+                            ((window as any).__maestroLastIntentionalTick === tick)
+                        );
+                    if (trustedPrimeTick) {
+                        setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
+                    } else if (LANDSCAPE_LOOP_DEBUG) {
+                        console.warn('[rotation-stable-anchor]', {
+                            reason: 'primeLandscapeState-stable-update-skipped',
+                            tick,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                            intentionalTick: getIntentionalTick(),
+                            manualIntentionalTick: (window as any).__maestroLastIntentionalTick ?? null,
+                            apiTickPosition: api?.tickPosition ?? null,
+                            layoutMode: api?.settings?.display?.layoutMode ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        });
+                    }
+                });
             };
 
             api.renderFinished.on(() => {
