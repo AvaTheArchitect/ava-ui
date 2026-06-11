@@ -1236,6 +1236,35 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }
     }, []);
 
+    // [page-scroll-authority-probe] Walks DOM ancestors to identify the true vertical scroll parent.
+    // Plain function — reads only DOM/window, no refs, no useCallback needed.
+    function getScrollParentProbe(el: HTMLElement | null) {
+        const chain: Array<Record<string, unknown>> = [];
+        let n: HTMLElement | null = el;
+        while (n && chain.length < 10) {
+            const cs = window.getComputedStyle(n);
+            chain.push({
+                tag: n.tagName,
+                className: String(n.className || ''),
+                id: n.id || '',
+                scrollTop: n.scrollTop,
+                clientH: n.clientHeight,
+                scrollH: n.scrollHeight,
+                canScrollY: n.scrollHeight > n.clientHeight + 5,
+                overflowY: cs.overflowY,
+                rectY: Math.round(n.getBoundingClientRect().y),
+                rectH: Math.round(n.getBoundingClientRect().height),
+            });
+            n = n.parentElement;
+        }
+        return {
+            windowScrollY: window.scrollY,
+            docScrollTop: document.documentElement.scrollTop,
+            bodyScrollTop: document.body?.scrollTop,
+            chain,
+        };
+    }
+
     // ── [S1-prime] One-shot S1 portrait snap — called after orientation change ──
     // setBeat/setTick do NOT fire playerPositionChanged, so S1 never auto-fires
     // after strip-to-page. This helper runs the same math and tween so the page
@@ -1247,6 +1276,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         // Mirror playerPositionChanged isStripMode guard — skip in landscape/strip
         const isStripMode = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
         if (isStripMode) return;
+
+        if (LANDSCAPE_LOOP_DEBUG) {
+            const _c = containerRef.current;
+            console.log('[page-scroll-authority-probe]', {
+                reason: 'snapPortraitToBeatRow',
+                anchorTick: beat?.absolutePlaybackStart ?? api?.tickPosition,
+                apiTickPosition: api?.tickPosition,
+                containerScrollTop: _c?.scrollTop ?? null,
+                containerClientH: _c?.clientHeight ?? null,
+                containerScrollH: _c?.scrollHeight ?? null,
+                containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
+                trueScrollTop: _c
+                    ? (_c.scrollHeight === _c.clientHeight
+                        ? window.scrollY || document.documentElement.scrollTop || document.body?.scrollTop || 0
+                        : _c.scrollTop)
+                    : null,
+                outerBoundingY: _c ? _c.getBoundingClientRect().y : null,
+                containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
+                trueScroll: _c ? getScrollParentProbe(_c) : null,
+            });
+        }
 
         const snapBounds = api.renderer?.boundsLookup;
         const snapSystems = snapBounds?.staffSystems ?? [];
@@ -2232,6 +2282,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
                             beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
                         });
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            const _c = containerRef.current;
+                            console.log('[page-scroll-authority-probe]', {
+                                reason: 'ensureCursorAndAnchorOnce-before-snap',
+                                anchorTick: tick,
+                                apiTickPosition: api?.tickPosition,
+                                containerScrollTop: _c?.scrollTop ?? null,
+                                containerClientH: _c?.clientHeight ?? null,
+                                containerScrollH: _c?.scrollHeight ?? null,
+                                containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
+                                trueScrollTop: _c
+                                    ? (_c.scrollHeight === _c.clientHeight
+                                        ? window.scrollY || document.documentElement.scrollTop || document.body?.scrollTop || 0
+                                        : _c.scrollTop)
+                                    : null,
+                                outerBoundingY: _c ? _c.getBoundingClientRect().y : null,
+                                containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
+                                trueScroll: _c ? getScrollParentProbe(_c) : null,
+                            });
+                        }
                         snapPortraitToBeatRow('song-load-prime', r.beat);
                         // [RotationStableAnchorRef] Portrait snap resolved — record as stable anchor.
                         setLastStableRotationAnchorTick(tick, 'snapPortraitToBeatRow-success');
@@ -2626,6 +2696,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     if (!isStripRender) {
                         removeLandscapeTrailingPadding('renderFinished-not-landscape-strip');
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            const _c = h;
+                            console.log('[page-scroll-authority-probe]', {
+                                reason: 'renderFinished-strip-to-page',
+                                anchorTick: api?.tickPosition ?? null,
+                                apiTickPosition: api?.tickPosition,
+                                containerScrollTop: _c?.scrollTop ?? null,
+                                containerClientH: _c?.clientHeight ?? null,
+                                containerScrollH: _c?.scrollHeight ?? null,
+                                containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
+                                trueScrollTop: _c
+                                    ? (_c.scrollHeight === _c.clientHeight
+                                        ? window.scrollY || document.documentElement.scrollTop || document.body?.scrollTop || 0
+                                        : _c.scrollTop)
+                                    : null,
+                                outerBoundingY: _c ? _c.getBoundingClientRect().y : null,
+                                containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
+                                trueScroll: _c ? getScrollParentProbe(_c) : null,
+                            });
+                        }
                         const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
                         if (!okCursor) return;
                         if (renderTokenRef.current !== tokenAtFinish) return;
@@ -3080,6 +3170,23 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const tickRaw = e.currentTick ?? e.tickPosition;
                 if (tickRaw == null) return;
+
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    const _lastT = landscapeScrollStateRef.current?.lastTick ?? lastTickRef.current ?? null;
+                    const _delta = _lastT != null ? Math.abs(tickRaw - _lastT) : null;
+                    const _isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                    console.log('[micro-tick-flood-probe]', {
+                        reason: 'playerPositionChanged',
+                        tickRaw,
+                        lastTick: _lastT,
+                        delta: _delta,
+                        playerState: (api as any)?.playerState ?? null,
+                        isStripMode: _isStrip,
+                        didRunExpensiveSync: !isSettlingRef.current && _isStrip,
+                        didWriteLandscapeState: !isSettlingRef.current && _isStrip,
+                        didRenderLoopHighlight: !isSettlingRef.current && _isStrip && loopEnabledRef.current,
+                    });
+                }
 
                 const isStripMode = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
 
@@ -3932,6 +4039,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                         if (sysIdx >= 0 && anchorIdx !== lastAnchorSysRef.current) {
                             lastAnchorSysRef.current = anchorIdx;
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                const _c = containerRef.current;
+                                console.log('[page-scroll-authority-probe]', {
+                                    reason: 'S1-drift-check',
+                                    anchorTick: curBeat?.absolutePlaybackStart ?? tick,
+                                    sysIdx, anchorIdx,
+                                    apiTickPosition: api?.tickPosition,
+                                    containerScrollTop: _c?.scrollTop ?? null,
+                                    containerClientH: _c?.clientHeight ?? null,
+                                    containerScrollH: _c?.scrollHeight ?? null,
+                                    containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
+                                    trueScrollTop: _c
+                                        ? (_c.scrollHeight === _c.clientHeight
+                                            ? window.scrollY || document.documentElement.scrollTop || document.body?.scrollTop || 0
+                                            : _c.scrollTop)
+                                        : null,
+                                    outerBoundingY: _c ? _c.getBoundingClientRect().y : null,
+                                    containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
+                                    trueScroll: _c ? getScrollParentProbe(_c) : null,
+                                });
+                            }
 
                             const scrollEl = (api.settings.player as any).scrollElement
                                 ?? scrollContainer
@@ -4391,6 +4519,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 : 'seeking to loop start (correct)',
                         });
                     }
+                    if (LANDSCAPE_LOOP_DEBUG) {
+                        console.log('[explicit-seek-probe]', {
+                            reason: 'loop-play-start-seekTicks',
+                            seekTargetTick: primeT,
+                            seekTargetMs: null,
+                            beforeTick: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                            landscapeScrollState: landscapeScrollStateRef.current,
+                        });
+                    }
                     if (api.tickPosition !== undefined) api.tickPosition = primeT;
                     api.player?.seekTicks?.(primeT);
                     (window as any).__maestroLoopReseat = {
@@ -4413,8 +4553,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
                 // ── END loop-start cursor re-prime ────────────────────────────────────────
 
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[pause-anchor-normalization-probe]', {
+                        reason: 'api.play-call',
+                        beforeApiTick: (api as any)?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        landscapeScrollState: landscapeScrollStateRef.current,
+                    });
+                }
                 api.play();
             } else {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.log('[pause-anchor-normalization-probe]', {
+                        reason: 'api.pause-call',
+                        beforeApiTick: (api as any)?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        landscapeScrollState: landscapeScrollStateRef.current,
+                    });
+                }
                 api.pause();
                 applyScrollMode(false);
             }
