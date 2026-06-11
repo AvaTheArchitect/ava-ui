@@ -884,6 +884,64 @@ function setPageAuthorityScrollTop(authority: PageScrollAuthority, top: number):
     window.scrollTo({ top: nextTop, behavior: 'auto' });
 }
 
+// [V143.1 page-scroll-authority-result diagnostics] ─────────────────────────
+function describeScrollAuthority(authority: PageScrollAuthority): any {
+    if (!authority.canScroll) {
+        return { kind: authority.kind };
+    }
+    if (authority.kind === 'element') {
+        const el = authority.scrollEl;
+        const r = el.getBoundingClientRect();
+        return {
+            kind: 'element',
+            tag: el.tagName,
+            id: el.id || '',
+            className: String(el.className || ''),
+            scrollTop: el.scrollTop,
+            clientH: el.clientHeight,
+            scrollH: el.scrollHeight,
+            rectY: Math.round(r.y),
+            rectH: Math.round(r.height),
+            overflowY: window.getComputedStyle(el).overflowY,
+        };
+    }
+    return {
+        kind: 'window',
+        scrollTop:
+            window.scrollY ||
+            document.documentElement.scrollTop ||
+            document.body?.scrollTop ||
+            0,
+        innerH: window.innerHeight,
+        docScrollH: document.documentElement.scrollHeight,
+        bodyScrollH: document.body?.scrollHeight ?? null,
+    };
+}
+function logPageScrollApplyResult(params: {
+    reason: string;
+    phase: string;
+    authority: PageScrollAuthority;
+    targetTop: number;
+    container: HTMLElement;
+    anchorTick?: number | null;
+}) {
+    if (!LANDSCAPE_LOOP_DEBUG) return;
+    const { reason, phase, authority, targetTop, container, anchorTick } = params;
+    console.log('[page-scroll-authority-result]', {
+        reason,
+        phase,
+        anchorTick: anchorTick ?? null,
+        targetTop,
+        authority: describeScrollAuthority(authority),
+        actualAuthorityScrollTop: getPageAuthorityScrollTop(authority),
+        containerScrollTop: container.scrollTop,
+        containerIsScrollable: container.scrollHeight > container.clientHeight + 5,
+        containerRectY: Math.round(container.getBoundingClientRect().y),
+        visualViewportH: window.visualViewport?.height ?? null,
+        innerHeight: window.innerHeight,
+    });
+}
+
 function computePageAuthorityTargetTop(params: {
     authority: PageScrollAuthority;
     container: HTMLElement;
@@ -1570,9 +1628,38 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             snapTarget: Math.round(tweenTo),
         });
 
+        const _snapAnchorTick = beat?.absolutePlaybackStart ?? (apiRef.current as any)?.tickPosition ?? null;
         if (Math.abs(tweenDelta) < 2) {
             if (_snapContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
             else { setPageAuthorityScrollTop(_snapAuthority, tweenTo); }
+            logPageScrollApplyResult({
+                reason: 'snapPortraitToBeatRow',
+                phase: 'immediate-after-write',
+                authority: _snapAuthority,
+                targetTop: tweenTo,
+                container: scrollElEl,
+                anchorTick: _snapAnchorTick,
+            });
+            window.setTimeout(() => {
+                logPageScrollApplyResult({
+                    reason: 'snapPortraitToBeatRow',
+                    phase: 'after-250ms',
+                    authority: _snapAuthority,
+                    targetTop: tweenTo,
+                    container: scrollElEl,
+                    anchorTick: _snapAnchorTick,
+                });
+            }, 250);
+            window.setTimeout(() => {
+                logPageScrollApplyResult({
+                    reason: 'snapPortraitToBeatRow',
+                    phase: 'after-750ms',
+                    authority: _snapAuthority,
+                    targetTop: tweenTo,
+                    container: scrollElEl,
+                    anchorTick: _snapAnchorTick,
+                });
+            }, 750);
         } else {
             const startTime = performance.now();
             const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -1588,10 +1675,38 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 } else {
                     if (_snapContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
                     else { setPageAuthorityScrollTop(_snapAuthority, tweenTo); }
+                    logPageScrollApplyResult({
+                        reason: 'snapPortraitToBeatRow',
+                        phase: 'tween-final-after-write',
+                        authority: _snapAuthority,
+                        targetTop: tweenTo,
+                        container: scrollElEl,
+                        anchorTick: _snapAnchorTick,
+                    });
                     s1AnimRafRef.current = null;
                 }
             };
             s1AnimRafRef.current = requestAnimationFrame(step);
+            window.setTimeout(() => {
+                logPageScrollApplyResult({
+                    reason: 'snapPortraitToBeatRow',
+                    phase: 'after-250ms',
+                    authority: _snapAuthority,
+                    targetTop: tweenTo,
+                    container: scrollElEl,
+                    anchorTick: _snapAnchorTick,
+                });
+            }, 250);
+            window.setTimeout(() => {
+                logPageScrollApplyResult({
+                    reason: 'snapPortraitToBeatRow',
+                    phase: 'after-750ms',
+                    authority: _snapAuthority,
+                    targetTop: tweenTo,
+                    container: scrollElEl,
+                    anchorTick: _snapAnchorTick,
+                });
+            }, 750);
         }
     }, [scrollContainer]);
 
@@ -4475,10 +4590,39 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     });
                                 }
 
+                                const _s1AnchorTick = curBeat?.absolutePlaybackStart ?? tick ?? null;
                                 if (Math.abs(tweenDelta) < 2) {
                                     // Already there — skip tween
                                     if (_s1ContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
                                     else { setPageAuthorityScrollTop(_s1Authority, tweenTo); }
+                                    logPageScrollApplyResult({
+                                        reason: 'S1-drift-check',
+                                        phase: 'immediate-after-write',
+                                        authority: _s1Authority,
+                                        targetTop: tweenTo,
+                                        container: scrollElEl,
+                                        anchorTick: _s1AnchorTick,
+                                    });
+                                    window.setTimeout(() => {
+                                        logPageScrollApplyResult({
+                                            reason: 'S1-drift-check',
+                                            phase: 'after-250ms',
+                                            authority: _s1Authority,
+                                            targetTop: tweenTo,
+                                            container: scrollElEl,
+                                            anchorTick: _s1AnchorTick,
+                                        });
+                                    }, 250);
+                                    window.setTimeout(() => {
+                                        logPageScrollApplyResult({
+                                            reason: 'S1-drift-check',
+                                            phase: 'after-750ms',
+                                            authority: _s1Authority,
+                                            targetTop: tweenTo,
+                                            container: scrollElEl,
+                                            anchorTick: _s1AnchorTick,
+                                        });
+                                    }, 750);
                                 } else {
                                     const startTime = performance.now();
                                     const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -4497,10 +4641,38 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                             // Force exact landing
                                             if (_s1ContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
                                             else { setPageAuthorityScrollTop(_s1Authority, tweenTo); }
+                                            logPageScrollApplyResult({
+                                                reason: 'S1-drift-check',
+                                                phase: 'tween-final-after-write',
+                                                authority: _s1Authority,
+                                                targetTop: tweenTo,
+                                                container: scrollElEl,
+                                                anchorTick: _s1AnchorTick,
+                                            });
                                             s1AnimRafRef.current = null;
                                         }
                                     };
                                     s1AnimRafRef.current = requestAnimationFrame(step);
+                                    window.setTimeout(() => {
+                                        logPageScrollApplyResult({
+                                            reason: 'S1-drift-check',
+                                            phase: 'after-250ms',
+                                            authority: _s1Authority,
+                                            targetTop: tweenTo,
+                                            container: scrollElEl,
+                                            anchorTick: _s1AnchorTick,
+                                        });
+                                    }, 250);
+                                    window.setTimeout(() => {
+                                        logPageScrollApplyResult({
+                                            reason: 'S1-drift-check',
+                                            phase: 'after-750ms',
+                                            authority: _s1Authority,
+                                            targetTop: tweenTo,
+                                            container: scrollElEl,
+                                            anchorTick: _s1AnchorTick,
+                                        });
+                                    }, 750);
                                 }
 
                                 // ── Drift check — debug only ──────────────────────────────
