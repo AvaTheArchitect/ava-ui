@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V141
+ * Current version: V142
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V142 LOCKS:
+ * ✅ [PlaybackLiveStableAnchor] lastStableRotationAnchorTickRef is now promoted
+ *         from live playback sources: Landscape playerPositionChanged ticks when
+ *         playerState===1 and tick advances meaningfully, accepted portrait beats
+ *         that pass regression/backtrack guards, and the best live tick from
+ *         api.tickPosition and landscapeScrollState.lastTick captured immediately
+ *         before api.pause(). Fixes rotation-to-Page returning to stale manual
+ *         anchor after playback advanced into M129. Do not remove any of the
+ *         three promotion sites.
  *
  * V141 LOCKS:
  * ✅ [LandscapeTrailingScrollPaddingScopeFix] removes the trailing spacer
@@ -3397,6 +3407,31 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if ((api.playerState ?? 0) === 1 && landscapeScrollRafRef.current === null) {
                         startLandscapeScrollLoop(container, api);
                     }
+                    // [PlaybackLiveStableAnchor] V142: Promote live Landscape playback tick to stable anchor.
+                    // Stable anchor was only updating from manual seeks/snaps, so playback could advance
+                    // while rotation still used the old manual tick.
+                    {
+                        const _prevStable = lastStableRotationAnchorTickRef.current ?? 0;
+                        const _shouldPromote =
+                            tickRaw > 1 &&
+                            !rotationGateActiveRef.current &&
+                            !isSettlingRef.current &&
+                            (api as any)?.playerState === 1 &&
+                            tickRaw > _prevStable + 30; // avoid micro-tick spam
+                        if (_shouldPromote) {
+                            setLastStableRotationAnchorTick(tickRaw, 'playerPositionChanged-live-landscape');
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.log('[playback-live-stable-anchor]', {
+                                    reason: 'playerPositionChanged-live-landscape',
+                                    tickRaw,
+                                    previousStable: _prevStable,
+                                    apiTickPosition: (api as any)?.tickPosition ?? null,
+                                    playerState: (api as any)?.playerState ?? null,
+                                    landscapeScrollState: landscapeScrollStateRef.current,
+                                });
+                            }
+                        }
+                    }
                     return;
                 }
 
@@ -3931,10 +3966,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     stableCurBeatRef.current = curBeat;
                     stableVisualKeyRef.current = curVisualKey;
 
-                    // [RotationStableAnchorRef] Record accepted beat as last stable anchor.
-                    // Guard: skip during settling or while rotation gate is active.
+                    // [RotationStableAnchorRef] [PlaybackLiveStableAnchor] V142: Record accepted beat.
+                    // Guard: skip during settling or rotation gate. Avoid overwriting a newer live
+                    // playback anchor with a much older accepted beat.
                     if (!rotationGateActiveRef.current && !isSettlingRef.current) {
-                        setLastStableRotationAnchorTick(curBeat?.absolutePlaybackStart ?? tick, 'playerPositionChanged-accepted-beat');
+                        const _beatTick = curBeat?.absolutePlaybackStart ?? tick;
+                        const _prevStable = lastStableRotationAnchorTickRef.current ?? 0;
+                        if (_beatTick > 1 && _beatTick > _prevStable - 240) {
+                            setLastStableRotationAnchorTick(_beatTick, 'playerPositionChanged-accepted-beat');
+                        }
                     }
 
                     const beatId = curBeat.absolutePlaybackStart ?? 0;
@@ -4579,13 +4619,38 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         landscapeScrollState: landscapeScrollStateRef.current,
                     });
                 }
+                // [PlaybackLiveStableAnchor] V142: Capture live tick before AlphaTab normalizes on pause.
+                // AlphaTab can silently seek backward to a beat/bar boundary after pause.
+                // Preserve the latest valid live visual/audio tick first.
+                {
+                    const _apiTick = (api as any)?.tickPosition;
+                    const _landscapeLastTick = landscapeScrollStateRef.current?.lastTick ?? null;
+                    const _candidates = [_apiTick, _landscapeLastTick]
+                        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 1);
+                    const _livePauseTick = _candidates.length ? Math.max(..._candidates) : null;
+                    if (_livePauseTick && _livePauseTick > 1) {
+                        const _prevStable = lastStableRotationAnchorTickRef.current ?? null;
+                        setLastStableRotationAnchorTick(_livePauseTick, 'pre-pause-live-anchor');
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.log('[playback-live-stable-anchor]', {
+                                reason: 'pre-pause-capture',
+                                livePauseTick: _livePauseTick,
+                                previousStable: _prevStable,
+                                apiTickPosition: _apiTick ?? null,
+                                landscapeLastTick: _landscapeLastTick,
+                                playerState: (api as any)?.playerState ?? null,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                            });
+                        }
+                    }
+                }
                 api.pause();
                 applyScrollMode(false);
             }
         };
         run();
         return () => { cancelled = true; };
-    }, [isPlaying, isSettling, applyScrollMode]);
+    }, [isPlaying, isSettling, applyScrollMode, setLastStableRotationAnchorTick]);
 
     useEffect(() => {
         const api = apiRef.current;
