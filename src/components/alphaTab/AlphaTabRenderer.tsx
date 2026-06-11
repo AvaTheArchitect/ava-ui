@@ -2,9 +2,21 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144
+ * Current version: V144.2
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.2 LOCKS:
+ * ✅ [FutureTickAnchorPoisonGuard] rejects stable-anchor candidates that are
+ *         far ahead of api.tickPosition (gap > 960) outside rotation/settling,
+ *         preventing Landscape from jumping forward after Page playback.
+ *         Mirrors the existing LowTickAnchorPoisonGuard in the same function.
+ *
+ * V144.1 LOCKS:
+ * ✅ [LandscapeNoiseGuardLogThrottle] keeps V144 skip behavior but rate-limits
+ *         guard diagnostics so Safari is not flooded during dense M128 playback.
+ *         Logs at most once per 120-tick or 500ms window per reason; each log
+ *         includes skippedCount so the total rate is still observable.
  *
  * V144 LOCKS:
  * ✅ [LandscapePlaybackNoiseGuard] skips expensive Landscape state rewrites for
@@ -1219,6 +1231,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             });
             return;
         }
+        // [FutureTickAnchorPoisonGuard] V144.2: Reject candidates far ahead of the live API
+        // tick outside rotation/settling. Guards against e.g. 489600 replacing 486723.
+        const _futureGap = typeof _apiTick === 'number' ? tick - _apiTick : 0;
+        const _futureTickPoison =
+            typeof _apiTick === 'number' &&
+            _apiTick > 10000 &&
+            tick > 10000 &&
+            _futureGap > 960 &&
+            !rotationGateActiveRef.current &&
+            !isSettlingRef.current;
+        if (_futureTickPoison) {
+            console.warn('[rotation-stable-anchor] future-tick-anchor-poison-rejected', {
+                source,
+                candidateTick: tick,
+                apiTickPosition: _apiTick,
+                futureGap: _futureGap,
+                existingStableTick: lastStableRotationAnchorTickRef.current ?? null,
+                reason: 'candidate-far-ahead-of-api',
+            });
+            return;
+        }
         lastStableRotationAnchorTickRef.current = tick;
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[rotation-stable-anchor]', {
@@ -1230,6 +1263,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 isSettling: isSettlingRef.current,
             });
         }
+    }, []);
+
+    // [LandscapeNoiseGuardLogThrottle] V144.1: log at most once per 120-tick or 500ms window per reason.
+    const shouldLogLandscapeNoiseGuard = useCallback((reason: string, tickRaw: number) => {
+        const now = performance.now();
+        const prev = lastLandscapeNoiseGuardLogRef.current[reason];
+        if (!prev) {
+            lastLandscapeNoiseGuardLogRef.current[reason] = { tick: tickRaw, time: now, count: 1 };
+            return true;
+        }
+        prev.count += 1;
+        const tickDelta = Math.abs(tickRaw - prev.tick);
+        const timeDelta = now - prev.time;
+        if (tickDelta >= 120 || timeDelta >= 500) {
+            prev.tick = tickRaw;
+            prev.time = now;
+            return true;
+        }
+        return false;
     }, []);
 
     const reassertRafRef = useRef<number | null>(null);
@@ -1298,6 +1350,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const landscapeScrollProbeRafRef = useRef<number | null>(null);
     const lastLoggedExpandedStartRef = useRef<number>(-1);
     const lastGoodLandscapeVisualDeltaXRef = useRef<number>(37);
+    // [LandscapeNoiseGuardLogThrottle] V144.1: per-reason log throttle state.
+    const lastLandscapeNoiseGuardLogRef = useRef<Record<string, { tick: number; time: number; count: number }>>({});
     const loopWrapInProgressRef = useRef<boolean>(false);
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
@@ -3689,14 +3743,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         _existingState.lastTick > 10000 &&
                         tickRaw <= 1
                     ) {
-                        console.warn('[landscape-playback-noise-guard]', {
-                            reason: 'end-reset-tick-skipped',
-                            tickRaw,
-                            lastTick: _existingState.lastTick,
-                            playerState: _playerState,
-                            playbackRange: _playbackRange,
-                            loopEnabled: loopEnabledRef.current,
-                        });
+                        if (shouldLogLandscapeNoiseGuard('end-reset-tick-skipped', tickRaw)) {
+                            console.warn('[landscape-playback-noise-guard]', {
+                                reason: 'end-reset-tick-skipped',
+                                skippedCount: lastLandscapeNoiseGuardLogRef.current['end-reset-tick-skipped']?.count ?? null,
+                                tickRaw,
+                                lastTick: _existingState.lastTick,
+                                playerState: _playerState,
+                                playbackRange: _playbackRange,
+                                loopEnabled: loopEnabledRef.current,
+                            });
+                        }
                         return;
                     }
 
@@ -3709,16 +3766,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         tickRaw <= _existingState.beatStart + 4 &&
                         _existingState.lastTick > _existingState.beatStart + 120
                     ) {
-                        console.warn('[landscape-playback-noise-guard]', {
-                            reason: 'same-beat-backward-reset-skipped',
-                            tickRaw,
-                            lastTick: _existingState.lastTick,
-                            beatStart: _existingState.beatStart,
-                            beatDur: _existingState.beatDur,
-                            playerState: _playerState,
-                            playbackRange: _playbackRange,
-                            loopEnabled: loopEnabledRef.current,
-                        });
+                        if (shouldLogLandscapeNoiseGuard('same-beat-backward-reset-skipped', tickRaw)) {
+                            console.warn('[landscape-playback-noise-guard]', {
+                                reason: 'same-beat-backward-reset-skipped',
+                                skippedCount: lastLandscapeNoiseGuardLogRef.current['same-beat-backward-reset-skipped']?.count ?? null,
+                                tickRaw,
+                                lastTick: _existingState.lastTick,
+                                beatStart: _existingState.beatStart,
+                                beatDur: _existingState.beatDur,
+                                playerState: _playerState,
+                                playbackRange: _playbackRange,
+                                loopEnabled: loopEnabledRef.current,
+                            });
+                        }
                         return;
                     }
 
@@ -3729,9 +3789,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         _existingState != null &&
                         Math.abs(tickRaw - _existingState.lastTick) <= 6
                     ) {
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (LANDSCAPE_LOOP_DEBUG && shouldLogLandscapeNoiseGuard('micro-delta-skipped', tickRaw)) {
                             console.log('[landscape-playback-noise-guard]', {
                                 reason: 'micro-delta-skipped',
+                                skippedCount: lastLandscapeNoiseGuardLogRef.current['micro-delta-skipped']?.count ?? null,
                                 tickRaw,
                                 lastTick: _existingState.lastTick,
                                 delta: Math.abs(tickRaw - _existingState.lastTick),
