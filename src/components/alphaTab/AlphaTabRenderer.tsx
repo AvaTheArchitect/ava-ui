@@ -2,9 +2,16 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V140
- * Date: June 10th, 2026
+ * Current version: V141
+ * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V141 LOCKS:
+ * ✅ [LandscapeTrailingScrollPaddingScopeFix] removes the trailing spacer
+ *         immediately outside healthy Landscape/Horizontal strip mode and
+ *         increases pad sizing to containerW - fixedCursorCenterX + safety.
+ *         Prevents Page/Portrait blank-screen leakage while giving final
+ *         measures enough scroll room to pass under the fixed cursor.
  *
  * V140 LOCKS:
  * ✅ [LandscapeTrailingScrollPadding] adds a dedicated horizontal trailing
@@ -1535,6 +1542,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }, 80);
     }, []); // isAlphaTabPageLayoutWhileLandscape reads only refs/window — all deps stable
 
+    // [LandscapeTrailingScrollPaddingScopeFix] Removes spacer immediately when leaving Landscape.
+    const removeLandscapeTrailingPadding = useCallback((reason: string) => {
+        const spacer = document.querySelector('.maestro-landscape-scroll-spacer');
+        if (spacer?.parentElement) spacer.remove();
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[landscape-trailing-padding-remove]', { reason });
+        }
+    }, []);
+
     // [LandscapeTrailingScrollPadding] Inserts/updates a spacer that expands scrollWidth beyond
     // the AlphaTab surface so late-song measures can scroll under the fixed Landscape cursor.
     const ensureLandscapeTrailingScrollPadding = useCallback((reason: string) => {
@@ -1543,12 +1559,30 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const container = document.querySelector('.alphatab-container.alphaTab') as HTMLElement | null;
         const surface = document.querySelector('.at-surface') as HTMLElement | null;
         if (!api || !container || !surface) return;
+        // [LandscapeTrailingScrollPaddingScopeFix] Guard: only run in healthy Landscape strip mode.
         const isHorizontal = api?.settings?.display?.layoutMode === 1;
-        if (!forceHorizontalRef.current && !isHorizontal) return;
+        const viewportIsLandscape = container.clientWidth > container.clientHeight;
+        const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
+        const firstBars = (systems?.[0] as any)?.bars?.length ?? null;
+        const isHealthyStrip =
+            (forceHorizontalRef.current || isHorizontal) &&
+            viewportIsLandscape &&
+            (firstBars == null || firstBars > 2);
+        if (!isHealthyStrip) {
+            removeLandscapeTrailingPadding('not-healthy-landscape');
+            return;
+        }
         const surfaceW = surface.scrollWidth || Math.round(surface.getBoundingClientRect().width);
         const containerW = container.clientWidth;
         if (!surfaceW || !containerW || surfaceW <= containerW) return;
-        const trailingPad = Math.max(400, Math.round(containerW * 0.5));
+        const scrollWBefore = container.scrollWidth;
+        const cursor = document.querySelector('.maestro-landscape-cursor') as HTMLElement | null;
+        const containerRect = container.getBoundingClientRect();
+        const cursorRect = cursor?.getBoundingClientRect();
+        const cursorCenterX = cursorRect
+            ? Math.round(cursorRect.left + cursorRect.width / 2 - containerRect.left)
+            : 182;
+        const trailingPad = Math.max(720, Math.round(containerW - cursorCenterX + 96));
         let spacer = container.querySelector('.maestro-landscape-scroll-spacer') as HTMLElement | null;
         if (!spacer) {
             spacer = document.createElement('div');
@@ -1564,19 +1598,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             height: '1px',
             pointerEvents: 'none',
             opacity: '0',
-            zIndex: '-1',
+            zIndex: '0',
         });
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[landscape-trailing-padding-probe]', {
                 reason,
                 containerW,
+                containerH: container.clientHeight,
                 surfaceW,
-                scrollW: container.scrollWidth,
-                maxScrollLeft: container.scrollWidth - container.clientWidth,
+                scrollWBefore,
+                scrollWAfter: container.scrollWidth,
+                maxScrollLeftBefore: scrollWBefore - containerW,
+                maxScrollLeftAfter: container.scrollWidth - containerW,
+                cursorCenterX,
                 trailingPad,
+                layoutMode: api.settings.display.layoutMode,
+                forceHorizontal: forceHorizontalRef.current,
             });
         }
-    }, []);
+    }, [removeLandscapeTrailingPadding]);
 
     const reassertLayout = useCallback(() => {
         if (reassertRafRef.current != null) cancelAnimationFrame(reassertRafRef.current);
@@ -1724,6 +1764,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // ── Strip-stuck recovery ──────────────────────────────────────
                 // Destroy landscape artifacts before forcing page mode.
                 console.warn('[V117] stuckHorizontalStrip recovery — forcing Page mode');
+                removeLandscapeTrailingPadding('stuckHorizontalStrip-page-recovery');
                 stopLandscapeScrollLoop();
                 landscapeScrollStateRef.current = null;
                 if (landscapeCursorRef.current) {
@@ -1751,6 +1792,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             api.render();
             applyAxisLock(el, api);
             if (!wantStrip) {
+                removeLandscapeTrailingPadding('strip-to-page-flip');
                 stopLandscapeScrollLoop();
                 landscapeScrollStateRef.current = null;
                 if (landscapeCursorRef.current) {
@@ -1759,7 +1801,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             }
         });
-    }, [stopLandscapeScrollLoop, checkStuckHorizontalStrip]);
+    }, [stopLandscapeScrollLoop, checkStuckHorizontalStrip, removeLandscapeTrailingPadding]);
 
     // ── forceHorizontal transition — pre-clear landscape on strip→page ────────────
     useEffect(() => {
@@ -1820,6 +1862,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const at = alphaTabModuleRef.current;
                 const el = containerRef.current;
                 if (api && at && el) {
+                    removeLandscapeTrailingPadding('forceHorizontal-strip-to-page');
                     api.settings.display.layoutMode = (at as any).LayoutMode.Page;
                     if ((at as any).SystemsLayoutMode) {
                         (api.settings.display as any).systemsLayoutMode =
@@ -1833,7 +1876,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             })();
         }
-    }, [forceHorizontal, reassertLayout, stopLandscapeScrollLoop]);
+    }, [forceHorizontal, reassertLayout, stopLandscapeScrollLoop, removeLandscapeTrailingPadding]);
 
     // ── Scroll mode ownership ─────────────────────────────────────────────────
     // Portrait/page mode: ScrollMode.Off — S1 owns all vertical row snapping.
@@ -2582,6 +2625,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const isStripRender = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
 
                     if (!isStripRender) {
+                        removeLandscapeTrailingPadding('renderFinished-not-landscape-strip');
                         const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
                         if (!okCursor) return;
                         if (renderTokenRef.current !== tokenAtFinish) return;
