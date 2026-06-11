@@ -2,9 +2,20 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V142
+ * Current version: V143
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V143 LOCKS:
+ * ✅ [PageScrollAuthorityFix] Page view snap/drift positioning now detects
+ *         the true vertical scroll authority when .alphatab-container is
+ *         full-height and non-scrollable. It preserves native container
+ *         scrolling when available, otherwise targets the real scroll parent
+ *         or window. Fixes correct-anchor-but-scrolls-to-top behavior after
+ *         rotating back to Page.
+ * ✅ [PlaybackLiveStableAnchor-LoopSafety] live Landscape anchor promotion now
+ *         accepts meaningful backward jumps (>240 ticks) as Custom Loop wrap
+ *         resets, while still throttling micro-tick forward updates.
  *
  * V142 LOCKS:
  * ✅ [PlaybackLiveStableAnchor] lastStableRotationAnchorTickRef is now promoted
@@ -816,6 +827,73 @@ function isGp8Url(fileUrl: string): boolean {
     );
 }
 
+// ─── [PageScrollAuthorityFix] V143 scroll authority helpers ──────────────────
+type PageScrollAuthority =
+    | { scrollEl: HTMLElement; kind: 'element'; scrollTop: number; canScroll: true }
+    | { scrollEl: Window; kind: 'window'; scrollTop: number; canScroll: true }
+    | { scrollEl: null; kind: 'none'; scrollTop: 0; canScroll: false };
+
+function getPageScrollAuthority(container: HTMLElement | null): PageScrollAuthority {
+    if (!container || typeof window === 'undefined') {
+        return { scrollEl: null, kind: 'none', scrollTop: 0, canScroll: false };
+    }
+    let n: HTMLElement | null = container;
+    while (n) {
+        const canScroll = n.scrollHeight > n.clientHeight + 5;
+        const cs = window.getComputedStyle(n);
+        const overflowY = cs.overflowY;
+        if (canScroll && /(auto|scroll|overlay)/.test(overflowY)) {
+            return { scrollEl: n, kind: 'element', scrollTop: n.scrollTop, canScroll: true };
+        }
+        n = n.parentElement;
+    }
+    const doc = document.documentElement;
+    const body = document.body;
+    const windowScrollH = Math.max(doc.scrollHeight, body?.scrollHeight ?? 0);
+    if (windowScrollH > window.innerHeight + 5) {
+        return {
+            scrollEl: window,
+            kind: 'window',
+            scrollTop: window.scrollY || doc.scrollTop || body?.scrollTop || 0,
+            canScroll: true,
+        };
+    }
+    return { scrollEl: null, kind: 'none', scrollTop: 0, canScroll: false };
+}
+
+function getPageAuthorityScrollTop(authority: PageScrollAuthority): number {
+    if (!authority.canScroll) return 0;
+    if (authority.kind === 'element') return authority.scrollEl.scrollTop;
+    return window.scrollY || document.documentElement.scrollTop || document.body?.scrollTop || 0;
+}
+
+function setPageAuthorityScrollTop(authority: PageScrollAuthority, top: number): void {
+    if (!authority.canScroll) return;
+    const nextTop = Math.max(0, top);
+    if (authority.kind === 'element') { authority.scrollEl.scrollTop = nextTop; return; }
+    window.scrollTo({ top: nextTop, behavior: 'auto' });
+}
+
+function computePageAuthorityTargetTop(params: {
+    authority: PageScrollAuthority;
+    container: HTMLElement;
+    targetRect: DOMRect;
+    desiredViewportY: number;
+}): number {
+    const { authority, container, targetRect, desiredViewportY } = params;
+    const currentAuthorityTop = getPageAuthorityScrollTop(authority);
+    if (container.scrollHeight > container.clientHeight + 5) {
+        const containerRect = container.getBoundingClientRect();
+        return container.scrollTop + (targetRect.top - containerRect.top) - desiredViewportY;
+    }
+    if (authority.kind === 'element') {
+        const authorityRect = authority.scrollEl.getBoundingClientRect();
+        return currentAuthorityTop + (targetRect.top - authorityRect.top) - desiredViewportY;
+    }
+    return currentAuthorityTop + targetRect.top - desiredViewportY;
+}
+// ── END scroll authority helpers ──────────────────────────────────────────────
+
 // ─── [P2] Component ───────────────────────────────────────────────────────────
 export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     fileUrl,
@@ -1342,11 +1420,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             return r.height > 100 && r.width > 500;
         });
 
+        let anchorRowRect: DOMRect | null = null; // [PageScrollAuthorityFix] V143: saved for authority tween
+        let clearanceAdjust = 0; // [PageScrollAuthorityFix] V143: tracked for authority tween
         let target: number;
         if (anchorIdx === 0) {
             target = 0;
         } else if (staffRows.length > anchorIdx) {
             const rowRect = staffRows[anchorIdx].getBoundingClientRect();
+            anchorRowRect = rowRect; // [PageScrollAuthorityFix]
             target = Math.max(0, scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP);
         } else {
             const anchorVb = (snapSystems[anchorIdx] as any)?.visualBounds;
@@ -1367,7 +1448,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const safeTopAbsAfterTarget = target + safeOffset;
                 const danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
                 if (danglingAfterTarget > 0.5) {
-                    target = Math.max(0, target + danglingAfterTarget + 3);
+                    clearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
+                    target = Math.max(0, target + clearanceAdjust);
                 }
             }
         }
@@ -1392,8 +1474,42 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             s1AnimRafRef.current = null;
         }
 
-        const tweenFrom = scrollElEl.scrollTop;
-        const tweenTo = target;
+        // [PageScrollAuthorityFix] V143: detect real scroll authority when container is full-height.
+        const _snapAuthority = getPageScrollAuthority(scrollElEl);
+        const _snapContainerScrollable = scrollElEl.scrollHeight > scrollElEl.clientHeight + 5;
+        const tweenFrom = _snapContainerScrollable
+            ? scrollElEl.scrollTop
+            : getPageAuthorityScrollTop(_snapAuthority);
+        let tweenTo = target;
+        if (!_snapContainerScrollable && _snapAuthority.canScroll) {
+            if (anchorIdx === 0) {
+                tweenTo = 0;
+            } else if (anchorRowRect !== null) {
+                tweenTo = Math.max(
+                    0,
+                    computePageAuthorityTargetTop({
+                        authority: _snapAuthority,
+                        container: scrollElEl,
+                        targetRect: anchorRowRect,
+                        desiredViewportY: headerH + GAP,
+                    }) + clearanceAdjust
+                );
+            }
+        }
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[page-scroll-authority-apply]', {
+                reason: 'snapPortraitToBeatRow',
+                anchorTick: beat?.absolutePlaybackStart ?? apiRef.current?.tickPosition,
+                targetTop: tweenTo,
+                authorityKind: _snapAuthority.kind,
+                beforeScrollTop: tweenFrom,
+                containerScrollTop: scrollElEl.scrollTop,
+                containerIsScrollable: _snapContainerScrollable,
+                containerRectY: Math.round(scrollElEl.getBoundingClientRect().y),
+                targetRectY: anchorRowRect !== null ? Math.round(anchorRowRect.top) : null,
+                desiredViewportY: headerH + GAP,
+            });
+        }
         const tweenDelta = tweenTo - tweenFrom;
         const TWEEN_MS = 150;
         const snapAnchor = anchorIdx;
@@ -1445,7 +1561,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         });
 
         if (Math.abs(tweenDelta) < 2) {
-            scrollElEl.scrollTop = tweenTo;
+            if (_snapContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
+            else { setPageAuthorityScrollTop(_snapAuthority, tweenTo); }
         } else {
             const startTime = performance.now();
             const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -1453,11 +1570,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (lastAnchorSysRef.current !== snapAnchor) return;
                 const elapsed = now - startTime;
                 const progress = Math.min(elapsed / TWEEN_MS, 1);
-                scrollElEl.scrollTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                const _nextTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                if (_snapContainerScrollable) { scrollElEl.scrollTop = _nextTop; }
+                else { setPageAuthorityScrollTop(_snapAuthority, _nextTop); }
                 if (progress < 1) {
                     s1AnimRafRef.current = requestAnimationFrame(step);
                 } else {
-                    scrollElEl.scrollTop = tweenTo;
+                    if (_snapContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
+                    else { setPageAuthorityScrollTop(_snapAuthority, tweenTo); }
                     s1AnimRafRef.current = null;
                 }
             };
@@ -2310,6 +2430,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 outerBoundingY: _c ? _c.getBoundingClientRect().y : null,
                                 containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
                                 trueScroll: _c ? getScrollParentProbe(_c) : null,
+                            });
+                        }
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            const _c = containerRef.current;
+                            const _eAuthority = getPageScrollAuthority(_c);
+                            console.log('[page-scroll-authority-apply]', {
+                                reason: 'ensureCursorAndAnchorOnce',
+                                anchorTick: tick,
+                                authorityKind: _eAuthority.kind,
+                                beforeScrollTop: getPageAuthorityScrollTop(_eAuthority),
+                                containerScrollTop: _c?.scrollTop ?? null,
+                                containerIsScrollable: _c ? _c.scrollHeight > _c.clientHeight + 5 : null,
+                                containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
                             });
                         }
                         snapPortraitToBeatRow('song-load-prime', r.beat);
@@ -3417,7 +3550,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             !rotationGateActiveRef.current &&
                             !isSettlingRef.current &&
                             (api as any)?.playerState === 1 &&
-                            tickRaw > _prevStable + 30; // avoid micro-tick spam
+                            (tickRaw > _prevStable + 30 || tickRaw < _prevStable - 240); // V143: allow Custom Loop backward wraps
                         if (_shouldPromote) {
                             setLastStableRotationAnchorTick(tickRaw, 'playerPositionChanged-live-landscape');
                             if (LANDSCAPE_LOOP_DEBUG) {
@@ -4149,11 +4282,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     });
                                 }
 
+                                let _s1AnchorRowRect: DOMRect | null = null; // [PageScrollAuthorityFix] V143
+                                let _s1ClearanceAdjust = 0; // [PageScrollAuthorityFix] V143
                                 let target: number;
                                 if (anchorIdx === 0) {
                                     target = 0;
                                 } else if (staffRows.length > anchorIdx) {
                                     const rowRect = staffRows[anchorIdx].getBoundingClientRect();
+                                    _s1AnchorRowRect = rowRect; // [PageScrollAuthorityFix]
                                     target = Math.max(
                                         0,
                                         scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP
@@ -4190,7 +4326,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
                                         // ε=0.5 avoids sub-pixel jitter; +3 prevents SVG hairline ghost
                                         if (danglingAfterTarget > 0.5) {
-                                            target = Math.max(0, target + danglingAfterTarget + 3);
+                                            _s1ClearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
+                                            target = Math.max(0, target + _s1ClearanceAdjust);
                                         }
                                     }
 
@@ -4226,8 +4363,40 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     cancelAnimationFrame(s1AnimRafRef.current);
                                     s1AnimRafRef.current = null;
                                 }
-                                const tweenFrom = scrollElEl.scrollTop;
-                                const tweenTo = target;
+                                // [PageScrollAuthorityFix] V143: detect real scroll authority.
+                                const _s1Authority = getPageScrollAuthority(scrollElEl);
+                                const _s1ContainerScrollable = scrollElEl.scrollHeight > scrollElEl.clientHeight + 5;
+                                const tweenFrom = _s1ContainerScrollable
+                                    ? scrollElEl.scrollTop
+                                    : getPageAuthorityScrollTop(_s1Authority);
+                                let tweenTo = target;
+                                if (!_s1ContainerScrollable && _s1Authority.canScroll) {
+                                    if (anchorIdx === 0) {
+                                        tweenTo = 0;
+                                    } else if (_s1AnchorRowRect !== null) {
+                                        tweenTo = Math.max(
+                                            0,
+                                            computePageAuthorityTargetTop({
+                                                authority: _s1Authority,
+                                                container: scrollElEl,
+                                                targetRect: _s1AnchorRowRect,
+                                                desiredViewportY: headerH + GAP,
+                                            }) + _s1ClearanceAdjust
+                                        );
+                                    }
+                                }
+                                if (LANDSCAPE_LOOP_DEBUG) {
+                                    console.log('[page-scroll-authority-apply]', {
+                                        reason: 'S1-drift-check',
+                                        anchorTick: curBeat?.absolutePlaybackStart ?? tick,
+                                        targetTop: tweenTo,
+                                        authorityKind: _s1Authority.kind,
+                                        beforeScrollTop: tweenFrom,
+                                        containerScrollTop: scrollElEl.scrollTop,
+                                        containerIsScrollable: _s1ContainerScrollable,
+                                        containerRectY: Math.round(scrollElEl.getBoundingClientRect().y),
+                                    });
+                                }
                                 const tweenDelta = tweenTo - tweenFrom;
                                 const TWEEN_MS = 150;
                                 const snapAnchor = anchorIdx; // capture for cancel guard
@@ -4248,7 +4417,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                                 if (Math.abs(tweenDelta) < 2) {
                                     // Already there — skip tween
-                                    scrollElEl.scrollTop = tweenTo;
+                                    if (_s1ContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
+                                    else { setPageAuthorityScrollTop(_s1Authority, tweenTo); }
                                 } else {
                                     const startTime = performance.now();
                                     const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -4258,12 +4428,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         if (lastAnchorSysRef.current !== snapAnchor) return;
                                         const elapsed = now - startTime;
                                         const progress = Math.min(elapsed / TWEEN_MS, 1);
-                                        scrollElEl.scrollTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                                        const _nextTop = tweenFrom + tweenDelta * easeOutCubic(progress);
+                                        if (_s1ContainerScrollable) { scrollElEl.scrollTop = _nextTop; }
+                                        else { setPageAuthorityScrollTop(_s1Authority, _nextTop); }
                                         if (progress < 1) {
                                             s1AnimRafRef.current = requestAnimationFrame(step);
                                         } else {
                                             // Force exact landing
-                                            scrollElEl.scrollTop = tweenTo;
+                                            if (_s1ContainerScrollable) { scrollElEl.scrollTop = tweenTo; }
+                                            else { setPageAuthorityScrollTop(_s1Authority, tweenTo); }
                                             s1AnimRafRef.current = null;
                                         }
                                     };
