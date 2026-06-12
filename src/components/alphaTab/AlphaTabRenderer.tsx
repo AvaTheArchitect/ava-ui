@@ -2,9 +2,15 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.8
+ * Current version: V144.9
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.9 LOCKS:
+ * ✅ [PlaybackEngagementGate] limits Landscape playback noise suppression to
+ *         actively playing streams only. Paused/stopped/manual/rotation ticks
+ *         are treated as authoritative so Page ↔ Landscape cursor authority does
+ *         not drift inside M1. V144.8 song-end hold remains untouched.
  *
  * V144.8 LOCKS:
  * ✅ [SongEndHoldPlayerState1Guard] suppresses proven post-completion Page reset
@@ -3913,6 +3919,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const _playbackRange = api?.playbackRange ?? null;
                     const _noLoop = !loopEnabledRef.current && _playbackRange == null;
                     const _noGate = !rotationGateActiveRef.current && !isSettlingRef.current;
+                    // [PlaybackEngagementGate] V144.9: noise guards apply only during active playback.
+                    // Paused/stopped/manual/rotation ticks are authoritative and must pass through.
+                    const _playbackEngaged = isPlayingRef.current === true && _playerState === 1;
 
                     // [HardEndResetGuard] V144.3: reject tick 0/1 end resets regardless of
                     // rotation gate or settling — fires before tickCache.findBeat unconditionally.
@@ -3947,20 +3956,36 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         tickRaw <= _existingState.beatStart + 4 &&
                         _existingState.lastTick > _existingState.beatStart + 120
                     ) {
-                        if (shouldLogLandscapeNoiseGuard('same-beat-backward-reset-skipped', tickRaw)) {
+                        if (_playbackEngaged) {
+                            if (shouldLogLandscapeNoiseGuard('same-beat-backward-reset-skipped', tickRaw)) {
+                                console.warn('[landscape-playback-noise-guard]', {
+                                    reason: 'same-beat-backward-reset-skipped',
+                                    skippedCount: lastLandscapeNoiseGuardLogRef.current['same-beat-backward-reset-skipped']?.count ?? null,
+                                    tickRaw,
+                                    lastTick: _existingState.lastTick,
+                                    beatStart: _existingState.beatStart,
+                                    beatDur: _existingState.beatDur,
+                                    playerState: _playerState,
+                                    playbackRange: _playbackRange,
+                                    loopEnabled: loopEnabledRef.current,
+                                });
+                            }
+                            return;
+                        } else if (shouldLogDiagnostic('landscape-guard-bypassed-not-playing', tickRaw)) {
                             console.warn('[landscape-playback-noise-guard]', {
-                                reason: 'same-beat-backward-reset-skipped',
-                                skippedCount: lastLandscapeNoiseGuardLogRef.current['same-beat-backward-reset-skipped']?.count ?? null,
+                                reason: 'guard-bypassed-not-playing',
+                                guard: 'same-beat-backward-reset',
                                 tickRaw,
-                                lastTick: _existingState.lastTick,
-                                beatStart: _existingState.beatStart,
-                                beatDur: _existingState.beatDur,
+                                lastTick: _existingState?.lastTick ?? null,
+                                beatStart: _existingState?.beatStart ?? null,
                                 playerState: _playerState,
-                                playbackRange: _playbackRange,
+                                isPlayingRef: isPlayingRef.current,
+                                isSettling: isSettlingRef.current,
+                                rotationGateActive: rotationGateActiveRef.current,
                                 loopEnabled: loopEnabledRef.current,
+                                playbackRange: _playbackRange,
                             });
                         }
-                        return;
                     }
 
                     // [LandscapeMicroDelta24Guard] V144.4: skip expensive sync for ≤24 tick deltas.
@@ -3970,20 +3995,36 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         _existingState != null &&
                         Math.abs(tickRaw - _existingState.lastTick) <= 24
                     ) {
-                        if (LANDSCAPE_LOOP_DEBUG && shouldLogLandscapeNoiseGuard('micro-delta-skipped', tickRaw)) {
-                            console.log('[landscape-playback-noise-guard]', {
-                                reason: 'micro-delta-skipped',
-                                skippedCount: lastLandscapeNoiseGuardLogRef.current['micro-delta-skipped']?.count ?? null,
+                        if (_playbackEngaged) {
+                            if (LANDSCAPE_LOOP_DEBUG && shouldLogLandscapeNoiseGuard('micro-delta-skipped', tickRaw)) {
+                                console.log('[landscape-playback-noise-guard]', {
+                                    reason: 'micro-delta-skipped',
+                                    skippedCount: lastLandscapeNoiseGuardLogRef.current['micro-delta-skipped']?.count ?? null,
+                                    tickRaw,
+                                    lastTick: _existingState.lastTick,
+                                    delta: Math.abs(tickRaw - _existingState.lastTick),
+                                    beatStart: _existingState.beatStart,
+                                    playerState: _playerState,
+                                    playbackRange: _playbackRange,
+                                    loopEnabled: loopEnabledRef.current,
+                                });
+                            }
+                            return;
+                        } else if (shouldLogDiagnostic('landscape-guard-bypassed-not-playing', tickRaw)) {
+                            console.warn('[landscape-playback-noise-guard]', {
+                                reason: 'guard-bypassed-not-playing',
+                                guard: 'micro-delta',
                                 tickRaw,
-                                lastTick: _existingState.lastTick,
-                                delta: Math.abs(tickRaw - _existingState.lastTick),
-                                beatStart: _existingState.beatStart,
+                                lastTick: _existingState?.lastTick ?? null,
+                                beatStart: _existingState?.beatStart ?? null,
                                 playerState: _playerState,
-                                playbackRange: _playbackRange,
+                                isPlayingRef: isPlayingRef.current,
+                                isSettling: isSettlingRef.current,
+                                rotationGateActive: rotationGateActiveRef.current,
                                 loopEnabled: loopEnabledRef.current,
+                                playbackRange: _playbackRange,
                             });
                         }
-                        return;
                     }
                     // ── END LandscapePlaybackNoiseGuard ───────────────────────
 
