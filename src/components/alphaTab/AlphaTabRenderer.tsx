@@ -2,9 +2,16 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.4
+ * Current version: V144.5
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.5 LOCKS:
+ * ✅ [DiagnosticLogThrottle] shouldLogDiagnostic() rate-limits high-frequency
+ *         debug logs (micro-tick-flood-probe, landscape-visual-loop-sync,
+ *         playback-live-stable-anchor, rotation-stable-anchor stable-anchor-updated)
+ *         to max once per 750ms or 240-tick advance. Warnings/errors unthrottled.
+ *         AlphaSynth Position Changed is library-internal — not our code, not touched.
  *
  * V144.4 LOCKS:
  * ✅ [LandscapeMicroDelta24Guard] expands Landscape micro-delta skip threshold to
@@ -1292,7 +1299,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             return;
         }
         lastStableRotationAnchorTickRef.current = tick;
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('rotation-stable-anchor-updated', tick, 1000, 480)) {
             console.log('[rotation-stable-anchor]', {
                 reason: 'stable-anchor-updated',
                 source,
@@ -1391,6 +1398,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const lastGoodLandscapeVisualDeltaXRef = useRef<number>(37);
     // [LandscapeNoiseGuardLogThrottle] V144.1: per-reason log throttle state.
     const lastLandscapeNoiseGuardLogRef = useRef<Record<string, { tick: number; time: number; count: number }>>({});
+    // [DiagnosticLogThrottle] V144.5: per-label throttle state for high-frequency debug logs.
+    const lastDiagnosticLogRef = useRef<Record<string, { time: number; tick: number; count: number }>>({});
+    const shouldLogDiagnostic = useCallback((label: string, tick?: number | null, minMs = 750, minTickDelta = 240): boolean => {
+        const now = performance.now();
+        const safeTick = typeof tick === 'number' ? tick : -1;
+        const prev = lastDiagnosticLogRef.current[label];
+        if (!prev) {
+            lastDiagnosticLogRef.current[label] = { time: now, tick: safeTick, count: 1 };
+            return true;
+        }
+        prev.count += 1;
+        const timeDelta = now - prev.time;
+        const tickDelta = safeTick >= 0 && prev.tick >= 0 ? Math.abs(safeTick - prev.tick) : 0;
+        if (timeDelta >= minMs || tickDelta >= minTickDelta) {
+            prev.time = now;
+            prev.tick = safeTick;
+            return true;
+        }
+        return false;
+    }, []);
     const loopWrapInProgressRef = useRef<boolean>(false);
     // [reseat-bar-gate] Bar index floor set on loop reseat — rejects pre-bar continuation beats.
     const reseatMinBarIdxRef = useRef<number | null>(null);
@@ -1542,28 +1569,23 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     interpolatedX - cursorSurfaceX,
                     maxScroll
                 ));
-                if (LANDSCAPE_LOOP_DEBUG) {
-                    const now = Date.now();
-                    const lastLog = (container as any).__lastLandscapeLoopSyncRafLogAt ?? 0;
-                    if (now - lastLog >= 200) {
-                        (container as any).__lastLandscapeLoopSyncRafLogAt = now;
-                        console.log('[landscape-visual-loop-sync]', {
-                            reason: 'raf-read',
-                            liveTick,
-                            playerState: (api as any)?.playerState ?? null,
-                            playbackRange: api?.playbackRange ?? null,
-                            stateBeatStart: state?.beatStart ?? null,
-                            stateBeatDur: state?.beatDur ?? null,
-                            stateLastTick: state?.lastTick ?? null,
-                            curBeatX: state?.curBeatX ?? null,
-                            nextBeatX: state?.nextBeatX ?? null,
-                            rawProgress: (liveTick - state.beatStart) / state.beatDur,
-                            clampedProgress: progress,
-                            interpolatedX,
-                            targetScrollLeft: targetScrollLeftRef.current,
-                            currentScrollLeft: container.scrollLeft,
-                        });
-                    }
+                if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('landscape-visual-loop-sync', liveTick)) {
+                    console.log('[landscape-visual-loop-sync]', {
+                        reason: 'raf-read',
+                        liveTick,
+                        playerState: (api as any)?.playerState ?? null,
+                        playbackRange: api?.playbackRange ?? null,
+                        stateBeatStart: state?.beatStart ?? null,
+                        stateBeatDur: state?.beatDur ?? null,
+                        stateLastTick: state?.lastTick ?? null,
+                        curBeatX: state?.curBeatX ?? null,
+                        nextBeatX: state?.nextBeatX ?? null,
+                        rawProgress: (liveTick - state.beatStart) / state.beatDur,
+                        clampedProgress: progress,
+                        interpolatedX,
+                        targetScrollLeft: targetScrollLeftRef.current,
+                        currentScrollLeft: container.scrollLeft,
+                    });
                 }
             }
             const target = targetScrollLeftRef.current;
@@ -1577,7 +1599,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         landscapeScrollRafRef.current = requestAnimationFrame(loop);
         if (typeof window !== 'undefined') (window as any).__maestroLandscapeRaf = landscapeScrollRafRef.current;
-    }, []);
+    }, [shouldLogDiagnostic]);
 
     const stopLandscapeScrollLoop = useCallback(() => {
         if (landscapeScrollRafRef.current !== null) {
@@ -3713,7 +3735,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             api.playerPositionChanged.on((e: any) => {
                 if (LANDSCAPE_LOOP_DEBUG) {
                     const isStripModeProbe = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
-                    if (isStripModeProbe || loopEnabledRef.current) {
+                    if ((isStripModeProbe || loopEnabledRef.current) && shouldLogDiagnostic('landscape-visual-loop-sync', e.currentTick ?? e.tickPosition ?? null)) {
                         console.log('[landscape-visual-loop-sync]', {
                             reason: 'playerPositionChanged-entry',
                             tickRaw: e.currentTick ?? e.tickPosition ?? null,
@@ -3729,7 +3751,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (LANDSCAPE_LOOP_DEBUG) {
                     const isStripProbe = forceHorizontalRef.current ||
                         (api?.settings?.display?.layoutMode === 1);
-                    if (isStripProbe && (api?.playerState ?? 0) === 1) {
+                    if (isStripProbe && (api?.playerState ?? 0) === 1 && shouldLogDiagnostic('landscape-visual-loop-sync', e.currentTick ?? e.tickPosition ?? null)) {
                         console.log('[landscape-visual-loop-sync]', {
                             reason: 'playerPositionChanged-settling-gate',
                             tickRaw: e.currentTick ?? e.tickPosition ?? null,
@@ -3744,7 +3766,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tickRaw = e.currentTick ?? e.tickPosition;
                 if (tickRaw == null) return;
 
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('micro-tick-flood-probe', tickRaw)) {
                     const _lastT = landscapeScrollStateRef.current?.lastTick ?? lastTickRef.current ?? null;
                     const _delta = _lastT != null ? Math.abs(tickRaw - _lastT) : null;
                     const _isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -4038,7 +4060,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
 
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('landscape-visual-loop-sync', tickRaw)) {
                         console.log('[landscape-visual-loop-sync]', {
                             reason: 'write-playerPositionChanged-live',
                             tickRaw,
@@ -4087,7 +4109,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             (tickRaw > _prevStable + 30 || tickRaw < _prevStable - 240); // V143: allow Custom Loop backward wraps
                         if (_shouldPromote) {
                             setLastStableRotationAnchorTick(tickRaw, 'playerPositionChanged-live-landscape');
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('playback-live-stable-anchor', tickRaw ?? null, 1000, 480)) {
                                 console.log('[playback-live-stable-anchor]', {
                                     reason: 'playerPositionChanged-live-landscape',
                                     tickRaw,
@@ -5395,7 +5417,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (_livePauseTick && _livePauseTick > 1) {
                         const _prevStable = lastStableRotationAnchorTickRef.current ?? null;
                         setLastStableRotationAnchorTick(_livePauseTick, 'pre-pause-live-anchor');
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('playback-live-stable-anchor', _livePauseTick ?? null, 1000, 480)) {
                             console.log('[playback-live-stable-anchor]', {
                                 reason: 'pre-pause-capture',
                                 livePauseTick: _livePauseTick,
@@ -5414,7 +5436,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         };
         run();
         return () => { cancelled = true; };
-    }, [isPlaying, isSettling, applyScrollMode, setLastStableRotationAnchorTick]);
+    }, [isPlaying, isSettling, applyScrollMode, setLastStableRotationAnchorTick, shouldLogDiagnostic]);
 
     useEffect(() => {
         const api = apiRef.current;
