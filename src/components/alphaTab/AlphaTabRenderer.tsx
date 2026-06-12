@@ -2,9 +2,14 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.1
+ * Current version: V145.2
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.2 LOCKS:
+ * ✅ [PageCursorPlayStartHardSnap] requests a Page cursor hard snap before playback
+ *         starts after recent manual seek, preventing MaestroCursorV2 from animating
+ *         from stale downstream interpolation memory.
  *
  * V145.1 LOCKS:
  * ✅ [PrimeLandscapeStateStartOverride] applies the stale-start anchor override directly
@@ -5752,6 +5757,41 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         preRotationAnchorTick: preRotationAnchorTickRef.current,
                         landscapeScrollState: landscapeScrollStateRef.current,
                     });
+                }
+                // [PageCursorPlayStartHardSnap] V145.2: before starting playback in page mode,
+                // flush any stale MaestroCursorV2 interpolation from a previous visual state.
+                // Only fires when the user recently did a manual seek (click/touch). Does not
+                // seek, does not change api.tickPosition — visual reset only.
+                {
+                    const _apiTick = Number((api as any)?.tickPosition ?? 0);
+                    const _playerState = Number((api as any)?.playerState ?? -1);
+                    const _manualSeekAge =
+                        typeof window !== 'undefined' && (window as any).__maestroManualSeek
+                            ? Date.now() - (window as any).__maestroManualSeek
+                            : null;
+                    const _hasRecentManualSeek =
+                        typeof _manualSeekAge === 'number' && _manualSeekAge >= 0 && _manualSeekAge < 5000;
+                    if (
+                        !forceHorizontalRef.current &&
+                        (_playerState === 0 || isPlayingRef.current === false) &&
+                        _hasRecentManualSeek
+                    ) {
+                        cursorRef.current?.requestSnap?.('play-start-hard-snap');
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.warn('[page-play-start-hard-snap]', {
+                                reason: 'before-api-play',
+                                apiTickPosition: _apiTick,
+                                playerState: _playerState,
+                                isPlayingRef: isPlayingRef.current,
+                                manualSeekAge: _manualSeekAge,
+                                seekTargetTick: seekTargetTickRef.current ?? null,
+                                lastIntentionalTick:
+                                    typeof window !== 'undefined'
+                                        ? (window as any).__maestroLastIntentionalTick ?? null
+                                        : null,
+                            });
+                        }
+                    }
                 }
                 api.play();
             } else {

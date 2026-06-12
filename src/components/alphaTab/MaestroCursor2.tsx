@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Last Updated May 30th, 2026
- * Version V1.3 
+ * Last Updated June 12th, 2026
+ * Version V1.4
  * File: components/alphaTab/MaestroCursor2.tsx
  * 
  * V1.2 patch (loop-reseat out-of-order guard fix):
@@ -37,6 +37,19 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MIN_PRIMARY_BEAT_TICKS = 30;
+
+// [PageCursorPlayStartHardSnap] V145.2 — clear interpolation memory on click/touch/play-start hard snaps.
+// These reasons trigger forceHardSnapNextSetBeat so the following setBeat fully resets
+// interpolation state instead of inheriting stale tween position from a previous session.
+const HARD_SNAP_REASONS = new Set([
+    'click-seek',
+    'touch-seek',
+    'song-load',
+    'huge-jump',
+    'loop-wrap',
+    'loop-reseat',
+    'play-start-hard-snap',
+]);
 const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
 const BAR_COLOR = 'rgba(0, 204, 170, 0.42)';
@@ -74,6 +87,9 @@ export class MaestroCursorV2 {
 
     private hasInitialPosition = false;
     private snapPending = false;
+    // [PageCursorPlayStartHardSnap] V145.2: set by requestSnap for HARD_SNAP_REASONS;
+    // causes the next setBeat to flush all interpolation state before re-anchoring.
+    private forceHardSnapNextSetBeat = false;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -118,6 +134,28 @@ export class MaestroCursorV2 {
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
         if (!beat) { this._hide(); return; }
+
+        // [PageCursorPlayStartHardSnap] V145.2: flush stale interpolation memory so this
+        // setBeat hard-places the cursor without animating from a previous tween position.
+        if (this.forceHardSnapNextSetBeat) {
+            const _prevX = this.currentNoteX;
+            const _prevY = this.currentY;
+            this.beatStart = 0;
+            this.expandedBeatDuration = 0;
+            this.lastValidRatio = 1.0;
+            this.lastTickApplied = -1;
+            this.forceHardSnapNextSetBeat = false;
+            console.warn('[maestro-cursor2-hard-snap]', {
+                reason: 'forceHardSnapNextSetBeat',
+                phase: 'setBeat',
+                scanStart: beat?.absolutePlaybackStart ?? null,
+                currentNoteX: _prevX,
+                currentY: _prevY,
+                previousRenderX: this.lastX,
+                previousTargetX: this.nextNoteX,
+                forceHardSnapNextSetBeat: false,
+            });
+        }
 
         const dur = beat.playbackDuration ?? beat.duration ?? 0;
         const bb = this.api?.renderer?.boundsLookup?.findBeat(beat);
@@ -293,6 +331,21 @@ export class MaestroCursorV2 {
         this.lastY = -9999;     // [V1.2] reset animation floor-clamp on seek/reseat
         this.lastBeatX = -9999; // reset ordering guard
         this.lastBeatY = -9999; // reset ordering guard
+        // [PageCursorPlayStartHardSnap] V145.2: hard-snap reasons flush all interpolation
+        // memory on the next setBeat so stale tween state cannot cause a visual lunge.
+        if (_reason && HARD_SNAP_REASONS.has(_reason)) {
+            this.forceHardSnapNextSetBeat = true;
+            this.expandedBeatDuration = 0; // block setTick until next setBeat re-anchors
+            console.warn('[maestro-cursor2-hard-snap]', {
+                reason: _reason,
+                phase: 'requestSnap',
+                currentNoteX: this.currentNoteX,
+                currentY: this.currentY,
+                previousRenderX: this.lastX,
+                previousTargetX: this.nextNoteX,
+                forceHardSnapNextSetBeat: true,
+            });
+        }
         console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
     }
 
