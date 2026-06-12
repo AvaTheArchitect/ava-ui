@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.9
+ * Current version: V145
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145 LOCKS:
+ * ✅ [StaleStartAnchorOverride] prevents stale mid-M1 rotation anchors from overriding
+ *         actual stopped/paused API truth near song start. If api.tickPosition is near 0
+ *         and stale preRotation/lastStable anchors are far ahead, getRotationAnchorTick
+ *         and landscapeInitialAnchor use the API start tick instead.
+ *         Page click and Landscape touch-seek now publish __maestroLastIntentionalTick
+ *         and update preRotationAnchorTickRef so user seeks become authoritative.
  *
  * V144.9 LOCKS:
  * ✅ [PlaybackEngagementGate] limits Landscape playback noise suppression to
@@ -645,7 +653,28 @@ function landscapeInitialAnchor(
         const reachableFloor = cursorSurfaceX + 4;
         // [RotationAnchorFreeze] overrideTick is the frozen pre-rotation anchor;
         // fall back to getIntentionalTick() then api.tickPosition if not provided.
-        const liveTick = overrideTick ?? getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
+        let liveTick = overrideTick ?? getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
+        // [StaleStartAnchorOverride] V145: if the resolved tick is a stale far-ahead
+        // anchor but the API is near song start and stopped, prefer the actual API tick.
+        const _liaApiTick = Number((api as any)?.tickPosition ?? 0);
+        const _liaPlayerState = Number((api as any)?.playerState ?? -1);
+        if (
+            _liaPlayerState === 0 &&
+            Number.isFinite(_liaApiTick) && _liaApiTick >= 0 && _liaApiTick <= 24 &&
+            Number.isFinite(liveTick) && liveTick > 960 && (liveTick - _liaApiTick) > 480
+        ) {
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.warn('[rotation-anchor-start-override]', {
+                    reason: 'landscapeInitialAnchor-stale-start-anchor-overridden',
+                    staleLiveTick: liveTick,
+                    apiTickPosition: _liaApiTick,
+                    overrideTick: overrideTick ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    playerState: _liaPlayerState,
+                });
+            }
+            liveTick = _liaApiTick;
+        }
         const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
         if (LANDSCAPE_LOOP_DEBUG) {
             console.log('[landscape-cursor-prime-probe]', {
@@ -1195,18 +1224,64 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // [RotationAnchorFreeze / RotationStableAnchorRef] Returns the best tick for rotation anchoring.
     // Priority: frozen pre-rotation tick (gate active) → last stable anchor → intentional → landscapeState → api.tickPosition
     const getRotationAnchorTick = useCallback((api: any): number => {
+        // Resolve candidate from the priority chain.
+        let candidateTick: number;
         if (rotationGateActiveRef.current && preRotationAnchorTickRef.current != null) {
-            return preRotationAnchorTickRef.current;
+            candidateTick = preRotationAnchorTickRef.current;
+        } else if (lastStableRotationAnchorTickRef.current != null) {
+            candidateTick = lastStableRotationAnchorTickRef.current;
+        } else {
+            const intentional = getIntentionalTick();
+            if (intentional != null) {
+                candidateTick = intentional;
+            } else {
+                const landscapeState = landscapeScrollStateRef.current;
+                if (landscapeState?.lastTick != null) candidateTick = landscapeState.lastTick;
+                else if (landscapeState?.beatStart != null) candidateTick = landscapeState.beatStart;
+                else candidateTick = (api as any)?.tickPosition ?? 0;
+            }
         }
-        if (lastStableRotationAnchorTickRef.current != null) {
-            return lastStableRotationAnchorTickRef.current;
+        // [StaleStartAnchorOverride] V145: when stopped/paused and api.tickPosition is
+        // near song start but the candidate is a stale mid-song anchor, prefer the actual
+        // API tick. Targets the observed stale-1921-vs-real-3 regression.
+        const _apiTick = Number((api as any)?.tickPosition ?? 0);
+        const _playerState = Number((api as any)?.playerState ?? -1);
+        const _intentionalTick = getIntentionalTick();
+        const _isStoppedOrPaused = _playerState === 0 || !isPlayingRef.current;
+        const _apiNearSongStart = Number.isFinite(_apiTick) && _apiTick >= 0 && _apiTick <= 24;
+        const _candidateFarAhead =
+            Number.isFinite(candidateTick) &&
+            candidateTick > 960 &&
+            (candidateTick - _apiTick) > 480;
+        const _noFreshIntentionalTick =
+            typeof _intentionalTick !== 'number' ||
+            Math.abs(_intentionalTick - _apiTick) > 480;
+        if (
+            _isStoppedOrPaused &&
+            _apiNearSongStart &&
+            _candidateFarAhead &&
+            _noFreshIntentionalTick &&
+            !loopEnabledRef.current &&
+            !(api?.playbackRange)
+        ) {
+            if (LANDSCAPE_LOOP_DEBUG) {
+                console.warn('[rotation-anchor-start-override]', {
+                    reason: 'stale-start-anchor-overridden',
+                    candidateTick,
+                    apiTickPosition: _apiTick,
+                    playerState: _playerState,
+                    isPlayingRef: isPlayingRef.current,
+                    intentionalTick: _intentionalTick,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                    landscapeScrollState: landscapeScrollStateRef.current,
+                });
+            }
+            preRotationAnchorTickRef.current = _apiTick;
+            lastStableRotationAnchorTickRef.current = _apiTick;
+            candidateTick = _apiTick;
         }
-        const intentional = getIntentionalTick();
-        if (intentional != null) return intentional;
-        const landscapeState = landscapeScrollStateRef.current;
-        if (landscapeState?.lastTick != null) return landscapeState.lastTick;
-        if (landscapeState?.beatStart != null) return landscapeState.beatStart;
-        return (api as any)?.tickPosition ?? 0;
+        return candidateTick;
     }, []);
 
     // [RotationStableAnchorRef] Records a trusted anchor tick from stable sources only.
@@ -5948,6 +6023,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 if (bestBeat) {
                                     seekTargetTickRef.current = bestTick;
                                     seekFreezeUntilRef.current = Date.now() + 300;
+                                    // [StaleStartAnchorOverride] V145: publish authoritative intent so
+                                    // rotation/prime paths trust this seek over stale cached anchors.
+                                    (window as any).__maestroLastIntentionalTick = bestTick;
+                                    (window as any).__maestroLastIntentionalTickAt = Date.now();
+                                    preRotationAnchorTickRef.current = bestTick;
                                     const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
                                     if (SEEK_DIAGNOSTIC_DEBUG) {
                                         const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -6118,6 +6198,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const safeTarget = Math.min(target + 2, target + Math.max(0, beatDurForClamp - 1));
                 seekTargetTickRef.current = safeTarget;
                 seekFreezeUntilRef.current = Date.now() + 250;
+                // [StaleStartAnchorOverride] V145: publish authoritative intent so
+                // rotation/prime paths trust this seek over stale cached anchors.
+                (window as any).__maestroLastIntentionalTick = safeTarget;
+                (window as any).__maestroLastIntentionalTickAt = Date.now();
+                preRotationAnchorTickRef.current = safeTarget;
                 const wasPlaying = (api.playerState ?? 0) === 1;
                 const tok = ++seekTokenRef.current;
                 if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
