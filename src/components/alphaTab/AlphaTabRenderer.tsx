@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.6
- * Date: June 11th, 2026
+ * Current version: V144.7
+ * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.7 LOCKS:
+ * ✅ [SongEndHoldCursor] suppresses automatic visual cursor reset to M1 after
+ *         natural song completion. tickRaw <= 1 emitted by AlphaTab after
+ *         playback ends is treated as end-reset noise when lastTick > 10000 and
+ *         no loop is active. Stable anchor preserved at final song position.
+ *         Intentional restart (user presses Play) and rewind are unaffected.
+ *         Landscape restart-on-Play behavior is preserved — do not modify it.
+ *         Portrait path only: suppresses playerState === 0 only. playerState === 1
+ *         is always passed through to avoid blocking intentional restarts.
  *
  * V144.6 LOCKS:
  * ✅ [PrimeLandscapeStableAnchorScrollRepair] primeLandscapeState uses
@@ -4180,6 +4190,41 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 // ── Portrait cursor engine ────────────────────────────────────
                 if (!cursorRef.current) return;
+
+                // [SongEndHoldCursor] V144.7: In portrait path, reject tickRaw <= 1 at song end
+                // when no loop is active and lastTick was deep in the song.
+                // AlphaTab emits tick 1 after natural completion — do not reset cursor to M1.
+                // Portrait-only: only suppress on playerState === 0 (stopped/finished).
+                // playerState === 1 is left through entirely — may be an intentional restart.
+                {
+                    const _lastTick = lastTickRef.current ?? 0;
+                    const _playerState = (api as any)?.playerState ?? -1;
+                    const _isEndResetNoise =
+                        tickRaw <= 1 &&
+                        !loopEnabledRef.current &&
+                        !(api?.playbackRange) &&
+                        _lastTick > 10000 &&
+                        _playerState === 0;
+                    if (_isEndResetNoise) {
+                        // Safety bypass: active seek targeting tick ≤ 1 is an intentional rewind.
+                        const _intentionalTick = getIntentionalTick();
+                        const _isIntentionalRewind =
+                            (seekFreezeUntilRef.current > Date.now() && (seekTargetTickRef.current ?? Infinity) <= 1) ||
+                            (_intentionalTick !== null && _intentionalTick <= 1);
+                        if (!_isIntentionalRewind) {
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.warn('[song-end-hold]', {
+                                    reason: 'suppress-portrait-end-reset-tick',
+                                    tickRaw,
+                                    lastTick: _lastTick,
+                                    playerState: _playerState,
+                                    note: 'natural completion — holding cursor at song end position',
+                                });
+                            }
+                            return;
+                        }
+                    }
+                }
 
                 // V1.8.5: Consume loop-click seek target from BeatCustomLoopOverlay.
                 // commitBarSnap (click path) sets __maestroManualSeekTargetTick = clickedTick
