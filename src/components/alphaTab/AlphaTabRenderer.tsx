@@ -2,9 +2,23 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.2
+ * Current version: V144.4
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.4 LOCKS:
+ * ✅ [LandscapeMicroDelta24Guard] expands Landscape micro-delta skip threshold to
+ *         24 ticks so tiny 13–18 tick playback noise no longer triggers expensive
+ *         beat/state writes while RAF owns smooth motion.
+ *
+ * V144.3 LOCKS:
+ * ✅ [ExistingFutureAnchorRepair] repairs already-poisoned future stable anchors
+ *         when a future candidate is rejected: if the existing stable tick is also
+ *         far ahead of api.tickPosition, it is overwritten with api.tickPosition.
+ * ✅ [LandscapeMicroDelta12Guard] expands Landscape micro-delta skip threshold
+ *         to 12 ticks (from 6) while RAF owns smooth playback.
+ * ✅ [HardEndResetGuard] rejects tick 0/1 end resets regardless of rotation/settling
+ *         gates when Loop is off and lastTick > 10000.
  *
  * V144.2 LOCKS:
  * ✅ [FutureTickAnchorPoisonGuard] rejects stable-anchor candidates that are
@@ -1242,6 +1256,31 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             !rotationGateActiveRef.current &&
             !isSettlingRef.current;
         if (_futureTickPoison) {
+            // [ExistingFutureAnchorRepair] V144.3: if the existing stable anchor is also
+            // far ahead of api.tickPosition, repair it now rather than leaving a bad anchor.
+            const _existingStable = lastStableRotationAnchorTickRef.current;
+            const _existingFutureGap =
+                typeof _existingStable === 'number' && typeof _apiTick === 'number'
+                    ? _existingStable - _apiTick
+                    : 0;
+            if (
+                typeof _existingStable === 'number' &&
+                _apiTick > 10000 &&
+                _existingStable > 10000 &&
+                _existingFutureGap > 960 &&
+                !rotationGateActiveRef.current &&
+                !isSettlingRef.current
+            ) {
+                lastStableRotationAnchorTickRef.current = _apiTick;
+                console.warn('[rotation-stable-anchor] existing-future-anchor-repaired', {
+                    source,
+                    oldStableTick: _existingStable,
+                    repairedToTick: _apiTick,
+                    apiTickPosition: _apiTick,
+                    existingFutureGap: _existingFutureGap,
+                    reason: 'existing-stable-far-ahead-of-api',
+                });
+            }
             console.warn('[rotation-stable-anchor] future-tick-anchor-poison-rejected', {
                 source,
                 candidateTick: tick,
@@ -3709,6 +3748,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const _lastT = landscapeScrollStateRef.current?.lastTick ?? lastTickRef.current ?? null;
                     const _delta = _lastT != null ? Math.abs(tickRaw - _lastT) : null;
                     const _isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+                    const _probeState = landscapeScrollStateRef.current;
+                    const _probeRange = api?.playbackRange ?? null;
+                    const _probeNoLoop = !loopEnabledRef.current && _probeRange == null;
+                    const _probeNoGate = !rotationGateActiveRef.current && !isSettlingRef.current;
+                    const _probeWouldSkipEndReset =
+                        _probeNoLoop && _probeState != null && _probeState.lastTick > 10000 && tickRaw <= 1;
+                    const _probeWouldSkipSameBeat =
+                        _probeNoLoop && _probeNoGate && _probeState != null &&
+                        tickRaw < _probeState.lastTick &&
+                        tickRaw <= _probeState.beatStart + 4 &&
+                        _probeState.lastTick > _probeState.beatStart + 120;
+                    const _probeWouldSkipMicroDelta =
+                        _probeNoLoop && _probeNoGate && _probeState != null &&
+                        _delta != null && _delta <= 24;
                     console.log('[micro-tick-flood-probe]', {
                         reason: 'playerPositionChanged',
                         tickRaw,
@@ -3716,8 +3769,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         delta: _delta,
                         playerState: (api as any)?.playerState ?? null,
                         isStripMode: _isStrip,
-                        didRunExpensiveSync: !isSettlingRef.current && _isStrip,
-                        didWriteLandscapeState: !isSettlingRef.current && _isStrip,
+                        rotationGateActive: rotationGateActiveRef.current,
+                        isSettling: isSettlingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: _probeRange,
+                        noiseGuardWouldSkipEndReset: _probeWouldSkipEndReset,
+                        noiseGuardWouldSkipSameBeatReset: _probeWouldSkipSameBeat,
+                        noiseGuardWouldSkipMicroDelta: _probeWouldSkipMicroDelta,
+                        didRunExpensiveSync: !isSettlingRef.current && _isStrip &&
+                            !_probeWouldSkipEndReset && !_probeWouldSkipSameBeat && !_probeWouldSkipMicroDelta,
+                        didWriteLandscapeState: !isSettlingRef.current && _isStrip &&
+                            !_probeWouldSkipEndReset && !_probeWouldSkipSameBeat && !_probeWouldSkipMicroDelta,
                         didRenderLoopHighlight: !isSettlingRef.current && _isStrip && loopEnabledRef.current,
                     });
                 }
@@ -3735,14 +3797,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const _noLoop = !loopEnabledRef.current && _playbackRange == null;
                     const _noGate = !rotationGateActiveRef.current && !isSettlingRef.current;
 
-                    // Part 3 — End-reset tick guard: reject bogus tick 0/1 near end of song.
-                    if (
+                    // [HardEndResetGuard] V144.3: reject tick 0/1 end resets regardless of
+                    // rotation gate or settling — fires before tickCache.findBeat unconditionally.
+                    const _isEndResetNoise =
                         _noLoop &&
-                        _noGate &&
                         _existingState != null &&
                         _existingState.lastTick > 10000 &&
-                        tickRaw <= 1
-                    ) {
+                        tickRaw <= 1;
+                    if (_isEndResetNoise) {
                         if (shouldLogLandscapeNoiseGuard('end-reset-tick-skipped', tickRaw)) {
                             console.warn('[landscape-playback-noise-guard]', {
                                 reason: 'end-reset-tick-skipped',
@@ -3752,6 +3814,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 playerState: _playerState,
                                 playbackRange: _playbackRange,
                                 loopEnabled: loopEnabledRef.current,
+                                rotationGateActive: rotationGateActiveRef.current,
+                                isSettling: isSettlingRef.current,
                             });
                         }
                         return;
@@ -3782,12 +3846,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         return;
                     }
 
-                    // Part 1 — Micro-tick throttle: skip expensive sync for 2–6 tick deltas.
+                    // [LandscapeMicroDelta24Guard] V144.4: skip expensive sync for ≤24 tick deltas.
                     if (
                         _noLoop &&
                         _noGate &&
                         _existingState != null &&
-                        Math.abs(tickRaw - _existingState.lastTick) <= 6
+                        Math.abs(tickRaw - _existingState.lastTick) <= 24
                     ) {
                         if (LANDSCAPE_LOOP_DEBUG && shouldLogLandscapeNoiseGuard('micro-delta-skipped', tickRaw)) {
                             console.log('[landscape-playback-noise-guard]', {
