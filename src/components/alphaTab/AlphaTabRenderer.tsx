@@ -2,9 +2,16 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145
+ * Current version: V145.1
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.1 LOCKS:
+ * ✅ [PrimeLandscapeStateStartOverride] applies the stale-start anchor override directly
+ *         inside primeLandscapeState so corrected song-start API truth cannot be
+ *         overwritten by stale preRotation/intentional ticks. Runs after V144.6 repair.
+ * ✅ [StartBeatReachabilityTolerance] allows M1 beat 1 to snap in landscapeInitialAnchor
+ *         when its X is within 8px of the reachable floor (e.g. beatX 120, floor 124).
  *
  * V145 LOCKS:
  * ✅ [StaleStartAnchorOverride] prevents stale mid-M1 rotation anchors from overriding
@@ -706,17 +713,25 @@ function landscapeInitialAnchor(
             }
             const beatX = typeof bb.onNotesX === 'number'
                 ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+            // [StartBeatReachabilityTolerance] V145.1: allow M1 beat 1 to snap when its
+            // X is only a few px left of the reachable floor (e.g. beatX 120, floor 124).
+            const START_REACHABLE_TOLERANCE_PX = 8;
+            const _isSongStartProbe = probe <= 24;
+            const _canSnap =
+                beatX >= reachableFloor ||
+                (_isSongStartProbe && beatX >= reachableFloor - START_REACHABLE_TOLERANCE_PX);
             if (LANDSCAPE_LOOP_DEBUG) {
                 console.log('[landscape-cursor-prime-probe]', {
                     reason: 'landscapeInitialAnchor-probe',
                     probeTick: probe,
                     beatX: Number(beatX.toFixed(1)),
                     reachableFloor,
-                    wouldSnap: beatX >= reachableFloor,
+                    wouldSnap: _canSnap,
+                    isSongStartProbe: _isSongStartProbe,
                     currentApiTick: api.tickPosition,
                 });
             }
-            if (beatX >= reachableFloor) {
+            if (_canSnap) {
                 const snap = Math.max(0, beatX - cursorSurfaceX);
                 console.log('[rotation-anchor-resolution]', {
                     reason: 'landscapeInitialAnchor-snap',
@@ -3071,7 +3086,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     ((api as any)?.playerState ?? 0) === 0 &&
                     !(api?.playbackRange) &&
                     !loopEnabledRef.current;
-                const primeScrollTick = _shouldReprimeLandscapeScroll
+                let primeScrollTick = _shouldReprimeLandscapeScroll
                     ? _primeAnchorTick
                     : _primeCandidateTick;
                 if (_shouldReprimeLandscapeScroll && LANDSCAPE_LOOP_DEBUG) {
@@ -3086,6 +3101,55 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         playbackRange: api?.playbackRange ?? null,
                         loopEnabled: loopEnabledRef.current,
                     });
+                }
+                // [PrimeLandscapeStartOverride] V145.1: if API/player truth is near song
+                // start while stopped/paused, prevent stale preRotation/intentional ticks
+                // from priming Landscape mid-M1. Runs after V144.6 repair so it takes
+                // precedence over any stale anchor that repair may have selected.
+                {
+                    const _apiTick = Number((api as any)?.tickPosition ?? 0);
+                    const _playerState = Number((api as any)?.playerState ?? -1);
+                    const _intentionalTick = getIntentionalTick?.() ?? null;
+                    const _isStoppedOrPaused = _playerState === 0 || isPlayingRef.current === false;
+                    const _apiNearSongStart = Number.isFinite(_apiTick) && _apiTick >= 0 && _apiTick <= 24;
+                    const _primeFarAhead =
+                        Number.isFinite(primeScrollTick) &&
+                        primeScrollTick > 480 &&
+                        (primeScrollTick - _apiTick) > 240;
+                    // An intentional tick near start CONFIRMS API truth; it must not protect
+                    // a stale preRotationAnchorTick like 961.
+                    const _intentionalNearStart =
+                        typeof _intentionalTick === 'number' &&
+                        _intentionalTick >= 0 &&
+                        _intentionalTick <= 24;
+                    const _intentionalMatchesApi =
+                        typeof _intentionalTick !== 'number' ||
+                        Math.abs(_intentionalTick - _apiTick) <= 24;
+                    if (
+                        _isStoppedOrPaused &&
+                        _apiNearSongStart &&
+                        _primeFarAhead &&
+                        (_intentionalNearStart || _intentionalMatchesApi) &&
+                        !loopEnabledRef.current &&
+                        !(api?.playbackRange)
+                    ) {
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.warn('[primeLandscapeState-start-override]', {
+                                reason: 'stale-prime-scroll-tick-overridden',
+                                primeScrollTickBefore: primeScrollTick,
+                                apiTickPosition: _apiTick,
+                                playerState: _playerState,
+                                isPlayingRef: isPlayingRef.current,
+                                intentionalTick: _intentionalTick,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                            });
+                        }
+                        primeScrollTick = _apiTick;
+                        preRotationAnchorTickRef.current = _apiTick;
+                        lastStableRotationAnchorTickRef.current = _apiTick;
+                    }
                 }
                 if (SEEK_DIAGNOSTIC_DEBUG) {
                     const intentionalT = getIntentionalTick();
