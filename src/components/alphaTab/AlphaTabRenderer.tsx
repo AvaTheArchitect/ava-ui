@@ -2,9 +2,14 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.7
+ * Current version: V144.8-diagnostic
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.8 DIAGNOSTIC:
+ * 🔎 [PageCursorResetSourceProbe] instruments AlphaTabRenderer and MaestroCursor2
+ *         reset/snap/setBeat/lastTickRef paths to identify why Page cursor
+ *         auto-resets to M1 after natural completion. No behavior changes.
  *
  * V144.7 LOCKS:
  * ✅ [SongEndHoldCursor] suppresses automatic visual cursor reset to M1 after
@@ -2767,6 +2772,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'about-to-requestSnap-song-load',
+                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                            anchorTick: tick,
+                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            lastTickRef: lastTickRef.current ?? null,
+                            lastStableAnchor: lastStableRotationAnchorTickRef.current ?? null,
+                            seekTargetTick: seekTargetTickRef.current ?? null,
+                            seekFreezeActive: seekFreezeUntilRef.current > Date.now(),
+                            loopEnabled: loopEnabledRef.current,
+                            isSettling: isSettlingRef.current,
+                        });
                         cursorRef.current?.requestSnap('song-load');
                         if (ORIENTATION_ANCHOR_DEBUG) {
                             console.log('[orientation-cursor-probe]', {
@@ -2867,6 +2887,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
                             });
                         }
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'about-to-snapPortraitToBeatRow-song-load-prime',
+                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                            anchorTick: tick,
+                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            lastTickRef: lastTickRef.current ?? null,
+                        });
                         snapPortraitToBeatRow('song-load-prime', r.beat);
                         // [RotationStableAnchorRef] Portrait snap resolved — record as stable anchor.
                         setLastStableRotationAnchorTick(tick, 'snapPortraitToBeatRow-success');
@@ -4205,6 +4235,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         !(api?.playbackRange) &&
                         _lastTick > 10000 &&
                         _playerState === 0;
+                    // [V144.8] Always probe low ticks so we can see if/why the guard fires or not
+                    if (tickRaw <= 1) {
+                        console.warn('[song-end-hold-probe]', {
+                            reason: 'portrait-low-tick-received',
+                            tickRaw,
+                            lastTick: _lastTick,
+                            playerState: _playerState,
+                            isEndResetNoiseConditionMet: _isEndResetNoise,
+                            loopEnabled: loopEnabledRef.current,
+                            hasPlaybackRange: !!(api?.playbackRange),
+                            lastTickDeep: _lastTick > 10000,
+                        });
+                    }
                     if (_isEndResetNoise) {
                         // Safety bypass: active seek targeting tick ≤ 1 is an intentional rewind.
                         const _intentionalTick = getIntentionalTick();
@@ -4318,6 +4361,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
                         stableVisualKeyRef.current = null;
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'lastTickRef-cleared',
+                            site: 'loop-wrap',
+                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                            previousLastTick: lastTickRef.current,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                        });
                         lastTickRef.current = null;
                         allowBacktrackUntilRef.current = Date.now() + 300;
                         const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
@@ -4464,6 +4515,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         stableExpandedBeatStartRef.current = 0;
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'lastTickRef-cleared',
+                            site: 'loop-reseat',
+                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                            previousLastTick: lastTickRef.current,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                        });
                         lastTickRef.current = null;
                         lastAcceptedBeatStartRef.current = -1;
                         allowBacktrackUntilRef.current = Date.now() + 600;
@@ -4846,6 +4905,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         cursorRef.current.setLoopEndX(null);
                     }
 
+                    console.warn('[page-cursor-reset-source]', {
+                        reason: 'about-to-setBeat',
+                        callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                        beatStart: curBeat?.absolutePlaybackStart ?? null,
+                        beatBarIdx: curBeat?.voice?.bar?.masterBar?.index ?? curBeat?.voice?.bar?.index ?? null,
+                        guardedStart,
+                        apiTickPosition: (api as any)?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        lastTickRef: lastTickRef.current ?? null,
+                        tick,
+                    });
                     cursorRef.current.setBeat(curBeat, resolvedNextBeat, nextExpandedStart ?? null, guardedStart);
                 }
 
@@ -5236,6 +5306,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
             lastAcceptedBeatStartRef.current = -1;
             lastRegressionLogRef.current = '';
+            console.warn('[page-cursor-reset-source]', {
+                reason: 'lastTickRef-cleared',
+                site: 'hardReset-fileUrl-effect',
+                callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                previousLastTick: lastTickRef.current,
+                apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
+                playerState: (apiRef.current as any)?.playerState ?? null,
+            });
             lastTickRef.current = null;
             stableCurBeatRef.current = null;
             stableExpandedBeatStartRef.current = 0;

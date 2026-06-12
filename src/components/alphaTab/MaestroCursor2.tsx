@@ -109,6 +109,14 @@ export class MaestroCursorV2 {
         nextExpandedBeatStart: number | null = null,
         expandedBeatStart: number | null = null,
     ): void {
+        console.warn('[maestro-cursor2-reset-source]', {
+            method: 'setBeat',
+            beatStart: beat?.absolutePlaybackStart ?? null,
+            beatBarIdx: beat?.voice?.bar?.masterBar?.index ?? beat?.voice?.bar?.index ?? null,
+            nextBeatStart: preScannedNextBeat?.absolutePlaybackStart ?? null,
+            guardedStart: expandedBeatStart,
+            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+        });
         if (!beat) { this._hide(); return; }
 
         const dur = beat.playbackDuration ?? beat.duration ?? 0;
@@ -272,6 +280,11 @@ export class MaestroCursorV2 {
      * visible between loop passes rather than flickering hidden.
      */
     public requestSnap(_reason?: string): void {
+        console.warn('[maestro-cursor2-reset-source]', {
+            method: 'requestSnap',
+            reason: _reason ?? 'unknown',
+            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+        });
         this.nextNoteX = null;
         this.stayPutMode = false;
         this.lastValidRatio = 1.0;
