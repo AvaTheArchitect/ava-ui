@@ -2,9 +2,18 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.5
+ * Current version: V144.6
  * Date: June 11th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V144.6 LOCKS:
+ * ✅ [PrimeLandscapeStableAnchorScrollRepair] primeLandscapeState uses
+ *         primeScrollTick instead of the raw candidate tick when the candidate
+ *         is stale (>960 ticks from stable anchor while not playing, no loop).
+ *         Prevents Landscape strip from priming to stale end-of-song position
+ *         after user repositions Page cursor. Visual/scroll only — does not
+ *         override playback position. Do not remove the _shouldReprimeLandscapeScroll
+ *         guard or the primeScrollTick substitution in all three use sites.
  *
  * V144.5 LOCKS:
  * ✅ [DiagnosticLogThrottle] shouldLogDiagnostic() rate-limits high-frequency
@@ -2913,6 +2922,49 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tick = isActivelyPlaying
                     ? ((api as any)?.tickPosition ?? 0)
                     : getRotationAnchorTick(api);
+                // [PrimeLandscapeStableAnchorScrollRepair] V144.6: If candidate tick is stale
+                // (far from stable anchor / api.tickPosition while not playing), use the
+                // stable/API anchor for visual scroll priming. This prevents Landscape from
+                // scrolling to stale end-of-song position after user repositions Page cursor.
+                const _primeCandidateTick = tick;
+                const _primeApiTick = typeof (api as any)?.tickPosition === 'number'
+                    ? (api as any).tickPosition : null;
+                const _primeStableTick = lastStableRotationAnchorTickRef.current ?? null;
+                const _primeAnchorTick =
+                    typeof _primeStableTick === 'number' && _primeStableTick > 0
+                        ? _primeStableTick
+                        : typeof _primeApiTick === 'number' && _primeApiTick > 0
+                            ? _primeApiTick
+                            : null;
+                const _primeCandidateGap =
+                    typeof _primeAnchorTick === 'number'
+                        ? Math.abs(_primeCandidateTick - _primeAnchorTick)
+                        : 0;
+                const _shouldReprimeLandscapeScroll =
+                    typeof _primeAnchorTick === 'number' &&
+                    _primeCandidateTick > 10000 &&
+                    _primeAnchorTick > 10000 &&
+                    _primeCandidateGap > 960 &&
+                    !isPlayingRef.current &&
+                    ((api as any)?.playerState ?? 0) === 0 &&
+                    !(api?.playbackRange) &&
+                    !loopEnabledRef.current;
+                const primeScrollTick = _shouldReprimeLandscapeScroll
+                    ? _primeAnchorTick
+                    : _primeCandidateTick;
+                if (_shouldReprimeLandscapeScroll && LANDSCAPE_LOOP_DEBUG) {
+                    console.warn('[primeLandscapeState-anchor-repair]', {
+                        reason: 'using-stable-anchor-for-prime-scroll',
+                        candidateTick: _primeCandidateTick,
+                        primeScrollTick,
+                        apiTickPosition: _primeApiTick,
+                        lastStableRotationAnchorTick: _primeStableTick,
+                        candidateVsAnchorGap: _primeCandidateGap,
+                        playerState: (api as any)?.playerState ?? null,
+                        playbackRange: api?.playbackRange ?? null,
+                        loopEnabled: loopEnabledRef.current,
+                    });
+                }
                 if (SEEK_DIAGNOSTIC_DEBUG) {
                     const intentionalT = getIntentionalTick();
                     const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -2951,7 +3003,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         currentScrollLeft: ctr.scrollLeft,
                     });
                 }
-                const r = tickCache.findBeat(trackSet, tick);
+                const r = tickCache.findBeat(trackSet, primeScrollTick);
                 const bb = r?.beat ? bounds.findBeat(r.beat) : null;
                 if (!bb?.visualBounds) return;
                 const curBeatX = typeof bb.onNotesX === 'number'
@@ -2974,7 +3026,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     curBeatX, nextBeatX,
                     beatStart: beat.absolutePlaybackStart ?? 0,
                     beatDur: structuralDur,
-                    lastTick: tick,
+                    lastTick: primeScrollTick,
                 };
                 if (LANDSCAPE_LOOP_DEBUG) {
                     console.log('[landscape-visual-loop-sync]', {
@@ -3072,15 +3124,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
                     // [StableAnchorPoisonGuard] Only write if tick is confirmed trusted (not passive api.tickPosition drift).
                     const trustedPrimeTick =
-                        tick > 1 &&
+                        primeScrollTick > 1 &&
                         (
-                            preRotationAnchorTickRef.current === tick ||
-                            lastStableRotationAnchorTickRef.current === tick ||
-                            getIntentionalTick() === tick ||
-                            ((window as any).__maestroLastIntentionalTick === tick)
+                            preRotationAnchorTickRef.current === primeScrollTick ||
+                            lastStableRotationAnchorTickRef.current === primeScrollTick ||
+                            getIntentionalTick() === primeScrollTick ||
+                            ((window as any).__maestroLastIntentionalTick === primeScrollTick) ||
+                            // [V144.6] Also trust when we repaired to stable anchor
+                            _shouldReprimeLandscapeScroll
                         );
                     if (trustedPrimeTick) {
-                        setLastStableRotationAnchorTick(tick, 'primeLandscapeState-success');
+                        setLastStableRotationAnchorTick(primeScrollTick, 'primeLandscapeState-success');
                     } else if (LANDSCAPE_LOOP_DEBUG) {
                         console.warn('[rotation-stable-anchor]', {
                             reason: 'primeLandscapeState-stable-update-skipped',
