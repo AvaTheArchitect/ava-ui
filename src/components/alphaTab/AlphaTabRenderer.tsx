@@ -2,14 +2,15 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V144.8-diagnostic
+ * Current version: V144.8
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
- * V144.8 DIAGNOSTIC:
- * 🔎 [PageCursorResetSourceProbe] instruments AlphaTabRenderer and MaestroCursor2
- *         reset/snap/setBeat/lastTickRef paths to identify why Page cursor
- *         auto-resets to M1 after natural completion. No behavior changes.
+ * V144.8 LOCKS:
+ * ✅ [SongEndHoldPlayerState1Guard] suppresses proven post-completion Page reset
+ *         ticks where AlphaTab emits tickRaw<=1 while playerState is still 1/2,
+ *         while preserving explicit seek/restart-to-start actions.
+ *         Diagnostic probes retained for one validation pass.
  *
  * V144.7 LOCKS:
  * ✅ [SongEndHoldCursor] suppresses automatic visual cursor reset to M1 after
@@ -4221,21 +4222,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // ── Portrait cursor engine ────────────────────────────────────
                 if (!cursorRef.current) return;
 
-                // [SongEndHoldCursor] V144.7: In portrait path, reject tickRaw <= 1 at song end
+                // [SongEndHoldCursor] V144.8: In portrait path, reject tickRaw <= 1 at song end
                 // when no loop is active and lastTick was deep in the song.
-                // AlphaTab emits tick 1 after natural completion — do not reset cursor to M1.
-                // Portrait-only: only suppress on playerState === 0 (stopped/finished).
-                // playerState === 1 is left through entirely — may be an intentional restart.
+                // V144.8: Diagnostic confirmed AlphaTab emits tickRaw=1 while playerState=1
+                // after natural completion — broadened from playerState===0 to 0|1|2.
+                // Intentional seek-to-start bypasses the guard via _recentStartSeek.
                 {
                     const _lastTick = lastTickRef.current ?? 0;
                     const _playerState = (api as any)?.playerState ?? -1;
+                    const _intentionalTick = getIntentionalTick();
+                    const _recentStartSeek =
+                        (seekFreezeUntilRef.current > Date.now() && (seekTargetTickRef.current ?? Infinity) <= 1) ||
+                        (typeof _intentionalTick === 'number' && _intentionalTick <= 1);
                     const _isEndResetNoise =
                         tickRaw <= 1 &&
                         !loopEnabledRef.current &&
                         !(api?.playbackRange) &&
                         _lastTick > 10000 &&
-                        _playerState === 0;
-                    // [V144.8] Always probe low ticks so we can see if/why the guard fires or not
+                        (_playerState === 0 || _playerState === 1 || _playerState === 2) &&
+                        !_recentStartSeek;
+                    // [V144.8] Always probe low ticks to confirm guard behavior
                     if (tickRaw <= 1) {
                         console.warn('[song-end-hold-probe]', {
                             reason: 'portrait-low-tick-received',
@@ -4243,29 +4249,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             lastTick: _lastTick,
                             playerState: _playerState,
                             isEndResetNoiseConditionMet: _isEndResetNoise,
+                            recentStartSeek: _recentStartSeek,
+                            intentionalTick: _intentionalTick,
                             loopEnabled: loopEnabledRef.current,
                             hasPlaybackRange: !!(api?.playbackRange),
                             lastTickDeep: _lastTick > 10000,
                         });
                     }
                     if (_isEndResetNoise) {
-                        // Safety bypass: active seek targeting tick ≤ 1 is an intentional rewind.
-                        const _intentionalTick = getIntentionalTick();
-                        const _isIntentionalRewind =
-                            (seekFreezeUntilRef.current > Date.now() && (seekTargetTickRef.current ?? Infinity) <= 1) ||
-                            (_intentionalTick !== null && _intentionalTick <= 1);
-                        if (!_isIntentionalRewind) {
-                            if (LANDSCAPE_LOOP_DEBUG) {
-                                console.warn('[song-end-hold]', {
-                                    reason: 'suppress-portrait-end-reset-tick',
-                                    tickRaw,
-                                    lastTick: _lastTick,
-                                    playerState: _playerState,
-                                    note: 'natural completion — holding cursor at song end position',
-                                });
-                            }
-                            return;
+                        if (LANDSCAPE_LOOP_DEBUG) {
+                            console.warn('[song-end-hold]', {
+                                reason: 'suppress-portrait-end-reset-tick',
+                                tickRaw,
+                                lastTick: _lastTick,
+                                playerState: _playerState,
+                                recentStartSeek: _recentStartSeek,
+                                intentionalTick: _intentionalTick,
+                                seekTargetTick: seekTargetTickRef.current ?? null,
+                                seekFreezeActive: seekFreezeUntilRef.current > Date.now(),
+                                note: 'AlphaTab emitted post-completion tickRaw<=1 while playerState may still be 1',
+                            });
                         }
+                        return;
                     }
                 }
 
