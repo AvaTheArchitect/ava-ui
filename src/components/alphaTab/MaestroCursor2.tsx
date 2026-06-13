@@ -54,6 +54,10 @@ const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
 const BAR_COLOR = 'rgba(0, 204, 170, 0.42)';
 const SPINE_COLOR = 'rgba(0, 220, 185, 0.85)';
+const CURSOR2_DIAG =
+    typeof window !== 'undefined' &&
+    ((window as any).CURSOR2_DIAG === true ||
+     (window as any).LANDSCAPE_LOOP_DEBUG === true);
 
 // ─── Class ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +94,7 @@ export class MaestroCursorV2 {
     // [PageCursorPlayStartHardSnap] V145.2: set by requestSnap for HARD_SNAP_REASONS;
     // causes the next setBeat to flush all interpolation state before re-anchoring.
     private forceHardSnapNextSetBeat = false;
+    private tickDiagCount = 0;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -134,6 +139,44 @@ export class MaestroCursorV2 {
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
         if (!beat) { this._hide(); return; }
+
+        const _incomingScanStart =
+            expandedBeatStart ??
+            beat?.absolutePlaybackStart ??
+            beat?.playbackStart ??
+            null;
+        if (CURSOR2_DIAG) {
+            console.warn('[cursor2-interpolation-probe]', {
+                phase: 'setBeat-entry',
+                incomingScanStart: _incomingScanStart,
+                incomingBeatAbsStart: beat?.absolutePlaybackStart ?? null,
+                incomingBeatPlaybackStart: beat?.playbackStart ?? null,
+                incomingBeatDuration: beat?.playbackDuration ?? beat?.duration ?? null,
+                incomingBeatBarIdx:
+                    beat?.voice?.bar?.masterBar?.index ??
+                    beat?.voice?.bar?.index ??
+                    null,
+                preScannedNextBeatStart:
+                    preScannedNextBeat?.absolutePlaybackStart ??
+                    preScannedNextBeat?.playbackStart ??
+                    null,
+                preScannedNextBeatBarIdx:
+                    preScannedNextBeat?.voice?.bar?.masterBar?.index ??
+                    preScannedNextBeat?.voice?.bar?.index ??
+                    null,
+                nextExpandedBeatStart,
+                expandedBeatStart,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+                apiPlaybackRangeEnd: (this.api as any)?.playbackRange?.endTick ?? null,
+                currentNoteXBefore: this.currentNoteX,
+                beatStartBefore: this.beatStart,
+                expandedBeatDurationBefore: this.expandedBeatDuration,
+                nextNoteXBefore: this.nextNoteX,
+                loopEndX: this.loopEndX,
+                forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+            });
+        }
 
         // [PageCursorPlayStartHardSnap] V145.2: flush stale interpolation memory so this
         // setBeat hard-places the cursor without animating from a previous tween position.
@@ -205,6 +248,7 @@ export class MaestroCursorV2 {
             return;
         }
 
+        this.tickDiagCount = 0;
         this.currentNoteX = newNoteX;
         this.currentY = vb.y;
         this.currentH = vb.h;
@@ -239,6 +283,30 @@ export class MaestroCursorV2 {
         const sameRow = Math.abs(finalY - this.lastBeatY) < 5;
         const isBackward = sameRow && this.lastBeatX > -9000
             && finalX < (this.lastBeatX - BAR_WIDTH / 2) - BACKSTEP_PX;
+        if (CURSOR2_DIAG) {
+            console.warn('[cursor2-interpolation-probe]', {
+                phase: 'setBeat-resolved',
+                scanStart,
+                computedDur,
+                computedRatio,
+                finalExpandedBeatDuration: this.expandedBeatDuration,
+                currentNoteX: this.currentNoteX,
+                currentY: this.currentY,
+                currentH: this.currentH,
+                nextNoteX: this.nextNoteX,
+                stayPutMode: this.stayPutMode,
+                finalX,
+                finalY,
+                isBackward,
+                lastX: this.lastX,
+                lastY: this.lastY,
+                lastBeatX: this.lastBeatX,
+                lastBeatY: this.lastBeatY,
+                loopEndX: this.loopEndX,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+            });
+        }
         this._applyTransform(finalX, finalY, this.currentH, /* snap */ !isBackward);
         this.hasInitialPosition = true;
         this.lastBeatX = this.currentNoteX;
@@ -257,6 +325,29 @@ export class MaestroCursorV2 {
     }
 
     setLoopEndX(x: number | null): void {
+        if (CURSOR2_DIAG) {
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = masterBar
+                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
+                : null;
+            console.warn('[cursor2-interpolation-probe]', {
+                phase: 'setLoopEndX',
+                incomingLoopEndX: x,
+                previousLoopEndX: this.loopEndX,
+                currentBeatStart: this.beatStart,
+                currentNoteX: this.currentNoteX,
+                currentBeatBarIdx:
+                    this.currentBeat?.voice?.bar?.masterBar?.index ??
+                    this.currentBeat?.voice?.bar?.index ??
+                    null,
+                masterBarX: mbBounds?.visualBounds?.x ?? null,
+                masterBarRight: mbBounds?.visualBounds
+                    ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
+                    : null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+                apiPlaybackRangeEnd: (this.api as any)?.playbackRange?.endTick ?? null,
+            });
+        }
         this.loopEndX = x;
     }
 
@@ -302,6 +393,53 @@ export class MaestroCursorV2 {
         }
 
         const finalX = interpolatedX - BAR_WIDTH / 2;
+        const _shouldDiagTick =
+            CURSOR2_DIAG &&
+            (this.tickDiagCount < 8 || this.loopEndX !== null);
+        if (_shouldDiagTick) {
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = masterBar
+                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
+                : null;
+            const mbX = mbBounds?.visualBounds?.x ?? null;
+            const mbRight = mbBounds?.visualBounds
+                ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
+                : null;
+            console.warn('[cursor2-interpolation-probe]', {
+                phase: 'setTick',
+                tick,
+                beatStart: overrideBeatStart ?? this.beatStart,
+                expandedBeatDuration: this.expandedBeatDuration,
+                progress,
+                currentNoteX: this.currentNoteX,
+                nextNoteX: this.nextNoteX,
+                stayPutMode: this.stayPutMode,
+                loopEndX: this.loopEndX,
+                masterBarX: mbX,
+                masterBarRight: mbRight,
+                loopEndInsideCurrentBar:
+                    this.loopEndX !== null &&
+                    mbX !== null &&
+                    mbRight !== null &&
+                    this.loopEndX >= mbX &&
+                    this.loopEndX <= mbRight,
+                interpolatedX,
+                finalX,
+                lastX: this.lastX,
+                lastY: this.lastY,
+                wouldSkipSmallMove:
+                    Math.abs(finalX - this.lastX) < 0.5 &&
+                    Math.abs(this.currentY - this.lastY) < 0.8,
+                wouldBackstepClamp:
+                    Math.abs(this.currentY - this.lastY) < 5 &&
+                    this.lastX > -9000 &&
+                    finalX < this.lastX - BACKSTEP_PX,
+                lastTickApplied: this.lastTickApplied,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+            });
+            this.tickDiagCount++;
+        }
         this._applyTransform(finalX, this.currentY, this.currentH, false);
     }
 
@@ -323,6 +461,32 @@ export class MaestroCursorV2 {
             reason: _reason ?? 'unknown',
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
+        if (CURSOR2_DIAG) {
+            console.warn('[cursor2-interpolation-probe]', {
+                phase: 'requestSnap',
+                reason: _reason ?? 'unknown',
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+                apiPlaybackRangeEnd: (this.api as any)?.playbackRange?.endTick ?? null,
+                intentionalTick:
+                    typeof window !== 'undefined'
+                        ? (window as any).__maestroLastIntentionalTick ?? null
+                        : null,
+                currentNoteX: this.currentNoteX,
+                currentY: this.currentY,
+                beatStart: this.beatStart,
+                expandedBeatDuration: this.expandedBeatDuration,
+                nextNoteX: this.nextNoteX,
+                stayPutMode: this.stayPutMode,
+                loopEndX: this.loopEndX,
+                lastX: this.lastX,
+                lastY: this.lastY,
+                lastBeatX: this.lastBeatX,
+                lastBeatY: this.lastBeatY,
+                lastTickApplied: this.lastTickApplied,
+                forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+            });
+        }
         this.nextNoteX = null;
         this.stayPutMode = false;
         this.lastValidRatio = 1.0;
