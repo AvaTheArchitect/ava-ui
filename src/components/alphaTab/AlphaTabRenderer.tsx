@@ -2,9 +2,15 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.2
+ * Current version: V145.2.1
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.2.1 LOCKS:
+ * ✅ [PagePlayStartHardSnapGateFix] opens the Page play-start hard snap gate and
+ *         defers it one RAF so song-load/remount primes cannot consume the final
+ *         playback hard snap. No playerState/seek-age conditions that could prevent
+ *         firing. Page-mode only (!forceHorizontalRef.current).
  *
  * V145.2 LOCKS:
  * ✅ [PageCursorPlayStartHardSnap] requests a Page cursor hard snap before playback
@@ -5758,32 +5764,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         landscapeScrollState: landscapeScrollStateRef.current,
                     });
                 }
-                // [PageCursorPlayStartHardSnap] V145.2: before starting playback in page mode,
-                // flush any stale MaestroCursorV2 interpolation from a previous visual state.
-                // Only fires when the user recently did a manual seek (click/touch). Does not
-                // seek, does not change api.tickPosition — visual reset only.
-                {
-                    const _apiTick = Number((api as any)?.tickPosition ?? 0);
-                    const _playerState = Number((api as any)?.playerState ?? -1);
+                // [PagePlayStartHardSnapGateFix] V145.2.1: deferred one RAF so any
+                // synchronous song-load/remount cursor primes complete before the
+                // play-start hard snap marks the next playback setBeat. Broad Page-only
+                // guard — no playerState/seek-age conditions that could prevent firing.
+                // Does not seek, does not change api.tickPosition — visual reset only.
+                if (!forceHorizontalRef.current) {
                     const _manualSeekAge =
                         typeof window !== 'undefined' && (window as any).__maestroManualSeek
                             ? Date.now() - (window as any).__maestroManualSeek
                             : null;
-                    const _hasRecentManualSeek =
-                        typeof _manualSeekAge === 'number' && _manualSeekAge >= 0 && _manualSeekAge < 5000;
-                    if (
-                        !forceHorizontalRef.current &&
-                        (_playerState === 0 || isPlayingRef.current === false) &&
-                        _hasRecentManualSeek
-                    ) {
-                        cursorRef.current?.requestSnap?.('play-start-hard-snap');
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                    const _lastIntentionalTickAt =
+                        typeof window !== 'undefined'
+                            ? Number((window as any).__maestroLastIntentionalTickAt ?? 0)
+                            : 0;
+                    const _lastIntentionalAge =
+                        _lastIntentionalTickAt > 0 ? Date.now() - _lastIntentionalTickAt : null;
+                    requestAnimationFrame(() => {
+                        if (!forceHorizontalRef.current) {
+                            cursorRef.current?.requestSnap?.('play-start-hard-snap');
                             console.warn('[page-play-start-hard-snap]', {
-                                reason: 'before-api-play',
-                                apiTickPosition: _apiTick,
-                                playerState: _playerState,
+                                reason: 'raf-before-live-playback',
+                                apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                playerState: Number((api as any)?.playerState ?? -1),
                                 isPlayingRef: isPlayingRef.current,
                                 manualSeekAge: _manualSeekAge,
+                                lastIntentionalAge: _lastIntentionalAge,
                                 seekTargetTick: seekTargetTickRef.current ?? null,
                                 lastIntentionalTick:
                                     typeof window !== 'undefined'
@@ -5791,7 +5797,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         : null,
                             });
                         }
-                    }
+                    });
                 }
                 api.play();
             } else {
