@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.3
+ * Current version: V145.4
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.4 LOCKS:
+ * ✅ [LoopToggleReseatAnchorFix] loop-toggle-on and toggle ON reseat reasons
+ *         are now treated the same as loop-play-start for the visible-beat
+ *         replacement guard. Prevents the first-visible-attack forward scan
+ *         from skipping the loop start beat and parking the cursor at beat 2
+ *         during a loop toggle reseat. loopPlayStartPreserveAbsRef is also
+ *         set for toggle-on reasons. Do not remove.
  *
  * V145.3 LOCKS:
  * ✅ [SongEndHoldGuard] prevents stale-start overrides from converting a valid
@@ -4779,6 +4787,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (reseatFlag.reason === 'loop-play-start') {
                             loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
                         }
+                        // [LoopToggleReseatAnchorFix] V145.4: preserve loop-start beat for
+                        // toggle-on reasons so the visible-beat replacement guard can protect it.
+                        if (reseatFlag.reason === 'loop-toggle-on' || reseatFlag.reason === 'toggle ON') {
+                            loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
+                        }
                         (window as any).__maestroLoopReseat = null;
                         console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
                             liveTick: tick,
@@ -4945,10 +4958,27 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             : null) ??
                         (window as any).__maestroLoopReseat?.reason ??
                         null;
+                    // [LoopToggleReseatAnchorFix] V145.4: guard for toggle-on reseat.
+                    // Conditions (all required):
+                    //   1. activeReseatReason is toggle-on
+                    //   2. liveRange.startTick is known
+                    //   3. curBeatAbs is at or within 120 ticks of loop start
+                    //   4. live tick is within 120 ticks of loop start (not later in the loop)
+                    const _isToggleOnReseat =
+                        (activeReseatReason === 'loop-toggle-on' ||
+                         activeReseatReason === 'toggle ON') &&
+                        liveRange?.startTick != null &&
+                        curBeatAbs != null &&
+                        (curBeatAbs === liveRange.startTick ||
+                         curBeatAbs === preservedLoopStartAbs ||
+                         Math.abs(curBeatAbs - liveRange.startTick) <= 120) &&
+                        Math.abs(tick - liveRange.startTick) <= 120;
+
                     const isLoopPlayStart =
-                        activeReseatReason === 'loop-play-start' &&
-                        preservedLoopStartAbs != null &&
-                        curBeatAbs === preservedLoopStartAbs;
+                        (activeReseatReason === 'loop-play-start' &&
+                         preservedLoopStartAbs != null &&
+                         curBeatAbs === preservedLoopStartAbs) ||
+                        _isToggleOnReseat;
 
                     // Clear once playback advances past the protected beat
                     if (preservedLoopStartAbs != null && curBeatAbs !== preservedLoopStartAbs) {
@@ -4958,6 +4988,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (isLoopPlayStart) {
                         // Do not replace loop start beat with first visible attack.
                         // Tied/slide lead-in beats at loop boundary should be visually honored.
+                        if (_isToggleOnReseat && LOOP_CLICK_RESEAT_DEBUG) {
+                            console.log('[loop-toggle-reseat-anchor-fix]', {
+                                reason: 'toggle-on-loop-start-preserved',
+                                curBeatAbs,
+                                liveRangeStartTick: liveRange?.startTick ?? null,
+                                activeReseatReason,
+                                loopPlayStartPreserveAbs: loopPlayStartPreserveAbsRef.current,
+                                tick,
+                                note: 'visible-beat replacement skipped — cursor stays at loop start',
+                            });
+                        }
                         activeLoopReseatReasonRef.current = null;
                         // Skip the replacement — fall through to normal cursor logic with original curBeat
                     } else {
