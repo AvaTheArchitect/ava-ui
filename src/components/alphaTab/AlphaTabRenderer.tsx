@@ -2,9 +2,15 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.2.1
+ * Current version: V145.3
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.3 LOCKS:
+ * ✅ [SongEndHoldGuard] prevents stale-start overrides from converting a valid
+ *         song-end hold anchor into api tick 0/1 during rotation. Guards all three
+ *         stale-start override call sites: getRotationAnchorTick, landscapeInitialAnchor,
+ *         and primeLandscapeState.
  *
  * V145.2.1 LOCKS:
  * ✅ [PagePlayStartHardSnapGateFix] opens the Page play-start hard snap gate and
@@ -681,17 +687,32 @@ function landscapeInitialAnchor(
             Number.isFinite(_liaApiTick) && _liaApiTick >= 0 && _liaApiTick <= 24 &&
             Number.isFinite(liveTick) && liveTick > 960 && (liveTick - _liaApiTick) > 480
         ) {
-            if (LANDSCAPE_LOOP_DEBUG) {
-                console.warn('[rotation-anchor-start-override]', {
-                    reason: 'landscapeInitialAnchor-stale-start-anchor-overridden',
-                    staleLiveTick: liveTick,
+            // [SongEndHoldGuard] V145.3: liveTick > 10000 with api near start means this
+            // is a post-song-end-hold rotation, not a stale M1 anchor. Preserve the deep anchor.
+            const _looksLikeSongEndHold = liveTick > 10000;
+            if (_looksLikeSongEndHold) {
+                console.warn('[song-end-hold-rotation-preserve]', {
+                    reason: 'skip-stale-start-override-for-song-end-hold',
+                    callSite: 'landscapeInitialAnchor',
                     apiTickPosition: _liaApiTick,
+                    playerState: _liaPlayerState,
+                    liveTick,
                     overrideTick: overrideTick ?? null,
                     intentionalTick: getIntentionalTick(),
-                    playerState: _liaPlayerState,
                 });
+            } else {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.warn('[rotation-anchor-start-override]', {
+                        reason: 'landscapeInitialAnchor-stale-start-anchor-overridden',
+                        staleLiveTick: liveTick,
+                        apiTickPosition: _liaApiTick,
+                        overrideTick: overrideTick ?? null,
+                        intentionalTick: getIntentionalTick(),
+                        playerState: _liaPlayerState,
+                    });
+                }
+                liveTick = _liaApiTick;
             }
-            liveTick = _liaApiTick;
         }
         const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
         if (LANDSCAPE_LOOP_DEBUG) {
@@ -1290,22 +1311,50 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             !loopEnabledRef.current &&
             !(api?.playbackRange)
         ) {
-            if (LANDSCAPE_LOOP_DEBUG) {
-                console.warn('[rotation-anchor-start-override]', {
-                    reason: 'stale-start-anchor-overridden',
-                    candidateTick,
+            // [SongEndHoldGuard] V145.3: if the candidate and both anchor refs are all
+            // deep in the song (> 10000) while api is near start and stopped, this is a
+            // post-song-end-hold rotation. Preserve the deep anchor.
+            const _preRotationDeep =
+                Number.isFinite(preRotationAnchorTickRef.current) &&
+                (preRotationAnchorTickRef.current ?? 0) > 10000;
+            const _lastStableDeep =
+                Number.isFinite(lastStableRotationAnchorTickRef.current) &&
+                (lastStableRotationAnchorTickRef.current ?? 0) > 10000;
+            const _candidateDeep = Number.isFinite(candidateTick) && candidateTick > 10000;
+            const _looksLikeSongEndHold = _candidateDeep && (_preRotationDeep || _lastStableDeep);
+            if (_looksLikeSongEndHold) {
+                preRotationAnchorTickRef.current = candidateTick;
+                lastStableRotationAnchorTickRef.current = candidateTick;
+                console.warn('[song-end-hold-rotation-preserve]', {
+                    reason: 'skip-stale-start-override-for-song-end-hold',
+                    callSite: 'getRotationAnchorTick',
                     apiTickPosition: _apiTick,
                     playerState: _playerState,
                     isPlayingRef: isPlayingRef.current,
-                    intentionalTick: _intentionalTick,
+                    candidateTick,
                     preRotationAnchorTick: preRotationAnchorTickRef.current,
                     lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                    landscapeScrollState: landscapeScrollStateRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: api?.playbackRange ?? null,
                 });
+            } else {
+                if (LANDSCAPE_LOOP_DEBUG) {
+                    console.warn('[rotation-anchor-start-override]', {
+                        reason: 'stale-start-anchor-overridden',
+                        candidateTick,
+                        apiTickPosition: _apiTick,
+                        playerState: _playerState,
+                        isPlayingRef: isPlayingRef.current,
+                        intentionalTick: _intentionalTick,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        landscapeScrollState: landscapeScrollStateRef.current,
+                    });
+                }
+                preRotationAnchorTickRef.current = _apiTick;
+                lastStableRotationAnchorTickRef.current = _apiTick;
+                candidateTick = _apiTick;
             }
-            preRotationAnchorTickRef.current = _apiTick;
-            lastStableRotationAnchorTickRef.current = _apiTick;
-            candidateTick = _apiTick;
         }
         return candidateTick;
     }, []);
@@ -3144,22 +3193,52 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         !loopEnabledRef.current &&
                         !(api?.playbackRange)
                     ) {
-                        if (LANDSCAPE_LOOP_DEBUG) {
-                            console.warn('[primeLandscapeState-start-override]', {
-                                reason: 'stale-prime-scroll-tick-overridden',
-                                primeScrollTickBefore: primeScrollTick,
+                        // [SongEndHoldGuard] V145.3: if primeScrollTick and the anchor refs
+                        // are all deep in the song (> 10000) while api is near start, this is
+                        // a post-song-end-hold rotation. Preserve the deep anchor.
+                        const _preRotationDeep =
+                            Number.isFinite(preRotationAnchorTickRef.current) &&
+                            (preRotationAnchorTickRef.current ?? 0) > 10000;
+                        const _lastStableDeep =
+                            Number.isFinite(lastStableRotationAnchorTickRef.current) &&
+                            (lastStableRotationAnchorTickRef.current ?? 0) > 10000;
+                        const _primeDeep =
+                            Number.isFinite(primeScrollTick) && primeScrollTick > 10000;
+                        const _looksLikeSongEndHold =
+                            _primeDeep && (_preRotationDeep || _lastStableDeep);
+                        if (_looksLikeSongEndHold) {
+                            preRotationAnchorTickRef.current = primeScrollTick;
+                            lastStableRotationAnchorTickRef.current = primeScrollTick;
+                            console.warn('[song-end-hold-rotation-preserve]', {
+                                reason: 'skip-stale-start-override-for-song-end-hold',
+                                callSite: 'primeLandscapeState',
                                 apiTickPosition: _apiTick,
                                 playerState: _playerState,
                                 isPlayingRef: isPlayingRef.current,
-                                intentionalTick: _intentionalTick,
+                                candidateTick: primeScrollTick,
                                 preRotationAnchorTick: preRotationAnchorTickRef.current,
                                 lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                landscapeScrollState: landscapeScrollStateRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
                             });
+                        } else {
+                            if (LANDSCAPE_LOOP_DEBUG) {
+                                console.warn('[primeLandscapeState-start-override]', {
+                                    reason: 'stale-prime-scroll-tick-overridden',
+                                    primeScrollTickBefore: primeScrollTick,
+                                    apiTickPosition: _apiTick,
+                                    playerState: _playerState,
+                                    isPlayingRef: isPlayingRef.current,
+                                    intentionalTick: _intentionalTick,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                    landscapeScrollState: landscapeScrollStateRef.current,
+                                });
+                            }
+                            primeScrollTick = _apiTick;
+                            preRotationAnchorTickRef.current = _apiTick;
+                            lastStableRotationAnchorTickRef.current = _apiTick;
                         }
-                        primeScrollTick = _apiTick;
-                        preRotationAnchorTickRef.current = _apiTick;
-                        lastStableRotationAnchorTickRef.current = _apiTick;
                     }
                 }
                 if (SEEK_DIAGNOSTIC_DEBUG) {
