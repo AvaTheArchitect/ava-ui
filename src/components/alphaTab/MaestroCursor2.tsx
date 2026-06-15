@@ -2,9 +2,15 @@
 
 /**
  * Last Updated June 12th, 2026
- * Version V1.4
+ * Version V1.5
  * File: components/alphaTab/MaestroCursor2.tsx
- * 
+ *
+ * V1.5 LOCKS:
+ * ✅ [FirstTickSmallMoveBypass] After a fresh setBeat/hard-snap anchor, Cursor2 allows
+ *    the first few live setTick transforms to render even when movement is under the
+ *    normal 0.5px suppression threshold. This eliminates direct chord-start micro-pause
+ *    on slow/long chords while preserving the normal tiny-move throttle afterward.
+ *
  * V1.2 patch (loop-reseat out-of-order guard fix):
  *   ✅ requestSnap() now fully resets the out-of-order guard state:
  *      lastX, lastY reset to -9999 so the next setBeat() is never rejected
@@ -54,10 +60,14 @@ const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
 const BAR_COLOR = 'rgba(0, 204, 170, 0.42)';
 const SPINE_COLOR = 'rgba(0, 220, 185, 0.85)';
-const CURSOR2_DIAG =
-    typeof window !== 'undefined' &&
-    ((window as any).CURSOR2_DIAG === true ||
-     (window as any).LANDSCAPE_LOOP_DEBUG === true);
+function cursor2DiagEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    return (
+        (window as any).CURSOR2_DIAG === true ||
+        (window as any).LANDSCAPE_LOOP_DEBUG === true ||
+        window.localStorage?.getItem('CURSOR2_DIAG') === 'true'
+    );
+}
 
 // ─── Class ────────────────────────────────────────────────────────────────────
 
@@ -90,11 +100,28 @@ export class MaestroCursorV2 {
     private lastBeatY = -9999;   // vb.y of last accepted setBeat (ordering guard only)
 
     private hasInitialPosition = false;
-    private snapPending = false;
     // [PageCursorPlayStartHardSnap] V145.2: set by requestSnap for HARD_SNAP_REASONS;
     // causes the next setBeat to flush all interpolation state before re-anchoring.
     private forceHardSnapNextSetBeat = false;
     private tickDiagCount = 0;
+    private forceRenderSmallMoveTicks = 0;
+    private isLiveTickTransform = false;
+
+    // [ClickSeekRowStartSuppress] V145.6: set by requestSnap for manual seek reasons
+    // so the immediately following setBeat does not arm a row-start glide.
+    private suppressNextRowStart = false;
+
+    // [RowStartAnchorGlide] V145.6: temporary left-barline anchor for row transitions.
+    private rowStartX: number | null = null;
+    private rowStartY: number | null = null;
+    private rowStartTargetX: number | null = null;
+    private rowStartBeatStart: number | null = null;
+
+    // [RowStartOffsetDecay] V1.6: decaying visual offset so the row-start distance
+    // spreads across 2 beats instead of being crammed into one beat's Math.pow curve.
+    private rowStartOffsetX: number | null = null;
+    private rowStartOffsetBeatStart: number | null = null;
+    private rowStartOffsetDuration: number | null = null;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -115,6 +142,7 @@ export class MaestroCursorV2 {
             visibility: 'hidden',
             opacity: '0',
             transform: 'translate3d(-100vw, 0px, 0px)',
+            transition: 'none',
         });
 
         container.appendChild(this.element);
@@ -145,7 +173,7 @@ export class MaestroCursorV2 {
             beat?.absolutePlaybackStart ??
             beat?.playbackStart ??
             null;
-        if (CURSOR2_DIAG) {
+        if (cursor2DiagEnabled()) {
             console.warn('[cursor2-interpolation-probe]', {
                 phase: 'setBeat-entry',
                 incomingScanStart: _incomingScanStart,
@@ -175,6 +203,15 @@ export class MaestroCursorV2 {
                 nextNoteXBefore: this.nextNoteX,
                 loopEndX: this.loopEndX,
                 forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+            });
+            console.warn('[cursor2-setbeat-timing-probe]', {
+                incomingScanStart: _incomingScanStart,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                previousBeatStart: this.beatStart,
+                previousLastX: this.lastX,
+                previousCurrentNoteX: this.currentNoteX,
+                previousNextNoteX: this.nextNoteX,
+                previousExpandedBeatDuration: this.expandedBeatDuration,
             });
         }
 
@@ -249,9 +286,73 @@ export class MaestroCursorV2 {
         }
 
         this.tickDiagCount = 0;
+        // [FirstTickSmallMoveBypass] V1.5: after a new anchor, allow the first few
+        // live tick transforms through even if movement is below the normal 0.5px
+        // suppression threshold. This prevents slow chord starts from visually freezing.
+        this.forceRenderSmallMoveTicks = 4;
+
+        // Capture previous position before overwriting — used by the robust row-change
+        // detector below, which must survive play-start-hard-snap clearing lastBeatY.
+        const previousRowY = this.currentY;
+        const previousRowX = this.currentNoteX;
+
         this.currentNoteX = newNoteX;
         this.currentY = vb.y;
         this.currentH = vb.h;
+
+        // ── Row-start glide anchor ────────────────────────────────────────────
+        // [RowStartAnchorGlide] V145.6: on a row transition, record the row's left
+        // barline so setTick can glide from there to the first notehead.
+        // Two signals arm rowChanged so direct-start on the last beat before a wrap
+        // is also caught even when play-start-hard-snap has cleared lastBeatY/-9999.
+        const yRowChanged =
+            (this.lastBeatY > -9000 && Math.abs(vb.y - this.lastBeatY) >= 5) ||
+            (previousRowY > 0 && Math.abs(vb.y - previousRowY) >= 5);
+        const xWrappedLeft =
+            previousRowX > -9000 &&
+            newNoteX < previousRowX - 50;
+        const rowChanged = (yRowChanged || xWrappedLeft) && !this.suppressNextRowStart;
+        // [ClickSeekRowStartSuppress] V145.6: consume the suppression flag now regardless
+        // of whether rowChanged fired, so it does not bleed into the next natural beat.
+        this.suppressNextRowStart = false;
+        if (rowChanged) {
+            const _masterBar = beat?.voice?.bar?.masterBar;
+            const _mbBounds = _masterBar
+                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(_masterBar)
+                : null;
+            const _mbX = _mbBounds?.visualBounds?.x ?? null;
+            if (_mbX !== null && isFinite(_mbX) && _mbX < this.currentNoteX) {
+                this.rowStartX = _mbX - BAR_WIDTH / 2;
+                this.rowStartY = this.currentY;
+                this.rowStartTargetX = this.currentNoteX - BAR_WIDTH / 2;
+                this.rowStartBeatStart = scanStart;
+                // rowStartOffset arming removed — A/B confirmed the runway pullback
+                // causes Beat 1 to land late at row wraps. Offset fields stay null;
+                // rowStartX/Y/Target/BeatStart still anchor the visual snap position.
+                this.rowStartOffsetX = null;
+                this.rowStartOffsetBeatStart = null;
+                this.rowStartOffsetDuration = null;
+            } else {
+                this.rowStartX = null;
+                this.rowStartY = null;
+                this.rowStartTargetX = null;
+                this.rowStartBeatStart = null;
+                this.rowStartOffsetX = null;
+                this.rowStartOffsetBeatStart = null;
+                this.rowStartOffsetDuration = null;
+            }
+        } else {
+            // Normal same-row beat change — clear visual anchor fields only.
+            // rowStartOffset* fields must NOT be cleared here; they decay independently
+            // over rowStartOffsetDuration ticks and are only cleared by:
+            //   1. setTick when elapsed >= rowStartOffsetDuration
+            //   2. requestSnap (explicit seek/reset)
+            //   3. a new row-start offset arming and replacing them
+            this.rowStartX = null;
+            this.rowStartY = null;
+            this.rowStartTargetX = null;
+            this.rowStartBeatStart = null;
+        }
 
         // ── Resolve next anchor (LERP target) ────────────────────────────────
         this.nextNoteX = null;
@@ -283,7 +384,7 @@ export class MaestroCursorV2 {
         const sameRow = Math.abs(finalY - this.lastBeatY) < 5;
         const isBackward = sameRow && this.lastBeatX > -9000
             && finalX < (this.lastBeatX - BAR_WIDTH / 2) - BACKSTEP_PX;
-        if (CURSOR2_DIAG) {
+        if (cursor2DiagEnabled()) {
             console.warn('[cursor2-interpolation-probe]', {
                 phase: 'setBeat-resolved',
                 scanStart,
@@ -308,6 +409,13 @@ export class MaestroCursorV2 {
             });
         }
         this._applyTransform(finalX, finalY, this.currentH, /* snap */ !isBackward);
+        // [RowStartAnchorGlide] V145.6: prime lastX to the glide origin so the backstep
+        // clamp in _applyTransform doesn't suppress the first row-start glide frames.
+        // The snap above set lastX to currentNoteX - BAR_WIDTH/2 (the notehead); row-start
+        // glide will try to go left of that, which would trigger the clamp without this reset.
+        if (this.rowStartX !== null) {
+            this.lastX = this.rowStartX;
+        }
         this.hasInitialPosition = true;
         this.lastBeatX = this.currentNoteX;
         this.lastBeatY = this.currentY;
@@ -325,7 +433,7 @@ export class MaestroCursorV2 {
     }
 
     setLoopEndX(x: number | null): void {
-        if (CURSOR2_DIAG) {
+        if (cursor2DiagEnabled()) {
             const masterBar = this.currentBeat?.voice?.bar?.masterBar;
             const mbBounds = masterBar
                 ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
@@ -392,9 +500,29 @@ export class MaestroCursorV2 {
             interpolatedX = this.currentNoteX;
         }
 
-        const finalX = interpolatedX - BAR_WIDTH / 2;
+        let finalX = interpolatedX - BAR_WIDTH / 2;
+
+        // [RowStartOffsetDecay] V1.6: apply a decaying visual offset so the cursor starts
+        // at the left barline and converges to normal interpolation over 2 beats.
+        // Replaces the single-beat Math.pow curve that caused vacuum/sling into beat 1.
+        if (
+            this.rowStartOffsetX !== null &&
+            this.rowStartOffsetBeatStart !== null &&
+            this.rowStartOffsetDuration !== null
+        ) {
+            const elapsed = tick - this.rowStartOffsetBeatStart;
+            const decayProgress = Math.max(0, Math.min(1, elapsed / this.rowStartOffsetDuration));
+            const remainingOffset = Math.pow(1 - decayProgress, 2.35);
+            finalX = finalX + this.rowStartOffsetX * remainingOffset;
+            if (decayProgress >= 1) {
+                this.rowStartOffsetX = null;
+                this.rowStartOffsetBeatStart = null;
+                this.rowStartOffsetDuration = null;
+            }
+        }
+
         const _shouldDiagTick =
-            CURSOR2_DIAG &&
+            cursor2DiagEnabled() &&
             (this.tickDiagCount < 8 || this.loopEndX !== null);
         if (_shouldDiagTick) {
             const masterBar = this.currentBeat?.voice?.bar?.masterBar;
@@ -430,6 +558,9 @@ export class MaestroCursorV2 {
                 wouldSkipSmallMove:
                     Math.abs(finalX - this.lastX) < 0.5 &&
                     Math.abs(this.currentY - this.lastY) < 0.8,
+                tinyMoveBypassActive: true,
+                isLiveTickTransform: this.isLiveTickTransform,
+                forceRenderSmallMoveTicks: this.forceRenderSmallMoveTicks,
                 wouldBackstepClamp:
                     Math.abs(this.currentY - this.lastY) < 5 &&
                     this.lastX > -9000 &&
@@ -440,7 +571,40 @@ export class MaestroCursorV2 {
             });
             this.tickDiagCount++;
         }
-        this._applyTransform(finalX, this.currentY, this.currentH, false);
+        if (
+            cursor2DiagEnabled() &&
+            (
+                progress < 0.03 ||
+                Math.abs(progress - 0.25) < 0.01 ||
+                Math.abs(progress - 0.50) < 0.01 ||
+                Math.abs(progress - 0.75) < 0.01 ||
+                progress > 0.92
+            )
+        ) {
+            console.log('[cursor2-playback-milestone-probe]', {
+                tick,
+                beatStart: overrideBeatStart ?? this.beatStart,
+                progress,
+                currentNoteX: this.currentNoteX,
+                nextNoteX: this.nextNoteX,
+                interpolatedX,
+                finalX,
+                lastX: this.lastX,
+                currentY: this.currentY,
+                styleTransform: this.element.style.transform,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                currentBeatBarIdx:
+                    this.currentBeat?.voice?.bar?.masterBar?.index ??
+                    this.currentBeat?.voice?.bar?.index ??
+                    null,
+            });
+        }
+        this.isLiveTickTransform = true;
+        try {
+            this._applyTransform(finalX, this.currentY, this.currentH, false);
+        } finally {
+            this.isLiveTickTransform = false;
+        }
     }
 
     /**
@@ -461,7 +625,7 @@ export class MaestroCursorV2 {
             reason: _reason ?? 'unknown',
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
-        if (CURSOR2_DIAG) {
+        if (cursor2DiagEnabled()) {
             console.warn('[cursor2-interpolation-probe]', {
                 phase: 'requestSnap',
                 reason: _reason ?? 'unknown',
@@ -487,19 +651,49 @@ export class MaestroCursorV2 {
                 forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
             });
         }
-        this.nextNoteX = null;
-        this.stayPutMode = false;
+        // [PlayStartHardSnapTargetPreserve] V145.5.3:
+        // For play-start-hard-snap, the cursor is already anchored on the clicked beat.
+        // Wiping nextNoteX/stayPutMode destroys the active lerp target, causing fallback
+        // to masterBarRight and a visible BAM when the next setBeat lands.
+        const preserveActivePlaybackTarget = _reason === 'play-start-hard-snap';
+        if (!preserveActivePlaybackTarget) {
+            this.nextNoteX = null;
+            this.stayPutMode = false;
+        }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
         this.lastX = -9999;     // [V1.2] reset animation floor-clamp on seek/reseat
         this.lastY = -9999;     // [V1.2] reset animation floor-clamp on seek/reseat
         this.lastBeatX = -9999; // reset ordering guard
         this.lastBeatY = -9999; // reset ordering guard
+        this.rowStartX = null;
+        this.rowStartY = null;
+        this.rowStartTargetX = null;
+        this.rowStartBeatStart = null;
+        this.rowStartOffsetX = null;
+        this.rowStartOffsetBeatStart = null;
+        this.rowStartOffsetDuration = null;
+        // [ClickSeekRowStartSuppress] V145.6: manual seeks snap to the clicked beat position
+        // directly — suppress row-start glide arming for the immediately following setBeat.
+        if (
+            _reason === 'click-seek' ||
+            _reason === 'touch-seek' ||
+            _reason === 'loop-reseat'
+        ) {
+            this.suppressNextRowStart = true;
+        }
         // [PageCursorPlayStartHardSnap] V145.2: hard-snap reasons flush all interpolation
         // memory on the next setBeat so stale tween state cannot cause a visual lunge.
         if (_reason && HARD_SNAP_REASONS.has(_reason)) {
             this.forceHardSnapNextSetBeat = true;
-            this.expandedBeatDuration = 0; // block setTick until next setBeat re-anchors
+            // [PlayStartHardSnapDurationPreserve] V145.5.2:
+            // Do not clear expandedBeatDuration for play-start-hard-snap.
+            // On direct chord starts, the clicked beat is already correctly anchored.
+            // Clearing duration makes setTick return early until the next setBeat,
+            // causing the visible jump to the next row/beat.
+            if (_reason !== 'play-start-hard-snap') {
+                this.expandedBeatDuration = 0;
+            }
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: _reason,
                 phase: 'requestSnap',
@@ -528,20 +722,68 @@ export class MaestroCursorV2 {
             x = this.lastX;
         }
 
-        x = Math.round(x * 2) / 2;
-        y = Math.round(y * 2) / 2;
+        // [FirstTickSmallMoveBypass] V1.5: live setTick transforms bypass subpixel
+        // suppression entirely — slow tempo / long chords can move <0.5px per tick,
+        // and suppressing those frames creates the visible chord-start micro-pause.
+        // Non-live transforms keep the existing quantization/throttle.
+        const isLiveTick = this.isLiveTickTransform === true;
+        const bypassTinyMove =
+            isLiveTick ||
+            (!snap && this.forceRenderSmallMoveTicks > 0);
+        const renderX = bypassTinyMove ? x : Math.round(x * 2) / 2;
+        const renderY = Math.round(y * 2) / 2;
 
-        if (
-            Math.abs(x - this.lastX) < 0.5 &&
-            Math.abs(y - this.lastY) < 0.8 &&
-            !snap
-        ) return;
+        if (cursor2DiagEnabled() && this.tickDiagCount <= 8) {
+            console.warn('[cursor2-apply-transform-probe]', {
+                isLiveTickTransform: this.isLiveTickTransform,
+                isLiveTick,
+                bypassTinyMove,
+                snap,
+                x,
+                renderX,
+                renderY,
+                lastX: this.lastX,
+                forceRenderSmallMoveTicks: this.forceRenderSmallMoveTicks,
+            });
+        }
 
-        this.lastX = x;
-        this.lastY = y;
+        const isTinyMove =
+            Math.abs(renderX - this.lastX) < 0.5 &&
+            Math.abs(renderY - this.lastY) < 0.8 &&
+            !snap;
+        // Live setTick movement must not be suppressed just because it is subpixel.
+        if (isTinyMove && !bypassTinyMove) return;
+        if (!isLiveTick && !snap && this.forceRenderSmallMoveTicks > 0) {
+            this.forceRenderSmallMoveTicks--;
+        }
 
-        if (snap) this.element.style.transition = 'none';
-        this.element.style.transform = `translate3d(${x}px, ${y}px, 0px)`;
+        this.lastX = renderX;
+        this.lastY = renderY;
+
+        this.element.style.transition = 'none';
+        this.element.style.transform = `translate3d(${renderX}px, ${renderY}px, 0px)`;
+
+        // [cursor2-dom-transform-probe] V145.5 diagnostic — confirm DOM receives transform
+        if (cursor2DiagEnabled()) {
+            const _domProbeKey = `dom-probe-${this.beatStart}`;
+            const _domProbeCount = ((this as any).__domProbeCount ??= {});
+            _domProbeCount[_domProbeKey] = (_domProbeCount[_domProbeKey] ?? 0) + 1;
+            if (_domProbeCount[_domProbeKey] <= 20) {
+                console.log('[cursor2-dom-transform-probe]', {
+                    renderX,
+                    renderY,
+                    styleTransform: this.element.style.transform,
+                    elementId: this.element.id,
+                    elementClassName: this.element.className,
+                    opacity: this.element.style.opacity,
+                    visibility: this.element.style.visibility,
+                    isLiveTick: this.isLiveTickTransform,
+                    parentClassName: this.element.parentElement?.className ?? null,
+                    parentId: this.element.parentElement?.id ?? null,
+                    probeCount: _domProbeCount[_domProbeKey],
+                });
+            }
+        }
 
         if (Math.abs(h - this.lastH) > 2) {
             this.element.style.height = `${h}px`;

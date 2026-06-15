@@ -5919,6 +5919,45 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     });
                 }
+                // ── [PlayStartBeatNormalization] ─────────────────────────────────────────
+                // When no loop is active and a beat was intentionally clicked/selected
+                // (or seeked to), normalize api.tickPosition to the beat's
+                // absolutePlaybackStart so api.play() begins exactly on the attack tick.
+                // effectiveIntentTick fallback: clickedTickRaw → seekTargetTickRef → api.tickPosition
+                {
+                    const _clickedTickRaw = getIntentionalTick();
+                    const _seekTargetTick = seekTargetTickRef.current ?? null;
+                    const _apiTickBeforeNormalization = (api as any)?.tickPosition ?? null;
+
+                    const _effectiveIntentTick: number | null =
+                        _clickedTickRaw != null ? _clickedTickRaw
+                        : _seekTargetTick != null ? _seekTargetTick
+                        : _apiTickBeforeNormalization;
+
+                    const _normTickCache = (api as any)?.tickCache;
+                    const _normTrackSet = getTrackSet(api);
+                    const _normBeatResult = (_effectiveIntentTick != null && _normTickCache?.findBeat)
+                        ? _normTickCache.findBeat(_normTrackSet, _effectiveIntentTick)
+                        : null;
+                    const _normBeat = _normBeatResult?.beat ?? null;
+
+                    const normalizedStartTick: number | null = _normBeat?.absolutePlaybackStart ?? null;
+                    if (
+                        liveLoopRange == null &&
+                        _effectiveIntentTick != null &&
+                        normalizedStartTick != null &&
+                        typeof _apiTickBeforeNormalization === 'number' &&
+                        _apiTickBeforeNormalization > normalizedStartTick
+                    ) {
+                        if ((api as any).tickPosition !== undefined) (api as any).tickPosition = normalizedStartTick;
+                        api.player?.seekTicks?.(normalizedStartTick);
+                        seekTargetTickRef.current = normalizedStartTick;
+                        (window as any).__maestroLastIntentionalTick = normalizedStartTick;
+                        (window as any).__maestroLastIntentionalTickAt = Date.now();
+                        (window as any).__maestroManualSeek = Date.now();
+                    }
+                }
+                // ── end [PlayStartBeatNormalization] ─────────────────────────────────────
                 api.play();
             } else {
                 if (LANDSCAPE_LOOP_DEBUG) {

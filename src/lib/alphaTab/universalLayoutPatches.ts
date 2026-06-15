@@ -396,6 +396,10 @@ function stampStaffSvgRowKeys(containerEl: HTMLElement): void {
  * to prevent the pre-patch layout from flashing on screen.
  * Called unconditionally for ALL GP file types. Safe on gp4/gp5/gp7/gp8.
  */
+// Set to true to hide the TAB clef glyph on every row after the first.
+// Default is false: repeated TAB clefs are visible, keeping the gutter occupied.
+const MAESTRO_HIDE_REPEATED_TAB_CLEFS = false;
+
 export function runUniversalLayoutPatches(
   containerEl: HTMLElement,
 ): Promise<void> {
@@ -417,7 +421,7 @@ export function runUniversalLayoutPatches(
 
         if (!firstStaffRowSeen) fixBar1X(svg);
         fixDisplacedBarNumbers(svg, anchors, i);
-        if (firstStaffRowSeen) hideRepeatedTabClef(svg);
+        if (firstStaffRowSeen && MAESTRO_HIDE_REPEATED_TAB_CLEFS) hideRepeatedTabClef(svg);
         fixSectionLabelX(svg, anchors, i);
         fixHeaderStack(svg, anchors, i);
 
