@@ -709,7 +709,7 @@ function landscapeInitialAnchor(
                     intentionalTick: getIntentionalTick(),
                 });
             } else {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.warn('[rotation-anchor-start-override]', {
                         reason: 'landscapeInitialAnchor-stale-start-anchor-overridden',
                         staleLiveTick: liveTick,
@@ -723,7 +723,7 @@ function landscapeInitialAnchor(
             }
         }
         const PROBE_TICKS = [liveTick, 0, 60, 120, 240, 480, 720, 960];
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             console.log('[landscape-cursor-prime-probe]', {
                 reason: 'landscapeInitialAnchor-start',
                 currentApiTick: api.tickPosition,
@@ -739,7 +739,7 @@ function landscapeInitialAnchor(
             const r = tickCache.findBeat(trackSet, probe);
             const bb = r?.beat ? bounds.findBeat(r.beat) : null;
             if (!bb?.visualBounds) {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[landscape-cursor-prime-probe]', {
                         reason: 'landscapeInitialAnchor-probe',
                         probeTick: probe,
@@ -760,7 +760,7 @@ function landscapeInitialAnchor(
             const _canSnap =
                 beatX >= reachableFloor ||
                 (_isSongStartProbe && beatX >= reachableFloor - START_REACHABLE_TOLERANCE_PX);
-            if (LANDSCAPE_LOOP_DEBUG) {
+            if (isRendererDebugEnabled()) {
                 console.log('[landscape-cursor-prime-probe]', {
                     reason: 'landscapeInitialAnchor-probe',
                     probeTick: probe,
@@ -773,51 +773,53 @@ function landscapeInitialAnchor(
             }
             if (_canSnap) {
                 const snap = Math.max(0, beatX - cursorSurfaceX);
-                console.log('[rotation-anchor-resolution]', {
-                    reason: 'landscapeInitialAnchor-snap',
-                    source: 'landscapeInitialAnchor',
-                    requestedTick: liveTick,
-                    resolvedBeatTick: r?.beat?.absolutePlaybackStart ?? null,
-                    resolvedBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                    resolvedBeatX: Number(beatX.toFixed(1)),
-                    resolvedBeatY: bb?.visualBounds?.y ?? null,
-                    containerScrollLeft: container.scrollLeft,
-                    containerScrollTop: container.scrollTop,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                });
-                // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (landscapeInitialAnchor)
-                console.log('[rotation-anchor-gate-probe]', {
-                    reason: 'before-scrollLeft-snap-landscapeInitialAnchor',
-                    rotationGateActive: null,
-                    preRotationAnchorTick: null,
-                    lastStableRotationAnchorTick: null,
-                    isLandscape: true,
-                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                    apiTickPosition: api?.tickPosition ?? null,
-                    playerState: (api as any)?.playerState ?? null,
-                    isPlayingRef: null,
-                    loopEnabled: null,
-                    playbackRange: api?.playbackRange ?? null,
-                    intentionalTick: liveTick,
-                    landscapeScrollState: null,
-                    containerScrollLeft: container.scrollLeft,
-                    containerScrollTop: container.scrollTop,
-                    containerClientW: container.clientWidth,
-                    containerClientH: container.clientHeight,
-                    containerScrollW: container.scrollWidth,
-                    containerScrollH: container.scrollHeight,
-                    surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
-                    surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                    snapTarget: snap,
-                });
+                if (isRendererDebugEnabled()) {
+                    console.log('[rotation-anchor-resolution]', {
+                        reason: 'landscapeInitialAnchor-snap',
+                        source: 'landscapeInitialAnchor',
+                        requestedTick: liveTick,
+                        resolvedBeatTick: r?.beat?.absolutePlaybackStart ?? null,
+                        resolvedBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                        resolvedBeatX: Number(beatX.toFixed(1)),
+                        resolvedBeatY: bb?.visualBounds?.y ?? null,
+                        containerScrollLeft: container.scrollLeft,
+                        containerScrollTop: container.scrollTop,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    });
+                    // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (landscapeInitialAnchor)
+                    console.log('[rotation-anchor-gate-probe]', {
+                        reason: 'before-scrollLeft-snap-landscapeInitialAnchor',
+                        rotationGateActive: null,
+                        preRotationAnchorTick: null,
+                        lastStableRotationAnchorTick: null,
+                        isLandscape: true,
+                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                        apiTickPosition: api?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: null,
+                        loopEnabled: null,
+                        playbackRange: api?.playbackRange ?? null,
+                        intentionalTick: liveTick,
+                        landscapeScrollState: null,
+                        containerScrollLeft: container.scrollLeft,
+                        containerScrollTop: container.scrollTop,
+                        containerClientW: container.clientWidth,
+                        containerClientH: container.clientHeight,
+                        containerScrollW: container.scrollWidth,
+                        containerScrollH: container.scrollHeight,
+                        surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
+                        surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        snapTarget: snap,
+                    });
+                }
                 // [LandscapeRightRunwayFix] V143.4: ensure runway before write, then defer one RAF.
                 const { beforeScrollW: _liaBefore, addedRunwayPx: _liaAdded } =
                     ensureLandscapeRunwayForSnap(container, snap, 'landscapeInitialAnchor');
                 requestAnimationFrame(() => {
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.log('[landscape-right-runway]', {
                             reason: 'landscapeInitialAnchor',
                             targetScrollLeft: snap,
@@ -835,7 +837,7 @@ function landscapeInitialAnchor(
                 return;
             }
         }
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             console.log('[landscape-cursor-prime-probe]', {
                 reason: 'landscapeInitialAnchor-fallthrough',
                 note: 'no probe tick matched reachableFloor — scrollLeft set to 0',
@@ -844,32 +846,34 @@ function landscapeInitialAnchor(
             });
         }
         // [rotation-anchor-gate-probe] Point 10: before scrollLeft=0 fallthrough (landscapeInitialAnchor)
-        console.log('[rotation-anchor-gate-probe]', {
-            reason: 'before-scrollLeft-zero-fallthrough-landscapeInitialAnchor',
-            rotationGateActive: null,
-            preRotationAnchorTick: null,
-            lastStableRotationAnchorTick: null,
-            isLandscape: true,
-            layoutMode: api?.settings?.display?.layoutMode ?? null,
-            apiTickPosition: api?.tickPosition ?? null,
-            playerState: (api as any)?.playerState ?? null,
-            isPlayingRef: null,
-            loopEnabled: null,
-            playbackRange: api?.playbackRange ?? null,
-            intentionalTick: liveTick,
-            landscapeScrollState: null,
-            containerScrollLeft: container.scrollLeft,
-            containerScrollTop: container.scrollTop,
-            containerClientW: container.clientWidth,
-            containerClientH: container.clientHeight,
-            containerScrollW: container.scrollWidth,
-            containerScrollH: container.scrollHeight,
-            surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
-            surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
-            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-            note: 'no probe tick matched — snapping to 0',
-        });
+        if (isRendererDebugEnabled()) {
+            console.log('[rotation-anchor-gate-probe]', {
+                reason: 'before-scrollLeft-zero-fallthrough-landscapeInitialAnchor',
+                rotationGateActive: null,
+                preRotationAnchorTick: null,
+                lastStableRotationAnchorTick: null,
+                isLandscape: true,
+                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                apiTickPosition: api?.tickPosition ?? null,
+                playerState: (api as any)?.playerState ?? null,
+                isPlayingRef: null,
+                loopEnabled: null,
+                playbackRange: api?.playbackRange ?? null,
+                intentionalTick: liveTick,
+                landscapeScrollState: null,
+                containerScrollLeft: container.scrollLeft,
+                containerScrollTop: container.scrollTop,
+                containerClientW: container.clientWidth,
+                containerClientH: container.clientHeight,
+                containerScrollW: container.scrollWidth,
+                containerScrollH: container.scrollHeight,
+                surfaceW: container.querySelector('.at-surface')?.scrollWidth ?? null,
+                surfaceH: container.querySelector('.at-surface')?.scrollHeight ?? null,
+                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                note: 'no probe tick matched — snapping to 0',
+            });
+        }
         container.scrollLeft = 0;
         targetScrollLeftRef.current = 0;
     };
@@ -1157,7 +1161,7 @@ function logPageScrollApplyResult(params: {
     container: HTMLElement;
     anchorTick?: number | null;
 }) {
-    if (!LANDSCAPE_LOOP_DEBUG) return;
+    if (!isRendererDebugEnabled()) return;
     const { reason, phase, authority, targetTop, container, anchorTick } = params;
     console.log('[page-scroll-authority-result]', {
         reason,
@@ -1346,7 +1350,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     playbackRange: api?.playbackRange ?? null,
                 });
             } else {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.warn('[rotation-anchor-start-override]', {
                         reason: 'stale-start-anchor-overridden',
                         candidateTick,
@@ -1676,23 +1680,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     mostVisibleBarX = vb.x;
                                     mostVisibleBarW = vb.w;
 
-                                    if (resolvedIdx === null) {
-                                        const now = Date.now();
-                                        const lastShapeLog = (container as any).__lastBarShapeLogAt ?? 0;
-                                        if (now - lastShapeLog > 1000) {
-                                            (container as any).__lastBarShapeLogAt = now;
-                                            console.log('[orientation-bar-shape-probe]', {
-                                                keys: Object.keys(mbb ?? {}),
-                                                masterBarIndex: (mbb as any)?.masterBar?.index ?? null,
-                                                barIndex: (mbb as any)?.bar?.index ?? null,
-                                                barMasterBarIndex: (mbb as any)?.bar?.masterBar?.index ?? null,
-                                                masterBarBoundsIndex: (mbb as any)?.masterBarBounds?.masterBar?.index ?? null,
-                                                index: (mbb as any)?.index ?? null,
-                                                visualBounds: vb,
-                                            });
-                                        }
-                                    }
-
                                     try {
                                         const mbArr = ((api as any).tickCache as any)?.masterBars ?? [];
                                         const match = mbArr.find((mb: any) => mb?.masterBar?.index === mostVisibleBarIdx);
@@ -1712,19 +1699,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         };
                     }
 
-                    console.log('[orientation-anchor-probe]', {
-                        reason: 'landscape-scroll',
-                        scrollLeft,
-                        containerW,
-                        surfaceW,
-                        apiTickPosition,
-                        isPlaying,
-                        mostVisibleBarIdx,
-                        mostVisibleBarStartTick,
-                        mostVisibleBarX,
-                        mostVisibleBarW,
-                        barIdxResolved: mostVisibleBarIdx !== null,
-                    });
                 });
             }, { passive: true });
         }
@@ -1758,7 +1732,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     interpolatedX - cursorSurfaceX,
                     maxScroll
                 ));
-                if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('landscape-visual-loop-sync', liveTick)) {
+                if (isRendererDebugEnabled() && shouldLogDiagnostic('landscape-visual-loop-sync', liveTick)) {
                     console.log('[landscape-visual-loop-sync]', {
                         reason: 'raf-read',
                         liveTick,
@@ -1839,7 +1813,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const isStripMode = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
         if (isStripMode) return;
 
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             const _c = containerRef.current;
             console.log('[page-scroll-authority-probe]', {
                 reason: 'snapPortraitToBeatRow',
@@ -1930,19 +1904,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         target = Math.min(target, maxScroll);
 
-        if (ORIENTATION_ANCHOR_DEBUG) {
-            console.log('[orientation-s1-prime-snap]', {
-                reason,
-                curBeatAbs: beat?.absolutePlaybackStart ?? null,
-                curBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
-                sysIdx,
-                anchorIdx,
-                fromScroll: Math.round(scrollElEl.scrollTop),
-                target: Math.round(target),
-                delta: Math.round(target - scrollElEl.scrollTop),
-            });
-        }
-
         if (s1AnimRafRef.current !== null) {
             cancelAnimationFrame(s1AnimRafRef.current);
             s1AnimRafRef.current = null;
@@ -1970,7 +1931,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 );
             }
         }
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             console.log('[page-scroll-authority-apply]', {
                 reason: 'snapPortraitToBeatRow',
                 anchorTick: beat?.absolutePlaybackStart ?? apiRef.current?.tickPosition,
@@ -1988,51 +1949,53 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const TWEEN_MS = 150;
         const snapAnchor = anchorIdx;
 
-        // [rotation-anchor-resolution] snapPortraitToBeatRow — resolved scroll target
-        console.log('[rotation-anchor-resolution]', {
-            reason: 'snapPortraitToBeatRow-snap',
-            source: 'snapPortraitToBeatRow',
-            requestedTick: (apiRef.current as any)?.tickPosition ?? null,
-            resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
-            resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
-            resolvedBeatX: null,
-            resolvedBeatY: (snapBb as any)?.visualBounds?.y ?? null,
-            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-            containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
-            systemsLength: snapSystems.length,
-            firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
-            sysIdx,
-            anchorIdx,
-            tweenFrom: Math.round(tweenFrom),
-            tweenTo: Math.round(tweenTo),
-        });
-        // [rotation-anchor-gate-probe] Point 10: before scrollTop snap (snapPortraitToBeatRow)
-        console.log('[rotation-anchor-gate-probe]', {
-            reason: 'before-scrollTop-snap-snapPortraitToBeatRow',
-            rotationGateActive: rotationGateActiveRef.current,
-            preRotationAnchorTick: preRotationAnchorTickRef.current,
-            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-            isLandscape: forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1),
-            layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
-            apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
-            playerState: (apiRef.current as any)?.playerState ?? null,
-            isPlayingRef: isPlayingRef.current,
-            loopEnabled: loopEnabledRef.current,
-            playbackRange: apiRef.current?.playbackRange ?? null,
-            intentionalTick: getIntentionalTick(),
-            landscapeScrollState: landscapeScrollStateRef.current ?? null,
-            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-            containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
-            containerClientW: containerRef.current?.clientWidth ?? null,
-            containerClientH: containerRef.current?.clientHeight ?? null,
-            containerScrollW: containerRef.current?.scrollWidth ?? null,
-            containerScrollH: containerRef.current?.scrollHeight ?? null,
-            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-            systemsLength: snapSystems.length,
-            firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
-            snapTarget: Math.round(tweenTo),
-        });
+        if (isRendererDebugEnabled()) {
+            // [rotation-anchor-resolution] snapPortraitToBeatRow — resolved scroll target
+            console.log('[rotation-anchor-resolution]', {
+                reason: 'snapPortraitToBeatRow-snap',
+                source: 'snapPortraitToBeatRow',
+                requestedTick: (apiRef.current as any)?.tickPosition ?? null,
+                resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+                resolvedBeatX: null,
+                resolvedBeatY: (snapBb as any)?.visualBounds?.y ?? null,
+                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
+                systemsLength: snapSystems.length,
+                firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
+                sysIdx,
+                anchorIdx,
+                tweenFrom: Math.round(tweenFrom),
+                tweenTo: Math.round(tweenTo),
+            });
+            // [rotation-anchor-gate-probe] Point 10: before scrollTop snap (snapPortraitToBeatRow)
+            console.log('[rotation-anchor-gate-probe]', {
+                reason: 'before-scrollTop-snap-snapPortraitToBeatRow',
+                rotationGateActive: rotationGateActiveRef.current,
+                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                isLandscape: forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1),
+                layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
+                apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
+                playerState: (apiRef.current as any)?.playerState ?? null,
+                isPlayingRef: isPlayingRef.current,
+                loopEnabled: loopEnabledRef.current,
+                playbackRange: apiRef.current?.playbackRange ?? null,
+                intentionalTick: getIntentionalTick(),
+                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
+                containerClientW: containerRef.current?.clientWidth ?? null,
+                containerClientH: containerRef.current?.clientHeight ?? null,
+                containerScrollW: containerRef.current?.scrollWidth ?? null,
+                containerScrollH: containerRef.current?.scrollHeight ?? null,
+                surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                systemsLength: snapSystems.length,
+                firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
+                snapTarget: Math.round(tweenTo),
+            });
+        }
 
         const _snapAnchorTick = beat?.absolutePlaybackStart ?? (apiRef.current as any)?.tickPosition ?? null;
 
@@ -2045,7 +2008,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 !isDeviceLandscape() &&
                 tweenTo > 1000 &&
                 currentTop < 100;
-            if (LANDSCAPE_LOOP_DEBUG) {
+            if (isRendererDebugEnabled()) {
                 console.log('[page-scroll-authority-restore]', {
                     reason: 'snapPortraitToBeatRow',
                     phase,
@@ -2260,7 +2223,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         forceHorizontalRef.current === true &&
                         isDeviceLandscape() === true;
                     if (!_execIntendedStrip) {
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[rotation-layout-mismatch]', {
                                 reason: 'deferred-landscape-recovery-cancelled-not-strip',
                                 forceHorizontal: forceHorizontalRef.current,
@@ -2274,7 +2237,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     if (!isAlphaTabPageLayoutWhileLandscape(api)) return;
                     if (landscapeMismatchRecoveryAttemptsRef.current >= 2) {
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.warn('[rotation-layout-mismatch]', {
                                 reason: 'deferred-landscape-recovery-max-attempts',
                                 source,
@@ -2290,7 +2253,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         lastStableRotationAnchorTickRef.current = rescueTick;
                     }
                     rotationGateActiveRef.current = true;
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.warn('[rotation-layout-mismatch]', {
                             reason: 'deferred-landscape-layout-reassert',
                             source,
@@ -2318,7 +2281,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const removeLandscapeTrailingPadding = useCallback((reason: string) => {
         const spacer = document.querySelector('.maestro-landscape-scroll-spacer');
         if (spacer?.parentElement) spacer.remove();
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             console.log('[landscape-trailing-padding-remove]', { reason });
         }
     }, []);
@@ -2372,7 +2335,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             opacity: '0',
             zIndex: '0',
         });
-        if (LANDSCAPE_LOOP_DEBUG) {
+        if (isRendererDebugEnabled()) {
             console.log('[landscape-trailing-padding-probe]', {
                 reason,
                 containerW,
@@ -2442,30 +2405,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 && firstBars > 40;
 
             // Log every reassertLayout decision for diagnostics.
-            console.warn('[V117] reassertLayout', {
-                needsFlip,
-                looksCollapsed,
-                stuckHorizontalStrip,
-                wantStrip,
-                forceHorizontal: forceHorizontalRef.current,
-                isTouchDevice,
-                viewportW,
-                viewportH,
-                isSmallMobileViewport,
-                isMobileLandscapeCandidate,
-                previousWantStrip,
-                stripTransition,
-                isDeviceLandscape: isDeviceLandscape(),
-                containerW,
-                windowInnerWidth: window.innerWidth,
-                windowInnerHeight: window.innerHeight,
-                visualViewportWidth: vv?.width,
-                visualViewportHeight: vv?.height,
-                mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
-                firstBars,
-                surfaceW,
-                currentLayout,
-            });
+            if (isRendererDebugEnabled()) {
+                console.warn('[V117] reassertLayout', {
+                    needsFlip,
+                    looksCollapsed,
+                    stuckHorizontalStrip,
+                    wantStrip,
+                    forceHorizontal: forceHorizontalRef.current,
+                    isTouchDevice,
+                    viewportW,
+                    viewportH,
+                    isSmallMobileViewport,
+                    isMobileLandscapeCandidate,
+                    previousWantStrip,
+                    stripTransition,
+                    isDeviceLandscape: isDeviceLandscape(),
+                    containerW,
+                    windowInnerWidth: window.innerWidth,
+                    windowInnerHeight: window.innerHeight,
+                    visualViewportWidth: vv?.width,
+                    visualViewportHeight: vv?.height,
+                    mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                    firstBars,
+                    surfaceW,
+                    currentLayout,
+                });
+            }
 
             if (!needsFlip && !looksCollapsed && !stuckHorizontalStrip) return;
 
@@ -2484,32 +2449,34 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             rotationGateActiveRef.current = true;
             lastOrientationModeRef.current = wantStrip ? 'landscape' : 'page';
-            console.log('[rotation-anchor-gate-probe]', {
-                reason: 'orientation-flip-start',
-                rotationGateActive: rotationGateActiveRef.current,
-                preRotationAnchorTick: preRotationAnchorTickRef.current,
-                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                lastOrientationMode: lastOrientationModeRef.current,
-                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                layoutMode: api?.settings?.display?.layoutMode ?? null,
-                apiTickPosition: api?.tickPosition ?? null,
-                playerState: (api as any)?.playerState ?? null,
-                isPlayingRef: isPlayingRef.current,
-                loopEnabled: loopEnabledRef.current,
-                playbackRange: api?.playbackRange ?? null,
-                intentionalTick: getIntentionalTick(),
-                landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                containerScrollLeft: el?.scrollLeft ?? null,
-                containerScrollTop: el?.scrollTop ?? null,
-                containerClientW: el?.clientWidth ?? null,
-                containerClientH: el?.clientHeight ?? null,
-                containerScrollW: el?.scrollWidth ?? null,
-                containerScrollH: el?.scrollHeight ?? null,
-                surfaceW: el?.querySelector('.at-surface')?.scrollWidth ?? null,
-                surfaceH: el?.querySelector('.at-surface')?.scrollHeight ?? null,
-                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-            });
+            if (isRendererDebugEnabled()) {
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'orientation-flip-start',
+                    rotationGateActive: rotationGateActiveRef.current,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                    lastOrientationMode: lastOrientationModeRef.current,
+                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: api?.tickPosition ?? null,
+                    playerState: (api as any)?.playerState ?? null,
+                    isPlayingRef: isPlayingRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: api?.playbackRange ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                    containerScrollLeft: el?.scrollLeft ?? null,
+                    containerScrollTop: el?.scrollTop ?? null,
+                    containerClientW: el?.clientWidth ?? null,
+                    containerClientH: el?.clientHeight ?? null,
+                    containerScrollW: el?.scrollWidth ?? null,
+                    containerScrollH: el?.scrollHeight ?? null,
+                    surfaceW: el?.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: el?.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
+            }
 
             // ── Wait for stable container width (2 RAF frames) ────────────────
             // iOS/Chrome viewport dimensions can be unstable during rotation.
@@ -2525,7 +2492,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const w3 = el.clientWidth;
             if (Math.abs(w3 - w1) > 4) {
                 // Width still moving — defer; resize handler will re-trigger.
-                console.warn('[V117] reassertLayout deferred — width unstable', { w1, w3 });
+                if (isRendererDebugEnabled()) console.warn('[V117] reassertLayout deferred — width unstable', { w1, w3 });
                 return;
             }
 
@@ -2596,32 +2563,34 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             rotationGateActiveRef.current = true;
             lastOrientationModeRef.current = 'landscape';
-            console.log('[rotation-anchor-gate-probe]', {
-                reason: 'orientation-flip-start-forceHorizontal',
-                rotationGateActive: rotationGateActiveRef.current,
-                preRotationAnchorTick: preRotationAnchorTickRef.current,
-                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                lastOrientationMode: lastOrientationModeRef.current,
-                isLandscape: true,
-                layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
-                apiTickPosition: apiRef.current?.tickPosition ?? null,
-                playerState: (apiRef.current as any)?.playerState ?? null,
-                isPlayingRef: isPlayingRef.current,
-                loopEnabled: loopEnabledRef.current,
-                playbackRange: apiRef.current?.playbackRange ?? null,
-                intentionalTick: getIntentionalTick(),
-                landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-                containerScrollTop: containerRef.current?.scrollTop ?? null,
-                containerClientW: containerRef.current?.clientWidth ?? null,
-                containerClientH: containerRef.current?.clientHeight ?? null,
-                containerScrollW: containerRef.current?.scrollWidth ?? null,
-                containerScrollH: containerRef.current?.scrollHeight ?? null,
-                surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-                surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-                systemsLength: apiRef.current?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                firstSystemBars: apiRef.current?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-            });
+            if (isRendererDebugEnabled()) {
+                console.log('[rotation-anchor-gate-probe]', {
+                    reason: 'orientation-flip-start-forceHorizontal',
+                    rotationGateActive: rotationGateActiveRef.current,
+                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                    lastOrientationMode: lastOrientationModeRef.current,
+                    isLandscape: true,
+                    layoutMode: apiRef.current?.settings?.display?.layoutMode ?? null,
+                    apiTickPosition: apiRef.current?.tickPosition ?? null,
+                    playerState: (apiRef.current as any)?.playerState ?? null,
+                    isPlayingRef: isPlayingRef.current,
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRange: apiRef.current?.playbackRange ?? null,
+                    intentionalTick: getIntentionalTick(),
+                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                    containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                    containerScrollTop: containerRef.current?.scrollTop ?? null,
+                    containerClientW: containerRef.current?.clientWidth ?? null,
+                    containerClientH: containerRef.current?.clientHeight ?? null,
+                    containerScrollW: containerRef.current?.scrollWidth ?? null,
+                    containerScrollH: containerRef.current?.scrollHeight ?? null,
+                    surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                    surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                    systemsLength: apiRef.current?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: apiRef.current?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                });
+            }
             showCurtain(curtainRef.current);
             stopLandscapeScrollLoop();
             landscapeScrollStateRef.current = null;
@@ -2856,6 +2825,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             api.renderStarted.on(() => {
                 // [rotation-anchor-gate-probe] Point 2: renderStarted
+                if (isRendererDebugEnabled()) {
                 console.log('[rotation-anchor-gate-probe]', {
                     reason: 'renderStarted',
                     rotationGateActive: rotationGateActiveRef.current,
@@ -2882,6 +2852,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
                     firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
                 });
+                }
                 activeRendersRef.current += 1;
                 renderTokenRef.current += 1;
                 forceRevealCancelRef.current += 1;
@@ -2937,89 +2908,58 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
-                        console.warn('[page-cursor-reset-source]', {
-                            reason: 'about-to-requestSnap-song-load',
-                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                            anchorTick: tick,
-                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
-                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            lastTickRef: lastTickRef.current ?? null,
-                            lastStableAnchor: lastStableRotationAnchorTickRef.current ?? null,
-                            seekTargetTick: seekTargetTickRef.current ?? null,
-                            seekFreezeActive: seekFreezeUntilRef.current > Date.now(),
-                            loopEnabled: loopEnabledRef.current,
-                            isSettling: isSettlingRef.current,
-                        });
-                        cursorRef.current?.requestSnap('song-load');
-                        if (ORIENTATION_ANCHOR_DEBUG) {
-                            console.log('[orientation-cursor-probe]', {
-                                reason: 'song-load-prime',
+                        if (isRendererDebugEnabled()) {
+                            const stack = new Error().stack;
+                            console.warn('[page-cursor-reset-source]', {
+                                reason: 'about-to-requestSnap-song-load',
+                                callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                                anchorTick: tick,
+                                beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
                                 apiTickPosition: (api as any)?.tickPosition ?? null,
-                                curBeatAbs: r?.beat?.absolutePlaybackStart ?? null,
-                                curBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                                isLandscape: isDeviceLandscape(),
-                                wantStrip: forceHorizontalRef.current,
+                                playerState: (api as any)?.playerState ?? null,
+                                lastTickRef: lastTickRef.current ?? null,
+                                lastStableAnchor: lastStableRotationAnchorTickRef.current ?? null,
+                                seekTargetTick: seekTargetTickRef.current ?? null,
+                                seekFreezeActive: seekFreezeUntilRef.current > Date.now(),
+                                loopEnabled: loopEnabledRef.current,
+                                isSettling: isSettlingRef.current,
                             });
                         }
+                        cursorRef.current?.requestSnap('song-load');
                         cursorRef.current?.setBeat(r.beat);
                         cursorRef.current?.setTick(tick);
-                        // ── [orientation-s1-gap-probe] Does song-load-prime trigger S1 snap? ──
-                        if (ORIENTATION_ANCHOR_DEBUG) {
-                            // Match exactly what S1 uses in playerPositionChanged
-                            const scrollEl = (apiRef.current?.settings?.player as any)?.scrollElement
-                                ?? (apiRef.current?.renderer?.framer?.scrollElement as HTMLElement | null | undefined)
-                                ?? scrollContainer
-                                ?? containerRef.current;
-                            const currentScrollTop = (scrollEl as HTMLElement | null)?.scrollTop ?? null;
-                            const snapBounds = apiRef.current?.renderer?.boundsLookup;
-                            const snapSystems = snapBounds?.staffSystems ?? [];
-                            const snapBb = snapBounds?.findBeat?.(r.beat);
-                            const beatY = snapBb?.visualBounds?.y ?? null;
-                            const sysIdx = beatY != null ? findSystemIndexForY(snapSystems as any[], beatY) : null;
-                            console.log('[orientation-s1-gap-probe]', {
-                                reason: 'song-load-prime-no-s1',
-                                note: 'setBeat/setTick do NOT fire playerPositionChanged — S1 snap will NOT run here',
-                                apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
-                                curBeatAbs: r?.beat?.absolutePlaybackStart ?? null,
-                                curBeatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                                beatY,
-                                resolvedSysIdx: sysIdx,
-                                expectedAnchorIdx: sysIdx != null ? Math.max(0, sysIdx - 1) : null,
-                                currentScrollTop,
-                                s1WouldFireOnNextPositionChanged: false,
+                        // [rotation-anchor-gate-probe] Point 8: before snapPortraitToBeatRow
+                        if (isRendererDebugEnabled()) {
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'before-snapPortraitToBeatRow',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                                containerScrollTop: containerRef.current?.scrollTop ?? null,
+                                containerClientW: containerRef.current?.clientWidth ?? null,
+                                containerClientH: containerRef.current?.clientHeight ?? null,
+                                containerScrollW: containerRef.current?.scrollWidth ?? null,
+                                containerScrollH: containerRef.current?.scrollHeight ?? null,
+                                surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                                beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
                             });
                         }
-                        // [rotation-anchor-gate-probe] Point 8: before snapPortraitToBeatRow
-                        console.log('[rotation-anchor-gate-probe]', {
-                            reason: 'before-snapPortraitToBeatRow',
-                            rotationGateActive: rotationGateActiveRef.current,
-                            preRotationAnchorTick: preRotationAnchorTickRef.current,
-                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                            layoutMode: api?.settings?.display?.layoutMode ?? null,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            isPlayingRef: isPlayingRef.current,
-                            loopEnabled: loopEnabledRef.current,
-                            playbackRange: api?.playbackRange ?? null,
-                            intentionalTick: getIntentionalTick(),
-                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-                            containerScrollTop: containerRef.current?.scrollTop ?? null,
-                            containerClientW: containerRef.current?.clientWidth ?? null,
-                            containerClientH: containerRef.current?.clientHeight ?? null,
-                            containerScrollW: containerRef.current?.scrollWidth ?? null,
-                            containerScrollH: containerRef.current?.scrollHeight ?? null,
-                            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-                            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
-                        });
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             const _c = containerRef.current;
                             console.log('[page-scroll-authority-probe]', {
                                 reason: 'ensureCursorAndAnchorOnce-before-snap',
@@ -3039,7 +2979,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 trueScroll: _c ? getScrollParentProbe(_c) : null,
                             });
                         }
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             const _c = containerRef.current;
                             const _eAuthority = getPageScrollAuthority(_c);
                             console.log('[page-scroll-authority-apply]', {
@@ -3052,57 +2992,64 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 containerRectY: _c ? Math.round(_c.getBoundingClientRect().y) : null,
                             });
                         }
-                        console.warn('[page-cursor-reset-source]', {
-                            reason: 'about-to-snapPortraitToBeatRow-song-load-prime',
-                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                            anchorTick: tick,
-                            beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
-                            beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            lastTickRef: lastTickRef.current ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            const stack = new Error().stack;
+                            console.warn('[page-cursor-reset-source]', {
+                                reason: 'about-to-snapPortraitToBeatRow-song-load-prime',
+                                callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                                anchorTick: tick,
+                                beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                beatBarIdx: r?.beat?.voice?.bar?.masterBar?.index ?? null,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                lastTickRef: lastTickRef.current ?? null,
+                            });
+                        }
                         snapPortraitToBeatRow('song-load-prime', r.beat);
                         // [RotationStableAnchorRef] Portrait snap resolved — record as stable anchor.
                         setLastStableRotationAnchorTick(tick, 'snapPortraitToBeatRow-success');
                         // [RotationAnchorFreeze] Portrait snap committed — clear gate so playback
                         // tick tracking resumes normally.
-                        console.log('[rotation-anchor-gate-probe]', {
-                            reason: 'rotation-gate-cleared',
-                            clearedAt: 'ensureCursorAndAnchorOnce',
-                            finalTick: tick,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            preRotationAnchorTick: preRotationAnchorTickRef.current,
-                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'rotation-gate-cleared',
+                                clearedAt: 'ensureCursorAndAnchorOnce',
+                                finalTick: tick,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                            });
+                        }
                         rotationGateActiveRef.current = false;
                         preRotationAnchorTickRef.current = null;
                         // [rotation-anchor-gate-probe] Point 9: after snapPortraitToBeatRow (tween may still be in progress)
-                        console.log('[rotation-anchor-gate-probe]', {
-                            reason: 'after-snapPortraitToBeatRow',
-                            rotationGateActive: rotationGateActiveRef.current,
-                            preRotationAnchorTick: preRotationAnchorTickRef.current,
-                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                            layoutMode: api?.settings?.display?.layoutMode ?? null,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            isPlayingRef: isPlayingRef.current,
-                            loopEnabled: loopEnabledRef.current,
-                            playbackRange: api?.playbackRange ?? null,
-                            intentionalTick: getIntentionalTick(),
-                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                            containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-                            containerScrollTop: containerRef.current?.scrollTop ?? null,
-                            containerClientW: containerRef.current?.clientWidth ?? null,
-                            containerClientH: containerRef.current?.clientHeight ?? null,
-                            containerScrollW: containerRef.current?.scrollWidth ?? null,
-                            containerScrollH: containerRef.current?.scrollHeight ?? null,
-                            surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-                            surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'after-snapPortraitToBeatRow',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                                containerScrollTop: containerRef.current?.scrollTop ?? null,
+                                containerClientW: containerRef.current?.clientWidth ?? null,
+                                containerClientH: containerRef.current?.clientHeight ?? null,
+                                containerScrollW: containerRef.current?.scrollWidth ?? null,
+                                containerScrollH: containerRef.current?.scrollHeight ?? null,
+                                surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            });
+                        }
                         resolve(true);
                     };
                     requestAnimationFrame(step);
@@ -3110,7 +3057,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const primeLandscapeState = (ctr: HTMLElement) => {
                 if (loopWrapInProgressRef.current) {
-                    if (LANDSCAPE_LOOP_DEBUG) console.log(
+                    if (isRendererDebugEnabled()) console.log(
                         '[landscape-loop-wrap-visual-snap]',
                         { reason: 'primeLandscapeState-blocked-during-wrap' }
                     );
@@ -3157,7 +3104,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 let primeScrollTick = _shouldReprimeLandscapeScroll
                     ? _primeAnchorTick
                     : _primeCandidateTick;
-                if (_shouldReprimeLandscapeScroll && LANDSCAPE_LOOP_DEBUG) {
+                if (_shouldReprimeLandscapeScroll && isRendererDebugEnabled()) {
                     console.warn('[primeLandscapeState-anchor-repair]', {
                         reason: 'using-stable-anchor-for-prime-scroll',
                         candidateTick: _primeCandidateTick,
@@ -3230,7 +3177,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 playbackRange: api?.playbackRange ?? null,
                             });
                         } else {
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (isRendererDebugEnabled()) {
                                 console.warn('[primeLandscapeState-start-override]', {
                                     reason: 'stale-prime-scroll-tick-overridden',
                                     primeScrollTickBefore: primeScrollTick,
@@ -3249,7 +3196,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
                 }
-                if (SEEK_DIAGNOSTIC_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     const intentionalT = getIntentionalTick();
                     const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                     console.log('[maestro-seek-diagnostic]', {
@@ -3277,7 +3224,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 : 'ok',
                     });
                 }
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[landscape-cursor-prime-probe]', {
                         reason: 'primeLandscapeState-start',
                         inputTick: tick,
@@ -3312,7 +3259,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     beatDur: structuralDur,
                     lastTick: primeScrollTick,
                 };
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[landscape-visual-loop-sync]', {
                         reason: 'write-primeLandscapeState',
                         apiTickPosition: api?.tickPosition ?? null,
@@ -3335,7 +3282,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
                 const cursorSurfaceX = getCursorSurfaceX(ctr);
                 const snap = Math.max(0, curBeatX - cursorSurfaceX);
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[landscape-cursor-prime-probe]', {
                         reason: 'primeLandscapeState-end',
                         inputTick: tick,
@@ -3347,51 +3294,53 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         targetScrollLeft: snap,
                     });
                 }
-                console.log('[rotation-anchor-resolution]', {
-                    reason: 'primeLandscapeState-snap',
-                    source: 'primeLandscapeState',
-                    requestedTick: tick,
-                    resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
-                    resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
-                    resolvedBeatX: Number(curBeatX.toFixed(1)),
-                    resolvedBeatY: bb?.visualBounds?.y ?? null,
-                    containerScrollLeft: ctr.scrollLeft,
-                    containerScrollTop: ctr.scrollTop,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                });
-                // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (primeLandscapeState)
-                console.log('[rotation-anchor-gate-probe]', {
-                    reason: 'before-scrollLeft-snap-primeLandscapeState',
-                    rotationGateActive: rotationGateActiveRef.current,
-                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                    apiTickPosition: api?.tickPosition ?? null,
-                    playerState: (api as any)?.playerState ?? null,
-                    isPlayingRef: isPlayingRef.current,
-                    loopEnabled: loopEnabledRef.current,
-                    playbackRange: api?.playbackRange ?? null,
-                    intentionalTick: getIntentionalTick(),
-                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                    containerScrollLeft: ctr?.scrollLeft ?? null,
-                    containerScrollTop: ctr?.scrollTop ?? null,
-                    containerClientW: ctr?.clientWidth ?? null,
-                    containerClientH: ctr?.clientHeight ?? null,
-                    containerScrollW: ctr?.scrollWidth ?? null,
-                    containerScrollH: ctr?.scrollHeight ?? null,
-                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
-                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                    snapTarget: snap,
-                });
+                if (isRendererDebugEnabled()) {
+                    console.log('[rotation-anchor-resolution]', {
+                        reason: 'primeLandscapeState-snap',
+                        source: 'primeLandscapeState',
+                        requestedTick: tick,
+                        resolvedBeatTick: beat?.absolutePlaybackStart ?? null,
+                        resolvedBeatBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+                        resolvedBeatX: Number(curBeatX.toFixed(1)),
+                        resolvedBeatY: bb?.visualBounds?.y ?? null,
+                        containerScrollLeft: ctr.scrollLeft,
+                        containerScrollTop: ctr.scrollTop,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    });
+                    // [rotation-anchor-gate-probe] Point 10: before scrollLeft hard snap (primeLandscapeState)
+                    console.log('[rotation-anchor-gate-probe]', {
+                        reason: 'before-scrollLeft-snap-primeLandscapeState',
+                        rotationGateActive: rotationGateActiveRef.current,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                        apiTickPosition: api?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        intentionalTick: getIntentionalTick(),
+                        landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                        containerScrollLeft: ctr?.scrollLeft ?? null,
+                        containerScrollTop: ctr?.scrollTop ?? null,
+                        containerClientW: ctr?.clientWidth ?? null,
+                        containerClientH: ctr?.clientHeight ?? null,
+                        containerScrollW: ctr?.scrollWidth ?? null,
+                        containerScrollH: ctr?.scrollHeight ?? null,
+                        surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                        surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                        snapTarget: snap,
+                    });
+                }
                 // [LandscapeRightRunwayFix] V143.4: ensure runway before write, then defer one RAF.
                 const { beforeScrollW: _primeBefore, addedRunwayPx: _primeAdded } =
                     ensureLandscapeRunwayForSnap(ctr, snap, 'primeLandscapeState');
                 requestAnimationFrame(() => {
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.log('[landscape-right-runway]', {
                             reason: 'primeLandscapeState',
                             targetScrollLeft: snap,
@@ -3438,32 +3387,34 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             api.renderFinished.on(() => {
                 // [rotation-anchor-gate-probe] Point 3: renderFinished
-                console.log('[rotation-anchor-gate-probe]', {
-                    reason: 'renderFinished',
-                    rotationGateActive: rotationGateActiveRef.current,
-                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                    lastOrientationMode: lastOrientationModeRef.current,
-                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                    apiTickPosition: api?.tickPosition ?? null,
-                    playerState: (api as any)?.playerState ?? null,
-                    isPlayingRef: isPlayingRef.current,
-                    loopEnabled: loopEnabledRef.current,
-                    playbackRange: api?.playbackRange ?? null,
-                    intentionalTick: getIntentionalTick(),
-                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                    containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-                    containerScrollTop: containerRef.current?.scrollTop ?? null,
-                    containerClientW: containerRef.current?.clientWidth ?? null,
-                    containerClientH: containerRef.current?.clientHeight ?? null,
-                    containerScrollW: containerRef.current?.scrollWidth ?? null,
-                    containerScrollH: containerRef.current?.scrollHeight ?? null,
-                    surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-                    surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                });
+                if (isRendererDebugEnabled()) {
+                    console.log('[rotation-anchor-gate-probe]', {
+                        reason: 'renderFinished',
+                        rotationGateActive: rotationGateActiveRef.current,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        lastOrientationMode: lastOrientationModeRef.current,
+                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                        apiTickPosition: api?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        intentionalTick: getIntentionalTick(),
+                        landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                        containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                        containerScrollTop: containerRef.current?.scrollTop ?? null,
+                        containerClientW: containerRef.current?.clientWidth ?? null,
+                        containerClientH: containerRef.current?.clientHeight ?? null,
+                        containerScrollW: containerRef.current?.scrollWidth ?? null,
+                        containerScrollH: containerRef.current?.scrollHeight ?? null,
+                        surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                        surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    });
+                }
                 // [DeferredLandscapeMismatchRecovery] V139: reset attempt counter when healthy.
                 {
                     const _rfSystems = api?.renderer?.boundsLookup?.staffSystems ?? [];
@@ -3491,7 +3442,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         manualIntentional ??
                         preRotationAnchorTickRef.current ??
                         0;
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.warn('[rotation-layout-mismatch]', {
                             reason: 'landscape-viewport-page-layout-detected-diagnostic-only',
                             rescueTick,
@@ -3517,7 +3468,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (_intendedStrip) {
                         scheduleLandscapeMismatchRecovery('renderFinished-diagnostic-mismatch', rescueTick);
                     } else {
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[rotation-layout-mismatch]', {
                                 reason: 'landscape-recovery-skipped-not-in-strip-mode',
                                 rescueTick,
@@ -3620,7 +3571,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (pendingLandscapeMismatchRecoveryRef.current != null) {
                             window.clearTimeout(pendingLandscapeMismatchRecoveryRef.current);
                             pendingLandscapeMismatchRecoveryRef.current = null;
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (isRendererDebugEnabled()) {
                                 console.log('[rotation-layout-mismatch]', {
                                     reason: 'cancel-landscape-recovery-on-page-render',
                                     lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
@@ -3629,7 +3580,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 });
                             }
                         }
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             const _c = h;
                             console.log('[page-scroll-authority-probe]', {
                                 reason: 'renderFinished-strip-to-page',
@@ -3664,7 +3615,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 wrapper, h, () => getFixedCursorX(h)
                             );
                         }
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
                             console.log('[landscape-cursor-prime-probe]', {
                                 reason: 'landscape-cursor-created',
@@ -3684,31 +3635,33 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 (n as HTMLElement).style.opacity = '0';
                             });
                         // [rotation-anchor-gate-probe] Point 4: before landscapeInitialAnchor
-                        console.log('[rotation-anchor-gate-probe]', {
-                            reason: 'before-landscapeInitialAnchor',
-                            rotationGateActive: rotationGateActiveRef.current,
-                            preRotationAnchorTick: preRotationAnchorTickRef.current,
-                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                            layoutMode: api?.settings?.display?.layoutMode ?? null,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            isPlayingRef: isPlayingRef.current,
-                            loopEnabled: loopEnabledRef.current,
-                            playbackRange: api?.playbackRange ?? null,
-                            intentionalTick: getIntentionalTick(),
-                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                            containerScrollLeft: h?.scrollLeft ?? null,
-                            containerScrollTop: h?.scrollTop ?? null,
-                            containerClientW: h?.clientWidth ?? null,
-                            containerClientH: h?.clientHeight ?? null,
-                            containerScrollW: h?.scrollWidth ?? null,
-                            containerScrollH: h?.scrollHeight ?? null,
-                            surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
-                            surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
-                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'before-landscapeInitialAnchor',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: h?.scrollLeft ?? null,
+                                containerScrollTop: h?.scrollTop ?? null,
+                                containerClientW: h?.clientWidth ?? null,
+                                containerClientH: h?.clientHeight ?? null,
+                                containerScrollW: h?.scrollWidth ?? null,
+                                containerScrollH: h?.scrollHeight ?? null,
+                                surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            });
+                        }
                         landscapeInitialAnchor(
                             h,
                             api,
@@ -3718,31 +3671,33 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             rotationGateActiveRef.current ? preRotationAnchorTickRef.current ?? undefined : undefined,
                         );
                         // [rotation-anchor-gate-probe] Point 5: after landscapeInitialAnchor called (async RAF — snap not yet applied)
-                        console.log('[rotation-anchor-gate-probe]', {
-                            reason: 'after-landscapeInitialAnchor-called',
-                            rotationGateActive: rotationGateActiveRef.current,
-                            preRotationAnchorTick: preRotationAnchorTickRef.current,
-                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                            isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                            layoutMode: api?.settings?.display?.layoutMode ?? null,
-                            apiTickPosition: api?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                            isPlayingRef: isPlayingRef.current,
-                            loopEnabled: loopEnabledRef.current,
-                            playbackRange: api?.playbackRange ?? null,
-                            intentionalTick: getIntentionalTick(),
-                            landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                            containerScrollLeft: h?.scrollLeft ?? null,
-                            containerScrollTop: h?.scrollTop ?? null,
-                            containerClientW: h?.clientWidth ?? null,
-                            containerClientH: h?.clientHeight ?? null,
-                            containerScrollW: h?.scrollWidth ?? null,
-                            containerScrollH: h?.scrollHeight ?? null,
-                            surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
-                            surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
-                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                            firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log('[rotation-anchor-gate-probe]', {
+                                reason: 'after-landscapeInitialAnchor-called',
+                                rotationGateActive: rotationGateActiveRef.current,
+                                preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                apiTickPosition: api?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                loopEnabled: loopEnabledRef.current,
+                                playbackRange: api?.playbackRange ?? null,
+                                intentionalTick: getIntentionalTick(),
+                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                containerScrollLeft: h?.scrollLeft ?? null,
+                                containerScrollTop: h?.scrollTop ?? null,
+                                containerClientW: h?.clientWidth ?? null,
+                                containerClientH: h?.clientHeight ?? null,
+                                containerScrollW: h?.scrollWidth ?? null,
+                                containerScrollH: h?.scrollHeight ?? null,
+                                surfaceW: h?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                surfaceH: h?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                            });
+                        }
                         startLandscapeScrollLoop(h, api);
                     }
 
@@ -3835,14 +3790,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
 
-                    console.log('[loop-render-probe]', {
-                        reason: 'renderFinished-stable',
-                        loopEnabled: loopEnabledRef.current,
-                        playbackRangeRef: playbackRangeRef.current,
-                        apiPlaybackRange: (api.playbackRange as any) ?? null,
-                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                        firstSystemBars: (api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
-                    });
+                    if (isRendererDebugEnabled()) {
+                        console.log('[loop-render-probe]', {
+                            reason: 'renderFinished-stable',
+                            loopEnabled: loopEnabledRef.current,
+                            playbackRangeRef: playbackRangeRef.current,
+                            apiPlaybackRange: (api.playbackRange as any) ?? null,
+                            systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                            firstSystemBars: (api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
+                        });
+                    }
 
                     // ── Maestro lyric overlay ─────────────────────────────────
                     requestAnimationFrame(() => {
@@ -3867,69 +3824,75 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const ctr = containerRef.current;
                             if (ctr) {
                                 // [rotation-anchor-gate-probe] Point 6: before primeLandscapeState (renderFinished RAF)
-                                console.log('[rotation-anchor-gate-probe]', {
-                                    reason: 'before-primeLandscapeState-renderFinished',
-                                    rotationGateActive: rotationGateActiveRef.current,
-                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                                    apiTickPosition: api?.tickPosition ?? null,
-                                    playerState: (api as any)?.playerState ?? null,
-                                    isPlayingRef: isPlayingRef.current,
-                                    loopEnabled: loopEnabledRef.current,
-                                    playbackRange: api?.playbackRange ?? null,
-                                    intentionalTick: getIntentionalTick(),
-                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                                    containerScrollLeft: ctr?.scrollLeft ?? null,
-                                    containerScrollTop: ctr?.scrollTop ?? null,
-                                    containerClientW: ctr?.clientWidth ?? null,
-                                    containerClientH: ctr?.clientHeight ?? null,
-                                    containerScrollW: ctr?.scrollWidth ?? null,
-                                    containerScrollH: ctr?.scrollHeight ?? null,
-                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
-                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
-                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                                });
+                                if (isRendererDebugEnabled()) {
+                                    console.log('[rotation-anchor-gate-probe]', {
+                                        reason: 'before-primeLandscapeState-renderFinished',
+                                        rotationGateActive: rotationGateActiveRef.current,
+                                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                        apiTickPosition: api?.tickPosition ?? null,
+                                        playerState: (api as any)?.playerState ?? null,
+                                        isPlayingRef: isPlayingRef.current,
+                                        loopEnabled: loopEnabledRef.current,
+                                        playbackRange: api?.playbackRange ?? null,
+                                        intentionalTick: getIntentionalTick(),
+                                        landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                        containerScrollLeft: ctr?.scrollLeft ?? null,
+                                        containerScrollTop: ctr?.scrollTop ?? null,
+                                        containerClientW: ctr?.clientWidth ?? null,
+                                        containerClientH: ctr?.clientHeight ?? null,
+                                        containerScrollW: ctr?.scrollWidth ?? null,
+                                        containerScrollH: ctr?.scrollHeight ?? null,
+                                        surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                        surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                    });
+                                }
                                 primeLandscapeState(ctr);
                                 // [RotationAnchorFreeze] Landscape snap committed — clear gate.
-                                console.log('[rotation-anchor-gate-probe]', {
-                                    reason: 'rotation-gate-cleared',
-                                    clearedAt: 'renderFinished-landscape',
-                                    finalTick: preRotationAnchorTickRef.current,
-                                    apiTickPosition: api?.tickPosition ?? null,
-                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                });
+                                if (isRendererDebugEnabled()) {
+                                    console.log('[rotation-anchor-gate-probe]', {
+                                        reason: 'rotation-gate-cleared',
+                                        clearedAt: 'renderFinished-landscape',
+                                        finalTick: preRotationAnchorTickRef.current,
+                                        apiTickPosition: api?.tickPosition ?? null,
+                                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                    });
+                                }
                                 rotationGateActiveRef.current = false;
                                 preRotationAnchorTickRef.current = null;
                                 // [rotation-anchor-gate-probe] Point 7: after primeLandscapeState (renderFinished RAF)
-                                console.log('[rotation-anchor-gate-probe]', {
-                                    reason: 'after-primeLandscapeState-renderFinished',
-                                    rotationGateActive: rotationGateActiveRef.current,
-                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                                    apiTickPosition: api?.tickPosition ?? null,
-                                    playerState: (api as any)?.playerState ?? null,
-                                    isPlayingRef: isPlayingRef.current,
-                                    loopEnabled: loopEnabledRef.current,
-                                    playbackRange: api?.playbackRange ?? null,
-                                    intentionalTick: getIntentionalTick(),
-                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                                    containerScrollLeft: ctr?.scrollLeft ?? null,
-                                    containerScrollTop: ctr?.scrollTop ?? null,
-                                    containerClientW: ctr?.clientWidth ?? null,
-                                    containerClientH: ctr?.clientHeight ?? null,
-                                    containerScrollW: ctr?.scrollWidth ?? null,
-                                    containerScrollH: ctr?.scrollHeight ?? null,
-                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
-                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
-                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                                });
+                                if (isRendererDebugEnabled()) {
+                                    console.log('[rotation-anchor-gate-probe]', {
+                                        reason: 'after-primeLandscapeState-renderFinished',
+                                        rotationGateActive: rotationGateActiveRef.current,
+                                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                        apiTickPosition: api?.tickPosition ?? null,
+                                        playerState: (api as any)?.playerState ?? null,
+                                        isPlayingRef: isPlayingRef.current,
+                                        loopEnabled: loopEnabledRef.current,
+                                        playbackRange: api?.playbackRange ?? null,
+                                        intentionalTick: getIntentionalTick(),
+                                        landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                        containerScrollLeft: ctr?.scrollLeft ?? null,
+                                        containerScrollTop: ctr?.scrollTop ?? null,
+                                        containerClientW: ctr?.clientWidth ?? null,
+                                        containerClientH: ctr?.clientHeight ?? null,
+                                        containerScrollW: ctr?.scrollWidth ?? null,
+                                        containerScrollH: ctr?.scrollHeight ?? null,
+                                        surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                        surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                    });
+                                }
                                 ensureLandscapeTrailingScrollPadding('primeLandscapeState-renderFinished');
                             }
                         });
@@ -3952,7 +3915,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             let stateDebounce: ReturnType<typeof setTimeout>;
             api.playerStateChanged.on((e: any) => {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
+                    const stack = new Error().stack;
                     console.log('[landscape-playback-state-sync]', {
                         reason: 'playerStateChanged-raw',
                         rawEvent: e,
@@ -3963,10 +3927,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         loopEnabled: loopEnabledRef.current,
                         playbackRange: api?.playbackRange ?? null,
                         isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                        callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                        callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
                     });
                 }
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[landscape-playback-state-sync]', {
                         reason: 'playerStateChanged',
                         state: e?.state ?? e ?? null,
@@ -3992,7 +3956,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 stateDebounce = setTimeout(() => {
                     const playing = (e.state ?? 0) === 1;
                     if (playing !== isPlayingRef.current) {
-                        if (LANDSCAPE_LOOP_DEBUG && !playing) {
+                        if (isRendererDebugEnabled() && !playing) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'onPlayStateChange-false-call',
                                 apiPlayerState: (api as any)?.playerState ?? null,
@@ -4011,58 +3975,62 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (ctr) {
                         requestAnimationFrame(() => {
                             // [rotation-anchor-gate-probe] Point 6: before primeLandscapeState (playerStateChanged play-start)
-                            console.log('[rotation-anchor-gate-probe]', {
-                                reason: 'before-primeLandscapeState-playerStateChanged',
-                                rotationGateActive: rotationGateActiveRef.current,
-                                preRotationAnchorTick: preRotationAnchorTickRef.current,
-                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                                layoutMode: api?.settings?.display?.layoutMode ?? null,
-                                apiTickPosition: api?.tickPosition ?? null,
-                                playerState: (api as any)?.playerState ?? null,
-                                isPlayingRef: isPlayingRef.current,
-                                loopEnabled: loopEnabledRef.current,
-                                playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
-                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                                containerScrollLeft: ctr?.scrollLeft ?? null,
-                                containerScrollTop: ctr?.scrollTop ?? null,
-                                containerClientW: ctr?.clientWidth ?? null,
-                                containerClientH: ctr?.clientHeight ?? null,
-                                containerScrollW: ctr?.scrollWidth ?? null,
-                                containerScrollH: ctr?.scrollHeight ?? null,
-                                surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
-                                surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
-                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                            });
+                            if (isRendererDebugEnabled()) {
+                                console.log('[rotation-anchor-gate-probe]', {
+                                    reason: 'before-primeLandscapeState-playerStateChanged',
+                                    rotationGateActive: rotationGateActiveRef.current,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    playerState: (api as any)?.playerState ?? null,
+                                    isPlayingRef: isPlayingRef.current,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    intentionalTick: getIntentionalTick(),
+                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                    containerScrollLeft: ctr?.scrollLeft ?? null,
+                                    containerScrollTop: ctr?.scrollTop ?? null,
+                                    containerClientW: ctr?.clientWidth ?? null,
+                                    containerClientH: ctr?.clientHeight ?? null,
+                                    containerScrollW: ctr?.scrollWidth ?? null,
+                                    containerScrollH: ctr?.scrollHeight ?? null,
+                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                });
+                            }
                             primeLandscapeState(ctr);
                             // [rotation-anchor-gate-probe] Point 7: after primeLandscapeState (playerStateChanged play-start)
-                            console.log('[rotation-anchor-gate-probe]', {
-                                reason: 'after-primeLandscapeState-playerStateChanged',
-                                rotationGateActive: rotationGateActiveRef.current,
-                                preRotationAnchorTick: preRotationAnchorTickRef.current,
-                                lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                                isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                                layoutMode: api?.settings?.display?.layoutMode ?? null,
-                                apiTickPosition: api?.tickPosition ?? null,
-                                playerState: (api as any)?.playerState ?? null,
-                                isPlayingRef: isPlayingRef.current,
-                                loopEnabled: loopEnabledRef.current,
-                                playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
-                                landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                                containerScrollLeft: ctr?.scrollLeft ?? null,
-                                containerScrollTop: ctr?.scrollTop ?? null,
-                                containerClientW: ctr?.clientWidth ?? null,
-                                containerClientH: ctr?.clientHeight ?? null,
-                                containerScrollW: ctr?.scrollWidth ?? null,
-                                containerScrollH: ctr?.scrollHeight ?? null,
-                                surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
-                                surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
-                                systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                                firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                            });
+                            if (isRendererDebugEnabled()) {
+                                console.log('[rotation-anchor-gate-probe]', {
+                                    reason: 'after-primeLandscapeState-playerStateChanged',
+                                    rotationGateActive: rotationGateActiveRef.current,
+                                    preRotationAnchorTick: preRotationAnchorTickRef.current,
+                                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                                    layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                    apiTickPosition: api?.tickPosition ?? null,
+                                    playerState: (api as any)?.playerState ?? null,
+                                    isPlayingRef: isPlayingRef.current,
+                                    loopEnabled: loopEnabledRef.current,
+                                    playbackRange: api?.playbackRange ?? null,
+                                    intentionalTick: getIntentionalTick(),
+                                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                                    containerScrollLeft: ctr?.scrollLeft ?? null,
+                                    containerScrollTop: ctr?.scrollTop ?? null,
+                                    containerClientW: ctr?.clientWidth ?? null,
+                                    containerClientH: ctr?.clientHeight ?? null,
+                                    containerScrollW: ctr?.scrollWidth ?? null,
+                                    containerScrollH: ctr?.scrollHeight ?? null,
+                                    surfaceW: ctr?.querySelector('.at-surface')?.scrollWidth ?? null,
+                                    surfaceH: ctr?.querySelector('.at-surface')?.scrollHeight ?? null,
+                                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                                });
+                            }
                             startLandscapeScrollLoop(ctr, api);
                         });
                     }
@@ -4071,7 +4039,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             // 🔒🔒🔒 CURSOR / SCROLL ENGINE ───────────────────────────────────
             api.playerPositionChanged.on((e: any) => {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     const isStripModeProbe = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                     if ((isStripModeProbe || loopEnabledRef.current) && shouldLogDiagnostic('landscape-visual-loop-sync', e.currentTick ?? e.tickPosition ?? null)) {
                         console.log('[landscape-visual-loop-sync]', {
@@ -4086,7 +4054,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                 }
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     const isStripProbe = forceHorizontalRef.current ||
                         (api?.settings?.display?.layoutMode === 1);
                     if (isStripProbe && (api?.playerState ?? 0) === 1 && shouldLogDiagnostic('landscape-visual-loop-sync', e.currentTick ?? e.tickPosition ?? null)) {
@@ -4104,7 +4072,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tickRaw = e.currentTick ?? e.tickPosition;
                 if (tickRaw == null) return;
 
-                if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('micro-tick-flood-probe', tickRaw)) {
+                if (isRendererDebugEnabled() && shouldLogDiagnostic('micro-tick-flood-probe', tickRaw)) {
                     const _lastT = landscapeScrollStateRef.current?.lastTick ?? lastTickRef.current ?? null;
                     const _delta = _lastT != null ? Math.abs(tickRaw - _lastT) : null;
                     const _isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -4303,7 +4271,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
 
-                    if (LANDSCAPE_LOOP_DEBUG && expandedStart !== lastLoggedExpandedStartRef.current) {
+                    if (isRendererDebugEnabled() && expandedStart !== lastLoggedExpandedStartRef.current) {
                         lastLoggedExpandedStartRef.current = expandedStart;
                         console.log('[landscape-visual-segment-map]', {
                             tickRaw,
@@ -4327,7 +4295,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
 
-                    if (LANDSCAPE_LOOP_DEBUG && loopEnabledRef.current &&
+                    if (isRendererDebugEnabled() && loopEnabledRef.current &&
                         api?.playbackRange && nextBeatX <= curBeatX + 1) {
 
                         const liveRange = api.playbackRange as { startTick: number; endTick: number };
@@ -4355,19 +4323,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             } catch { return { probeTick, error: true }; }
                         });
 
-                        console.log('[landscape-zero-delta-segment-probe]', {
-                            tickRaw,
-                            playbackRange: api?.playbackRange ?? null,
-                            beatAbsStart,
-                            expandedStart,
-                            structuralDur,
-                            expandedDur,
-                            curBeatX,
-                            nextBeatX,
-                            visualDeltaX: nextBeatX - curBeatX,
-                            loopEndTick: liveRange.endTick,
-                            lookAheadResults,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log('[landscape-zero-delta-segment-probe]', {
+                                tickRaw,
+                                playbackRange: api?.playbackRange ?? null,
+                                beatAbsStart,
+                                expandedStart,
+                                structuralDur,
+                                expandedDur,
+                                curBeatX,
+                                nextBeatX,
+                                visualDeltaX: nextBeatX - curBeatX,
+                                loopEndTick: liveRange.endTick,
+                                lookAheadResults,
+                            });
+                        }
                     }
 
                     let effectiveNextBeatX = nextBeatX;
@@ -4382,7 +4352,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     ) {
                         effectiveNextBeatX = curBeatX + lastGoodLandscapeVisualDeltaXRef.current;
 
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[landscape-zero-delta-fallback]', {
                                 tickRaw,
                                 playbackRange: api?.playbackRange ?? null,
@@ -4433,7 +4403,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                     }
 
-                    if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('landscape-visual-loop-sync', tickRaw)) {
+                    if (isRendererDebugEnabled() && shouldLogDiagnostic('landscape-visual-loop-sync', tickRaw)) {
                         console.log('[landscape-visual-loop-sync]', {
                             reason: 'write-playerPositionChanged-live',
                             tickRaw,
@@ -4482,7 +4452,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             (tickRaw > _prevStable + 30 || tickRaw < _prevStable - 240); // V143: allow Custom Loop backward wraps
                         if (_shouldPromote) {
                             setLastStableRotationAnchorTick(tickRaw, 'playerPositionChanged-live-landscape');
-                            if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('playback-live-stable-anchor', tickRaw ?? null, 1000, 480)) {
+                            if (isRendererDebugEnabled() && shouldLogDiagnostic('playback-live-stable-anchor', tickRaw ?? null, 1000, 480)) {
                                 console.log('[playback-live-stable-anchor]', {
                                     reason: 'playerPositionChanged-live-landscape',
                                     tickRaw,
@@ -4521,21 +4491,23 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         !_recentStartSeek;
                     // [V144.8] Always probe low ticks to confirm guard behavior
                     if (tickRaw <= 1) {
-                        console.warn('[song-end-hold-probe]', {
-                            reason: 'portrait-low-tick-received',
-                            tickRaw,
-                            lastTick: _lastTick,
-                            playerState: _playerState,
-                            isEndResetNoiseConditionMet: _isEndResetNoise,
-                            recentStartSeek: _recentStartSeek,
-                            intentionalTick: _intentionalTick,
-                            loopEnabled: loopEnabledRef.current,
-                            hasPlaybackRange: !!(api?.playbackRange),
-                            lastTickDeep: _lastTick > 10000,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.warn('[song-end-hold-probe]', {
+                                reason: 'portrait-low-tick-received',
+                                tickRaw,
+                                lastTick: _lastTick,
+                                playerState: _playerState,
+                                isEndResetNoiseConditionMet: _isEndResetNoise,
+                                recentStartSeek: _recentStartSeek,
+                                intentionalTick: _intentionalTick,
+                                loopEnabled: loopEnabledRef.current,
+                                hasPlaybackRange: !!(api?.playbackRange),
+                                lastTickDeep: _lastTick > 10000,
+                            });
+                        }
                     }
                     if (_isEndResetNoise) {
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.warn('[song-end-hold]', {
                                 reason: 'suppress-portrait-end-reset-tick',
                                 tickRaw,
@@ -4571,7 +4543,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const FAR_TICKS = 240;
                 if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
                     if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) {
-                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[loop-click-reseat-probe]', {
                                 reason: 'seekFreeze-gate-return',
                                 tickRaw,
@@ -4598,7 +4570,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const LOOP_WRAP_MARGIN = 30; // reduced from 120 — 120 was too aggressive for 60-tick slide subdivisions
                 if (loopEnabledRef.current && liveRange) {
                     // ── [loop-click-reseat-probe] below-startTick diagnostic ──────────────
-                    if (LOOP_CLICK_RESEAT_DEBUG && tickRaw < liveRange.startTick) {
+                    if (isRendererDebugEnabled() && tickRaw < liveRange.startTick) {
                         console.log('[loop-click-reseat-probe]', {
                             reason: 'tick-below-loop-startTick',
                             tickRaw,
@@ -4613,7 +4585,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
                         loopWrapInProgressRef.current = true;
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'loop-wrap-guard-enter',
                                 tickRaw,
@@ -4625,7 +4597,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 landscapeScrollState: landscapeScrollStateRef.current,
                             });
                         }
-                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[loop-click-reseat-probe]', {
                                 reason: 'loop-wrap-guard-fired',
                                 tickRaw,
@@ -4644,18 +4616,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
                         stableVisualKeyRef.current = null;
-                        console.warn('[page-cursor-reset-source]', {
-                            reason: 'lastTickRef-cleared',
-                            site: 'loop-wrap',
-                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                            previousLastTick: lastTickRef.current,
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            const stack = new Error().stack;
+                            console.warn('[page-cursor-reset-source]', {
+                                reason: 'lastTickRef-cleared',
+                                site: 'loop-wrap',
+                                callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                                previousLastTick: lastTickRef.current,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                            });
+                        }
                         lastTickRef.current = null;
                         allowBacktrackUntilRef.current = Date.now() + 300;
                         const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
-                        if (SEEK_DIAGNOSTIC_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                             console.log('[maestro-seek-diagnostic]', {
                                 reason: 'loop-wrap',
@@ -4684,7 +4659,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         // inside-highlight click override (e.g. 7201 within [3840, 7680]).
                         (window as any).__maestroLoopPlayStartOverrideTick = null;
                         (window as any).__maestroLoopPlayStartOverrideTickAt = null;
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'loop-wrap-seek-start',
                                 targetTick: liveRange.startTick,
@@ -4697,7 +4672,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         }
                         if (seekTicks) seekTicks(liveRange.startTick);
                         api.tickPosition = liveRange.startTick;
-                        if (LANDSCAPE_LOOP_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'loop-wrap-seek-after',
                                 targetTick: liveRange.startTick,
@@ -4744,7 +4719,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     const scrollLeftBefore = wrapContainer.scrollLeft;
                                     targetScrollLeftRef.current = wrapSnap;
                                     wrapContainer.scrollLeft = wrapSnap;
-                                    if (LANDSCAPE_LOOP_DEBUG) {
+                                    if (isRendererDebugEnabled()) {
                                         console.log('[landscape-loop-wrap-visual-snap]', {
                                             reason: 'loop-wrap-visual-snap',
                                             targetTick: liveRange.startTick,
@@ -4793,24 +4768,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
                         }
                         (window as any).__maestroLoopReseat = null;
-                        console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
-                            liveTick: tick,
-                            reseatTick: reseatFlag.tick,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
+                                liveTick: tick,
+                                reseatTick: reseatFlag.tick,
+                            });
+                        }
                         cursorRef.current?.requestSnap(reseatFlag.reason ?? 'loop-reseat');
                         stableCurBeatRef.current = null;
                         stableVisualKeyRef.current = null;
                         stableExpandedBeatStartRef.current = 0;
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
-                        console.warn('[page-cursor-reset-source]', {
-                            reason: 'lastTickRef-cleared',
-                            site: 'loop-reseat',
-                            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                            previousLastTick: lastTickRef.current,
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            playerState: (api as any)?.playerState ?? null,
-                        });
+                        if (isRendererDebugEnabled()) {
+                            const stack = new Error().stack;
+                            console.warn('[page-cursor-reset-source]', {
+                                reason: 'lastTickRef-cleared',
+                                site: 'loop-reseat',
+                                callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                                previousLastTick: lastTickRef.current,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                playerState: (api as any)?.playerState ?? null,
+                            });
+                        }
                         lastTickRef.current = null;
                         lastAcceptedBeatStartRef.current = -1;
                         allowBacktrackUntilRef.current = Date.now() + 600;
@@ -4988,7 +4968,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (isLoopPlayStart) {
                         // Do not replace loop start beat with first visible attack.
                         // Tied/slide lead-in beats at loop boundary should be visually honored.
-                        if (_isToggleOnReseat && LOOP_CLICK_RESEAT_DEBUG) {
+                        if (_isToggleOnReseat && isRendererDebugEnabled()) {
                             console.log('[loop-toggle-reseat-anchor-fix]', {
                                 reason: 'toggle-on-loop-start-preserved',
                                 curBeatAbs,
@@ -5063,14 +5043,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const allowBacktrack =
                                 Date.now() < ((window as any).__maestroAllowBacktrackUntil ?? 0);
                             if (allowBacktrack) {
-                                console.log('[V117] structural regression allowed — manual backtrack seek');
+                                if (isRendererDebugEnabled()) {
+                                    console.log('[V117] structural regression allowed — manual backtrack seek');
+                                }
                             } else {
                                 const regKey = `${incomingStart}:${prevAbs}`;
                                 if (lastRegressionLogRef.current !== regKey) {
                                     lastRegressionLogRef.current = regKey;
-                                    console.warn('[V117] structural regression discarded');
+                                    if (isRendererDebugEnabled()) {
+                                        console.warn('[V117] structural regression discarded');
+                                    }
                                 }
-                                if (LOOP_CLICK_RESEAT_DEBUG) {
+                                if (isRendererDebugEnabled()) {
                                     console.log('[loop-click-reseat-probe]', {
                                         reason: 'V117-regression-return',
                                         incomingStart,
@@ -5108,7 +5092,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!isActuallyPlaying || inBypassWindow) {
                         lastAcceptedBeatStartRef.current = incomingStart;
                     } else if (lastAcceptedBeatStartRef.current >= 0 && incomingStart < lastAcceptedBeatStartRef.current - MIN_BACKTRACK_TICKS) {
-                        if (LOOP_CLICK_RESEAT_DEBUG) {
+                        if (isRendererDebugEnabled()) {
                             console.log('[loop-click-reseat-probe]', {
                                 reason: 'D1-backtrack-guard-return',
                                 incomingStart,
@@ -5221,17 +5205,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         cursorRef.current.setLoopEndX(null);
                     }
 
-                    console.warn('[page-cursor-reset-source]', {
-                        reason: 'about-to-setBeat',
-                        callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                        beatStart: curBeat?.absolutePlaybackStart ?? null,
-                        beatBarIdx: curBeat?.voice?.bar?.masterBar?.index ?? curBeat?.voice?.bar?.index ?? null,
-                        guardedStart,
-                        apiTickPosition: (api as any)?.tickPosition ?? null,
-                        playerState: (api as any)?.playerState ?? null,
-                        lastTickRef: lastTickRef.current ?? null,
-                        tick,
-                    });
+                    if (isRendererDebugEnabled()) {
+                        const stack = new Error().stack;
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'about-to-setBeat',
+                            callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                            beatStart: curBeat?.absolutePlaybackStart ?? null,
+                            beatBarIdx: curBeat?.voice?.bar?.masterBar?.index ?? curBeat?.voice?.bar?.index ?? null,
+                            guardedStart,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            playerState: (api as any)?.playerState ?? null,
+                            lastTickRef: lastTickRef.current ?? null,
+                            tick,
+                        });
+                    }
                     cursorRef.current.setBeat(curBeat, resolvedNextBeat, nextExpandedStart ?? null, guardedStart);
                 }
 
@@ -5253,7 +5240,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                         if (sysIdx >= 0 && anchorIdx !== lastAnchorSysRef.current) {
                             lastAnchorSysRef.current = anchorIdx;
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (isRendererDebugEnabled()) {
                                 const _c = containerRef.current;
                                 console.log('[page-scroll-authority-probe]', {
                                     reason: 'S1-drift-check',
@@ -5426,7 +5413,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         );
                                     }
                                 }
-                                if (LANDSCAPE_LOOP_DEBUG) {
+                                if (isRendererDebugEnabled()) {
                                     console.log('[page-scroll-authority-apply]', {
                                         reason: 'S1-drift-check',
                                         anchorTick: curBeat?.absolutePlaybackStart ?? tick,
@@ -5441,20 +5428,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 const tweenDelta = tweenTo - tweenFrom;
                                 const TWEEN_MS = 150;
                                 const snapAnchor = anchorIdx; // capture for cancel guard
-
-                                if (ORIENTATION_ANCHOR_DEBUG) {
-                                    console.log('[orientation-anchor-probe]', {
-                                        reason: 'portrait-s1-snap',
-                                        apiTickPosition: (api as any)?.tickPosition ?? null,
-                                        resolvedBeatTick: tick,
-                                        resolvedBeatBarIdx: curBeat?.voice?.bar?.masterBar?.index ?? null,
-                                        s1AnchorIdx: anchorIdx,
-                                        s1SysIdx: sysIdx,
-                                        s1TargetScrollTop: tweenTo,
-                                        currentScrollTop: tweenFrom,
-                                        lastLandscapeVisibleBar: lastLandscapeVisibleBarRef.current,
-                                    });
-                                }
 
                                 const _s1AnchorTick = curBeat?.absolutePlaybackStart ?? tick ?? null;
                                 if (Math.abs(tweenDelta) < 2) {
@@ -5585,15 +5558,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         init().catch(console.error);
 
         (window as any).__maestroProbeRendererLoop = () => {
-            const _api = apiRef.current;
-            console.log('[loop-render-probe]', {
-                reason: 'manual',
-                loopEnabled: loopEnabledRef.current,
-                playbackRangeRef: playbackRangeRef.current,
-                apiPlaybackRange: (_api?.playbackRange as any) ?? null,
-                systemsLength: _api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                firstSystemBars: (_api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
-            });
+            if (isRendererDebugEnabled()) {
+                const _api = apiRef.current;
+                console.log('[loop-render-probe]', {
+                    reason: 'manual',
+                    loopEnabled: loopEnabledRef.current,
+                    playbackRangeRef: playbackRangeRef.current,
+                    apiPlaybackRange: (_api?.playbackRange as any) ?? null,
+                    systemsLength: _api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                    firstSystemBars: (_api?.renderer?.boundsLookup?.staffSystems?.[0] as any)?.bars?.length ?? null,
+                });
+            }
         };
 
         return () => {
@@ -5622,14 +5597,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
             lastAcceptedBeatStartRef.current = -1;
             lastRegressionLogRef.current = '';
-            console.warn('[page-cursor-reset-source]', {
-                reason: 'lastTickRef-cleared',
-                site: 'hardReset-fileUrl-effect',
-                callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-                previousLastTick: lastTickRef.current,
-                apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
-                playerState: (apiRef.current as any)?.playerState ?? null,
-            });
+            if (isRendererDebugEnabled()) {
+                const stack = new Error().stack;
+                console.warn('[page-cursor-reset-source]', {
+                    reason: 'lastTickRef-cleared',
+                    site: 'hardReset-fileUrl-effect',
+                    callStack: stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+                    previousLastTick: lastTickRef.current,
+                    apiTickPosition: (apiRef.current as any)?.tickPosition ?? null,
+                    playerState: (apiRef.current as any)?.playerState ?? null,
+                });
+            }
             lastTickRef.current = null;
             stableCurBeatRef.current = null;
             stableExpandedBeatStartRef.current = 0;
@@ -5795,7 +5773,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         (window as any).__maestroLoopPlayStartOverrideTick = null;
                         (window as any).__maestroLoopPlayStartOverrideTickAt = null;
                     }
-                    if (LOOP_CLICK_RESEAT_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.log('[loop-click-reseat-probe]', {
                             reason: 'playerStateChanged-loop-prime',
                             isPlaying,
@@ -5811,7 +5789,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             loopPlayStartOverrideTick: (window as any).__maestroLoopPlayStartOverrideTick ?? null,
                         });
                     }
-                    if (SEEK_DIAGNOSTIC_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                         console.log('[maestro-seek-diagnostic]', {
                             reason: 'loop-play-start',
@@ -5838,7 +5816,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 : 'seeking to loop start (correct)',
                         });
                     }
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.log('[explicit-seek-probe]', {
                             reason: 'loop-play-start-seekTicks',
                             seekTargetTick: primeT,
@@ -5859,20 +5837,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     };
                     (window as any).__maestroManualSeek = Date.now();
                     (window as any).__maestroCursor?.requestSnap?.('loop-play-start');
-                    if (ORIENTATION_ANCHOR_DEBUG) {
-                        console.log('[orientation-cursor-probe]', {
-                            reason: 'loop-play-start-prime',
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            primeT,
-                            isLandscape: isDeviceLandscape(),
-                            wantStrip: forceHorizontalRef.current,
-                            lastLandscapeVisibleBar: lastLandscapeVisibleBarRef.current,
-                        });
-                    }
                 }
                 // ── END loop-start cursor re-prime ────────────────────────────────────────
 
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[pause-anchor-normalization-probe]', {
                         reason: 'api.play-call',
                         beforeApiTick: (api as any)?.tickPosition ?? null,
@@ -5903,19 +5871,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     requestAnimationFrame(() => {
                         if (!forceHorizontalRef.current) {
                             cursorRef.current?.requestSnap?.('play-start-hard-snap');
-                            console.warn('[page-play-start-hard-snap]', {
-                                reason: 'raf-before-live-playback',
-                                apiTickPosition: Number((api as any)?.tickPosition ?? 0),
-                                playerState: Number((api as any)?.playerState ?? -1),
-                                isPlayingRef: isPlayingRef.current,
-                                manualSeekAge: _manualSeekAge,
-                                lastIntentionalAge: _lastIntentionalAge,
-                                seekTargetTick: seekTargetTickRef.current ?? null,
-                                lastIntentionalTick:
-                                    typeof window !== 'undefined'
-                                        ? (window as any).__maestroLastIntentionalTick ?? null
-                                        : null,
-                            });
+                            if (isRendererDebugEnabled()) {
+                                console.warn('[page-play-start-hard-snap]', {
+                                    reason: 'raf-before-live-playback',
+                                    apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                    playerState: Number((api as any)?.playerState ?? -1),
+                                    isPlayingRef: isPlayingRef.current,
+                                    manualSeekAge: _manualSeekAge,
+                                    lastIntentionalAge: _lastIntentionalAge,
+                                    seekTargetTick: seekTargetTickRef.current ?? null,
+                                    lastIntentionalTick:
+                                        typeof window !== 'undefined'
+                                            ? (window as any).__maestroLastIntentionalTick ?? null
+                                            : null,
+                                });
+                            }
                         }
                     });
                 }
@@ -5960,7 +5930,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // ── end [PlayStartBeatNormalization] ─────────────────────────────────────
                 api.play();
             } else {
-                if (LANDSCAPE_LOOP_DEBUG) {
+                if (isRendererDebugEnabled()) {
                     console.log('[pause-anchor-normalization-probe]', {
                         reason: 'api.pause-call',
                         beforeApiTick: (api as any)?.tickPosition ?? null,
@@ -5984,7 +5954,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (_livePauseTick && _livePauseTick > 1) {
                         const _prevStable = lastStableRotationAnchorTickRef.current ?? null;
                         setLastStableRotationAnchorTick(_livePauseTick, 'pre-pause-live-anchor');
-                        if (LANDSCAPE_LOOP_DEBUG && shouldLogDiagnostic('playback-live-stable-anchor', _livePauseTick ?? null, 1000, 480)) {
+                        if (isRendererDebugEnabled() && shouldLogDiagnostic('playback-live-stable-anchor', _livePauseTick ?? null, 1000, 480)) {
                             console.log('[playback-live-stable-anchor]', {
                                 reason: 'pre-pause-capture',
                                 livePauseTick: _livePauseTick,
@@ -6207,7 +6177,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!touchState.isDragging) {
                         const api = apiRef.current;
                         if ((api?.playerState ?? 0) === 1) {
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (isRendererDebugEnabled()) {
                                 console.log('[landscape-playback-state-sync]', {
                                     reason: 'onPlayStateChange-false-call',
                                     apiPlayerState: (api as any)?.playerState ?? null,
@@ -6240,7 +6210,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!isStrip) return;
                     try {
                         if ((api.playerState ?? 0) === 1) {
-                            if (LANDSCAPE_LOOP_DEBUG) {
+                            if (isRendererDebugEnabled()) {
                                 console.log('[landscape-playback-state-sync]', {
                                     reason: 'onPlayStateChange-false-call',
                                     apiPlayerState: (api as any)?.playerState ?? null,
@@ -6298,7 +6268,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     (window as any).__maestroLastIntentionalTickAt = Date.now();
                                     preRotationAnchorTickRef.current = bestTick;
                                     const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
-                                    if (SEEK_DIAGNOSTIC_DEBUG) {
+                                    if (isRendererDebugEnabled()) {
                                         const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                                         console.log('[maestro-seek-diagnostic]', {
                                             reason: 'touch-drag-seek',
@@ -6497,7 +6467,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const api = apiRef.current;
                 if (!api?.isReadyForPlayback) return;
                 if (api.playerState !== 0) {
-                    if (LANDSCAPE_LOOP_DEBUG) {
+                    if (isRendererDebugEnabled()) {
                         console.log('[landscape-playback-state-sync]', {
                             reason: 'onPlayStateChange-false-call',
                             apiPlayerState: (api as any)?.playerState ?? null,
