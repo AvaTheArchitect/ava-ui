@@ -217,13 +217,29 @@ export class MaestroCursorV2 {
 
         // [PageCursorPlayStartHardSnap] V145.2: flush stale interpolation memory so this
         // setBeat hard-places the cursor without animating from a previous tween position.
-        if (this.forceHardSnapNextSetBeat) {
+        // pendingHardSnap is read now but only consumed after bounds are confirmed — a
+        // failed findBeat must not silently discard the play-start hard snap.
+        const pendingHardSnap = this.forceHardSnapNextSetBeat;
+        const dur = beat.playbackDuration ?? beat.duration ?? 0;
+        const bb = this.api?.renderer?.boundsLookup?.findBeat(beat);
+        if (!bb?.visualBounds) {
+            // Do not consume a pending play-start hard snap on a failed bounds lookup.
+            // Leave forceHardSnapNextSetBeat true so the next valid setBeat can hard-place.
+            this._hide();
+            return;
+        }
+
+        if (pendingHardSnap) {
             const _prevX = this.currentNoteX;
             const _prevY = this.currentY;
+            const previousTargetX = this.nextNoteX;
+            const previousStayPutMode = this.stayPutMode;
             this.beatStart = 0;
             this.expandedBeatDuration = 0;
             this.lastValidRatio = 1.0;
             this.lastTickApplied = -1;
+            this.nextNoteX = null;
+            this.stayPutMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -232,14 +248,13 @@ export class MaestroCursorV2 {
                 currentNoteX: _prevX,
                 currentY: _prevY,
                 previousRenderX: this.lastX,
-                previousTargetX: this.nextNoteX,
+                previousTargetX,
+                previousStayPutMode,
                 forceHardSnapNextSetBeat: false,
+                nextNoteXAfterReset: this.nextNoteX,
+                stayPutModeAfterReset: this.stayPutMode,
             });
         }
-
-        const dur = beat.playbackDuration ?? beat.duration ?? 0;
-        const bb = this.api?.renderer?.boundsLookup?.findBeat(beat);
-        if (!bb?.visualBounds) { this._hide(); return; }
         const vb = bb.visualBounds;
 
         // ── Grace note guard ─────────────────────────────────────────────────
@@ -372,8 +387,76 @@ export class MaestroCursorV2 {
                         this.nextNoteX = nx;
                     } else if (sameRow && nx <= this.currentNoteX + 0.5) {
                         this.stayPutMode = true;
+                    } else {
+                        // Next beat is on a different row/system.
+                        // Do not interpolate toward masterBar.right; hold near current notehead
+                        // until the next row's setBeat arrives.
+                        if (cursor2DiagEnabled()) {
+                            const _mbCR = beat?.voice?.bar?.masterBar
+                                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
+                                : null;
+                            console.warn('[maestro-cursor2-boundary]', {
+                                reason: 'cross-row-next-beat-risk',
+                                currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                                nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
+                                currentNoteX: this.currentNoteX,
+                                currentY: this.currentY,
+                                nextX: nx,
+                                nextY: nb.visualBounds.y,
+                                xDelta: nx - this.currentNoteX,
+                                yDelta: nb.visualBounds.y - this.currentY,
+                                nextNoteX: this.nextNoteX,
+                                stayPutMode: this.stayPutMode,
+                                loopEndX: this.loopEndX,
+                                expandedBeatDuration: this.expandedBeatDuration,
+                                forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+                                barRight: _mbCR?.visualBounds
+                                    ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
+                                    : null,
+                            });
+                        }
+                        this.stayPutMode = true;
+                        if (cursor2DiagEnabled()) {
+                            const _mbCR = beat?.voice?.bar?.masterBar
+                                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
+                                : null;
+                            console.warn('[maestro-cursor2-boundary]', {
+                                reason: 'cross-row-next-beat-stay-put',
+                                currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                                nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
+                                currentNoteX: this.currentNoteX,
+                                currentY: this.currentY,
+                                nextX: nx,
+                                nextY: nb.visualBounds.y,
+                                barRight: _mbCR?.visualBounds
+                                    ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
+                                    : null,
+                            });
+                        }
                     }
                 }
+            }
+        }
+        if (!nextCandidate) {
+            this.stayPutMode = true;
+            if (cursor2DiagEnabled()) {
+                const _mbNull = beat?.voice?.bar?.masterBar
+                    ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
+                    : null;
+                console.warn('[maestro-cursor2-boundary]', {
+                    reason: 'no-next-candidate-stay-put',
+                    currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                    currentNoteX: this.currentNoteX,
+                    currentY: this.currentY,
+                    nextNoteX: this.nextNoteX,
+                    stayPutMode: this.stayPutMode,
+                    loopEndX: this.loopEndX,
+                    expandedBeatDuration: this.expandedBeatDuration,
+                    forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+                    barRight: _mbNull?.visualBounds
+                        ? _mbNull.visualBounds.x + _mbNull.visualBounds.w
+                        : null,
+                });
             }
         }
 
@@ -686,6 +769,19 @@ export class MaestroCursorV2 {
         // memory on the next setBeat so stale tween state cannot cause a visual lunge.
         if (_reason && HARD_SNAP_REASONS.has(_reason)) {
             this.forceHardSnapNextSetBeat = true;
+            if (cursor2DiagEnabled()) {
+                console.warn('[maestro-cursor2-hard-snap-arm]', {
+                    reason: 'requestSnap-arm',
+                    requestReason: _reason ?? null,
+                    forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+                    apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                    playerState: (this.api as any)?.playerState ?? null,
+                    previousRenderX: this.lastX,
+                    nextNoteX: this.nextNoteX,
+                    stayPutMode: this.stayPutMode,
+                    callStack: new Error().stack?.split('\n').slice(1, 5).join(' | '),
+                });
+            }
             // [PlayStartHardSnapDurationPreserve] V145.5.2:
             // Do not clear expandedBeatDuration for play-start-hard-snap.
             // On direct chord starts, the clicked beat is already correctly anchored.
@@ -705,6 +801,10 @@ export class MaestroCursorV2 {
             });
         }
         console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
+    }
+
+    public hasPendingHardSnap(): boolean {
+        return this.forceHardSnapNextSetBeat === true;
     }
 
     public destroy(): void {
