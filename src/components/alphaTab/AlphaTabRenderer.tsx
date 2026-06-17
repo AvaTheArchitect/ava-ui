@@ -6,6 +6,10 @@
  * Date: June 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * V145.6 Locks:
+ * ✅ [Cursor2BoundaryGuard]
+ *        Preserves pending hard snap when bounds lookup fails.
+ *        Clears stale nextNoteX/stayPutMode state on hard snap consume.
  * V145.4 LOCKS:
  * ✅ [LoopToggleReseatAnchorFix] loop-toggle-on and toggle ON reseat reasons
  *         are now treated the same as loop-play-start for the visible-beat
@@ -612,6 +616,7 @@ type MaestroCursorLike = {
         nextBeat?: any | null,
         overrideBeatStart?: number | null,
     ) => void;
+    hasPendingHardSnap: () => boolean;
 };
 
 function getIntentionalTick(): number | null {
@@ -1552,6 +1557,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const loopEnabledRef = useRef(loopEnabled);
     const playbackRangeRef = useRef(playbackRange);
     const isPlayingRef = useRef(isPlaying);
+    const playStartHardSnapInFlightRef = useRef(false);
+    const playStartHardSnapArmedAtRef = useRef<number | null>(null);
+    const playStartHardSnapFallbackTimerRef = useRef<number | null>(null);
+    const playStartHardSnapAlreadyArmedRef = useRef(false);
+    const resumeTickGateUntilRef = useRef<number>(0);
+    const resumeTickGateAnchorRef = useRef<number | null>(null);
     const seekInProgressRef = useRef(false);
     const seekTokenRef = useRef(0);
     const resumeTimerRef = useRef<number | null>(null);
@@ -2826,32 +2837,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             api.renderStarted.on(() => {
                 // [rotation-anchor-gate-probe] Point 2: renderStarted
                 if (isRendererDebugEnabled()) {
-                console.log('[rotation-anchor-gate-probe]', {
-                    reason: 'renderStarted',
-                    rotationGateActive: rotationGateActiveRef.current,
-                    preRotationAnchorTick: preRotationAnchorTickRef.current,
-                    lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                    lastOrientationMode: lastOrientationModeRef.current,
-                    isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
-                    layoutMode: api?.settings?.display?.layoutMode ?? null,
-                    apiTickPosition: api?.tickPosition ?? null,
-                    playerState: (api as any)?.playerState ?? null,
-                    isPlayingRef: isPlayingRef.current,
-                    loopEnabled: loopEnabledRef.current,
-                    playbackRange: api?.playbackRange ?? null,
-                    intentionalTick: getIntentionalTick(),
-                    landscapeScrollState: landscapeScrollStateRef.current ?? null,
-                    containerScrollLeft: containerRef.current?.scrollLeft ?? null,
-                    containerScrollTop: containerRef.current?.scrollTop ?? null,
-                    containerClientW: containerRef.current?.clientWidth ?? null,
-                    containerClientH: containerRef.current?.clientHeight ?? null,
-                    containerScrollW: containerRef.current?.scrollWidth ?? null,
-                    containerScrollH: containerRef.current?.scrollHeight ?? null,
-                    surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
-                    surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
-                    systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
-                    firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
-                });
+                    console.log('[rotation-anchor-gate-probe]', {
+                        reason: 'renderStarted',
+                        rotationGateActive: rotationGateActiveRef.current,
+                        preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                        lastOrientationMode: lastOrientationModeRef.current,
+                        isLandscape: forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1),
+                        layoutMode: api?.settings?.display?.layoutMode ?? null,
+                        apiTickPosition: api?.tickPosition ?? null,
+                        playerState: (api as any)?.playerState ?? null,
+                        isPlayingRef: isPlayingRef.current,
+                        loopEnabled: loopEnabledRef.current,
+                        playbackRange: api?.playbackRange ?? null,
+                        intentionalTick: getIntentionalTick(),
+                        landscapeScrollState: landscapeScrollStateRef.current ?? null,
+                        containerScrollLeft: containerRef.current?.scrollLeft ?? null,
+                        containerScrollTop: containerRef.current?.scrollTop ?? null,
+                        containerClientW: containerRef.current?.clientWidth ?? null,
+                        containerClientH: containerRef.current?.clientHeight ?? null,
+                        containerScrollW: containerRef.current?.scrollWidth ?? null,
+                        containerScrollH: containerRef.current?.scrollHeight ?? null,
+                        surfaceW: containerRef.current?.querySelector('.at-surface')?.scrollWidth ?? null,
+                        surfaceH: containerRef.current?.querySelector('.at-surface')?.scrollHeight ?? null,
+                        systemsLength: api?.renderer?.boundsLookup?.staffSystems?.length ?? null,
+                        firstSystemBars: api?.renderer?.boundsLookup?.staffSystems?.[0]?.bars?.length ?? null,
+                    });
                 }
                 activeRendersRef.current += 1;
                 renderTokenRef.current += 1;
@@ -2908,6 +2919,139 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         const r = tickCache.findBeat(trackSet, tick);
                         if (!r?.beat) { requestAnimationFrame(step); return; }
                         if (!bounds.findBeat(r.beat)) { requestAnimationFrame(step); return; }
+                        // [PagePlayStartSongLoadGuard] Block song-load cursor prime during play-start
+                        // handoff. Two conditions:
+                        // 1. playStartHardSnapInFlightRef is true — play-start hard snap was armed.
+                        // 2. _nearPendingPlayStart — catches the specific observed shape where
+                        //    seekTargetTick ≈ lastTickRef while playerState=0 and isSettling=true,
+                        //    meaning renderFinished fired after seekTicks but before api.play().
+                        {
+                            const _playerState = (api as any)?.playerState ?? null;
+                            const _seekTarget = seekTargetTickRef.current;
+                            const _lastTick = lastTickRef.current;
+                            const _playStartArmAge =
+                                playStartHardSnapArmedAtRef.current != null
+                                    ? performance.now() - playStartHardSnapArmedAtRef.current
+                                    : Infinity;
+                            const _nearPendingPlayStart =
+                                _playStartArmAge < 1500 &&
+                                _playerState === 0 &&
+                                isSettlingRef.current &&
+                                !!cursorRef.current &&
+                                _seekTarget != null &&
+                                _lastTick != null &&
+                                Math.abs(_seekTarget - _lastTick) <= 8;
+                            if (playStartHardSnapInFlightRef.current || _nearPendingPlayStart) {
+                                if (isRendererDebugEnabled()) {
+                                    console.warn('[page-cursor-reset-source]', {
+                                        reason: 'blocked-song-load-prime-play-start-handoff',
+                                        anchorTick: tick,
+                                        beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                        apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                        playerState: _playerState,
+                                        isSettling: isSettlingRef.current,
+                                        seekTargetTick: _seekTarget,
+                                        lastTickRef: _lastTick,
+                                        lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                                        playStartHardSnapInFlight: playStartHardSnapInFlightRef.current,
+                                        playStartArmAge: _playStartArmAge,
+                                        nearPendingPlayStart: _nearPendingPlayStart,
+                                    });
+                                }
+                                return resolve(true);
+                            }
+                        }
+                        // [RedundantSettlingPrimeGuard] Block late song-load primes that fire during
+                        // layout settling when the cursor is already positioned at the anchor tick.
+                        // Prevents the cursor from flying forward on Play when ensureCursorAndAnchorOnce
+                        // re-runs after layout settles and redundantly re-primes the same position.
+                        {
+                            const _playerState = (api as any)?.playerState ?? null;
+                            const _seekTarget = seekTargetTickRef.current;
+                            const _lastTick = lastTickRef.current;
+                            const _lastStable = lastStableRotationAnchorTickRef.current;
+                            const _redundantSettlingPrime =
+                                _playerState === 0 &&
+                                isSettlingRef.current &&
+                                !!cursorRef.current &&
+                                _lastStable != null &&
+                                _lastTick != null &&
+                                Math.abs(_lastStable - tick) <= 8 &&
+                                Math.abs(_lastTick - tick) <= 8 &&
+                                r?.beat?.absolutePlaybackStart != null;
+                            if (_redundantSettlingPrime) {
+                                if (isRendererDebugEnabled()) {
+                                    console.warn('[page-cursor-reset-source]', {
+                                        reason: 'blocked-redundant-settling-song-load-prime',
+                                        anchorTick: tick,
+                                        beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                        apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                        playerState: _playerState,
+                                        isSettling: isSettlingRef.current,
+                                        seekTargetTick: _seekTarget,
+                                        lastTickRef: _lastTick,
+                                        lastStableAnchor: _lastStable,
+                                        cursorExists: !!cursorRef.current,
+                                    });
+                                }
+                                // Safe paused-cursor repaint: restore cursor visibility without
+                                // running the full song-load prime stack (no requestSnap, no snapPortraitToBeatRow).
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(() => {
+                                        if (renderTokenRef.current !== tok) return;
+                                        if (!cursorRef.current) return;
+                                        if ((api as any)?.playerState !== 0) return;
+                                        if (forceHorizontalRef.current) return;
+                                        if (playStartHardSnapInFlightRef.current) return;
+                                        {
+                                            const _pendingHardSnap = cursorRef.current?.hasPendingHardSnap?.() ?? false;
+
+                                            if (_pendingHardSnap) {
+                                                if (isRendererDebugEnabled()) {
+                                                    console.warn('[page-cursor-reset-source]', {
+                                                        reason: 'skipped-safe-paused-repaint-pending-hard-snap',
+                                                        anchorTick: tick,
+                                                        beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                                        apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                                        playerState: (api as any)?.playerState ?? null,
+                                                        isSettling: isSettlingRef.current,
+                                                        lastTickRef: lastTickRef.current,
+                                                        seekTargetTick: seekTargetTickRef.current,
+                                                        lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                                                        hasPendingHardSnap: cursorRef.current?.hasPendingHardSnap?.() ?? null,
+                                                    });
+                                                }
+                                                return;
+                                            }
+                                        }
+                                        try {
+                                            cursorRef.current.setBeat(r.beat);
+                                            cursorRef.current.setTick(tick);
+                                            if (isRendererDebugEnabled()) {
+                                                console.warn('[page-cursor-reset-source]', {
+                                                    reason: 'safe-paused-cursor-repaint-after-blocked-prime',
+                                                    anchorTick: tick,
+                                                    beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                                    apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                                    playerState: (api as any)?.playerState ?? null,
+                                                    isSettling: isSettlingRef.current,
+                                                    lastTickRef: lastTickRef.current,
+                                                    lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                                                });
+                                            }
+                                        } catch (err) {
+                                            if (isRendererDebugEnabled()) {
+                                                console.warn('[page-cursor-reset-source]', {
+                                                    reason: 'safe-paused-cursor-repaint-after-blocked-prime-error',
+                                                    error: err instanceof Error ? err.message : String(err),
+                                                });
+                                            }
+                                        }
+                                    });
+                                });
+                                return resolve(true);
+                            }
+                        }
                         if (isRendererDebugEnabled()) {
                             const stack = new Error().stack;
                             console.warn('[page-cursor-reset-source]', {
@@ -3600,6 +3744,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 trueScroll: _c ? getScrollParentProbe(_c) : null,
                             });
                         }
+                        // [PlayStartHardSnapInFlightGuard] Skip song-load cursor prime while
+                        // play-start hard snap is armed. ensureCursorAndAnchorOnce would consume
+                        // forceHardSnapNextSetBeat and call snapPortraitToBeatRow before the first
+                        // live playerPositionChanged setBeat. Only guard when the cursor already
+                        // exists — initial creation must still proceed when cursorRef is null.
+                        if (playStartHardSnapInFlightRef.current && cursorRef.current) {
+                            return;
+                        }
                         const okCursor = await ensureCursorAndAnchorOnce(tokenAtFinish);
                         if (!okCursor) return;
                         if (renderTokenRef.current !== tokenAtFinish) return;
@@ -3950,6 +4102,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     console.warn('[V117] isSettling stuck on play — force clearing');
                     isSettlingRef.current = false;
                     setIsSettling(false);
+                }
+                if ((e.state ?? 0) === 1) {
+                    playStartHardSnapInFlightRef.current = false;
+                    playStartHardSnapArmedAtRef.current = null;
+                    playStartHardSnapAlreadyArmedRef.current = false;
+                    if (playStartHardSnapFallbackTimerRef.current !== null) {
+                        window.clearTimeout(playStartHardSnapFallbackTimerRef.current);
+                        playStartHardSnapFallbackTimerRef.current = null;
+                    }
                 }
                 if (seekInProgressRef.current) return;
                 clearTimeout(stateDebounce);
@@ -4742,6 +4903,68 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tick = tickRaw;
                 const lastTick = lastTickRef.current;
 
+                // ── [resume-tick-gate] Suppress stale pre-resume frames ───────────────────
+                {
+                    const _resumeGateAnchor = resumeTickGateAnchorRef.current;
+                    const _resumeGateActive =
+                        _resumeGateAnchor != null &&
+                        _resumeGateAnchor > 24 &&
+                        performance.now() < resumeTickGateUntilRef.current;
+
+                    const _isStalePreResumeTick =
+                        _resumeGateActive &&
+                        tick + 24 < _resumeGateAnchor;
+
+                    if (_isStalePreResumeTick) {
+                        if (isRendererDebugEnabled()) {
+                            console.warn('[resume-tick-gate]', {
+                                reason: 'blocked-stale-pre-resume-tick',
+                                tick,
+                                resumeGateAnchor: _resumeGateAnchor,
+                                delta: tick - _resumeGateAnchor,
+                                apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                playerState: (api as any)?.playerState ?? null,
+                                lastTickRef: lastTickRef.current,
+                                lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                                preRotationAnchor: preRotationAnchorTickRef.current,
+                                seekTargetTick: seekTargetTickRef.current,
+                                gateRemainingMs: Math.round(resumeTickGateUntilRef.current - performance.now()),
+                            });
+                        }
+                        return;
+                    }
+
+                    if (_resumeGateActive && tick + 24 >= _resumeGateAnchor) {
+                        const _isActuallyPlayingForResumeGate =
+                            Number((api as any)?.playerState ?? 0) === 1 || isPlayingRef.current === true;
+
+                        if (_isActuallyPlayingForResumeGate) {
+                            resumeTickGateUntilRef.current = 0;
+                            resumeTickGateAnchorRef.current = null;
+                            if (isRendererDebugEnabled()) {
+                                console.warn('[resume-tick-gate]', {
+                                    reason: 'accepted-live-resume-or-later-tick',
+                                    tick,
+                                    resumeGateAnchor: _resumeGateAnchor,
+                                    apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                    playerState: (api as any)?.playerState ?? null,
+                                    isPlayingRef: isPlayingRef.current,
+                                });
+                            }
+                        } else if (isRendererDebugEnabled()) {
+                            console.warn('[resume-tick-gate]', {
+                                reason: 'kept-gate-on-paused-repaint',
+                                tick,
+                                resumeGateAnchor: _resumeGateAnchor,
+                                apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                                playerState: (api as any)?.playerState ?? null,
+                                isPlayingRef: isPlayingRef.current,
+                                gateRemainingMs: Math.round(resumeTickGateUntilRef.current - performance.now()),
+                            });
+                        }
+                    }
+                }
+
                 // ── V1.8.4: Loop reseat guard ─────────────────────────────────────────────
                 // BeatCustomLoopOverlay sets window.__maestroLoopReseat on commitBarSnap
                 // (click-to-move) and toggle-ON. Flushing stable cursor refs here prevents
@@ -4946,18 +5169,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     //   4. live tick is within 120 ticks of loop start (not later in the loop)
                     const _isToggleOnReseat =
                         (activeReseatReason === 'loop-toggle-on' ||
-                         activeReseatReason === 'toggle ON') &&
+                            activeReseatReason === 'toggle ON') &&
                         liveRange?.startTick != null &&
                         curBeatAbs != null &&
                         (curBeatAbs === liveRange.startTick ||
-                         curBeatAbs === preservedLoopStartAbs ||
-                         Math.abs(curBeatAbs - liveRange.startTick) <= 120) &&
+                            curBeatAbs === preservedLoopStartAbs ||
+                            Math.abs(curBeatAbs - liveRange.startTick) <= 120) &&
                         Math.abs(tick - liveRange.startTick) <= 120;
 
                     const isLoopPlayStart =
                         (activeReseatReason === 'loop-play-start' &&
-                         preservedLoopStartAbs != null &&
-                         curBeatAbs === preservedLoopStartAbs) ||
+                            preservedLoopStartAbs != null &&
+                            curBeatAbs === preservedLoopStartAbs) ||
                         _isToggleOnReseat;
 
                     // Clear once playback advances past the protected beat
@@ -5198,11 +5421,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             (endBeatStart + endBeatDur) === liveRange.endTick &&
                             (endBeatNext == null || nextBeatBarIdx !== endBeatBarIdx);
 
-                        cursorRef.current.setLoopEndX(
+                        cursorRef.current?.setLoopEndX?.(
                             sameRow && !loopEndsOnBarline ? loopEndVisualX : null
                         );
                     } else {
-                        cursorRef.current.setLoopEndX(null);
+                        cursorRef.current?.setLoopEndX?.(null);
                     }
 
                     if (isRendererDebugEnabled()) {
@@ -5627,7 +5850,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
             delete (window as any).__maestroProbeRendererLoop;
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fileUrl, startLandscapeScrollLoop, stopLandscapeScrollLoop, snapPortraitToBeatRow, getRotationAnchorTick, setLastStableRotationAnchorTick, resetKey]);
 
     useEffect(() => {
@@ -5754,10 +5977,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // When loop is ON, re-prime cursor to playbackRange.startTick before play.
                 // Without this, cursor sits at the last clicked/parked position until the
                 // first playerPositionChanged fires — causing a visible catch-up delay.
-                // Uses live api.playbackRange (not React state) so BeatCustomLoopOverlay
-                // writes are always respected even if React state is stale.
+                // Uses live api.playbackRange with playbackRangeRef.current as fallback so that
+                // BeatCustomLoopOverlay writes are respected AND rotation races (where AlphaTab
+                // temporarily resets api.playbackRange to null while loopEnabledRef is still true)
+                // are handled correctly. Fallback prevents PlayStartBeatNormalization from running
+                // in Loop mode and ensures the loop re-prime can fire even after api.playbackRange reset.
                 const liveLoopRange = loopEnabledRef.current
-                    ? (api.playbackRange as { startTick: number; endTick: number } | null)
+                    ? ((api.playbackRange ?? playbackRangeRef.current) as { startTick: number; endTick: number } | null)
                     : null;
                 if (liveLoopRange?.startTick != null) {
                     const overrideTick = (window as any).__maestroLoopPlayStartOverrideTick;
@@ -5852,48 +6078,39 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         landscapeScrollState: landscapeScrollStateRef.current,
                     });
                 }
-                // [PagePlayStartHardSnapGateFix] V145.2.1: deferred one RAF so any
-                // synchronous song-load/remount cursor primes complete before the
-                // play-start hard snap marks the next playback setBeat. Broad Page-only
-                // guard — no playerState/seek-age conditions that could prevent firing.
-                // Does not seek, does not change api.tickPosition — visual reset only.
-                if (!forceHorizontalRef.current) {
-                    const _manualSeekAge =
-                        typeof window !== 'undefined' && (window as any).__maestroManualSeek
-                            ? Date.now() - (window as any).__maestroManualSeek
-                            : null;
-                    const _lastIntentionalTickAt =
-                        typeof window !== 'undefined'
-                            ? Number((window as any).__maestroLastIntentionalTickAt ?? 0)
-                            : 0;
-                    const _lastIntentionalAge =
-                        _lastIntentionalTickAt > 0 ? Date.now() - _lastIntentionalTickAt : null;
-                    requestAnimationFrame(() => {
-                        if (!forceHorizontalRef.current) {
-                            cursorRef.current?.requestSnap?.('play-start-hard-snap');
-                            if (isRendererDebugEnabled()) {
-                                console.warn('[page-play-start-hard-snap]', {
-                                    reason: 'raf-before-live-playback',
-                                    apiTickPosition: Number((api as any)?.tickPosition ?? 0),
-                                    playerState: Number((api as any)?.playerState ?? -1),
-                                    isPlayingRef: isPlayingRef.current,
-                                    manualSeekAge: _manualSeekAge,
-                                    lastIntentionalAge: _lastIntentionalAge,
-                                    seekTargetTick: seekTargetTickRef.current ?? null,
-                                    lastIntentionalTick:
-                                        typeof window !== 'undefined'
-                                            ? (window as any).__maestroLastIntentionalTick ?? null
-                                            : null,
-                                });
-                            }
-                        }
-                    });
+                // [PlayStartHardSnapInFlightGuard] Arm before seekTicks so any synchronous or
+                // immediately-queued playerPositionChanged / renderFinished work sees the guard
+                // as true. requestSnap('play-start-hard-snap') is still deferred until after
+                // normalization. Fallback clear prevents the ref from sticking if api.play()
+                // fails or playerStateChanged never fires with state 1.
+                if (!forceHorizontalRef.current && cursorRef.current) {
+                    if (playStartHardSnapFallbackTimerRef.current !== null) {
+                        window.clearTimeout(playStartHardSnapFallbackTimerRef.current);
+                        playStartHardSnapFallbackTimerRef.current = null;
+                    }
+                    // Capture previous in-flight state before overwriting it.
+                    // Only reset the already-armed guard when this is a genuinely new play
+                    // attempt. If the effect re-runs mid-handoff (playStartHardSnapInFlightRef
+                    // already true), do NOT clear a snap that was already armed for this run.
+                    const _wasAlreadyInFlight = playStartHardSnapInFlightRef.current;
+                    playStartHardSnapInFlightRef.current = true;
+                    playStartHardSnapArmedAtRef.current = performance.now();
+                    if (!_wasAlreadyInFlight) {
+                        playStartHardSnapAlreadyArmedRef.current = false;
+                    }
+                    playStartHardSnapFallbackTimerRef.current = window.setTimeout(() => {
+                        playStartHardSnapFallbackTimerRef.current = null;
+                        playStartHardSnapInFlightRef.current = false;
+                        playStartHardSnapArmedAtRef.current = null;
+                        playStartHardSnapAlreadyArmedRef.current = false;
+                    }, 1500);
                 }
                 // ── [PlayStartBeatNormalization] ─────────────────────────────────────────
                 // When no loop is active and a beat was intentionally clicked/selected
                 // (or seeked to), normalize api.tickPosition to the beat's
                 // absolutePlaybackStart so api.play() begins exactly on the attack tick.
                 // effectiveIntentTick fallback: clickedTickRaw → seekTargetTickRef → api.tickPosition
+                let didNormalizeAndSeekForPlayStart = false;
                 {
                     const _clickedTickRaw = getIntentionalTick();
                     const _seekTargetTick = seekTargetTickRef.current ?? null;
@@ -5919,15 +6136,97 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         typeof _apiTickBeforeNormalization === 'number' &&
                         _apiTickBeforeNormalization > normalizedStartTick
                     ) {
+                        if (!forceHorizontalRef.current && !playStartHardSnapAlreadyArmedRef.current) {
+                            cursorRef.current?.requestSnap?.('play-start-hard-snap');
+                            playStartHardSnapAlreadyArmedRef.current = true;
+                        }
                         if ((api as any).tickPosition !== undefined) (api as any).tickPosition = normalizedStartTick;
                         api.player?.seekTicks?.(normalizedStartTick);
                         seekTargetTickRef.current = normalizedStartTick;
-                        (window as any).__maestroLastIntentionalTick = normalizedStartTick;
-                        (window as any).__maestroLastIntentionalTickAt = Date.now();
+                        if (normalizedStartTick != null && normalizedStartTick > 24) {
+                            (window as any).__maestroLastIntentionalTick = normalizedStartTick;
+                            (window as any).__maestroLastIntentionalTickAt = Date.now();
+                        }
                         (window as any).__maestroManualSeek = Date.now();
+                        didNormalizeAndSeekForPlayStart = true;
                     }
                 }
                 // ── end [PlayStartBeatNormalization] ─────────────────────────────────────
+                // [PagePlayStartHardSnapGateFix] V145.3: synchronous after normalization,
+                // before api.play(). The previous RAF deferral was a race — a queued
+                // paused-position playerPositionChanged could fire before the RAF, calling
+                // setBeat with stale lastTickApplied=1443 before forceHardSnapNextSetBeat
+                // was armed. Running here guarantees lastTickApplied=-1 and
+                // forceHardSnapNextSetBeat=true before any audio-worker event can land.
+                // Skip re-arm when normalization already called seekTicks — hard snap was
+                // already armed before the seek, and arming again would produce a second
+                // play-start-hard-snap that survives until the next live setBeat.
+                if (!forceHorizontalRef.current && !didNormalizeAndSeekForPlayStart && !playStartHardSnapAlreadyArmedRef.current) {
+                    if (isRendererDebugEnabled()) {
+                        console.warn('[page-cursor-reset-source]', {
+                            reason: 'about-to-request-play-start-hard-snap',
+                            site: 'post-normalization-fallback',
+                            didNormalizeAndSeekForPlayStart,
+                            playStartHardSnapInFlight: playStartHardSnapInFlightRef.current,
+                            apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                            playerState: (api as any)?.playerState ?? null,
+                            lastTickRef: lastTickRef.current,
+                            seekTargetTick: seekTargetTickRef.current,
+                            lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                        });
+                    }
+                    cursorRef.current?.requestSnap?.('play-start-hard-snap');
+                    playStartHardSnapAlreadyArmedRef.current = true;
+                    if (isRendererDebugEnabled()) {
+                        console.warn('[page-play-start-hard-snap]', {
+                            reason: 'sync-after-normalization',
+                            apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                            playerState: Number((api as any)?.playerState ?? -1),
+                            isPlayingRef: isPlayingRef.current,
+                            seekTargetTick: seekTargetTickRef.current ?? null,
+                            lastIntentionalTick:
+                                typeof window !== 'undefined'
+                                    ? (window as any).__maestroLastIntentionalTick ?? null
+                                    : null,
+                            rotationGateActive: rotationGateActiveRef.current,
+                            isSettling: isSettlingRef.current,
+                            forceHorizontal: forceHorizontalRef.current,
+                            layoutMode: (api as any)?.settings?.display?.layoutMode ?? null,
+                            lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
+                            preRotationAnchorTick: preRotationAnchorTickRef.current,
+                        });
+                    }
+                }
+                {
+                    const _resumeGateAnchor =
+                        Number((api as any)?.tickPosition ?? 0) ||
+                        lastTickRef.current ||
+                        lastStableRotationAnchorTickRef.current ||
+                        preRotationAnchorTickRef.current ||
+                        null;
+                    if (_resumeGateAnchor != null && _resumeGateAnchor > 24) {
+                        resumeTickGateAnchorRef.current = _resumeGateAnchor;
+                        resumeTickGateUntilRef.current = performance.now() + 400;
+                    }
+                }
+                // [LoopPlaybackRangeRotationRestore] If loop is active and liveLoopRange was
+                // recovered from playbackRangeRef.current (rotation race: api.playbackRange is
+                // null but React state still has the range), restore api.playbackRange before
+                // api.play() so AlphaTab actually loops. Without this, api.play() would start
+                // without a loop range and play through to the end of the song.
+                if (loopEnabledRef.current && liveLoopRange != null && api.playbackRange == null) {
+                    console.warn('[loop-playback-range-restore]', {
+                        reason: 'restored-api-playbackRange-before-play',
+                        liveLoopRange,
+                        apiPlaybackRangeBefore: api.playbackRange ?? null,
+                        apiTickPosition: Number((api as any)?.tickPosition ?? 0),
+                        lastTickRef: lastTickRef.current,
+                        lastStableAnchor: lastStableRotationAnchorTickRef.current,
+                        preRotationAnchor: preRotationAnchorTickRef.current,
+                        playerState: (api as any)?.playerState ?? null,
+                    });
+                    api.playbackRange = liveLoopRange;
+                }
                 api.play();
             } else {
                 if (isRendererDebugEnabled()) {
