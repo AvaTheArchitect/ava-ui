@@ -815,6 +815,8 @@ export default function MaestroApp(): React.JSX.Element {
                     setActiveTab('home')
                     setCurrentModule(null)
                     setActiveTool('none')
+                  } else if (item.id === 'profile') {
+                    router.push('/profile')
                   } else {
                     setActiveTab(item.id as TabId)
                   }
