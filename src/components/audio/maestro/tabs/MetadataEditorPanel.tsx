@@ -876,10 +876,11 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                     : `public/${tabId}/${pendingFile.name}`;
                 const { error: upErr } = await supabase.storage.from('tabs').upload(storagePath, pendingFile, { upsert: true });
                 if (upErr) throw upErr;
-                const { error: fpErr } = await supabase.from('tabs').update({
+                const { data: tabFileRow, error: fpErr } = await supabase.from('tabs').update({
                     file_name: base, file_extension: ext, file_path: storagePath,
-                }).eq('id', tabId);
+                }).eq('id', tabId).select('id').single();
                 if (fpErr) throw fpErr;
+                if (!tabFileRow) throw new Error('File save blocked — tab row not found or permission denied.');
                 setOriginalFileName(`${base}.${ext}`);
                 setPendingFile(null);
             }
@@ -930,8 +931,9 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
             // source is now form-driven — remove the extractedMeta fallback
 
 
-            const { error: metaErr } = await supabase.from('tabs').update(metadataPatch).eq('id', tabId);
+            const { data: metaRow, error: metaErr } = await supabase.from('tabs').update(metadataPatch).eq('id', tabId).select('id').single();
             if (metaErr) throw metaErr;
+            if (!metaRow) throw new Error('Metadata save blocked — tab row not found or permission denied.');
 
             // ── D. tab_youtube upsert / delete ─────────────────────────────────
             const { data: existingYt, error: ytFetchErr } = await supabase.from('tab_youtube').select('id, video_type').eq('tab_id', tabId);
