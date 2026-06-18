@@ -13,6 +13,8 @@ import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, Graduation
 
 // ✅ Fixed Import Path (case sensitive)
 import TunerDial from '@/components/tuner/TunerDial'
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/alphaTab/supabase"
 
 export type TabId = "home" | "songs" | "setlist" | "tools" | "profile"
 export type ModuleId = "practice" | "singers" | "jam" | "lessons" | "build" | "ai-tab"
@@ -233,8 +235,8 @@ const PrintComponent = ({ onClose }: { onClose: () => void }) => {
 export default function MaestroApp(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>("home")
   const [currentModule, setCurrentModule] = useState<ModuleId | null>(null)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [password, setPassword] = useState("")
+  const router = useRouter()
+  const [authChecked, setAuthChecked] = useState(false)
   const [toolDrawerOpen, setToolDrawerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -307,22 +309,15 @@ export default function MaestroApp(): React.JSX.Element {
     setButtonColorMode(savedButtonMode)
   }, [])
 
-  const checkPassword = () => {
-    if (password === "guitar2025") {
-      setIsAuthenticated(true)
-      sessionStorage.setItem("maestro-authenticated", "true")
-    } else {
-      alert("Incorrect password")
-      setPassword("")
-    }
-  }
-
   useEffect(() => {
-    const authenticated = sessionStorage.getItem("maestro-authenticated")
-    if (authenticated === "true") {
-      setIsAuthenticated(true)
-    }
-  }, [])
+    let mounted = true
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      if (!session) router.replace("/auth/sign-in")
+      else setAuthChecked(true)
+    })
+    return () => { mounted = false }
+  }, [router])
 
   // Language translations
   const translations = {
@@ -516,32 +511,10 @@ export default function MaestroApp(): React.JSX.Element {
     }
   ]
 
-  // ✅ PASSWORD SCREEN - FIXED FOR MOBILE (NO SCROLL)
-  if (!isAuthenticated) {
+  if (!authChecked) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center p-4 overflow-hidden">
-        <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full text-center">
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent mb-2">🎸 Maestro.AI</h2>
-          <p className="text-gray-600 text-lg mb-2">Guitar Practice Suite</p>
-          <p className="text-gray-500 text-sm mb-6">Enter password to access beta</p>
-
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && checkPassword()}
-            placeholder="Enter password"
-            className="w-full p-4 border-2 border-gray-300 rounded-xl text-lg mb-4 focus:border-purple-500 focus:outline-none"
-            autoFocus
-          />
-
-          <button
-            onClick={checkPassword}
-            className="w-full bg-gradient-to-r from-purple-600 to-purple-700 text-white p-4 rounded-xl text-lg font-semibold hover:from-purple-700 hover:to-purple-800 transition-all duration-300"
-          >
-            Access App
-          </button>
-        </div>
+      <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
       </div>
     )
   }
@@ -1088,6 +1061,18 @@ export default function MaestroApp(): React.JSX.Element {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Sign Out */}
+              <div>
+                <button
+                  onClick={() => {
+                    supabase.auth.signOut().then(() => router.replace('/auth/sign-in'))
+                  }}
+                  className="w-full flex items-center justify-center p-3 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors font-medium"
+                >
+                  Sign Out
+                </button>
               </div>
             </div>
           </div>
