@@ -1,0 +1,11 @@
+{
+  "name": "Maestro AI",
+  "short_name": "Maestro",
+  "description": "AI-Powered Music Learning Platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait-primary"
+}
