@@ -103,7 +103,7 @@ export default function UpdatePasswordPage() {
               minLength={8}
               autoComplete="new-password"
               placeholder="At least 8 characters"
-              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base focus:border-purple-500 focus:outline-none"
+              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:border-purple-500 focus:outline-none"
             />
           </div>
 
@@ -119,7 +119,7 @@ export default function UpdatePasswordPage() {
               required
               autoComplete="new-password"
               placeholder="Repeat new password"
-              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base focus:border-purple-500 focus:outline-none"
+              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:border-purple-500 focus:outline-none"
             />
           </div>
 

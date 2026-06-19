@@ -336,3 +336,16 @@ body.loop-dragging {
   -webkit-user-select: none !important;
   cursor: ew-resize !important;
 }
+
+
+/* ── Auth inputs — iOS autofill text visibility ──────────────────────────────
+   iOS Safari ignores `color` on autofilled fields; only -webkit-text-fill-color
+   takes effect. The inset box-shadow replaces the browser's yellow/blue
+   autofill background with white so the dark text stays readable. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827;                    /* gray-900 */
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset;
+  transition: background-color 5000s ease-in-out 0s;
+}

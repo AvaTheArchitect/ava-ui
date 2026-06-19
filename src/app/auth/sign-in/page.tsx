@@ -69,7 +69,7 @@ export default function SignInPage() {
               required
               autoComplete="email"
               placeholder="you@example.com"
-              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base focus:border-purple-500 focus:outline-none"
+              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:border-purple-500 focus:outline-none"
             />
           </div>
 
@@ -85,7 +85,7 @@ export default function SignInPage() {
               required
               autoComplete="current-password"
               placeholder="••••••••"
-              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base focus:border-purple-500 focus:outline-none"
+              className="w-full p-4 border-2 border-gray-300 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:border-purple-500 focus:outline-none"
             />
           </div>
 
