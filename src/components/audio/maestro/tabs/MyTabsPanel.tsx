@@ -204,15 +204,11 @@ const SongRowPopup: React.FC<{
     }, [onClose]);
 
     const fixedStyle: React.CSSProperties = anchorRect
-        ? (() => {
-            const PANEL_W = 846, PANEL_H = 750, PANEL_TOP = 102;
-            const panelLeft = (window.innerWidth - PANEL_W) / 2;
-            return {
-                position: 'fixed' as const,
-                right: (panelLeft + PANEL_W) - anchorRect.right,
-                bottom: (PANEL_TOP + PANEL_H) - anchorRect.top + 6,
-            };
-        })()
+        ? {
+            position: 'fixed' as const,
+            right: window.innerWidth - anchorRect.right,
+            bottom: window.innerHeight - anchorRect.top + 6,
+        }
         : { position: 'fixed' as const, right: 16, bottom: 100 };
 
     return (
@@ -662,10 +658,12 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 position: 'fixed', top: 102, left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 110,
-                width: 846, height: 750,
+                width: 'min(846px, calc(100vw - 24px))',
+                maxHeight: 'calc(100dvh - 110px)',
                 background: t.panelBg, borderRadius: 4,
                 boxShadow: 'var(--shadow-elevation)',
                 paddingTop: 45, paddingLeft: 28, paddingRight: 15,
+                paddingBottom: 'max(16px, env(safe-area-inset-bottom))' as React.CSSProperties['paddingBottom'],
                 boxSizing: 'border-box',
                 fontFamily: 'songsterr, -apple-system, system-ui, "system-ui", Arial, sans-serif',
                 fontWeight: 300, lineHeight: '18.4px', color: t.text,
@@ -674,11 +672,12 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 display: 'flex', flexDirection: 'column',
             }}>
 
-                {/* ── Search header: 769×72 ── */}
+                {/* ── Search header ── */}
                 <div style={{
                     position: 'sticky', top: 0, zIndex: 200,
-                    width: 769, height: 72, background: t.panelBg,
+                    width: '100%', minHeight: 72, background: t.panelBg,
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12,
                     flexShrink: 0,
                 }}>
                     <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: t.text, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -687,7 +686,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     <input type="search" placeholder="Search favorites"
                         value={search} onChange={e => setSearch(e.target.value)}
                         style={{
-                            width: 609, height: 44, padding: '0 18px', borderRadius: 22,
+                            flex: 1, minWidth: 0, maxWidth: 609, height: 44, padding: '0 18px', borderRadius: 22,
                             border: `1px solid ${t.inputBorder}`,
                             background: t.inputBg, color: t.text,
                             fontSize: 14, fontWeight: 300, fontFamily: 'inherit', outline: 'none',
@@ -696,7 +695,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 </div>
 
                 {/* ── Category tabs: sliding purple pill ── */}
-                <div style={{ width: 769, height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', paddingBottom: 8, boxSizing: 'border-box' }}>
+                <div style={{ width: '100%', height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', paddingBottom: 8, boxSizing: 'border-box' }}>
                     <div style={{
                         position: 'relative', width: '100%', height: 36,
                         background: t.tabContainerBg, borderRadius: 7,
@@ -722,21 +721,21 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
 
                 {/* ── Filter row — Favorites / All Songs only ── */}
                 {category !== 'playlists' && (
-                    <div style={{ width: 769, height: 55, flexShrink: 0, display: 'flex', alignItems: 'flex-end' }}>
+                    <div style={{ width: '100%', flexShrink: 0, paddingTop: 15 }}>
                         <div style={{
-                            width: 769, height: 40, marginTop: 15,
+                            width: '100%',
                             paddingLeft: 27, paddingRight: 25, boxSizing: 'border-box',
-                            display: 'flex', alignItems: 'center', gap: 15,
+                            display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 15,
                         }}>
-                            <div style={{ flex: '0 0 62px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flexShrink: 0, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconSort />} value={sort} theme={t} tooltip="Sort song list"
                                     onChange={v => setSort(v as SortOption)} options={SORT_OPTIONS} />
                             </div>
-                            <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconGenre />} value={genre} theme={t} tooltip="Filter by genre"
                                     onChange={v => setGenre(v as Genre)} options={MY_TABS_GENRE_OPTIONS} />
                             </div>
-                            <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconInstrument />} value={instrument} theme={t} tooltip="Filter by instrument"
                                     onChange={v => setInstrument(v as Instrument)}
                                     options={[
@@ -747,7 +746,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     ]}
                                 />
                             </div>
-                            <div style={{ flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
                                     onChange={v => setTuning(String(v))} listMaxHeight={380}
                                     header={
@@ -763,7 +762,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     options={TUNINGS}
                                 />
                             </div>
-                            <div style={{ flex: '0 0 62px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flexShrink: 0, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
                                     onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
                                     options={DIFFICULTY_OPTIONS}
@@ -775,7 +774,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
 
                 {/* ── A-Z sort row ── */}
                 {category !== 'playlists' && (
-                    <div style={{ width: 769, height: 55, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6, boxSizing: 'border-box' }}>
+                    <div style={{ width: '100%', height: 55, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6, boxSizing: 'border-box' }}>
                         <div style={{ width: 194 }}>
                             <AZToggle value={sortDir} onChange={setSortDir} theme={t} />
                         </div>
@@ -785,7 +784,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 {/* ── Song list ── */}
                 {category !== 'playlists' && (
                     <ul style={{
-                        flex: 1, overflowY: 'auto', overscrollBehavior: 'contain',
+                        flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain',
                         listStyle: 'none', margin: 0, padding: '8px 0',
                     }}>
                         {displayedSongs.length === 0 ? (
