@@ -3,28 +3,16 @@
 /**
  * MyTabsPanel.tsx
  * src/components/audio/maestro/tabs/MyTabsPanel.tsx
- * v3.1 — 2026-03-14
- *
- * 🔥 v3.1 CHANGES (pure import refactor — no UI or logic changes):
- * ✅ Removed inline TUNINGS array — now imported from @/lib/song-data
- * ✅ Removed inline GENRE_OPTIONS array — now imported from @/lib/song-data
- * ✅ MY_TABS_GENRE_OPTIONS built locally: [{ 'Any genre' }, ...GENRE_OPTIONS]
- * ✅ TUNINGS used directly — canonical array already starts with 'Any tunings'
+ * v3.3 — 2026-06-20
  *
  * 🔒 v3 FEATURES (PRESERVED):
- * Panel spec: 846×750, fixed top:102, centered, z-index:110
+ * Panel spec: desktop max 846×750, mobile responsive width/max-height, top:102, centered, z-index:110
  * Padding: 45 top / 28 left / 15 right
  * Backdrop:      var(--overlay-modal)    — globals.css
  * Panel shadow:  var(--shadow-elevation) — globals.css
  *
  * Pure UI component — no Supabase calls.
  * All data arrives via props from page.tsx → songState.
- *
- * v2 changes:
- *   ✅ Pencil (edit metadata) button added to each song row
- *   ✅ Pencil button closes MyTabsPanel and opens MetadataEditorPanel via parent state
- *   ✅ On close/back, MyTabsPanel reopens when launched from MyTabs
- *   ✅ Genre list trimmed: Rock · Metal · Blues · Country · Worship
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -307,7 +295,8 @@ const FilterDropdown: React.FC<{
     tooltip?: string;
     header?: React.ReactNode;
     listMaxHeight?: number;
-}> = ({ icon, options, value, onChange, theme: th, tooltip, header, listMaxHeight = 320 }) => {
+    align?: 'left' | 'right';
+}> = ({ icon, options, value, onChange, theme: th, tooltip, header, listMaxHeight = 320, align = 'left' }) => {
     const [open, setOpen] = useState(false);
     const [showTip, setShowTip] = useState(false);
     const ref = React.useRef<HTMLDivElement>(null);
@@ -380,7 +369,9 @@ const FilterDropdown: React.FC<{
             </button>
             {open && (
                 <div style={{
-                    position: 'absolute', top: '100%', left: 0, marginTop: 4,
+                    position: 'absolute', top: '100%',
+                    ...(align === 'right' ? { right: 0 } : { left: 0 }),
+                    marginTop: 4,
                     minWidth: 200, background: th.dropdownBg, borderRadius: 4,
                     boxShadow: th.dropdownShadow, border: `1px solid ${th.border}`,
                     zIndex: 200, overflow: 'hidden',
@@ -748,7 +739,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                             </div>
                             <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
-                                    onChange={v => setTuning(String(v))} listMaxHeight={380}
+                                    onChange={v => setTuning(String(v))} listMaxHeight={380} align="right"
                                     header={
                                         <button onClick={() => { }} style={{
                                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -765,7 +756,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                             <div style={{ flexShrink: 0, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
                                     onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
-                                    options={DIFFICULTY_OPTIONS}
+                                    options={DIFFICULTY_OPTIONS} align="right"
                                 />
                             </div>
                         </div>
