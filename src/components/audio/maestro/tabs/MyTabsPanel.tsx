@@ -300,11 +300,13 @@ const FilterDropdown: React.FC<{
     listMaxHeight?: number;
     align?: 'left' | 'right';
     menuWidth?: number | string;
-}> = ({ icon, options, value, onChange, theme: th, tooltip, header, topRow, listMaxHeight = 320, align = 'left', menuWidth = 260 }) => {
+    formatSelectedLabel?: (label: string) => string;
+}> = ({ icon, options, value, onChange, theme: th, tooltip, header, topRow, listMaxHeight = 320, align = 'left', menuWidth = 260, formatSelectedLabel }) => {
     const [open, setOpen] = useState(false);
     const [showTip, setShowTip] = useState(false);
     const ref = React.useRef<HTMLDivElement>(null);
-    const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+    const rawSelectedLabel = options.find(o => o.value === value)?.label ?? '';
+    const selectedLabel = formatSelectedLabel ? formatSelectedLabel(rawSelectedLabel) : rawSelectedLabel;
     const showLabel = value !== 'any' && value !== '';
 
     useEffect(() => {
@@ -752,6 +754,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     onChange={v => setTuning(String(v))} listMaxHeight={380} align="right" menuWidth={340}
                                     topRow={<>Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span></>}
                                     options={TUNINGS}
+                                    formatSelectedLabel={(label) => label.split('(')[0].trim()}
                                 />
                             </div>
                             <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
