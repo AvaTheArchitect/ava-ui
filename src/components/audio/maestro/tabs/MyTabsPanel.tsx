@@ -3,7 +3,7 @@
 /**
  * MyTabsPanel.tsx
  * src/components/audio/maestro/tabs/MyTabsPanel.tsx
- * v3.3 — 2026-06-20
+ * v3.6 — 2026-06-20
  *
  * 🔒 v3 FEATURES (PRESERVED):
  * Panel spec: desktop max 846×750, mobile responsive width/max-height, top:102, centered, z-index:110
@@ -294,9 +294,11 @@ const FilterDropdown: React.FC<{
     theme: ReturnType<typeof getTheme>;
     tooltip?: string;
     header?: React.ReactNode;
+    topRow?: React.ReactNode;
     listMaxHeight?: number;
     align?: 'left' | 'right';
-}> = ({ icon, options, value, onChange, theme: th, tooltip, header, listMaxHeight = 320, align = 'left' }) => {
+    menuWidth?: number | string;
+}> = ({ icon, options, value, onChange, theme: th, tooltip, header, topRow, listMaxHeight = 320, align = 'left', menuWidth = 260 }) => {
     const [open, setOpen] = useState(false);
     const [showTip, setShowTip] = useState(false);
     const ref = React.useRef<HTMLDivElement>(null);
@@ -372,7 +374,8 @@ const FilterDropdown: React.FC<{
                     position: 'absolute', top: '100%',
                     ...(align === 'right' ? { right: 0 } : { left: 0 }),
                     marginTop: 4,
-                    minWidth: 200, background: th.dropdownBg, borderRadius: 4,
+                    width: menuWidth, maxWidth: 'calc(100vw - 32px)',
+                    background: th.dropdownBg, borderRadius: 4,
                     boxShadow: th.dropdownShadow, border: `1px solid ${th.border}`,
                     zIndex: 200, overflow: 'hidden',
                 }}>
@@ -385,6 +388,17 @@ const FilterDropdown: React.FC<{
                         listStyle: 'none', margin: 0, padding: '4px 0',
                         maxHeight: listMaxHeight, overflowY: 'auto', overscrollBehavior: 'contain',
                     }}>
+                        {topRow && (
+                            <li role="option" aria-disabled="true" aria-selected={false} style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '9px 14px', cursor: 'not-allowed',
+                                fontSize: 13, fontWeight: 500,
+                                fontFamily: 'songsterr, -apple-system, system-ui, Arial, sans-serif',
+                                color: th.textMuted, opacity: 0.5,
+                            }}>
+                                {topRow}
+                            </li>
+                        )}
                         {options.map(opt => {
                             const sel = opt.value === value;
                             return (
@@ -617,16 +631,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
             />
             <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
                 onChange={v => setTuning(String(v))} listMaxHeight={280}
-                header={
-                    <button onClick={() => { }} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        width: '100%', padding: '4px 0', border: 'none', background: 'none',
-                        cursor: 'not-allowed', fontSize: 13, fontWeight: 500,
-                        color: t.textMuted, fontFamily: 'inherit', opacity: 0.5,
-                    }}>
-                        Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
-                    </button>
-                }
+                topRow={<>Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span></>}
                 options={TUNINGS}
             />
             <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
@@ -739,17 +744,8 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                             </div>
                             <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
-                                    onChange={v => setTuning(String(v))} listMaxHeight={380} align="right"
-                                    header={
-                                        <button onClick={() => { }} style={{
-                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                            width: '100%', padding: '4px 0', border: 'none', background: 'none',
-                                            cursor: 'not-allowed', fontSize: 13, fontWeight: 500,
-                                            color: t.textMuted, fontFamily: 'inherit', opacity: 0.5,
-                                        }}>
-                                            Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
-                                        </button>
-                                    }
+                                    onChange={v => setTuning(String(v))} listMaxHeight={380} align="right" menuWidth={340}
+                                    topRow={<>Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span></>}
                                     options={TUNINGS}
                                 />
                             </div>
