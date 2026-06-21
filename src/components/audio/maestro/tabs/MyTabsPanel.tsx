@@ -549,7 +549,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
     const displayedSongs = useMemo(() => {
         let list = category === 'favorites' ? getFavoriteSongs(songs) : [...songs];
         list = searchSongs(list, search);
-        list = filterSongs(list, { instrument: 'any', tuning, difficulty, genre });
+        list = filterSongs(list, { instrument, tuning, difficulty, genre });
         if (sort === 'title' || sort === 'artist') list = sortSongs(list, sort);
         if (sortDir === 'za') list = [...list].reverse();
         return list;
@@ -665,7 +665,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 maxHeight: 'calc(100dvh - 110px)',
                 background: t.panelBg, borderRadius: 4,
                 boxShadow: 'var(--shadow-elevation)',
-                paddingTop: 45, paddingLeft: 28, paddingRight: 15,
+                paddingTop: 45, paddingLeft: 28, paddingRight: 0,
                 paddingBottom: 'max(16px, env(safe-area-inset-bottom))' as React.CSSProperties['paddingBottom'],
                 boxSizing: 'border-box',
                 fontFamily: 'songsterr, -apple-system, system-ui, "system-ui", Arial, sans-serif',
@@ -696,6 +696,15 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                         }}
                     />
                 </div>
+
+                {/* Content frame — shared right gutter for all non-playlist rows */}
+                <div style={{
+                    flex: category !== 'playlists' ? 1 : undefined,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    paddingRight: 25,
+                }}>
 
                 {/* ── Category tabs: sliding purple pill ── */}
                 <div style={{ width: '100%', height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', paddingBottom: 8, boxSizing: 'border-box' }}>
@@ -743,8 +752,11 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     onChange={v => setInstrument(v as Instrument)}
                                     options={[
                                         { label: 'Any instruments', value: 'any' },
-                                        { label: 'Guitar', value: 'guitar' },
-                                        { label: 'Bass', value: 'bass' },
+                                        { label: 'Guitar (6-string)', value: 'guitar6' },
+                                        { label: 'Guitar (7-string)', value: 'guitar7' },
+                                        { label: 'Guitar (12-string)', value: 'guitar12' },
+                                        { label: 'Bass (4-string)', value: 'bass4' },
+                                        { label: 'Bass (5-string)', value: 'bass5' },
                                         { label: 'Drums', value: 'drums' },
                                     ]}
                                 />
@@ -883,6 +895,8 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                         />
                     );
                 })()}
+
+                </div>{/* end content frame */}
 
                 {/* ══ Playlists tab ══ */}
                 {category === 'playlists' && (
