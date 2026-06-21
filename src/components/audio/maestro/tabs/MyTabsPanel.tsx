@@ -3,7 +3,7 @@
 /**
  * MyTabsPanel.tsx
  * src/components/audio/maestro/tabs/MyTabsPanel.tsx
- * v3.6 — 2026-06-20
+ * v3.6.1 — 2026-06-20
  *
  * 🔒 v3 FEATURES (PRESERVED):
  * Panel spec: desktop max 846×750, mobile responsive width/max-height, top:102, centered, z-index:110
@@ -706,195 +706,195 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                     paddingRight: 25,
                 }}>
 
-                {/* ── Category tabs: sliding purple pill ── */}
-                <div style={{ width: '100%', height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', paddingBottom: 8, boxSizing: 'border-box' }}>
-                    <div style={{
-                        position: 'relative', width: '100%', height: 36,
-                        background: t.tabContainerBg, borderRadius: 7,
-                        display: 'flex', alignItems: 'center',
-                        padding: 2, boxSizing: 'border-box',
-                    }}>
+                    {/* ── Category tabs: sliding purple pill ── */}
+                    <div style={{ width: '100%', height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', paddingBottom: 8, boxSizing: 'border-box' }}>
                         <div style={{
-                            position: 'absolute', top: 2, left: 2,
-                            width: 'calc(33.3333% - 1.33px)', height: 'calc(100% - 4px)',
-                            background: DOT_PURPLE, borderRadius: 6,
-                            transform: `translateX(calc(${activeIdx * 100}% + ${activeIdx * 1.33}px))`,
-                            transition: 'transform 0.25s ease',
-                            pointerEvents: 'none', zIndex: 0,
-                        }} />
-                        {TABS.map(tab => (
-                            <TabButton key={tab.key} active={tab.key === category} theme={t}
-                                onClick={() => handleCategoryChange(tab.key)}>
-                                {tab.label}
-                            </TabButton>
-                        ))}
-                    </div>
-                </div>
-
-                {/* ── Filter row — Favorites / All Songs only ── */}
-                {category !== 'playlists' && (
-                    <div style={{ width: '100%', flexShrink: 0, paddingTop: 15 }}>
-                        <div className="mytabs-filter-row" style={{
-                            width: '100%',
-                            paddingLeft: 27, paddingRight: 25, boxSizing: 'border-box',
-                            display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 15,
+                            position: 'relative', width: '100%', height: 36,
+                            background: t.tabContainerBg, borderRadius: 7,
+                            display: 'flex', alignItems: 'center',
+                            padding: 2, boxSizing: 'border-box',
                         }}>
-                            <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FilterDropdown icon={<IconSort />} value={sort} theme={t} tooltip="Sort song list"
-                                    onChange={v => setSort(v as SortOption)} options={SORT_OPTIONS} />
-                            </div>
-                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FilterDropdown icon={<IconGenre />} value={genre} theme={t} tooltip="Filter by genre"
-                                    onChange={v => setGenre(v as Genre)} options={MY_TABS_GENRE_OPTIONS} />
-                            </div>
-                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FilterDropdown icon={<IconInstrument />} value={instrument} theme={t} tooltip="Filter by instrument"
-                                    onChange={v => setInstrument(v as Instrument)}
-                                    options={[
-                                        { label: 'Any instruments', value: 'any' },
-                                        { label: 'Guitar (6-string)', value: 'guitar6' },
-                                        { label: 'Guitar (7-string)', value: 'guitar7' },
-                                        { label: 'Guitar (12-string)', value: 'guitar12' },
-                                        { label: 'Bass (4-string)', value: 'bass4' },
-                                        { label: 'Bass (5-string)', value: 'bass5' },
-                                        { label: 'Drums', value: 'drums' },
-                                    ]}
-                                />
-                            </div>
-                            <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
-                                    onChange={v => setTuning(String(v))} listMaxHeight={380} align="right" menuWidth={340}
-                                    topRow={<>Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span></>}
-                                    options={TUNINGS}
-                                    formatSelectedLabel={(label) => label.split('(')[0].trim()}
-                                />
-                            </div>
-                            <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
-                                    onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
-                                    options={DIFFICULTY_OPTIONS} align="right"
-                                />
-                            </div>
+                            <div style={{
+                                position: 'absolute', top: 2, left: 2,
+                                width: 'calc(33.3333% - 1.33px)', height: 'calc(100% - 4px)',
+                                background: DOT_PURPLE, borderRadius: 6,
+                                transform: `translateX(calc(${activeIdx * 100}% + ${activeIdx * 1.33}px))`,
+                                transition: 'transform 0.25s ease',
+                                pointerEvents: 'none', zIndex: 0,
+                            }} />
+                            {TABS.map(tab => (
+                                <TabButton key={tab.key} active={tab.key === category} theme={t}
+                                    onClick={() => handleCategoryChange(tab.key)}>
+                                    {tab.label}
+                                </TabButton>
+                            ))}
                         </div>
                     </div>
-                )}
 
-                {/* ── A-Z sort row ── */}
-                {category !== 'playlists' && (
-                    <div style={{ width: '100%', height: 55, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6, boxSizing: 'border-box' }}>
-                        <div style={{ width: 194 }}>
-                            <AZToggle value={sortDir} onChange={setSortDir} theme={t} />
+                    {/* ── Filter row — Favorites / All Songs only ── */}
+                    {category !== 'playlists' && (
+                        <div style={{ width: '100%', flexShrink: 0, paddingTop: 15 }}>
+                            <div className="mytabs-filter-row" style={{
+                                width: '100%',
+                                paddingLeft: 27, paddingRight: 25, boxSizing: 'border-box',
+                                display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 15,
+                            }}>
+                                <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FilterDropdown icon={<IconSort />} value={sort} theme={t} tooltip="Sort song list"
+                                        onChange={v => setSort(v as SortOption)} options={SORT_OPTIONS} />
+                                </div>
+                                <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FilterDropdown icon={<IconGenre />} value={genre} theme={t} tooltip="Filter by genre"
+                                        onChange={v => setGenre(v as Genre)} options={MY_TABS_GENRE_OPTIONS} />
+                                </div>
+                                <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FilterDropdown icon={<IconInstrument />} value={instrument} theme={t} tooltip="Filter by instrument"
+                                        onChange={v => setInstrument(v as Instrument)}
+                                        options={[
+                                            { label: 'Any instruments', value: 'any' },
+                                            { label: 'Guitar (6-string)', value: 'guitar6' },
+                                            { label: 'Guitar (7-string)', value: 'guitar7' },
+                                            { label: 'Guitar (12-string)', value: 'guitar12' },
+                                            { label: 'Bass (4-string)', value: 'bass4' },
+                                            { label: 'Bass (5-string)', value: 'bass5' },
+                                            { label: 'Drums', value: 'drums' },
+                                        ]}
+                                    />
+                                </div>
+                                <div style={{ flex: '1 1 44px', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FilterDropdown icon={<IconTuning />} value={tuning} theme={t} tooltip="Filter by tuning"
+                                        onChange={v => setTuning(String(v))} listMaxHeight={380} align="right" menuWidth={340}
+                                        topRow={<>Add custom tuning <span style={{ fontSize: 18, lineHeight: 1 }}>+</span></>}
+                                        options={TUNINGS}
+                                        formatSelectedLabel={(label) => label.split('(')[0].trim()}
+                                    />
+                                </div>
+                                <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
+                                        onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
+                                        options={DIFFICULTY_OPTIONS} align="right"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* ── Song list ── */}
-                {category !== 'playlists' && (
-                    <ul style={{
-                        flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain',
-                        listStyle: 'none', margin: 0, padding: '8px 0',
-                    }}>
-                        {displayedSongs.length === 0 ? (
-                            <li style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                                {category === 'favorites' && search === '' && instrument === 'any' && tuning === 'any' && difficulty === 'any' && genre === 'any' ? (
-                                    <div style={{ fontSize: 14, color: t.textMuted, textAlign: 'center' }}>
-                                        No favorites yet — click the ★ on any song to save it.
-                                    </div>
-                                ) : (
-                                    <>
-                                        <svg width="72" height="72" viewBox="0 0 72 72" fill="none"
-                                            stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                            style={{ opacity: 0.55, marginBottom: 4 }}>
-                                            <circle cx="30" cy="30" r="22" />
-                                            <line x1="46" y1="46" x2="64" y2="64" />
-                                            <circle cx="23" cy="26" r="2" fill={t.textMuted} stroke="none" />
-                                            <circle cx="37" cy="26" r="2" fill={t.textMuted} stroke="none" />
-                                            <path d="M23 38 Q30 33 37 38" />
-                                        </svg>
-                                        <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Tabs not found</div>
-                                        <button
-                                            onClick={() => {
-                                                setSearch('');
-                                                setInstrument('any');
-                                                setTuning('any');
-                                                setDifficulty('any');
-                                                setGenre('any');
-                                            }}
-                                            style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit' }}
-                                        >
-                                            <span style={{ color: GREEN, fontWeight: 500 }}>Reset filter</span>
-                                            <span style={{ color: t.textMuted }}>
-                                                {' '}to see {category === 'favorites' ? getFavoriteSongs(songs).length : songs.length} songs
-                                            </span>
-                                        </button>
-                                    </>
-                                )}
-                            </li>
-                        ) : displayedSongs.map(song => {
-                            const isActive = currentSong?.id === song.id;
-                            return (
-                                <li key={song.id}
-                                    onClick={() => { onSongSelect(song.id); onClose(); }}
-                                    onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = t.rowHover; }}
-                                    onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 10,
-                                        padding: '10px 14px 10px 6px', borderRadius: 6,
-                                        cursor: 'pointer', marginRight: 8,
-                                        background: isActive ? t.rowActive : 'transparent',
-                                        transition: 'background 0.12s ease',
-                                    }}
-                                >
-                                    <button onClick={e => handleFavClick(e, song.id)}
-                                        title={song.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                                        style={{ flexShrink: 0, padding: 2, border: 'none', background: 'none', cursor: 'pointer' }}>
-                                        <IconStar filled={song.isFavorite} color={song.isFavorite ? t.favStarFilled : t.textMuted} />
-                                    </button>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 16, fontWeight: isActive ? 500 : 300, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {song.title}
+                    {/* ── A-Z sort row ── */}
+                    {category !== 'playlists' && (
+                        <div style={{ width: '100%', height: 55, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6, boxSizing: 'border-box' }}>
+                            <div style={{ width: 194 }}>
+                                <AZToggle value={sortDir} onChange={setSortDir} theme={t} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Song list ── */}
+                    {category !== 'playlists' && (
+                        <ul style={{
+                            flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain',
+                            listStyle: 'none', margin: 0, padding: '8px 0',
+                        }}>
+                            {displayedSongs.length === 0 ? (
+                                <li style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                    {category === 'favorites' && search === '' && instrument === 'any' && tuning === 'any' && difficulty === 'any' && genre === 'any' ? (
+                                        <div style={{ fontSize: 14, color: t.textMuted, textAlign: 'center' }}>
+                                            No favorites yet — click the ★ on any song to save it.
                                         </div>
-                                        <div style={{ fontSize: 15, color: t.textMuted, marginTop: 2 }}>
-                                            {song.artist}
-                                            {song.difficulty != null && (
-                                                <span style={{ marginLeft: 8, opacity: 0.7 }}>· {getDifficultyLabel(song.difficulty)}</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {!['bass', 'drums'].includes(instrument) && <DifficultyDots difficulty={song.difficulty} />}
-                                    <button
-                                        onClick={e => handleEditMetadata(e, song.id)}
-                                        title="Edit metadata"
-                                        style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted }}
-                                    >
-                                        <IconPencil />
-                                    </button>
-                                    <button
-                                        onClick={e => handleOpenPopup(e, song.id)}
-                                        title="Add to playlist / remove"
-                                        style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted, fontSize: 18, lineHeight: 1, fontFamily: 'inherit' }}
-                                    >
-                                        +
-                                    </button>
+                                    ) : (
+                                        <>
+                                            <svg width="72" height="72" viewBox="0 0 72 72" fill="none"
+                                                stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                                style={{ opacity: 0.55, marginBottom: 4 }}>
+                                                <circle cx="30" cy="30" r="22" />
+                                                <line x1="46" y1="46" x2="64" y2="64" />
+                                                <circle cx="23" cy="26" r="2" fill={t.textMuted} stroke="none" />
+                                                <circle cx="37" cy="26" r="2" fill={t.textMuted} stroke="none" />
+                                                <path d="M23 38 Q30 33 37 38" />
+                                            </svg>
+                                            <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Tabs not found</div>
+                                            <button
+                                                onClick={() => {
+                                                    setSearch('');
+                                                    setInstrument('any');
+                                                    setTuning('any');
+                                                    setDifficulty('any');
+                                                    setGenre('any');
+                                                }}
+                                                style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit' }}
+                                            >
+                                                <span style={{ color: GREEN, fontWeight: 500 }}>Reset filter</span>
+                                                <span style={{ color: t.textMuted }}>
+                                                    {' '}to see {category === 'favorites' ? getFavoriteSongs(songs).length : songs.length} songs
+                                                </span>
+                                            </button>
+                                        </>
+                                    )}
                                 </li>
-                            );
-                        })}
-                    </ul>
-                )}
+                            ) : displayedSongs.map(song => {
+                                const isActive = currentSong?.id === song.id;
+                                return (
+                                    <li key={song.id}
+                                        onClick={() => { onSongSelect(song.id); onClose(); }}
+                                        onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = t.rowHover; }}
+                                        onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 10,
+                                            padding: '10px 14px 10px 6px', borderRadius: 6,
+                                            cursor: 'pointer', marginRight: 8,
+                                            background: isActive ? t.rowActive : 'transparent',
+                                            transition: 'background 0.12s ease',
+                                        }}
+                                    >
+                                        <button onClick={e => handleFavClick(e, song.id)}
+                                            title={song.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                                            style={{ flexShrink: 0, padding: 2, border: 'none', background: 'none', cursor: 'pointer' }}>
+                                            <IconStar filled={song.isFavorite} color={song.isFavorite ? t.favStarFilled : t.textMuted} />
+                                        </button>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 16, fontWeight: isActive ? 500 : 300, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {song.title}
+                                            </div>
+                                            <div style={{ fontSize: 15, color: t.textMuted, marginTop: 2 }}>
+                                                {song.artist}
+                                                {song.difficulty != null && (
+                                                    <span style={{ marginLeft: 8, opacity: 0.7 }}>· {getDifficultyLabel(song.difficulty)}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {!['bass4', 'bass5', 'drums'].includes(instrument) && <DifficultyDots difficulty={song.difficulty} />}
+                                        <button
+                                            onClick={e => handleEditMetadata(e, song.id)}
+                                            title="Edit metadata"
+                                            style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted }}
+                                        >
+                                            <IconPencil />
+                                        </button>
+                                        <button
+                                            onClick={e => handleOpenPopup(e, song.id)}
+                                            title="Add to playlist / remove"
+                                            style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted, fontSize: 18, lineHeight: 1, fontFamily: 'inherit' }}
+                                        >
+                                            +
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
 
-                {/* ── SongRowPopup ── */}
-                {openPopupSongId && category !== 'playlists' && (() => {
-                    const song = songs.find(s => s.id === openPopupSongId);
-                    if (!song) return null;
-                    return (
-                        <SongRowPopup
-                            song={song} playlists={playlists} theme={t} anchorRect={popupAnchorRect}
-                            onAddToPlaylist={(sId, pId) => onPlaylistAction?.('add', sId, pId)}
-                            onRemoveFavorite={id => onToggleFavorite?.(id)}
-                            onClose={() => { setOpenPopupSongId(null); setPopupAnchorRect(null); }}
-                        />
-                    );
-                })()}
+                    {/* ── SongRowPopup ── */}
+                    {openPopupSongId && category !== 'playlists' && (() => {
+                        const song = songs.find(s => s.id === openPopupSongId);
+                        if (!song) return null;
+                        return (
+                            <SongRowPopup
+                                song={song} playlists={playlists} theme={t} anchorRect={popupAnchorRect}
+                                onAddToPlaylist={(sId, pId) => onPlaylistAction?.('add', sId, pId)}
+                                onRemoveFavorite={id => onToggleFavorite?.(id)}
+                                onClose={() => { setOpenPopupSongId(null); setPopupAnchorRect(null); }}
+                            />
+                        );
+                    })()}
 
                 </div>{/* end content frame */}
 

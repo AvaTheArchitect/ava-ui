@@ -66,8 +66,8 @@ export const sortSongs = (
 ): SongItem[] => {
     return [...songs].sort((a, b) => {
         switch (sortBy) {
-            case 'title':    return a.title.localeCompare(b.title);
-            case 'artist':   return a.artist.localeCompare(b.artist);
+            case 'title':    return (a.title ?? '').localeCompare(b.title ?? '');
+            case 'artist':   return (a.artist ?? '').localeCompare(b.artist ?? '');
             case 'difficulty': return (a.difficulty || 0) - (b.difficulty || 0);
             default:         return 0;
         }
