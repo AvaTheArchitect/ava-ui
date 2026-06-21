@@ -101,7 +101,7 @@ const DIFFICULTY_OPTIONS: { label: string; value: string | number }[] = [
 
 const DIFF_TO_DOTS: Record<number, number> = { 1: 2, 2: 4, 3: 6 };
 
-const FILTER_RESPONSIVE_CSS = `@media(max-width:600px){.mytabs-filter-root{display:block!important;position:static!important}.mytabs-filter-btn{width:100%!important;min-width:0!important;padding-left:6px!important;padding-right:6px!important}.mytabs-filter-label{display:none!important}.mytabs-filter-row{padding-left:4px!important;padding-right:4px!important;gap:6px!important;flex-wrap:nowrap!important;position:relative}.mytabs-filter-menu{left:8px!important;right:8px!important;width:auto!important;max-width:none!important}}`;
+const FILTER_RESPONSIVE_CSS = `@media(max-width:600px){.mytabs-filter-root{display:block!important;position:static!important}.mytabs-filter-btn{width:100%!important;min-width:0!important;padding-left:6px!important;padding-right:6px!important}.mytabs-filter-label{display:none!important}.mytabs-filter-row{padding-left:4px!important;padding-right:4px!important;gap:6px!important;flex-wrap:nowrap!important;position:relative}.mytabs-filter-menu{left:8px!important;right:8px!important;width:auto!important;max-width:none!important}}@media(max-width:764px){.mytabs-panel{top:calc(64px + env(safe-area-inset-top))!important;max-height:calc(100dvh - 64px - env(safe-area-inset-top))!important;}}`;
 const DOT_PURPLE = 'rgb(147,51,234)';
 const DOT_EMPTY = 'rgb(188,188,189)';
 const RED = 'rgb(220,38,38)';
@@ -657,7 +657,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
             }} />
 
             {/* Panel */}
-            <div style={{
+            <div className="mytabs-panel" style={{
                 position: 'fixed', top: 102, left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 110,
