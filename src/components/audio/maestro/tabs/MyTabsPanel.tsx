@@ -100,6 +100,8 @@ const DIFFICULTY_OPTIONS: { label: string; value: string | number }[] = [
 ];
 
 const DIFF_TO_DOTS: Record<number, number> = { 1: 2, 2: 4, 3: 6 };
+
+const FILTER_RESPONSIVE_CSS = `@media(max-width:600px){.mytabs-filter-root{display:block!important;position:static!important}.mytabs-filter-btn{width:100%!important;min-width:0!important;padding-left:6px!important;padding-right:6px!important}.mytabs-filter-label{display:none!important}.mytabs-filter-row{padding-left:4px!important;padding-right:4px!important;gap:6px!important;flex-wrap:nowrap!important;position:relative}.mytabs-filter-menu{left:8px!important;right:8px!important;width:auto!important;max-width:none!important}}`;
 const DOT_PURPLE = 'rgb(147,51,234)';
 const DOT_EMPTY = 'rgb(188,188,189)';
 const RED = 'rgb(220,38,38)';
@@ -315,7 +317,7 @@ const FilterDropdown: React.FC<{
     }, [open]);
 
     return (
-        <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+        <div ref={ref} className="mytabs-filter-root" style={{ position: 'relative', display: 'inline-block' }}>
             {showTip && !open && tooltip && (
                 <div style={{
                     position: 'absolute', bottom: '100%', left: '50%',
@@ -330,6 +332,7 @@ const FilterDropdown: React.FC<{
                 </div>
             )}
             <button
+                className="mytabs-filter-btn"
                 onClick={() => { setOpen(p => !p); setShowTip(false); }}
                 onMouseEnter={() => setShowTip(true)}
                 onMouseLeave={() => setShowTip(false)}
@@ -340,11 +343,12 @@ const FilterDropdown: React.FC<{
                     background: th.filterBtnBg, color: th.text,
                     cursor: 'pointer', fontSize: 13, fontWeight: 300,
                     fontFamily: 'songsterr, -apple-system, system-ui, Arial, sans-serif',
+                    minWidth: 0,
                 }}>
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                     {icon}
                     {showLabel && (
-                        <span style={{
+                        <span className="mytabs-filter-label" style={{
                             display: 'block',
                             marginTop: 2,
                             fontSize: 10,
@@ -370,7 +374,7 @@ const FilterDropdown: React.FC<{
                 </svg>
             </button>
             {open && (
-                <div style={{
+                <div className="mytabs-filter-menu" style={{
                     position: 'absolute', top: '100%',
                     ...(align === 'right' ? { right: 0 } : { left: 0 }),
                     marginTop: 4,
@@ -643,6 +647,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
 
     return (
         <>
+            <style>{FILTER_RESPONSIVE_CSS}</style>
             {/* Backdrop */}
             <div onClick={onClose} style={{
                 position: 'fixed', inset: 0, zIndex: 109,
@@ -718,12 +723,12 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                 {/* ── Filter row — Favorites / All Songs only ── */}
                 {category !== 'playlists' && (
                     <div style={{ width: '100%', flexShrink: 0, paddingTop: 15 }}>
-                        <div style={{
+                        <div className="mytabs-filter-row" style={{
                             width: '100%',
                             paddingLeft: 27, paddingRight: 25, boxSizing: 'border-box',
                             display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 15,
                         }}>
-                            <div style={{ flexShrink: 0, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconSort />} value={sort} theme={t} tooltip="Sort song list"
                                     onChange={v => setSort(v as SortOption)} options={SORT_OPTIONS} />
                             </div>
@@ -749,7 +754,7 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                     options={TUNINGS}
                                 />
                             </div>
-                            <div style={{ flexShrink: 0, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ flex: '0 1 auto', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FilterDropdown icon={<IconDifficulty />} value={difficulty} theme={t} tooltip="Filter by difficulty"
                                     onChange={v => setDifficulty(v === 'any' ? 'any' : Number(v) as Difficulty)}
                                     options={DIFFICULTY_OPTIONS} align="right"
