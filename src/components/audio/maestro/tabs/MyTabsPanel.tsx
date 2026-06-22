@@ -178,20 +178,22 @@ const SongRowPopup: React.FC<{
     playlists: ClientPlaylist[];
     theme: ReturnType<typeof getTheme>;
     anchorRect: DOMRect | null;
+    anchorEl: HTMLElement | null;
     onAddToPlaylist?: (songId: string, playlistId: string) => void;
     onRemoveFavorite?: (songId: string) => void;
     onClose: () => void;
-}> = ({ song, playlists, theme: th, anchorRect, onAddToPlaylist, onRemoveFavorite, onClose }) => {
+}> = ({ song, playlists, theme: th, anchorRect, anchorEl, onAddToPlaylist, onRemoveFavorite, onClose }) => {
     const [trashHovered, setTrashHovered] = useState(false);
     const ref = React.useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
+            if (anchorEl && anchorEl.contains(e.target as Node)) return;
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
-    }, [onClose]);
+    }, [onClose, anchorEl]);
 
     const fixedStyle: React.CSSProperties = anchorRect
         ? {
@@ -521,6 +523,8 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
     const [search, setSearch] = useState('');
     const [openPopupSongId, setOpenPopupSongId] = useState<string | null>(null);
     const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
+    const [popupAnchorEl, setPopupAnchorEl] = useState<HTMLElement | null>(null);
+    const [hoveredPopupSongId, setHoveredPopupSongId] = useState<string | null>(null);
     const [playlistSort, setPlaylistSort] = useState<PlaylistSort>('az');
     const [creatingPlaylist, setCreatingPlaylist] = useState(false);
     const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -537,6 +541,8 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
         setRenamingId(null);
         setRenameValue('');
         setOpenPopupSongId(null);
+        setPopupAnchorRect(null);
+        setPopupAnchorEl(null);
     }, []);
 
     useEffect(() => {
@@ -598,9 +604,12 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
         if (openPopupSongId === songId) {
             setOpenPopupSongId(null);
             setPopupAnchorRect(null);
+            setPopupAnchorEl(null);
         } else {
+            const button = e.currentTarget as HTMLElement;
             setOpenPopupSongId(songId);
-            setPopupAnchorRect((e.currentTarget as HTMLButtonElement).getBoundingClientRect());
+            setPopupAnchorRect(button.getBoundingClientRect());
+            setPopupAnchorEl(button);
         }
     }, [openPopupSongId]);
 
@@ -845,9 +854,9 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                             transition: 'background 0.12s ease',
                                         }}
                                     >
-                                        <button onClick={e => handleFavClick(e, song.id)}
+                                        <button type="button" onClick={e => handleFavClick(e, song.id)}
                                             title={song.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                                            style={{ flexShrink: 0, padding: 2, border: 'none', background: 'none', cursor: 'pointer' }}>
+                                            style={{ flexShrink: 0, padding: 8, border: 'none', background: 'none', cursor: 'pointer' }}>
                                             <IconStar filled={song.isFavorite} color={song.isFavorite ? t.favStarFilled : t.textMuted} />
                                         </button>
                                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -863,18 +872,36 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                                         </div>
                                         {!['bass4', 'bass5', 'drums'].includes(instrument) && <DifficultyDots difficulty={song.difficulty} />}
                                         <button
+                                            type="button"
                                             onClick={e => handleEditMetadata(e, song.id)}
                                             title="Edit metadata"
-                                            style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted }}
+                                            style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted }}
                                         >
                                             <IconPencil />
                                         </button>
                                         <button
+                                            type="button"
+                                            onMouseDown={e => { e.stopPropagation(); }}
                                             onClick={e => handleOpenPopup(e, song.id)}
+                                            onMouseEnter={() => setHoveredPopupSongId(song.id)}
+                                            onMouseLeave={() => setHoveredPopupSongId(null)}
                                             title="Add to playlist / remove"
-                                            style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.textMuted, fontSize: 18, lineHeight: 1, fontFamily: 'inherit' }}
+                                            style={{ width: 32, height: 32, flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
                                         >
-                                            +
+                                            <span style={{
+                                                width: 22, height: 22, borderRadius: 4,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                pointerEvents: 'none', fontSize: 18, lineHeight: 1,
+                                                transition: 'background 0.12s ease, color 0.12s ease',
+                                                background: openPopupSongId === song.id
+                                                    ? 'rgb(249,115,22)'
+                                                    : hoveredPopupSongId === song.id
+                                                        ? DOT_PURPLE
+                                                        : 'transparent',
+                                                color: openPopupSongId === song.id || hoveredPopupSongId === song.id
+                                                    ? 'white'
+                                                    : t.textMuted,
+                                            }}>+</span>
                                         </button>
                                     </li>
                                 );
@@ -889,9 +916,10 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
                         return (
                             <SongRowPopup
                                 song={song} playlists={playlists} theme={t} anchorRect={popupAnchorRect}
+                                anchorEl={popupAnchorEl}
                                 onAddToPlaylist={(sId, pId) => onPlaylistAction?.('add', sId, pId)}
                                 onRemoveFavorite={id => onToggleFavorite?.(id)}
-                                onClose={() => { setOpenPopupSongId(null); setPopupAnchorRect(null); }}
+                                onClose={() => { setOpenPopupSongId(null); setPopupAnchorRect(null); setPopupAnchorEl(null); }}
                             />
                         );
                     })()}
