@@ -2022,7 +2022,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 : getPageAuthorityScrollTop(_snapAuthority);
             const shouldRestore =
                 !isDeviceLandscape() &&
-                tweenTo > 1000 &&
+                tweenTo > 50 &&
                 currentTop < 100;
             if (isRendererDebugEnabled()) {
                 console.log('[page-scroll-authority-restore]', {
@@ -2976,6 +2976,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const _lastTick = lastTickRef.current;
                             const _lastStable = lastStableRotationAnchorTickRef.current;
                             const _redundantSettlingPrime =
+                                !rotationGateActiveRef.current &&
                                 _playerState === 0 &&
                                 isSettlingRef.current &&
                                 !!cursorRef.current &&
