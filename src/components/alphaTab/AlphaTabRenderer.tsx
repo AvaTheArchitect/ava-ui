@@ -6552,6 +6552,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     if (seekTicks) seekTicks(bestTick);
                                     api.tickPosition = bestTick;
                                     resetBeatAcceptance();
+                                    setLastStableRotationAnchorTick(bestTick, 'touch-seek');
                                     landscapeScrollStateRef.current = null;
                                 }
                                 cursorRef.current?.requestSnap('touch-seek');
@@ -6709,6 +6710,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (seekTicks) seekTicks(safeTarget);
                 api.tickPosition = safeTarget;
                 resetBeatAcceptance();
+                setLastStableRotationAnchorTick(safeTarget, 'click-seek');
                 publishCursorAtTick(safeTarget);
                 if (wasPlaying) {
                     resumeTimerRef.current = window.setTimeout(() => {
