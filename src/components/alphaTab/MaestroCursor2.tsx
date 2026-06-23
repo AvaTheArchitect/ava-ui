@@ -81,8 +81,6 @@ export class MaestroCursorV2 {
 
     private nextNoteX: number | null = null;
     private stayPutMode = false;
-    private noNextBeatMode = false; // true only when setBeat has no next candidate (final beat / end of song)
-    private terminalSameRowNoAdvanceMode = false; // true when Site A fires but no forward same-row beat follows
     // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
     // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
     // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
@@ -242,8 +240,6 @@ export class MaestroCursorV2 {
             this.lastTickApplied = -1;
             this.nextNoteX = null;
             this.stayPutMode = false;
-            this.noNextBeatMode = false;
-            this.terminalSameRowNoAdvanceMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -376,8 +372,6 @@ export class MaestroCursorV2 {
         // ── Resolve next anchor (LERP target) ────────────────────────────────
         this.nextNoteX = null;
         this.stayPutMode = false;
-        this.noNextBeatMode = false;
-        this.terminalSameRowNoAdvanceMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
 
         if (nextCandidate) {
@@ -391,123 +385,53 @@ export class MaestroCursorV2 {
                     const sameRow = Math.abs(nb.visualBounds.y - this.currentY) < 5;
                     if (sameRow && nx > this.currentNoteX + 0.5) {
                         this.nextNoteX = nx;
-                        // Last-bar guard: if nextCandidate is in the final bar and no
-                        // forward same-row beat follows it, the cursor should reach barRight
-                        // rather than stopping at the tiny nextNoteX advance.
-                        const _ncMasterBarB1 = nextCandidate.voice?.bar?.masterBar;
-                        if (_ncMasterBarB1?.nextMasterBar == null) {
-                            const _ncBarBeatsB1 = nextCandidate.voice?.bar?.beats;
-                            const _ncIdxB1 = Array.isArray(_ncBarBeatsB1)
-                                ? (_ncBarBeatsB1 as any[]).indexOf(nextCandidate) : -1;
-                            let _hasForwardB1 = false;
-                            if (_ncIdxB1 >= 0) {
-                                for (let _i = _ncIdxB1 + 1; _i < (_ncBarBeatsB1 as any[]).length; _i++) {
-                                    const _bBb = this.api?.renderer?.boundsLookup?.findBeat?.((_ncBarBeatsB1 as any[])[_i]);
-                                    if (!_bBb?.visualBounds) continue;
-                                    const _bx = typeof _bBb.onNotesX === 'number'
-                                        ? _bBb.onNotesX : _bBb.visualBounds.x;
-                                    if (Math.abs(_bBb.visualBounds.y - this.currentY) < 5
-                                        && _bx > this.currentNoteX + 0.5) {
-                                        _hasForwardB1 = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!_hasForwardB1) {
-                                this.nextNoteX = null;
-                                this.terminalSameRowNoAdvanceMode = true;
-                            }
-                        }
                     } else if (sameRow && nx <= this.currentNoteX + 0.5) {
-                        // Scan remaining beats in nextCandidate's bar for any same-row beat
-                        // that advances X past the current position. If found: normal
-                        // stayPutMode (a forward setBeat arrives later). If not: terminal
-                        // gesture (hammer-on/tie/slur at bar end) — fall through to the
-                        // existing barRight interpolation in setTick via terminalSameRowNoAdvanceMode.
-                        const _ncBarBeats = nextCandidate.voice?.bar?.beats;
-                        const _ncIdx = Array.isArray(_ncBarBeats)
-                            ? (_ncBarBeats as any[]).indexOf(nextCandidate) : -1;
-                        let _hasForwardAfterNC = false;
-                        if (_ncIdx >= 0) {
-                            for (let _i = _ncIdx + 1; _i < (_ncBarBeats as any[]).length; _i++) {
-                                const _b = (_ncBarBeats as any[])[_i];
-                                const _bBb = this.api?.renderer?.boundsLookup?.findBeat?.(_b);
-                                if (!_bBb?.visualBounds) continue;
-                                const _bx = typeof _bBb.onNotesX === 'number'
-                                    ? _bBb.onNotesX : _bBb.visualBounds.x;
-                                if (Math.abs(_bBb.visualBounds.y - this.currentY) < 5
-                                    && _bx > this.currentNoteX + 0.5) {
-                                    _hasForwardAfterNC = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (_hasForwardAfterNC) {
-                            this.stayPutMode = true;
-                        } else {
-                            this.terminalSameRowNoAdvanceMode = true;
-                        }
+                        this.stayPutMode = true;
                     } else {
-                        // Next beat is on a different row/system (Site B).
-                        // Scan the current beat's bar for any later same-row forward beat.
-                        // If one exists the current beat still has same-row successors — stayPutMode
-                        // suppresses a premature barRight walk. If none exists this is effectively
-                        // the last same-row beat before a row/bar end — fall through to barRight.
-                        const _curBarBeats = beat?.voice?.bar?.beats;
-                        const _curBeatIdx = Array.isArray(_curBarBeats)
-                            ? (_curBarBeats as any[]).indexOf(beat) : -1;
-                        let _hasForwardSameRow = false;
-                        if (_curBeatIdx >= 0) {
-                            for (let _i = _curBeatIdx + 1; _i < (_curBarBeats as any[]).length; _i++) {
-                                const _bBb = this.api?.renderer?.boundsLookup?.findBeat?.((_curBarBeats as any[])[_i]);
-                                if (!_bBb?.visualBounds) continue;
-                                const _bx = typeof _bBb.onNotesX === 'number'
-                                    ? _bBb.onNotesX : _bBb.visualBounds.x;
-                                if (Math.abs(_bBb.visualBounds.y - this.currentY) < 5
-                                    && _bx > this.currentNoteX + 0.5) {
-                                    _hasForwardSameRow = true;
-                                    break;
-                                }
-                            }
+                        // Next beat is on a different row/system.
+                        // Do not interpolate toward masterBar.right; hold near current notehead
+                        // until the next row's setBeat arrives.
+                        if (cursor2DiagEnabled()) {
+                            const _mbCR = beat?.voice?.bar?.masterBar
+                                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
+                                : null;
+                            console.warn('[maestro-cursor2-boundary]', {
+                                reason: 'cross-row-next-beat-risk',
+                                currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                                nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
+                                currentNoteX: this.currentNoteX,
+                                currentY: this.currentY,
+                                nextX: nx,
+                                nextY: nb.visualBounds.y,
+                                xDelta: nx - this.currentNoteX,
+                                yDelta: nb.visualBounds.y - this.currentY,
+                                nextNoteX: this.nextNoteX,
+                                stayPutMode: this.stayPutMode,
+                                loopEndX: this.loopEndX,
+                                expandedBeatDuration: this.expandedBeatDuration,
+                                forceHardSnapNextSetBeat: this.forceHardSnapNextSetBeat,
+                                barRight: _mbCR?.visualBounds
+                                    ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
+                                    : null,
+                            });
                         }
-                        if (_hasForwardSameRow) {
-                            if (cursor2DiagEnabled()) {
-                                const _mbCR = beat?.voice?.bar?.masterBar
-                                    ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
-                                    : null;
-                                console.warn('[maestro-cursor2-boundary]', {
-                                    reason: 'cross-row-next-beat-stay-put',
-                                    currentAbsStart: beat?.absolutePlaybackStart ?? null,
-                                    nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
-                                    currentNoteX: this.currentNoteX,
-                                    currentY: this.currentY,
-                                    nextX: nx,
-                                    nextY: nb.visualBounds.y,
-                                    barRight: _mbCR?.visualBounds
-                                        ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
-                                        : null,
-                                });
-                            }
-                            this.stayPutMode = true;
-                        } else {
-                            if (cursor2DiagEnabled()) {
-                                const _mbCR = beat?.voice?.bar?.masterBar
-                                    ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
-                                    : null;
-                                console.warn('[maestro-cursor2-boundary]', {
-                                    reason: 'cross-row-bar-end-terminal',
-                                    currentAbsStart: beat?.absolutePlaybackStart ?? null,
-                                    nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
-                                    currentNoteX: this.currentNoteX,
-                                    currentY: this.currentY,
-                                    nextX: nx,
-                                    nextY: nb.visualBounds.y,
-                                    barRight: _mbCR?.visualBounds
-                                        ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
-                                        : null,
-                                });
-                            }
-                            this.terminalSameRowNoAdvanceMode = true;
+                        this.stayPutMode = true;
+                        if (cursor2DiagEnabled()) {
+                            const _mbCR = beat?.voice?.bar?.masterBar
+                                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
+                                : null;
+                            console.warn('[maestro-cursor2-boundary]', {
+                                reason: 'cross-row-next-beat-stay-put',
+                                currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                                nextAbsStart: nextCandidate?.absolutePlaybackStart ?? null,
+                                currentNoteX: this.currentNoteX,
+                                currentY: this.currentY,
+                                nextX: nx,
+                                nextY: nb.visualBounds.y,
+                                barRight: _mbCR?.visualBounds
+                                    ? _mbCR.visualBounds.x + _mbCR.visualBounds.w
+                                    : null,
+                            });
                         }
                     }
                 }
@@ -515,7 +439,6 @@ export class MaestroCursorV2 {
         }
         if (!nextCandidate) {
             this.stayPutMode = true;
-            this.noNextBeatMode = true;
             if (cursor2DiagEnabled()) {
                 const _mbNull = beat?.voice?.bar?.masterBar
                     ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
@@ -638,7 +561,7 @@ export class MaestroCursorV2 {
         if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
             interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
             interpolatedX = Math.min(interpolatedX, this.nextNoteX);
-        } else if (this.stayPutMode && !this.noNextBeatMode && !this.terminalSameRowNoAdvanceMode) {
+        } else if (this.stayPutMode) {
             const STAY_DRIFT_PX = 4;
             interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
         } else {
@@ -819,8 +742,6 @@ export class MaestroCursorV2 {
         if (!preserveActivePlaybackTarget) {
             this.nextNoteX = null;
             this.stayPutMode = false;
-            this.noNextBeatMode = false;
-            this.terminalSameRowNoAdvanceMode = false;
         }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
