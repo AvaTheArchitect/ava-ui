@@ -2,9 +2,14 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.4
- * Date: June 12th, 2026
+ * Current version: V145.7
+ * Date: June 22nd, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.7 Locks:
+ * ✅ [RemovePlayStartBeatNormalization]
+ *        Removes the V145-only non-loop play-start seek normalization absent in V134LOCKED.
+ *        Prevents stale intentional tick reuse from seeking playback backward/restarting audio during play-start.
  *
  * V145.6 Locks:
  * ✅ [Cursor2BoundaryGuard]
@@ -6105,53 +6110,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         playStartHardSnapAlreadyArmedRef.current = false;
                     }, 1500);
                 }
-                // ── [PlayStartBeatNormalization] ─────────────────────────────────────────
-                // When no loop is active and a beat was intentionally clicked/selected
-                // (or seeked to), normalize api.tickPosition to the beat's
-                // absolutePlaybackStart so api.play() begins exactly on the attack tick.
-                // effectiveIntentTick fallback: clickedTickRaw → seekTargetTickRef → api.tickPosition
-                let didNormalizeAndSeekForPlayStart = false;
-                {
-                    const _clickedTickRaw = getIntentionalTick();
-                    const _seekTargetTick = seekTargetTickRef.current ?? null;
-                    const _apiTickBeforeNormalization = (api as any)?.tickPosition ?? null;
-
-                    const _effectiveIntentTick: number | null =
-                        _clickedTickRaw != null ? _clickedTickRaw
-                        : _seekTargetTick != null ? _seekTargetTick
-                        : _apiTickBeforeNormalization;
-
-                    const _normTickCache = (api as any)?.tickCache;
-                    const _normTrackSet = getTrackSet(api);
-                    const _normBeatResult = (_effectiveIntentTick != null && _normTickCache?.findBeat)
-                        ? _normTickCache.findBeat(_normTrackSet, _effectiveIntentTick)
-                        : null;
-                    const _normBeat = _normBeatResult?.beat ?? null;
-
-                    const normalizedStartTick: number | null = _normBeat?.absolutePlaybackStart ?? null;
-                    if (
-                        liveLoopRange == null &&
-                        _effectiveIntentTick != null &&
-                        normalizedStartTick != null &&
-                        typeof _apiTickBeforeNormalization === 'number' &&
-                        _apiTickBeforeNormalization > normalizedStartTick
-                    ) {
-                        if (!forceHorizontalRef.current && !playStartHardSnapAlreadyArmedRef.current) {
-                            cursorRef.current?.requestSnap?.('play-start-hard-snap');
-                            playStartHardSnapAlreadyArmedRef.current = true;
-                        }
-                        if ((api as any).tickPosition !== undefined) (api as any).tickPosition = normalizedStartTick;
-                        api.player?.seekTicks?.(normalizedStartTick);
-                        seekTargetTickRef.current = normalizedStartTick;
-                        if (normalizedStartTick != null && normalizedStartTick > 24) {
-                            (window as any).__maestroLastIntentionalTick = normalizedStartTick;
-                            (window as any).__maestroLastIntentionalTickAt = Date.now();
-                        }
-                        (window as any).__maestroManualSeek = Date.now();
-                        didNormalizeAndSeekForPlayStart = true;
-                    }
-                }
-                // ── end [PlayStartBeatNormalization] ─────────────────────────────────────
+                // [RemovePlayStartBeatNormalization] V145.7: removed — see lock note at top of file.
+                const didNormalizeAndSeekForPlayStart = false;
                 // [PagePlayStartHardSnapGateFix] V145.3: synchronous after normalization,
                 // before api.play(). The previous RAF deferral was a race — a queued
                 // paused-position playerPositionChanged could fire before the RAF, calling
