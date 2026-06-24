@@ -4733,7 +4733,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // Restore -120 margin (Labs strategy) so we wrap before the
                 // final tick rather than at/after it — prevents overshoot on
                 // both cursors.
-                const liveRange = playbackRangeRef.current ?? (api.playbackRange as { startTick: number; endTick: number } | null);
+                // [LoopClickReseatFix] V1.8.7: During a manual loop-selection, BeatCustomLoopOverlay
+                // writes api.playbackRange directly (before React state catches up). Prefer the
+                // live api value in that window so the wrap guard uses the new range — not the
+                // previous one — and does not falsely wrap a downward loop-click back to the old start.
+                const _manualSeekAt = (window as any).__maestroManualSeek as number | undefined;
+                const _recentManualSeek =
+                    typeof _manualSeekAt === 'number' && Date.now() - _manualSeekAt < 500;
+                const _apiRange = api.playbackRange as { startTick: number; endTick: number } | null;
+                const liveRange = _recentManualSeek
+                    ? (_apiRange ?? playbackRangeRef.current)
+                    : (playbackRangeRef.current ?? _apiRange);
                 const LOOP_WRAP_MARGIN = 30; // reduced from 120 — 120 was too aggressive for 60-tick slide subdivisions
                 if (loopEnabledRef.current && liveRange) {
                     // ── [loop-click-reseat-probe] below-startTick diagnostic ──────────────

@@ -707,16 +707,20 @@ export default function BeatCustomLoopOverlay({
             const cursor = (window as any).__maestroCursor;
             cursor?.requestSnap?.('loop-toggle-on');
         } else if (source === 'click') {
-            if (api.tickPosition !== undefined) {
-                api.tickPosition = clickedTick;
-            }
-            api.player?.seekTicks?.(clickedTick);
-            (window as any).__maestroManualSeek = Date.now();
+            // V1.8.8: Arm the manual-seek globals BEFORE api.tickPosition / seekTicks
+            // so AlphaTabRenderer's playerPositionChanged sees the freeze gate already
+            // armed if the setter fires the event synchronously.
+            const manualSeekNow = Date.now();
+            (window as any).__maestroManualSeek = manualSeekNow;
             // V1.8.5: Tell AlphaTabRenderer's seek-freeze gate which tick to
             // expect. Without this, a stale seekTargetTickRef (e.g. 0 from a
             // prior touch/landscape seek) would filter out the clickedTick event
             // and both AlphaTab-internal startTick seeks, leaving cursor frozen.
             (window as any).__maestroManualSeekTargetTick = clickedTick;
+            if (api.tickPosition !== undefined) {
+                api.tickPosition = clickedTick;
+            }
+            api.player?.seekTicks?.(clickedTick);
             // V1.8.6: Allow playerPositionChanged regression guard to accept
             // intentional cursor movement to an earlier tapped beat/bar.
             // Matches the manual handleClick pattern in AlphaTabRenderer.
