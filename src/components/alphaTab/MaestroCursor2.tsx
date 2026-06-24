@@ -1,9 +1,18 @@
 'use client';
 
 /**
- * Last Updated June 23rd, 2026
- * Version V1.6
+ * Last Updated June 24th, 2026
+ * Version V1.7
  * File: components/alphaTab/MaestroCursor2.tsx
+ *
+ * V1.7 LOCKS:
+ * ✅ [TerminalSameRowNoAdvanceMode] Site B cross-row handoff now scans the current
+ *    voice's remaining beats. If the scan is clean and no later same-row forward
+ *    beat exists, Cursor2 allows setTick to fall through to bar-right interpolation
+ *    so hammer-on/slur/tie endings can reach the current row barline.
+ * ✅ [SiteBScanWasCleanGuard] Missing or unstable beat bounds keep stayPutMode active
+ *    instead of arming terminalSameRowNoAdvanceMode, protecting against Boundary
+ *    Monster regressions during render, rotation, or layout settling.
  *
  * V1.6 LOCKS:
  * ✅ [BarEndGapMode] When AlphaTab provides no preScannedNextBeat for the final beat before
