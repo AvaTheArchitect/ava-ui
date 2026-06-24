@@ -1,9 +1,19 @@
 'use client';
 
 /**
- * Last Updated June 12th, 2026
- * Version V1.5
+ * Last Updated June 23rd, 2026
+ * Version V1.6
  * File: components/alphaTab/MaestroCursor2.tsx
+ *
+ * V1.6 LOCKS:
+ * ✅ [BarEndGapMode] When AlphaTab provides no preScannedNextBeat for the final beat before
+ *    a real next master bar, Cursor2 now detects the bounded end-of-bar gap and allows
+ *    setTick to fall through to the existing bar-right interpolation instead of using the
+ *    4px stayPut drift. This lets isolated/single notes travel cleanly to the current barline.
+ * ✅ [BoundaryMonsterGuard] barEndGapMode only arms when the current beat has a valid
+ *    masterBar, a real nextMasterBar, and a positive bounded gap to nextMasterBar.start.
+ *    This prevents transient render/rotation null candidates from reintroducing the
+ *    Boundary Monster.
  *
  * V1.5 LOCKS:
  * ✅ [FirstTickSmallMoveBypass] After a fresh setBeat/hard-snap anchor, Cursor2 allows
@@ -81,6 +91,7 @@ export class MaestroCursorV2 {
 
     private nextNoteX: number | null = null;
     private stayPutMode = false;
+    private barEndGapMode = false;
     // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
     // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
     // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
@@ -240,6 +251,7 @@ export class MaestroCursorV2 {
             this.lastTickApplied = -1;
             this.nextNoteX = null;
             this.stayPutMode = false;
+            this.barEndGapMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -372,6 +384,7 @@ export class MaestroCursorV2 {
         // ── Resolve next anchor (LERP target) ────────────────────────────────
         this.nextNoteX = null;
         this.stayPutMode = false;
+        this.barEndGapMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
 
         if (nextCandidate) {
@@ -439,6 +452,24 @@ export class MaestroCursorV2 {
         }
         if (!nextCandidate) {
             this.stayPutMode = true;
+
+            const _mb = beat?.voice?.bar?.masterBar;
+            const _beatAbs = beat?.absolutePlaybackStart ?? null;
+            const _nextMasterBarStart = _mb?.nextMasterBar?.start ?? null;
+            const _gapToNextMasterBarStart =
+                typeof _beatAbs === 'number' && typeof _nextMasterBarStart === 'number'
+                    ? _nextMasterBarStart - _beatAbs
+                    : null;
+
+            const _isBarEndGap =
+                _mb != null &&
+                _mb.nextMasterBar != null &&
+                typeof _gapToNextMasterBarStart === 'number' &&
+                _gapToNextMasterBarStart > 0 &&
+                _gapToNextMasterBarStart <= 960;
+
+            this.barEndGapMode = _isBarEndGap;
+
             if (cursor2DiagEnabled()) {
                 const _mbNull = beat?.voice?.bar?.masterBar
                     ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
@@ -561,7 +592,7 @@ export class MaestroCursorV2 {
         if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
             interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
             interpolatedX = Math.min(interpolatedX, this.nextNoteX);
-        } else if (this.stayPutMode) {
+        } else if (this.stayPutMode && !this.barEndGapMode) {
             const STAY_DRIFT_PX = 4;
             interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
         } else {
@@ -742,6 +773,7 @@ export class MaestroCursorV2 {
         if (!preserveActivePlaybackTarget) {
             this.nextNoteX = null;
             this.stayPutMode = false;
+            this.barEndGapMode = false;
         }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
