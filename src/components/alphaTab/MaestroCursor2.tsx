@@ -92,6 +92,7 @@ export class MaestroCursorV2 {
     private nextNoteX: number | null = null;
     private stayPutMode = false;
     private barEndGapMode = false;
+    private terminalSameRowNoAdvanceMode = false;
     // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
     // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
     // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
@@ -252,6 +253,7 @@ export class MaestroCursorV2 {
             this.nextNoteX = null;
             this.stayPutMode = false;
             this.barEndGapMode = false;
+            this.terminalSameRowNoAdvanceMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -385,6 +387,7 @@ export class MaestroCursorV2 {
         this.nextNoteX = null;
         this.stayPutMode = false;
         this.barEndGapMode = false;
+        this.terminalSameRowNoAdvanceMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
 
         if (nextCandidate) {
@@ -428,7 +431,35 @@ export class MaestroCursorV2 {
                                     : null,
                             });
                         }
+                        const _curBarBeats: any[] = beat?.voice?.beats ?? beat?.voice?.bar?.beats ?? [];
+                        const _curBeatIdx = _curBarBeats.indexOf(beat);
+                        let _hasForwardSameRow = false;
+                        let _scanWasClean = _curBeatIdx >= 0;
+
+                        if (_curBeatIdx >= 0) {
+                            const _boundsLookup = this.api?.renderer?.boundsLookup;
+                            for (let _i = _curBeatIdx + 1; _i < _curBarBeats.length; _i++) {
+                                const _bb = _boundsLookup?.findBeat(_curBarBeats[_i]);
+                                if (!_bb?.visualBounds) {
+                                    _scanWasClean = false;
+                                    break;
+                                }
+                                const _bx = typeof _bb.onNotesX === 'number'
+                                    ? _bb.onNotesX
+                                    : _bb.visualBounds.x;
+                                if (
+                                    Math.abs(_bb.visualBounds.y - this.currentY) < 5 &&
+                                    _bx > this.currentNoteX + 0.5
+                                ) {
+                                    _hasForwardSameRow = true;
+                                    break;
+                                }
+                            }
+                        }
+
                         this.stayPutMode = true;
+                        this.terminalSameRowNoAdvanceMode = _scanWasClean && !_hasForwardSameRow;
+
                         if (cursor2DiagEnabled()) {
                             const _mbCR = beat?.voice?.bar?.masterBar
                                 ? this.api?.renderer?.boundsLookup?.findMasterBar?.(beat.voice.bar.masterBar)
@@ -592,7 +623,11 @@ export class MaestroCursorV2 {
         if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
             interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
             interpolatedX = Math.min(interpolatedX, this.nextNoteX);
-        } else if (this.stayPutMode && !this.barEndGapMode) {
+        } else if (
+            this.stayPutMode &&
+            !this.barEndGapMode &&
+            !this.terminalSameRowNoAdvanceMode
+        ) {
             const STAY_DRIFT_PX = 4;
             interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
         } else {
@@ -774,6 +809,7 @@ export class MaestroCursorV2 {
             this.nextNoteX = null;
             this.stayPutMode = false;
             this.barEndGapMode = false;
+            this.terminalSameRowNoAdvanceMode = false;
         }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
