@@ -178,8 +178,8 @@ const MoreIcon = ({ size = 24 }: { size?: number }) => (
 
 // ─── Mobile button ────────────────────────────────────────────────────────────
 
-// [MB4c] Blue is now the default. MOBILE_ACTIVE (green) reserved for future active states.
-const MOBILE_BLUE = 'rgb(59,130,246)';
+// [MB4c] Cyan uses Tailwind v4 token var(--color-cyan-400) to match mobile TransportBar text-cyan-400. MOBILE_ACTIVE green is reserved for future active states.
+const MOBILE_TRANSPORT_CYAN = 'var(--color-cyan-400)';
 const MOBILE_ACTIVE = 'rgb(34,197,94)';
 
 interface MobileButtonProps {
@@ -191,7 +191,7 @@ interface MobileButtonProps {
 
 const MobileButton: React.FC<MobileButtonProps> = ({ icon, label, onClick, active }) => {
     const [hovered, setHovered] = useState(false);
-    const color = active ? MOBILE_ACTIVE : MOBILE_BLUE;
+    const color = active ? MOBILE_ACTIVE : MOBILE_TRANSPORT_CYAN;
     return (
         <button
             onClick={onClick}
@@ -361,12 +361,12 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     isNarrow,
 }) => {
     // [MB1c] Mobile shell triggers on portrait OR landscape mobile dimensions.
-    // Portrait:  max-width: 764px (matches TransportBar threshold).
+    // Portrait:  max-width: 767px (matches Tailwind md breakpoint ≤767px).
     // Landscape: max-height: 500px + max-width: 1024px (mobile device on its side).
     // Two separate listeners — both cleaned up on unmount.
     const [isMobileTopTray, setIsMobileTopTray] = useState(false);
     useEffect(() => {
-        const portrait = window.matchMedia('(max-width: 764px)');
+        const portrait = window.matchMedia('(max-width: 767px)');
         const landscape = window.matchMedia('(max-height: 500px) and (max-width: 1024px)');
         const update = () => setIsMobileTopTray(portrait.matches || landscape.matches);
         update();
