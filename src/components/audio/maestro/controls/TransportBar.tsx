@@ -10,9 +10,9 @@
  * ✅ Cell wrappers: w-[51px] desktop / w-[44px] compact, h-[74px], flex-none
  * ✅ Speed exception: w-[64px], no collapse
  * ✅ Inner buttons: w-full h-full p-0 (Songsterr .Cny52i model)
- * ✅ Zone B: [flex:1_0_auto] desktop / flex-none compact (<960px)
+ * ✅ Zone B: [flex:1_0_auto] desktop / flex-none compact (<999px)
  * ✅ More wrapper 🔒: flex-1 mx-auto min-w-[51px] desktop /
- *                     flex-none mx-auto min-w-[44px] pr-[4px] compact
+ *                     flex-none mx-auto min-w-[48px] pr-[4px] compact
  * ✅ More button: mx-auto w-[51px] desktop / w-[44px] compact
  *
  * 🔒 PRESERVED:
@@ -20,7 +20,7 @@
  * ✅ All panel management / click-outside logic
  * ✅ All diagnostic logging
  * ✅ All child component props — zero child changes
- * ✅ Label hide @960px, right 50px bookend, button order
+ * ✅ Label hide @999px, right 50px bookend, button order
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -61,7 +61,7 @@ interface ExtendedTransportBarProps extends TransportBarProps {
   onMasterVolumeChange?: (volume: number) => void;
 }
 
-const LABEL_CLS = 'text-[10px] font-semibold uppercase tracking-normal whitespace-nowrap text-blue-200/85 [@media(max-width:960px)]:hidden';
+const LABEL_CLS = 'text-[10px] font-semibold uppercase tracking-normal whitespace-nowrap text-blue-200/85 [@media(max-width:999px)]:hidden';
 
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   api, isPlaying, playbackSpeed, isLooping, hasLoopSelection, audioSource,
@@ -159,6 +159,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     setIsMoreMenuOpen(p => !p);
     setIsTrackMixerOpen(false); setIsSpeedPanelOpen(false);
     setIsMetronomePanelOpen(false); setIsCountInPanelOpen(false); setIsExportPanelOpen(false);
+    setIsPrintPanelOpen(false);
   }, []);
   const handleMetronomePanelToggle = useCallback(() => {
     console.log('🎵 Metronome button clicked! Current state:', isMetronomePanelOpen);
@@ -212,6 +213,15 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     onTrackMuteToggle(selectedTrack);
   }, [selectedTrack, trackSoloState, trackMuteState, onTrackSoloToggle, onTrackMuteToggle]);
 
+  const [isCompactTransport, setIsCompactTransport] = useState(false);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 999px)');
+    const updateCompactTransport = () => { setIsCompactTransport(mediaQuery.matches); };
+    updateCompactTransport();
+    mediaQuery.addEventListener('change', updateCompactTransport);
+    return () => { mediaQuery.removeEventListener('change', updateCompactTransport); };
+  }, []);
+
   const router = useRouter();
   const isSynthMode = audioSource === 'synth';
   const displayBPM = currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120);
@@ -225,13 +235,13 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
       <div className="w-full h-[74px] flex items-center">
 
         {/* ── MIDDLE BAND: TrackMixer → Print ─────────────────────────────────────────────────
-             flex:4 1 0% + space-between — Songsterr-matched fluid gaps, no breakpoint jumps
+             flex:12.4 1 0% + space-between — Songsterr-inspected ratio, fluid gaps
              pl-[50px] — fixed left bookend
              All children flex-none, wrapper owns width, button fills w-full h-full
         ─────────────────────────────────────────────────────────────────────────────────────── */}
         <div
-          className="flex items-center h-full pl-[50px] min-w-0"
-          style={{ flex: '4 1 0%', justifyContent: 'space-between' }}
+          className="flex items-center h-full pl-[50px] [@media(max-width:900px)]:pl-5 [@media(max-width:820px)]:pl-4 min-w-0 gap-2"
+          style={{ flex: isCompactTransport ? '12.4 1 0%' : '4 1 0%', justifyContent: 'space-between' }}
         >
 
           {/* TrackMixer */}
@@ -272,7 +282,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             <span className={LABEL_CLS}>SPEED</span>
           </div>
           {/* Loop */}
-          <div className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative flex flex-col items-center justify-center gap-0.5">
+          <div className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] relative flex flex-col items-center justify-center gap-0.5">
             <LoopControl api={api} isLooping={isLooping} hasSelection={hasLoopSelection} onLoopToggle={onLoopToggle} />
             <span className={LABEL_CLS}>LOOP</span>
           </div>
@@ -282,7 +292,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             const isSoloed = trackSoloState.get(selectedTrack) || false;
             const soloEnabled = !!api && tracks.length > 0;
             return (
-              <div className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative">
+              <div className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] relative">
                 <button
                   onClick={handleSoloClick}
                   disabled={!soloEnabled}
@@ -321,7 +331,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             const isMuted = trackMuteState.get(selectedTrack) || false;
             const muteEnabled = !!api && tracks.length > 0;
             return (
-              <div className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative">
+              <div className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] relative">
                 <button
                   onClick={handleMuteClick}
                   disabled={!muteEnabled}
@@ -355,7 +365,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
           })()}
 
           {/* Count In */}
-          <div className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative" ref={countInPanelRef}>
+          <div className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] relative" ref={countInPanelRef}>
             <button
               onClick={handleCountInPanelToggle}
               disabled={!api}
@@ -391,7 +401,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
           </div>
 
           {/* Metronome */}
-          <div className="flex-none w-[68px] [@media(max-width:960px)]:w-[44px] h-[74px] relative" ref={metronomePanelRef}>
+          <div className="flex-none w-[68px] [@media(max-width:999px)]:w-[44px] h-[74px] relative" ref={metronomePanelRef}>
             <button
               onClick={handleMetronomePanelToggle}
               disabled={!api || !isSynthMode}
@@ -443,7 +453,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
           </div>
 
           {/* Export */}
-          <div ref={exportPanelRef} className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative flex flex-col items-center justify-center gap-0.5">
+          <div ref={exportPanelRef} className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] relative flex flex-col items-center justify-center gap-0.5">
             <ExportPanel
               api={api} isPanelOpen={isExportPanelOpen}
               onTogglePanel={handleExportToggle} onClose={() => setIsExportPanelOpen(false)}
@@ -451,42 +461,42 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
             <span className={LABEL_CLS}>EXPORT</span>
           </div>
 
-          {/* Print */}
-          <div ref={printPanelRef} className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] relative flex flex-col items-center justify-center gap-0.5">
-            <PrintPanel
-              api={api} isPanelOpen={isPrintPanelOpen}
-              onTogglePanel={handlePrintToggle} onClose={() => setIsPrintPanelOpen(false)}
-            />
-            <span className={LABEL_CLS}>PRINT</span>
-          </div>
 
         </div>
         {/* ── MIDDLE BAND end ── */}
 
         {/* ── ZONE B: RIGHT ANCHORED BAND ─────────────────────────────────────────────────────
-             flex:1 1 0%        — Songsterr-matched: participates in width negotiation
+             flex:2 1 0%        — Songsterr-inspected ratio (~2/14.4 of bar width)
              justify-content:flex-end — right-aligned contents
              align-items:flex-end    — Songsterr .B3a3il
              mr-[50px]          — fixed right bookend
         ─────────────────────────────────────────────────────────────────────────────────────── */}
         <div
-          className="flex flex-nowrap h-full mr-[50px]"
-          style={{ flex: '1 1 0%', justifyContent: 'flex-end', alignItems: 'flex-end' }}
+          className="flex flex-nowrap h-full mr-[50px] [@media(max-width:900px)]:mr-5 [@media(max-width:820px)]:mr-4"
+          style={{ flex: isCompactTransport ? '2 1 0%' : '1 1 0%', justifyContent: 'flex-end', alignItems: 'flex-end' }}
         >
 
           {/* ── 🔒 LOCK: DO NOT CHANGE More wrapper or button sizing ──────────────────────────
                Normal:  flex-1 mx-auto min-w-[51px] — wrapper centers, ghost margins from mx-auto
-               <960px:  flex-none mx-auto min-w-[44px] pr-[4px] — margins collapse, 48px cell
+               <999px:  flex-none mx-auto min-w-[48px] pr-[4px] — compact cell, mx-auto maintained at all widths.
                Button:  mx-auto w-[51px] desktop / w-[44px] compact, h-full p-0
-               Ghost margins live on the WRAPPER (mx-auto), NOT the button.
+               Ghost margins live on the WRAPPER, NOT the button.
           ─────────────────────────────────────────────────────────────────────────────────── */}
           <div
-            className="relative flex-1 [@media(max-width:960px)]:flex-none mx-auto min-w-[51px] [@media(max-width:960px)]:min-w-[44px] [@media(max-width:960px)]:pr-[4px] flex items-center h-[74px]"
+            className="relative flex-1 [@media(max-width:999px)]:flex-none mx-auto min-w-[51px] [@media(max-width:999px)]:min-w-[48px] [@media(max-width:999px)]:pr-[4px] flex items-center h-[74px]"
             ref={moreMenuRef}
           >
+            {/* PrintPanel: triggered from More menu, popup anchors above More button */}
+            <div ref={printPanelRef} className="absolute left-1/2 -translate-x-1/2 bottom-0 w-0 overflow-visible">
+              <PrintPanel
+                api={api} isPanelOpen={isPrintPanelOpen}
+                onTogglePanel={handlePrintToggle} onClose={() => setIsPrintPanelOpen(false)}
+              />
+            </div>
+
             <button
               onClick={handleMoreToggle}
-              className="mx-auto w-[51px] [@media(max-width:960px)]:w-[44px] h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 hover:brightness-125"
+              className="mx-auto w-[51px] [@media(max-width:999px)]:w-[44px] h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 hover:brightness-125"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
                 className={`transition-colors ${isMoreMenuOpen ? 'text-green-400' : 'text-blue-200'}`}
@@ -538,6 +548,22 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                   </div>
                 </button>
                 <div className="my-2 border-t border-gray-700" />
+                <button
+                  onClick={handlePrintToggle}
+                  disabled={!api}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left
+                    ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700/50'}`}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-blue-300 flex-shrink-0">
+                    <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-medium text-white">Print</div>
+                    <div className="text-xs text-gray-300">Print the current tab</div>
+                  </div>
+                  {api && <kbd className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-400">P</kbd>}
+                </button>
+                <div className="my-2 border-t border-gray-700" />
                 <div className="px-3 py-2 text-xs text-gray-500 italic">More options coming soon...</div>
               </div>
             )}
@@ -545,7 +571,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
           {/* ── 🔒 end More wrapper LOCK ── */}
 
           {/* Editor */}
-          <div className="flex-none w-[51px] [@media(max-width:960px)]:w-[44px] h-[74px] flex flex-col items-center justify-center gap-0.5">
+          <div className="flex-none w-[51px] [@media(max-width:999px)]:w-[44px] h-[74px] flex flex-col items-center justify-center gap-0.5">
             <button
               onClick={() => router.push('/editor')}
               className="group relative flex flex-col items-center justify-center gap-0.5 w-full h-auto flex-shrink-0 transition-all duration-200 hover:brightness-125"
