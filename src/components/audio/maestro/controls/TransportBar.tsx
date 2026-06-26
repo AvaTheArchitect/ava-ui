@@ -1,26 +1,43 @@
 'use client';
 
 /**
- * TransportBar.tsx - V99.0: Zone B flex:1 1 0% justify-end (Songsterr-matched) + Speed label aligned
- * Date: March 20th, 2026
+ * TransportBar.tsx - V100.0: Songsterr-matched responsive transport architecture locked
+ * Date: June 26th, 2026
  *
- * 🆕 V98.99 ARCHITECTURE:
- * ✅ Middle band (TrackMixer → Print): flex:4 1 0%, space-between — all gaps fluid
- * ✅ pl-[50px] fixed left bookend, no separate left cluster
- * ✅ Cell wrappers: w-[51px] desktop / w-[44px] compact, h-[74px], flex-none
- * ✅ Speed exception: w-[64px], no collapse
- * ✅ Inner buttons: w-full h-full p-0 (Songsterr .Cny52i model)
- * ✅ Zone B: [flex:1_0_auto] desktop / flex-none compact (<999px)
- * ✅ More wrapper 🔒: flex-1 mx-auto min-w-[51px] desktop /
- *                     flex-none mx-auto min-w-[48px] pr-[4px] compact
- * ✅ More button: mx-auto w-[51px] desktop / w-[44px] compact
+ * 🆕 V100.0 TRANSPORT RESPONSIVE LOCKS:
+ * ✅ Print moved from Zone A into More menu to reduce center-band pressure.
+ * ✅ Zone A order: TrackMixer → PlaybackControls → Speed → Loop → Solo → Mute → Count In → Metronome → Export.
+ * ✅ Zone B order: More → Editor.
+ * ✅ Desktop flex model: Zone A flex:4 1 0%, Zone B flex:1 1 0%, Songsterr-aligned.
+ * ✅ Compact flex model @999px: Zone A flex:12.4 1 0%, Zone B flex:2 1 0%.
+ * ✅ Label hide breakpoint locked at max-width:999px.
+ * ✅ Bookend system locked:
+ *    - 50px desktop outer bookends
+ *    - 20px narrow bookends at max-width:819px
+ *    - 16px ultra-narrow bookends at max-width:759px where applied
+ * ✅ Ultra-compact sizing locked at max-width:711px:
+ *    - regular transport cells: 34px
+ *    - Speed wrapper: 60px
+ *    - More wrapper: 38px
+ *    - More inner button: 34px
+ *    - Editor wrapper: 34px
+ * ✅ Tailwind v4 max-width collision fixed with range queries:
+ *    - 44px compact cells only apply from 712px through 999px
+ *    - 34px ultra-compact cells apply at 711px and below
+ * ✅ 650px desktop TransportBar verified:
+ *    - no Export/More overlap
+ *    - no clipping
+ *    - no inspector hatching
+ *    - clean distributed spacing before 649px mobile tray takeover
  *
  * 🔒 PRESERVED:
  * ✅ Solo/Mute mutual exclusivity
  * ✅ All panel management / click-outside logic
+ * ✅ More menu Print action and PrintPanel behavior
  * ✅ All diagnostic logging
- * ✅ All child component props — zero child changes
- * ✅ Label hide @999px, right 50px bookend, button order
+ * ✅ All child component props except intentional PlaybackControls ultra-compact sizing support
+ * ✅ TrackMixer, Speed, Loop, Count In, Metronome, Export, More, and Editor handlers
+ * ✅ No AlphaTabRenderer, MaestroCursor2, loop-engine, or playback logic changes
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
