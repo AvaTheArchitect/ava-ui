@@ -31,7 +31,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
   showAudioToggle = true,
 }) => {
   return (
-    <div id="c-play" className="flex items-center gap-2 h-[74px]">
+    <div id="c-play" className="flex items-center gap-2 [@media(max-width:711px)]:gap-1 h-[74px]">
       {/* 🆕 V90: Play/Pause Button - 56x56 (reduced from 60x60) */}
       <button
         id="control-play"
@@ -81,7 +81,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
 
       {/* 🎯 SONGSTERR EXACT: VERTICAL STACKED TOGGLE (74x44 container) */}
       {showAudioToggle && (
-        <div className="flex flex-col h-[44px] w-[74px] flex-shrink-0 flex-grow-0">
+        <div className="flex flex-col h-[44px] w-[74px] [@media(max-width:711px)]:w-[67px] flex-shrink-0 flex-grow-0">
 
           {/* 🔝 ORIGINAL Button (top half - 74x22) */}
           <button
@@ -89,7 +89,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             disabled={!api}
             className={`
               group relative
-              h-[22px] w-[74px]
+              h-[22px] w-[74px] [@media(max-width:711px)]:w-[67px]
               flex items-center justify-center
               transition-all duration-200
               flex-shrink-0 flex-grow-0
@@ -117,7 +117,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             disabled={!api}
             className={`
               group relative
-              h-[22px] w-[74px]
+              h-[22px] w-[74px] [@media(max-width:711px)]:w-[67px]
               flex items-center justify-center
               transition-all duration-200
               flex-shrink-0 flex-grow-0
