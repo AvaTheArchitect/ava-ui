@@ -366,7 +366,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     // Two separate listeners — both cleaned up on unmount.
     const [isMobileTopTray, setIsMobileTopTray] = useState(false);
     useEffect(() => {
-        const portrait = window.matchMedia('(max-width: 767px)');
+        const portrait = window.matchMedia('(max-width: 649px)');
         const landscape = window.matchMedia('(max-height: 500px) and (max-width: 1024px)');
         const update = () => setIsMobileTopTray(portrait.matches || landscape.matches);
         update();

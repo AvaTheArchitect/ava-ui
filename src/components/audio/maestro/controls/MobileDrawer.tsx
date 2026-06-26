@@ -45,7 +45,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const visibilityClass = isMobileLandscape ? 'block' : 'md:hidden';
+  const visibilityClass = isMobileLandscape ? 'block' : 'block [@media(min-width:650px)]:hidden';
 
   return (
     <>

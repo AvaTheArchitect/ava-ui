@@ -972,7 +972,7 @@ export default function SynthPlayerPage() {
             />
 
             {!isMobileLandscape && (
-                <div className="md:hidden" style={{ zIndex: 50 }}>
+                <div className="block [@media(min-width:650px)]:hidden" style={{ zIndex: 50 }}>
                     <MobileToolsSlideout
                         isCountInEnabled={isCountInEnabled}
                         onCountInToggle={handleCountInToggle}
