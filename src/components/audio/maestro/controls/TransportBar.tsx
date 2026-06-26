@@ -78,7 +78,7 @@ interface ExtendedTransportBarProps extends TransportBarProps {
   onMasterVolumeChange?: (volume: number) => void;
 }
 
-const LABEL_CLS = 'text-[10px] font-semibold uppercase tracking-normal whitespace-nowrap text-blue-200/85 [@media(max-width:999px)]:hidden';
+const LABEL_CLS = 'text-[10px] font-medium uppercase tracking-[0.3px] whitespace-nowrap text-blue-300 leading-[14px] [@media(max-width:999px)]:hidden';
 
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   api, isPlaying, playbackSpeed, isLooping, hasLoopSelection, audioSource,
@@ -332,7 +332,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                     </div>
                   </div>
                   <svg width="24" height="24" viewBox="0 0 24 24"
-                    className={`transition-colors ${isSoloed ? 'text-green-400' : 'text-blue-200'}`}
+                    className={`transition-colors ${isSoloed ? 'text-green-400' : 'text-blue-300'}`}
                     fill="currentColor"
                   >
                     <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
@@ -370,7 +370,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                     </div>
                   </div>
                   <svg width="24" height="24" viewBox="0 0 24 24"
-                    className={`transition-colors ${isMuted ? 'text-green-400' : 'text-blue-200'}`}
+                    className={`transition-colors ${isMuted ? 'text-green-400' : 'text-blue-300'}`}
                     fill="currentColor"
                   >
                     <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
@@ -402,7 +402,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                 </div>
               </div>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
-                className={`transition-colors ${isCountInEnabled ? 'text-green-400' : 'text-blue-200'}`}
+                className={`transition-colors ${isCountInEnabled ? 'text-green-400' : 'text-blue-300'}`}
               >
                 <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
               </svg>
@@ -438,7 +438,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                 </div>
               </div>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
-                className={`transition-colors ${isMetronomeEnabled && isSynthMode ? 'text-green-400' : 'text-blue-200'}`}
+                className={`transition-colors ${isMetronomeEnabled && isSynthMode ? 'text-green-400' : 'text-blue-300'}`}
               >
                 <path d="M12 2L4 20h16L12 2zm0 4.84L15.16 18H8.84L12 6.84z" />
                 <path d="M10.5 12L12 8l1.5 4z" />
@@ -516,7 +516,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               className="mx-auto w-[51px] [@media(min-width:712px)_and_(max-width:999px)]:w-[44px] [@media(max-width:711px)]:w-[34px] h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 hover:brightness-125"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
-                className={`transition-colors ${isMoreMenuOpen ? 'text-green-400' : 'text-blue-200'}`}
+                className={`transition-colors ${isMoreMenuOpen ? 'text-green-400' : 'text-blue-300'}`}
               >
                 <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
               </svg>
@@ -602,7 +602,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                 </div>
               </div>
               <svg width="24" height="24" viewBox="0 0 24 24"
-                className="transition-colors text-blue-200" fill="currentColor"
+                className="transition-colors text-blue-300" fill="currentColor"
               >
                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
               </svg>

@@ -236,8 +236,8 @@ const MobileTopMenuTray: React.FC<MobileTopMenuTrayProps> = ({
             position: 'relative',
             height: 'calc(64px + env(safe-area-inset-top))',
             width: '100%',
-            background: 'rgb(23,23,23)',
-            borderBottom: '1px solid rgba(124,58,237,0.3)',
+            background: 'linear-gradient(to bottom right, rgb(17,24,39), rgb(88,28,135), rgb(17,24,39))',
+            borderBottom: '1px solid rgba(168,85,247,0.3)',
             boxSizing: 'border-box',
             paddingTop: 'env(safe-area-inset-top)',
             display: 'flex',
@@ -278,10 +278,10 @@ const NavButton: React.FC<NavButtonProps> = ({
     const [hovered, setHovered] = useState(false);
 
     const color = active
-        ? 'rgb(167,139,250)'
+        ? '#4ade80'
         : hovered
-            ? 'rgb(226,232,240)'
-            : 'rgb(148,163,184)';
+            ? '#93c5fd'
+            : '#93c5fd';
 
     const resolvedWidth = isNarrow ? compactWidth : width;
 
@@ -340,7 +340,7 @@ const NavButton: React.FC<NavButtonProps> = ({
                     position: 'absolute', bottom: 0,
                     left: '50%', transform: 'translateX(-50%)',
                     width: 20, height: 2, borderRadius: 999,
-                    background: 'rgb(167,139,250)',
+                    background: '#4ade80',
                 }} />
             )}
         </button>
@@ -418,8 +418,8 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 position: 'relative',
                 height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
-                background: 'rgb(23,23,23)',
-                borderBottom: '1px solid rgba(124,58,237,0.3)',
+                background: 'linear-gradient(to bottom right, rgb(17,24,39), rgb(88,28,135), rgb(17,24,39))',
+                borderBottom: '1px solid rgba(168,85,247,0.3)',
                 fontFamily: 'songsterr, -apple-system, system-ui, "system-ui", Arial, sans-serif',
                 fontWeight: 300,
                 lineHeight: '18.4px',
@@ -449,11 +449,11 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                             width: narrow ? 52 : 86, height: 80, flexShrink: 0,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             border: 'none', background: 'none', cursor: 'pointer',
-                            color: 'rgb(148,163,184)',
+                            color: '#93c5fd',
                             transition: 'color 0.15s ease, width 0.15s ease',
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.color = 'rgb(226,232,240)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = 'rgb(148,163,184)'; }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#93c5fd'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#93c5fd'; }}
                     >
                         <BackIcon />
                     </button>
