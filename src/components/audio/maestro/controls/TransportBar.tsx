@@ -183,7 +183,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     setIsMetronomePanelOpen(p => !p);
     setIsTrackMixerOpen(false); setIsSpeedPanelOpen(false);
     setIsMoreMenuOpen(false); setIsCountInPanelOpen(false); setIsExportPanelOpen(false);
-  }, [isMetronomePanelOpen, audioSource, api]);
+  }, [isMetronomePanelOpen]);
   const handleCountInPanelToggle = useCallback(() => {
     setIsCountInPanelOpen(p => !p);
     setIsTrackMixerOpen(false); setIsSpeedPanelOpen(false);
