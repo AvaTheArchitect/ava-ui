@@ -280,7 +280,7 @@ const NavButton: React.FC<NavButtonProps> = ({
     const color = active
         ? '#4ade80'
         : hovered
-            ? '#93c5fd'
+            ? '#67e8f9'
             : '#93c5fd';
 
     const resolvedWidth = isNarrow ? compactWidth : width;
@@ -452,7 +452,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                             color: '#93c5fd',
                             transition: 'color 0.15s ease, width 0.15s ease',
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.color = '#93c5fd'; }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#67e8f9'; }}
                         onMouseLeave={e => { e.currentTarget.style.color = '#93c5fd'; }}
                     >
                         <BackIcon />

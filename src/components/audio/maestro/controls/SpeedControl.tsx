@@ -97,7 +97,7 @@ export const SpeedControl: React.FC<ExtendedSpeedControlProps> = ({
       >
         {/* Icon + Percentage */}
         <div className="flex items-center justify-center gap-1 h-[24px]">
-          <svg width="24" height="18" viewBox="0 0 28 20" className={`flex-shrink-0 transition-colors ${isPanelOpen ? 'text-green-400' : 'text-blue-300'}`}>
+          <svg width="24" height="18" viewBox="0 0 28 20" className={`flex-shrink-0 transition-colors ${isPanelOpen ? 'text-green-400' : 'text-blue-300 group-hover:text-cyan-300'}`}>
             <path d="M 2 16 A 12 12 0 0 1 26 16" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" />
             <path
               d="M 2 16 A 12 12 0 0 1 26 16"
@@ -113,7 +113,7 @@ export const SpeedControl: React.FC<ExtendedSpeedControlProps> = ({
               <circle cx="14" cy="16" r="2" fill="currentColor" />
             </g>
           </svg>
-          <span className="font-bold text-[12px] tabular-nums leading-none text-blue-300">
+          <span className="font-bold text-[12px] tabular-nums leading-none text-blue-300 group-hover:text-cyan-300">
             {Math.round(playbackSpeed * 100)}%
           </span>
         </div>
