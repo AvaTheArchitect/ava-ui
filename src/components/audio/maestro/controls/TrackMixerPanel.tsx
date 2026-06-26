@@ -120,13 +120,13 @@ export const TrackMixerPanel: React.FC<ExtendedTrackMixerPanelProps> = ({
         aria-haspopup="true"
         aria-pressed={isPanelOpen}
         className={`
-          group relative flex items-center h-[44px] rounded-lg transition-all duration-200
+          group relative flex items-center h-[44px] rounded-sm transition-all duration-200
           w-[264px] [@media(max-width:1200px)]:w-[86px]
           px-4 [@media(max-width:1200px)]:px-0
           gap-3 [@media(max-width:1200px)]:gap-0
           ${isPanelOpen
             ? 'bg-blue-500/10 border-2 border-blue-400/30'
-            : 'bg-blue-500/5 border border-blue-300/20 hover:bg-blue-500/10 hover:border-blue-400/30 hover:brightness-125'
+            : 'bg-blue-500/5 border border-blue-300/20 hover:border-cyan-300/40 hover:bg-cyan-300/5'
           }
           ${!api || tracks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
         `}
@@ -141,7 +141,7 @@ export const TrackMixerPanel: React.FC<ExtendedTrackMixerPanelProps> = ({
           <div className="flex items-center justify-center w-[40px] h-full">
             <svg
               width="13" height="8" viewBox="0 0 13 8"
-              className={`text-blue-200/70 transition-transform flex-shrink-0 ${isPanelOpen ? '' : 'rotate-180'}`}
+              className={`transition-all shrink-0 ${isPanelOpen ? 'text-green-400' : 'text-blue-300/70 group-hover:text-cyan-300/70'} ${isPanelOpen ? '' : 'rotate-180'}`}
               fill="currentColor"
             >
               <path d="M6.5 8L0 0h13L6.5 8z" />
@@ -153,17 +153,17 @@ export const TrackMixerPanel: React.FC<ExtendedTrackMixerPanelProps> = ({
         <div className="flex [@media(max-width:1200px)]:hidden items-center gap-3 w-full">
           <HeadstockIcon className="text-blue-200 flex-shrink-0" />
           <div className="flex flex-col items-start text-left gap-0.5 flex-1 min-w-0">
-            <div className="text-sm font-bold text-blue-200 leading-tight truncate w-full">
+            <div className={`text-sm font-bold leading-tight truncate w-full transition-colors ${isPanelOpen ? 'text-green-400' : 'text-blue-300 group-hover:text-cyan-300'}`}>
               {currentTrack?.name || 'No Track'}
             </div>
-            <div className="text-[12px] uppercase text-blue-200/70 leading-tight whitespace-nowrap tracking-wide">
+            <div className={`text-[12px] uppercase leading-tight whitespace-nowrap tracking-wide transition-colors ${isPanelOpen ? 'text-green-400/70' : 'text-blue-300/60 group-hover:text-cyan-300/80'}`}>
               TRACK {selectedTrack + 1} OF {tracks.length}
             </div>
           </div>
           {/* Full desktop chevron — UP when closed (panel opens above), DOWN when open */}
           <svg
             width="13" height="8" viewBox="0 0 13 8"
-            className={`text-blue-200/70 transition-transform flex-shrink-0 ${isPanelOpen ? '' : 'rotate-180'}`}
+            className={`transition-all shrink-0 ${isPanelOpen ? 'text-green-400' : 'text-blue-300/70 group-hover:text-cyan-300/70'} ${isPanelOpen ? '' : 'rotate-180'}`}
             fill="currentColor"
           >
             <path d="M6.5 8L0 0h13L6.5 8z" />
