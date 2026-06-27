@@ -244,6 +244,44 @@ body {
 }
 
 
+/* ── TopMenuTray dual-shell visibility ─────────────────────────────────────────
+   Both shells are always in the DOM. CSS decides which is visible.
+   This prevents JS matchMedia first-render flash and avoids hydration mismatch.
+
+   Mobile portrait:   max-width: 649px
+   Mobile landscape:  max-height: 500px AND max-width: 1024px
+   Desktop/tablet:    everything else
+*/
+
+.maestro-tray-desktop {
+  display: block;
+}
+
+.maestro-tray-mobile {
+  display: none;
+}
+
+@media (max-width: 649px) {
+  .maestro-tray-desktop {
+    display: none;
+  }
+
+  .maestro-tray-mobile {
+    display: flex;
+  }
+}
+
+@media (max-height: 500px) and (max-width: 1024px) {
+  .maestro-tray-desktop {
+    display: none;
+  }
+
+  .maestro-tray-mobile {
+    display: flex;
+  }
+}
+
+
 /* ============================================================================
    MAESTRO CURSOR — Drag Visual Feedback V99.23
    Ghost cursor effect with WHITE DOT preserved

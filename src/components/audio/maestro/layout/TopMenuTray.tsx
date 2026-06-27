@@ -214,13 +214,15 @@ interface MobileTopMenuTrayProps {
     onBack: () => void;
     viewMode: TabMode;
     onSongSelectorOpen: () => void;
+    className?: string;
 }
 
 const MobileTopMenuTray: React.FC<MobileTopMenuTrayProps> = ({
-    onBack, viewMode, onSongSelectorOpen,
+    onBack, viewMode, onSongSelectorOpen, className,
 }) => (
     <header
         data-top-menu-tray
+        className={className}
         style={{
             position: 'relative',
             height: 'calc(64px + env(safe-area-inset-top))',
@@ -230,7 +232,6 @@ const MobileTopMenuTray: React.FC<MobileTopMenuTrayProps> = ({
             boxShadow: '0 1px 6px rgba(168,85,247,0.35)',
             boxSizing: 'border-box',
             paddingTop: 'env(safe-area-inset-top)',
-            display: 'flex',
             alignItems: 'stretch',
             overflowX: 'hidden',
             overflowY: 'hidden',
@@ -350,24 +351,6 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     isPlaying: _isPlaying,
     isNarrow,
 }) => {
-    // [MB1c] Mobile shell triggers on portrait OR landscape mobile dimensions.
-    // Portrait:  max-width: 767px (matches Tailwind md breakpoint ≤767px).
-    // Landscape: max-height: 500px + max-width: 1024px (mobile device on its side).
-    // Two separate listeners — both cleaned up on unmount.
-    const [isMobileTopTray, setIsMobileTopTray] = useState(false);
-    useEffect(() => {
-        const portrait = window.matchMedia('(max-width: 649px)');
-        const landscape = window.matchMedia('(max-height: 500px) and (max-width: 1024px)');
-        const update = () => setIsMobileTopTray(portrait.matches || landscape.matches);
-        update();
-        portrait.addEventListener('change', update);
-        landscape.addEventListener('change', update);
-        return () => {
-            portrait.removeEventListener('change', update);
-            landscape.removeEventListener('change', update);
-        };
-    }, []);
-
     // [RC1d] Desktop/tablet compact — 968px, safely above mobile threshold.
     const [internalNarrow, setInternalNarrow] = useState(false);
     useEffect(() => {
@@ -391,24 +374,22 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
         onViewModeChange?.(viewMode === 'tab' ? 'chord' : 'tab');
     }, [viewMode, onViewModeChange]);
 
-    // [MB2] Mobile render path — completely separate from desktop/tablet.
-    if (isMobileTopTray) {
-        return (
+    // ── Both shells always rendered; CSS controls visibility (no matchMedia flash) ─
+    const gapMin = narrow ? 4 : 8;
+
+    return (
+        <>
             <MobileTopMenuTray
+                className="maestro-tray-mobile"
                 onBack={handleBack}
                 viewMode={viewMode}
                 onSongSelectorOpen={onSongSelectorOpen}
             />
-        );
-    }
 
-    // ── Desktop / tablet render path (v1.14 preserved exactly) ───────────────
-    const gapMin = narrow ? 4 : 8;
-
-    return (
-        <header
-            data-top-menu-tray
-            style={{
+            <header
+                data-top-menu-tray
+                className="maestro-tray-desktop"
+                style={{
                 position: 'relative',
                 height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
@@ -484,5 +465,6 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
 
             </div>
         </header>
+        </>
     );
 };
