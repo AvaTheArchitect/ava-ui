@@ -246,7 +246,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleTrackMixerToggle}
                 disabled={!props.api || props.tracks.length === 0}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-blue-300' : 'text-blue-300 hover:text-cyan-300'}`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Track mixer"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -305,7 +305,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleSpeedToggle}
                 disabled={!props.api}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-blue-300' : 'text-blue-300 hover:text-cyan-300'}`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Playback speed"
               >
                 <svg width="28" height="24" viewBox="0 0 32 24">
@@ -367,7 +367,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={handleLoopToggle}
               disabled={!props.api}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-blue-300 hover:text-cyan-300'}`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
               title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -383,7 +383,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                 ? ''
                 : props.isPlaying
                   ? 'text-orange-400 hover:text-orange-300'
-                  : 'text-blue-300 hover:text-cyan-300'
+                  : 'text-cyan-400 hover:text-cyan-300'
                 }`}
               title={props.isPlaying ? 'Pause' : 'Play'}
             >
@@ -412,7 +412,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 5. Gear (Settings) */}
             <button
               onClick={handleGearToggle}
-              className="w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 text-blue-300 hover:text-cyan-300"
+              className="w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 text-cyan-400 hover:text-cyan-300"
               title="Settings"
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
