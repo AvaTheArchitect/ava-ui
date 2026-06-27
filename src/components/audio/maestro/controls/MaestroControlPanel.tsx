@@ -161,12 +161,14 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     props.onLoopToggle();
   };
 
-  // 🆕 V100: FIXED - Close other panels AND Slideout when opening Gear (MobileDrawer)
+  // Close other panels AND Slideout when opening Gear (MobileDrawer); toggle closed on second tap.
   const handleGearToggle = () => {
-    setIsTrackMixerOpen(false); // ✅ Close track mixer
-    setIsSpeedPanelOpen(false);  // ✅ Close speed panel
-    props.onSlideoutShouldClose?.(); // ✅ Close slideout when opening gear
-    setIsDrawerOpen(true);       // Open drawer
+    if (!isDrawerOpen) {
+      setIsTrackMixerOpen(false);
+      setIsSpeedPanelOpen(false);
+      props.onSlideoutShouldClose?.();
+    }
+    setIsDrawerOpen(!isDrawerOpen);
   };
 
   // Handle Track Change
