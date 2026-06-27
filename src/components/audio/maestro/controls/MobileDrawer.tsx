@@ -1,23 +1,31 @@
 'use client';
 
 /**
- * MobileDrawer.tsx - V99: RIGHT-ALIGNED MINI POPUP (Songsterr Match)
- * Date: January 5th, 2026
- * 
- * 🔧 NEW IN V99:
- * ✅ ANCHORED TO BOTTOM-RIGHT (not centered)
- * ✅ 50% smaller than V98 (220px width)
- * ✅ Reduced height (320px max) to prevent cutoff in landscape
- * ✅ Positioned with `justify-end` at far right edge
- * ✅ TIGHT to bottom tray (pb-[80px]) and right edge (no padding)
- * ✅ AUTO-CLOSE on selections (Synth/Original/Theme)
- * ✅ Even tighter spacing and smaller fonts
- * 
- * 🔒 PRESERVED:
- * ✅ Audio Source, Theme, Utilities
- * ✅ All functionality intact
- * 
- * Accessed via Gear ⚙️ icon
+ * MobileDrawer.tsx - V99.1: RIGHT-ALIGNED MINI POPUP + TAP-THROUGH FIX
+ * Date: June 27th, 2026
+ *
+ * 🔧 NEW IN V99.1:
+ * ✅ Fixed Gear button second-tap close behavior.
+ * ✅ Outer fixed drawer wrapper now uses pointer-events-none.
+ * ✅ Inner visible drawer panel now uses pointer-events-auto.
+ * ✅ Transparent pb-[80px] spacing no longer intercepts bottom tray taps.
+ * ✅ Gear button can receive the second tap and close the drawer.
+ * ✅ No z-index, layout, color, size, or handler changes.
+ *
+ * 🔒 V99 PRESERVED:
+ * ✅ Anchored to bottom-right, not centered.
+ * ✅ 220px width mini popup.
+ * ✅ 320px max height to prevent cutoff in landscape.
+ * ✅ Positioned with justify-end at far right edge.
+ * ✅ Tight to bottom tray via pb-[80px] and right edge with no padding.
+ * ✅ Auto-close on selections: Synth, Original, Theme.
+ * ✅ Compact spacing and smaller fonts.
+ *
+ * 🔒 FUNCTIONALITY PRESERVED:
+ * ✅ Audio Source, Theme, Utilities.
+ * ✅ Backdrop close behavior unchanged.
+ * ✅ z-[9998] backdrop and z-[9999] drawer layering unchanged.
+ * ✅ Accessed via Gear ⚙️ icon.
  */
 
 import React from 'react';
@@ -56,8 +64,8 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       />
 
       {/* 🔥 V99: FAR RIGHT, TIGHT TO BOTTOM TRAY - no gaps */}
-      <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[80px] ${visibilityClass}`}>
-        <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col">
+      <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[80px] pointer-events-none ${visibilityClass}`}>
+        <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col pointer-events-auto">
           
           {/* Header - Minimal */}
           <div className="bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
