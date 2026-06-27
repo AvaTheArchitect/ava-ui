@@ -909,59 +909,58 @@ export default function SynthPlayerPage() {
             </main>
 
             <footer className="fixed bottom-0 inset-x-0 w-full z-50">
-                {playerReady && (
-                    <MaestroControlPanel
-                        api={api}
-                        isPlaying={isPlaying}
-                        currentTime={displayTime}
-                        duration={displayDuration}
-                        playbackSpeed={playbackSpeed}
-                        tracks={tracks}
-                        selectedTrack={selectedTrack}
-                        songInfo={songInfo}
-                        isLooping={isLooping}
-                        hasLoopSelection={hasLoopSelection}
-                        audioSource={audioSource}
-                        trackMuteState={trackMuteState}
-                        trackSoloState={trackSoloState}
-                        theme={theme}
-                        isMobileLandscape={isMobileLandscape}
-                        masterVolume={masterVolume}
-                        onMasterVolumeChange={handleMasterVolumeChange}
-                        onPlayPause={handlePlayPause}
-                        onStop={handleStop}
-                        onLoopToggle={handleLoopToggle}
-                        onLoopRangeChange={(start, end) => setHasLoopSelection(start !== null && end !== null)}
-                        onSpeedChange={handleSpeedChange}
-                        onTrackChange={handleTrackChange}
-                        onAudioSourceChange={handleAudioSourceChange}
-                        onTrackMuteToggle={handleTrackMuteToggle}
-                        onTrackSoloToggle={handleTrackSoloToggle}
-                        onThemeToggle={handleThemeToggle}
-                        pitchShift={pitchShift}
-                        onPitchShiftToggle={handlePitchShiftToggle}
-                        isCountInEnabled={isCountInEnabled}
-                        onCountInToggle={handleCountInToggle}
-                        countInMode={countInMode}
-                        onCountInModeChange={setCountInMode}
-                        isMetronomeEnabled={isMetronomeEnabled}
-                        onMetronomeToggle={handleMetronomeToggle}
-                        metronomeVolume={metronomeVolume}
-                        onMetronomeVolumeChange={setMetronomeVolume}
-                        metronomeBalance={metronomeBalance}
-                        onMetronomeBalanceChange={setMetronomeBalance}
-                        metronomeSubdivision={metronomeSubdivision}
-                        onMetronomeSubdivisionChange={(s: number) => setMetronomeSubdivision(s as SubdivisionMode)}
-                        metronomeSoundType={metronomeSoundType}
-                        onMetronomeSoundTypeChange={(s: string) => setMetronomeSoundType(s as MetronomeSoundType)}
-                        metronomeAccentEnabled={metronomeAccentEnabled}
-                        onMetronomeAccentToggle={() => setMetronomeAccentEnabled(p => !p)}
-                        onArmMetronome={armMetronome}
-                        currentBPM={currentBPM}
-                        onSlideoutShouldClose={() => slideoutCloseRef.current?.()}
-                        registerCloseAllPanels={(fn) => { closeControlPanelsRef.current = fn; }}
-                    />
-                )}
+                <MaestroControlPanel
+                    api={api}
+                    playerReady={playerReady}
+                    isPlaying={isPlaying}
+                    currentTime={displayTime}
+                    duration={displayDuration}
+                    playbackSpeed={playbackSpeed}
+                    tracks={tracks}
+                    selectedTrack={selectedTrack}
+                    songInfo={songInfo}
+                    isLooping={isLooping}
+                    hasLoopSelection={hasLoopSelection}
+                    audioSource={audioSource}
+                    trackMuteState={trackMuteState}
+                    trackSoloState={trackSoloState}
+                    theme={theme}
+                    isMobileLandscape={isMobileLandscape}
+                    masterVolume={masterVolume}
+                    onMasterVolumeChange={handleMasterVolumeChange}
+                    onPlayPause={handlePlayPause}
+                    onStop={handleStop}
+                    onLoopToggle={handleLoopToggle}
+                    onLoopRangeChange={(start, end) => setHasLoopSelection(start !== null && end !== null)}
+                    onSpeedChange={handleSpeedChange}
+                    onTrackChange={handleTrackChange}
+                    onAudioSourceChange={handleAudioSourceChange}
+                    onTrackMuteToggle={handleTrackMuteToggle}
+                    onTrackSoloToggle={handleTrackSoloToggle}
+                    onThemeToggle={handleThemeToggle}
+                    pitchShift={pitchShift}
+                    onPitchShiftToggle={handlePitchShiftToggle}
+                    isCountInEnabled={isCountInEnabled}
+                    onCountInToggle={handleCountInToggle}
+                    countInMode={countInMode}
+                    onCountInModeChange={setCountInMode}
+                    isMetronomeEnabled={isMetronomeEnabled}
+                    onMetronomeToggle={handleMetronomeToggle}
+                    metronomeVolume={metronomeVolume}
+                    onMetronomeVolumeChange={setMetronomeVolume}
+                    metronomeBalance={metronomeBalance}
+                    onMetronomeBalanceChange={setMetronomeBalance}
+                    metronomeSubdivision={metronomeSubdivision}
+                    onMetronomeSubdivisionChange={(s: number) => setMetronomeSubdivision(s as SubdivisionMode)}
+                    metronomeSoundType={metronomeSoundType}
+                    onMetronomeSoundTypeChange={(s: string) => setMetronomeSoundType(s as MetronomeSoundType)}
+                    metronomeAccentEnabled={metronomeAccentEnabled}
+                    onMetronomeAccentToggle={() => setMetronomeAccentEnabled(p => !p)}
+                    onArmMetronome={armMetronome}
+                    currentBPM={currentBPM}
+                    onSlideoutShouldClose={() => slideoutCloseRef.current?.()}
+                    registerCloseAllPanels={(fn) => { closeControlPanelsRef.current = fn; }}
+                />
             </footer>
 
             <CountInOverlay

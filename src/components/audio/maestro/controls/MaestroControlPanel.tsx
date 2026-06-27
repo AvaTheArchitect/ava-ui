@@ -84,9 +84,13 @@ export interface MaestroControlPanelProps {
   onSlideoutShouldClose?: () => void;
   // 🆕 V100: Callback that page.tsx can use to close internal panels
   registerCloseAllPanels?: (closeFunc: () => void) => void;
+  // Controls remain disabled until api is set AND AlphaTab player engine is ready
+  playerReady?: boolean;
 }
 
 export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) => {
+  const controlsReady = Boolean(props.api && props.playerReady);
+
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
@@ -188,7 +192,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
       {!props.isMobileLandscape && (
         <div className="hidden [@media(min-width:650px)]:block">
           <TransportBar
-            api={props.api}
+            api={controlsReady ? props.api : null}
             isPlaying={props.isPlaying}
             playbackSpeed={props.playbackSpeed}
             isLooping={props.isLooping}
@@ -245,7 +249,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <div className="relative z-[50] flex-shrink-0">
               <button
                 onClick={handleTrackMixerToggle}
-                disabled={!props.api || props.tracks.length === 0}
+                disabled={!controlsReady || props.tracks.length === 0}
                 className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Track mixer"
               >
@@ -304,7 +308,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <div className="relative z-[50] flex-shrink-0">
               <button
                 onClick={handleSpeedToggle}
-                disabled={!props.api}
+                disabled={!controlsReady}
                 className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Playback speed"
               >
@@ -366,7 +370,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 3. Loop */}
             <button
               onClick={handleLoopToggle}
-              disabled={!props.api}
+              disabled={!controlsReady}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
               title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >
@@ -378,7 +382,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 4. Play/Pause - YouTube Logo */}
             <button
               onClick={props.onPlayPause}
-              disabled={!props.api}
+              disabled={!controlsReady}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.audioSource === 'original' && !props.isPlaying
                 ? ''
                 : props.isPlaying
