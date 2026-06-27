@@ -81,7 +81,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
 
       {/* 🎯 SONGSTERR EXACT: VERTICAL STACKED TOGGLE (74x44 container) */}
       {showAudioToggle && (
-        <div className="flex flex-col h-[44px] w-[74px] [@media(max-width:711px)]:w-[67px] flex-shrink-0 flex-grow-0">
+        <div className="flex flex-col h-[44px] w-[74px] [@media(max-width:711px)]:w-[67px] flex-shrink-0 flex-grow-0 rounded-sm transition-all hover:ring-1 hover:ring-cyan-300/40">
 
           {/* 🔝 ORIGINAL Button (top half - 74x22) */}
           <button
@@ -94,14 +94,13 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               transition-all duration-200
               flex-shrink-0 flex-grow-0
               ${audioSource === 'original'
-                ? 'bg-[rgb(96,104,125)] text-orange-500'
-                : 'bg-gray-700/30 text-blue-400/70'
+                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
+                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
               }
-              ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[rgb(106,114,135)]'}
+              ${!api ? 'opacity-50 cursor-not-allowed' : ''}
               rounded-t-[2px]
-              border border-gray-600/50 border-b-0
+              border border-b-0
             `}
-            style={{ fontWeight: 300 }}
           >
             <span className="text-[10px] uppercase tracking-wide">ORIGINAL</span>
 
@@ -122,14 +121,13 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               transition-all duration-200
               flex-shrink-0 flex-grow-0
               ${audioSource === 'synth'
-                ? 'bg-[rgb(96,104,125)] text-orange-500'
-                : 'bg-gray-700/30 text-blue-400/70'
+                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
+                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
               }
-              ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[rgb(106,114,135)]'}
+              ${!api ? 'opacity-50 cursor-not-allowed' : ''}
               rounded-b-[2px]
-              border border-gray-600/50
+              border
             `}
-            style={{ fontWeight: 300 }}
           >
             <span className="text-[10px] uppercase tracking-wide">SYNTH</span>
 
