@@ -2,45 +2,41 @@
 
 /**
  * TopMenuTray.tsx
- * Version v2.0.5
- * Updated: May 2026
+ * Version v2.1.0
+ * Updated: June 26th, 2026
  *
- * V2.0.5 CHANGES — mobile landscape detection:
- * ✅ [MB1c] isMobileTopTray now covers portrait AND landscape mobile.
- *           Portrait:  (max-width: 764px) — unchanged.
- *           Landscape: (max-height: 500px) and (max-width: 1024px).
- *           Two separate matchMedia listeners, both cleaned up on unmount.
+ * V2.1.0 CHANGES — Maestro black chrome + purple accent lock:
+ * ✅ TopMenuTray surface restored to black/neutral gradient chrome.
+ * ✅ Purple-filled tray surface removed; bottom TransportBar remains the purple gradient system.
+ * ✅ Mobile and desktop TopMenuTray share the same black gradient:
+ *    linear-gradient(to bottom right, rgb(3,7,18), rgb(17,24,39), rgb(3,7,18)).
+ * ✅ Mobile and desktop TopMenuTray share a solid Maestro purple bottom accent:
+ *    2px solid rgba(168,85,247,1).
+ * ✅ Mobile and desktop TopMenuTray share a subtle purple accent glow:
+ *    boxShadow: 0 1px 6px rgba(168,85,247,0.35).
+ * ✅ Desktop icon system preserved:
+ *    resting #93c5fd, hover #67e8f9, active #4ade80.
+ * ✅ Mobile icon token system preserved:
+ *    MOBILE_TRANSPORT_CYAN and MOBILE_ACTIVE unchanged.
+ * ✅ No layout, height, z-index, breakpoint, or menu behavior changes.
+ *
+ * 🔒 V2.0.5 PRESERVED — mobile landscape detection:
+ * ✅ [MB1c] isMobileTopTray covers portrait AND landscape mobile.
+ *           Portrait:  max-width 649px after TransportBar breakpoint alignment.
+ *           Landscape: max-height 500px and max-width 1024px.
+ *           Separate matchMedia listeners are cleaned up on unmount.
  *           Either condition triggers the 5-icon mobile shell.
  *
- * 🔒 V2.0.4 PRESERVED EXACTLY (except isMobileTopTray detection).
- * ✅ [MB4b] Mobile blue token: rgb(59,130,246).
+ * 🔒 V2.0.4 PRESERVED:
+ * ✅ [MB4b] Mobile blue token path preserved, now aligned with tray color token usage.
  * ✅ [MB8]  BackIcon: chevron-style (< shape), strokeWidth 2.5.
  * ✅ [MB1]  isMobileTopTray state via matchMedia — own useEffect, own cleanup.
- * ✅ [MB2]  MobileTopMenuTray: separate render path, v1.14 desktop/tablet untouched.
+ * ✅ [MB2]  MobileTopMenuTray: separate render path, desktop/tablet untouched.
  * ✅ [MB3]  Mobile icons: Back, MyTabs/Star, Tab/Chord, Tuner, More ⋮
  * ✅ [MB5]  flex:1 spread, 64px min hit area, no labels.
  * ✅ [MB6]  TunerIcon (U-shaped fork), MoreIcon (vertical dots).
  * ✅ [MB6b] TunerIcon: two prongs → U-curve → stem → base.
  * ✅ [MB7]  No labels, no overflow, evenly spaced.
- *
- * 🔒 V1.14 PRESERVED EXACTLY (desktop/tablet render path):
- * ✅ [VP1-5] Icon 20×20, label 12px/0.3px/nowrap/text-stroke.
- * ✅ [RC1d]  Compact breakpoint: (max-width: 968px).
- * ✅ [RC2]   Compact widths unchanged.
- * ✅ [RC4]   gapMin: narrow ? 4 : 8.
- * ✅ [RN1]   isNarrow?: boolean prop — external override wins over matchMedia.
- * ✅ [RS1]   minWidth: 904 removed. FlexibleGap at all 5 gap sites.
- * ✅ [VA1]   No transform ownership. Dumb component. No scroll listeners.
- * ✅ [PS1]   data-top-menu-tray on <header>.
- * ✅ [PS2]   isPlaying prop received, not used internally.
- *
- * Parked for later:
- * - More menu contents (key switcher, transpose, print, lyrics, etc.)
- * - Tab/Chord display changer wiring
- * - Tuner wiring
- * - Colored header redesign
- * - Artist/title header system
- * - Mobile TransportBar Restart button
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -236,8 +232,9 @@ const MobileTopMenuTray: React.FC<MobileTopMenuTrayProps> = ({
             position: 'relative',
             height: 'calc(64px + env(safe-area-inset-top))',
             width: '100%',
-            background: 'linear-gradient(to bottom right, rgb(17,24,39), rgb(88,28,135), rgb(17,24,39))',
-            borderBottom: '1px solid rgba(168,85,247,0.3)',
+            background: 'linear-gradient(to bottom right, rgb(3,7,18), rgb(17,24,39), rgb(3,7,18))',
+            borderBottom: '2px solid rgba(168,85,247,1)',
+            boxShadow: '0 1px 6px rgba(168,85,247,0.35)',
             boxSizing: 'border-box',
             paddingTop: 'env(safe-area-inset-top)',
             display: 'flex',
@@ -418,8 +415,9 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 position: 'relative',
                 height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
-                background: 'linear-gradient(to bottom right, rgb(17,24,39), rgb(88,28,135), rgb(17,24,39))',
-                borderBottom: '1px solid rgba(168,85,247,0.3)',
+                background: 'linear-gradient(to bottom right, rgb(3,7,18), rgb(17,24,39), rgb(3,7,18))',
+                borderBottom: '2px solid rgba(168,85,247,1)',
+                boxShadow: '0 1px 6px rgba(168,85,247,0.35)',
                 fontFamily: 'songsterr, -apple-system, system-ui, "system-ui", Arial, sans-serif',
                 fontWeight: 300,
                 lineHeight: '18.4px',
