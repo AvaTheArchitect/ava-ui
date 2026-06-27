@@ -1,10 +1,12 @@
 'use client';
 
 /**
- * PlaybackControls.tsx - V90: YOUTUBE LOGO + SMALLER BUTTON (Songsterr Style)
- * Date: January 5th, 2026
- * 
- * 🔧 NEW IN V90:
+ * PlaybackControls.tsx - V91: YOUTUBE LOGO + SMALLER BUTTON (Songsterr Style)
+ * Date: June 26th, 2026
+ * 🔧 NEW IN V91:
+ * ✅ Updated Fonts and Colors
+ * ✅ Radial Button to Simon Orange Accent
+ * IN V90:
  * ✅ YouTube logo appears in play button when Original mode + paused
  * ✅ White YouTube logo (not red) matching Songsterr desktop style
  * ✅ Blue play triangle inside logo (matching app theme)
@@ -94,7 +96,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               transition-all duration-200
               flex-shrink-0 flex-grow-0
               ${audioSource === 'original'
-                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
+                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold [text-shadow:0_0_4px_rgba(251,146,60,0.65),0_0_8px_rgba(249,115,22,0.35)] shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
                 : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
               }
               ${!api ? 'opacity-50 cursor-not-allowed' : ''}
@@ -121,7 +123,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               transition-all duration-200
               flex-shrink-0 flex-grow-0
               ${audioSource === 'synth'
-                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
+                ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold [text-shadow:0_0_4px_rgba(251,146,60,0.65),0_0_8px_rgba(249,115,22,0.35)] shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
                 : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
               }
               ${!api ? 'opacity-50 cursor-not-allowed' : ''}
