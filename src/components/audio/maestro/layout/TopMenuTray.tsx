@@ -58,10 +58,6 @@ export interface TopMenuTrayProps {
 
 // ─── Layout helpers (desktop/tablet) ─────────────────────────────────────────
 
-const Spacer = ({ width, minWidth = 16 }: { width: number; minWidth?: number }) => (
-    <div aria-hidden="true" style={{ width, minWidth, flexShrink: 1, height: 80 }} />
-);
-
 const FlexibleGap = ({ width, minWidth = 8 }: { width: number; minWidth?: number }) => (
     <div aria-hidden="true" style={{ width, minWidth, flexShrink: 1 }} />
 );
@@ -186,15 +182,12 @@ interface MobileButtonProps {
 }
 
 const MobileButton: React.FC<MobileButtonProps> = ({ icon, label, onClick, active }) => {
-    const [hovered, setHovered] = useState(false);
     const color = active ? MOBILE_ACTIVE : MOBILE_TRANSPORT_CYAN;
     return (
         <button
             onClick={onClick}
             title={label}
             aria-label={label}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
             style={{
                 flex: 1,
                 height: '100%',
@@ -347,14 +340,14 @@ const NavButton: React.FC<NavButtonProps> = ({
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
-    currentSong,
+    currentSong: _currentSong,
     onSongSelectorOpen,
     onNewTabOpen,
     viewMode = 'tab',
     onViewModeChange,
     inboxCount = 0,
     onBack,
-    isPlaying,
+    isPlaying: _isPlaying,
     isNarrow,
 }) => {
     // [MB1c] Mobile shell triggers on portrait OR landscape mobile dimensions.
@@ -387,7 +380,11 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     const narrow = isNarrow ?? internalNarrow;
 
     const handleBack = useCallback(() => {
-        onBack ? onBack() : window.history.back();
+        if (onBack) {
+            onBack();
+        } else {
+            window.history.back();
+        }
     }, [onBack]);
 
     const handleViewModeToggle = useCallback(() => {
