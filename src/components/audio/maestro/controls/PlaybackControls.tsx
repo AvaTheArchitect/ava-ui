@@ -3,8 +3,10 @@
 /**
  * PlaybackControls.tsx - V91: YOUTUBE LOGO + SMALLER BUTTON (Songsterr Style)
  * Date: June 26th, 2026
+ * 🔧 NEW IN V92:
+ * ✅ Playbutton white ring on hover
  * 🔧 NEW IN V91:
- * ✅ Updated Fonts and Colors
+ * ✅ Updated Fonts and Colors- Playbutton white ring on hover
  * ✅ Radial Button to Simon Orange Accent
  * IN V90:
  * ✅ YouTube logo appears in play button when Original mode + paused
@@ -44,10 +46,10 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
           group relative w-[56px] h-[56px] rounded-full flex items-center justify-center
           transition-all duration-200 flex-shrink-0
           ${isPlaying
-            ? 'bg-gradient-to-br from-orange-500 to-red-500 shadow-lg shadow-orange-400/40'
-            : 'bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-400/40'
+            ? 'bg-gradient-to-br from-orange-500 to-red-500 shadow-lg shadow-orange-400/40 hover:shadow-[0_0_14px_rgba(249,115,22,0.45),0_0_24px_rgba(239,68,68,0.22)]'
+            : 'bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-400/40 hover:shadow-[0_10px_22px_rgba(0,0,0,0.46)] hover:[outline:2px_solid_rgba(255,255,255,0.92)] hover:outline-offset-2'
           }
-          ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 hover:shadow-2xl'}
+          ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
         `}
       >
         {/* 🆕 V90: YouTube Logo when Original mode + paused (WHITE like Songsterr) */}
