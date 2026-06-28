@@ -1,24 +1,36 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.16
- * Date: May 2026
- * Cloned from V102.15 — GPU-composited tray animation polish.
+ * Synth Player Page — Phase 4 V102.17
+ * Date: June 27, 2026
+ * Cloned from V102.16 — TopMenuTray scroll reveal + native scrollbar gutter stabilization.
+ *
+ * V102.17 CHANGES:
+ * ✅ TopMenuTray reveals immediately on manual upward scroll/pull.
+ * ✅ Manual reveal works during playback; playback-start still hides the tray once.
+ * ✅ <main> top padding is stable; removed padding-transition feedback loop.
+ * ✅ Desktop/fine-pointer fixed chrome reserves native scrollbar gutter with pointer-fine:right-3.75
+ *    applied to TopMenuTray wrapper, page.tsx footer wrapper, TransportBar fixed root,
+ *    and MaestroControlPanel mobile fixed root.
+ * ✅ <main> uses [scrollbar-gutter:stable] to prevent scrollbar width pulse / AlphaTab re-render jitter.
+ * ✅ Native scrollbar drag stabilized with branch-aware 160ms cooldown and pointer-direction gating.
+ *    - curr < 10: always reveals, bypasses cooldown.
+ *    - delta > 4: hides only outside cooldown window.
+ *    - delta < 0: reveals immediately for wheel/trackpad; for scrollbar drag requires confirmed
+ *      upward pointer movement (pointerDeltaYRef < 0) or cooldown expiry as fallback.
+ * ✅ Pointer cleanup now covers pointerup, pointercancel, and mouseup via shared resetScrollbarPointer.
+ * ✅ No cursor/AlphaTabRenderer logic touched.
  *
  * V102.16 CHANGES:
  * ✅ [VA1] TopMenuTray wrapper: duration-300 → duration-200 ease-out + will-change-transform.
  *          200ms ease-out matches Songsterr's snappier slide feel.
  *          will-change-transform promotes the layer to GPU before animation fires.
- *          No intent-guard logic touched.
  *
- * V102.15 LOCKED EXACTLY:
+ * V102.15 REFERENCE (intent-guard baseline — scroll reveal logic extended in V102.17):
  * ✅ [TG4-clean] All unconditional diagnostic logs removed (module, render, effect).
  * ✅ Remaining debug output gated behind localStorage.getItem('maestro_header_debug') === '1'.
- * ✅ Intent-guard architecture locked — do not modify without a new version tag.
  * ✅ [TG1] wheel → window capture, filtered by el.contains(target). Sets userScrollIntentUntilRef 700ms on scroll-up.
  * ✅ [TG2] pointerdown → window capture, same filter. Scrollbar heuristic: clientX > rect.right - 20. Sets intent 1000ms.
- * ✅ [TG3] scroll-up reveal gated by userScrollIntentUntilRef.current > performance.now().
- *          Programmatic auto-scroll (note click / cursor) cannot reveal tray.
  * ✅ [TG-cleanup] Both window listeners removed with matching { capture: true }.
  * ✅ [PS1b] Tray hides immediately when isPlaying → true.
  * ✅ [PS3-removed] No auto-restore on pause.
@@ -322,6 +334,9 @@ export default function SynthPlayerPage() {
     const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
     // [TG1] True when the pointer went down on the scroll container's scrollbar/rail.
     const isPointerOnScrollbarRef = useRef<boolean>(false);
+    const headerToggleLockUntilRef = useRef<number>(0);
+    const lastPointerYRef = useRef<number>(0);
+    const pointerDeltaYRef = useRef<number>(0);
 
     // [PS1b] Hide tray the moment playback starts.
     useEffect(() => {
@@ -346,42 +361,93 @@ export default function SynthPlayerPage() {
         const onPointerDown = (e: PointerEvent) => {
             if (!el.contains(e.target as Node)) return;
             pointerStartRef.current = { x: e.clientX, y: e.clientY };
+            lastPointerYRef.current = e.clientY;
+            pointerDeltaYRef.current = 0;
             const rect = el.getBoundingClientRect();
             const isScrollbar = e.clientX > rect.right - 20;
             isPointerOnScrollbarRef.current = isScrollbar;
-            if (isScrollbar) userScrollIntentUntilRef.current = performance.now() + 1000;
+            userScrollIntentUntilRef.current = isScrollbar
+                ? performance.now() + 1000
+                : performance.now() + 500;
         };
         window.addEventListener('pointerdown', onPointerDown, { capture: true });
 
+        // Track pointer Y during native scrollbar drag.
+        // Do not filter by el.contains(e.target) — pointer capture changes target during drag.
+        const onPointerMove = (e: PointerEvent) => {
+            if (!isPointerOnScrollbarRef.current) return;
+            pointerDeltaYRef.current = e.clientY - lastPointerYRef.current;
+            lastPointerYRef.current = e.clientY;
+        };
+        window.addEventListener('pointermove', onPointerMove, { passive: true, capture: true });
+
+        // Shared reset for all pointer-release events so scrollbar state never lingers.
+        const resetScrollbarPointer = () => {
+            isPointerOnScrollbarRef.current = false;
+            pointerDeltaYRef.current = 0;
+            lastPointerYRef.current = 0;
+            pointerStartRef.current = null;
+        };
+        const onPointerUp = resetScrollbarPointer;
+        const onPointerCancel = resetScrollbarPointer;
+        const onMouseUp = resetScrollbarPointer;
+        window.addEventListener('pointerup', onPointerUp, { capture: true });
+        window.addEventListener('pointercancel', onPointerCancel, { capture: true });
+        window.addEventListener('mouseup', onMouseUp, { capture: true });
+
         // [PS2] Scroll direction → show/hide tray.
-        //   scroll down    → always hide
-        //   scroll up      → show ONLY when not playing AND user intent confirmed [TG3]
-        //   within 10px    → always show (user scrolled back to top)
+        //   curr < 10    → always show (position-based, bypasses cooldown)
+        //   delta > 4    → hide, cooldown-protected
+        //   delta < 0    → show: immediately for wheel/trackpad; for scrollbar drag requires
+        //                   upward pointer direction or cooldown expiry as fallback
         const onScroll = () => {
+            const now = performance.now();
             const curr = el.scrollTop;
             const prev = lastScrollTopRef.current;
-            // Belt-and-suspenders: OR both checks. isPlayingRef can lag during
-            // seek-pause; api.playerState can be null between loads. [PS2-fix]
-            const atApi = (window as any).__at;
-            const liveIsPlaying = isPlayingRef.current || (atApi?.playerState ?? 0) === 1;
+            const delta = curr - prev;
+            const inCooldown = now < headerToggleLockUntilRef.current;
+
+            lastScrollTopRef.current = curr;
+
             if (curr < 10) {
+                // Position-based: always reveal at top, no cooldown gate.
                 setIsHeaderVisible(true);
-            } else if (curr > prev + 4) {
-                setIsHeaderVisible(false);
-            } else if (curr < prev - 4 && !liveIsPlaying) {
-                // [TG3] Only reveal on confirmed user scroll-up intent (wheel or scrollbar pointer).
-                // Programmatic auto-scroll from note clicks will not have set this window.
-                if (userScrollIntentUntilRef.current > performance.now()) {
+                headerToggleLockUntilRef.current = now + 160;
+                return;
+            }
+
+            if (delta > 4) {
+                // Downward: cooldown-protected to block rapid mid-animation flip-flops.
+                if (!inCooldown) {
+                    setIsHeaderVisible(false);
+                    headerToggleLockUntilRef.current = now + 160;
+                }
+                return;
+            }
+
+            if (delta < 0) {
+                const isScrollbarDrag = isPointerOnScrollbarRef.current;
+                const isScrollbarDragUp = pointerDeltaYRef.current < 0;
+                // Allow reveal when:
+                //   - not a scrollbar drag (wheel/trackpad/touch): always
+                //   - scrollbar drag with confirmed upward pointer: pointer direction gate
+                //   - scrollbar drag but direction unknown (no pointermove): allow after cooldown
+                const allowReveal = !isScrollbarDrag || isScrollbarDragUp || !inCooldown;
+                if (allowReveal) {
                     setIsHeaderVisible(true);
+                    headerToggleLockUntilRef.current = now + 160;
                 }
             }
-            lastScrollTopRef.current = curr;
         };
         el.addEventListener('scroll', onScroll, { passive: true });
 
         return () => {
             window.removeEventListener('wheel', onWheel, { capture: true });
             window.removeEventListener('pointerdown', onPointerDown, { capture: true });
+            window.removeEventListener('pointermove', onPointerMove, { capture: true });
+            window.removeEventListener('pointerup', onPointerUp, { capture: true });
+            window.removeEventListener('pointercancel', onPointerCancel, { capture: true });
+            window.removeEventListener('mouseup', onMouseUp, { capture: true });
             el.removeEventListener('scroll', onScroll);
         };
     }, []);
@@ -766,16 +832,16 @@ export default function SynthPlayerPage() {
     const trackIndices = useMemo(() => [selectedTrack], [selectedTrack]);
 
     // 🔒 Single source of truth for header visibility.
-    // [PS1] Hide during playback. Landscape always shows (controls must stay reachable).
+    // [PS1b] Playback hides tray once on start (useEffect above). Manual scroll restores it.
     // [PS2] isHeaderVisible tracks scroll direction — set by scroll listener above.
-    const isHeaderShown = isMobileLandscape || (isHeaderVisible && !isPlaying);
+    const isHeaderShown = isMobileLandscape || isHeaderVisible;
 
     return (
         <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
-            <div className={`fixed top-0 inset-x-0 w-full z-50 will-change-transform transform transition-transform duration-200 ease-out ${isHeaderShown ? 'translate-y-0' : '-translate-y-full'}`}>
+            <div className={`fixed top-0 left-0 right-0 pointer-fine:right-3.75 w-auto z-50 will-change-transform transform transition-transform duration-200 ease-out ${isHeaderShown ? 'translate-y-0' : '-translate-y-full'}`}>
                 <TopMenuTray
                     isPlaying={isPlaying}  // ← [PS4] v1.6 prop — parent reads for shell class
                     currentSong={currentSong || null}
@@ -839,9 +905,8 @@ export default function SynthPlayerPage() {
         ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}
         ${isMobileLandscape
                         ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
-                        : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain'}
-        ${isHeaderShown && !isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
-        transition-[padding] duration-300
+                        : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain [scrollbar-gutter:stable]'}
+        ${!isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
     `}
             >
                 {error && (
@@ -908,7 +973,7 @@ export default function SynthPlayerPage() {
                 <div className="h-24 px-4" />
             </main>
 
-            <footer className="fixed bottom-0 inset-x-0 w-full z-50">
+            <footer className="fixed bottom-0 left-0 right-0 pointer-fine:right-3.75 w-auto z-50">
                 <MaestroControlPanel
                     api={api}
                     playerReady={playerReady}
