@@ -338,9 +338,12 @@ export default function SynthPlayerPage() {
     const lastPointerYRef = useRef<number>(0);
     const pointerDeltaYRef = useRef<number>(0);
 
-    // [PS1b] Hide tray the moment playback starts.
+    // [PS1b] Hide tray when playback starts, but only if already scrolled past top.
     useEffect(() => {
-        if (isPlaying) setIsHeaderVisible(false);
+        if (isPlaying) {
+            const curr = mainScrollContainerRef.current?.scrollTop ?? 0;
+            if (curr > 80) setIsHeaderVisible(false);
+        }
     }, [isPlaying]);
 
     // [PS2 + TG1/TG2/TG3] Scroll / wheel / pointer intent listeners.
@@ -426,13 +429,23 @@ export default function SynthPlayerPage() {
             }
 
             if (delta < 0) {
+                // [TG3-PlaybackGuard] Require recent human scroll intent so AlphaTab/S1/native
+                // programmatic scroll corrections cannot reveal TopMenuTray during playback.
+                // wheel/trackpad set this ref in onWheel; scrollbar/touch set it in onPointerDown.
+                const hasRecentUserIntent = userScrollIntentUntilRef.current > now;
                 const isScrollbarDrag = isPointerOnScrollbarRef.current;
                 const isScrollbarDragUp = pointerDeltaYRef.current < 0;
                 // Allow reveal when:
-                //   - not a scrollbar drag (wheel/trackpad/touch): always
-                //   - scrollbar drag with confirmed upward pointer: pointer direction gate
-                //   - scrollbar drag but direction unknown (no pointermove): allow after cooldown
-                const allowReveal = !isScrollbarDrag || isScrollbarDragUp || !inCooldown;
+                //   - human intent confirmed AND not a scrollbar drag (wheel/trackpad/touch)
+                //   - human intent confirmed AND scrollbar drag with confirmed upward pointer
+                //   - human intent confirmed AND scrollbar drag direction unknown: allow after cooldown
+                const allowReveal =
+                    hasRecentUserIntent &&
+                    (
+                        !isScrollbarDrag ||
+                        isScrollbarDragUp ||
+                        !inCooldown
+                    );
                 if (allowReveal) {
                     setIsHeaderVisible(true);
                     headerToggleLockUntilRef.current = now + 160;
