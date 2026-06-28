@@ -1006,6 +1006,12 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
     return `${Math.round(vb.x)}:${Math.round(vb.y)}`;
 }
 
+// ── [S1] A/B scroll-engine flag ──────────────────────────────────────────────
+// true  → current Maestro S1 custom scroll (default, no behavior change)
+// false → bypass S1; portrait can use native AlphaTab ScrollMode.Continuous
+// S1 and native scroll must not run together; the flag enforces mutual exclusion.
+const MAESTRO_USE_S1_CUSTOM_SCROLL = true;
+
 // ── [S1] Snap debug — activate: localStorage.setItem('maestro_snap_debug','1') ──
 function isSnapDebugEnabled(): boolean {
     if (typeof window === 'undefined') return false;
@@ -1828,6 +1834,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         // Mirror playerPositionChanged isStripMode guard — skip in landscape/strip
         const isStripMode = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
         if (isStripMode) return;
+        if (!MAESTRO_USE_S1_CUSTOM_SCROLL) return;
 
         if (isRendererDebugEnabled()) {
             const _c = containerRef.current;
@@ -2646,8 +2653,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (!api) return;
         const alphaTab = await import('@coderline/alphatab');
         const isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
-        // Never enable Continuous in portrait — it fights S1. [S1-ownership]
-        const useMode = (enabled && isStrip)
+        // Never enable Continuous in portrait when S1 owns scroll. [S1-ownership]
+        // MAESTRO_USE_S1_CUSTOM_SCROLL=false allows native Continuous in portrait for A/B testing.
+        const useMode = (enabled && (isStrip || !MAESTRO_USE_S1_CUSTOM_SCROLL))
             ? (alphaTab as any).ScrollMode.Continuous
             : (alphaTab as any).ScrollMode.Off;
         (api.settings.player as any).scrollMode = useMode;
@@ -5467,7 +5475,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // DOM SVG rows measured directly — includes effect lanes in bounding rect.
                 // scrollRect.top subtracted so rowRect.top is scroll-container-relative.
                 // height>100 AND width>500 filters title (~69px) and tuning (~60px) SVGs.
-                {
+                // Gated by MAESTRO_USE_S1_CUSTOM_SCROLL — false bypasses S1 so native
+                // AlphaTab Continuous scroll can run without interference.
+                if (MAESTRO_USE_S1_CUSTOM_SCROLL) {
                     const snapBounds = api.renderer?.boundsLookup;
                     const snapSystems = snapBounds?.staffSystems ?? [];
                     const snapBb = snapBounds?.findBeat?.(curBeat);
