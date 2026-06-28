@@ -244,7 +244,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
       {/* MOBILE LAYOUT */}
       <div className={props.isMobileLandscape ? 'block' : 'block [@media(min-width:650px)]:hidden'}>
-        <div className="fixed bottom-0 left-0 right-0 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
+        <div className="fixed bottom-0 left-0 right-0 pointer-fine:right-3.75 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
           <div className="h-[80px] px-6 flex items-center justify-between">
 
             {/* 1. Track Mixer */}
