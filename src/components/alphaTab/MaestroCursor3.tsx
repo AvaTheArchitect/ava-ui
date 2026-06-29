@@ -2,7 +2,7 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.1
+ * Current version: V3.0.2
  * Date: June 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
@@ -18,7 +18,9 @@
  *
  * Architecture additions planned:
  * [ ] targetTick / renderTick separation
- * [ ] RAF loop lifecycle (startRaf / stopRaf)
+ * [x] RAF loop lifecycle (startRaf / stopRaf)
+ * [x] tickToX(tick) extracted from setTick math
+ * [x] renderPosition(tick) helper added
  * [ ] setTick → targetTick only, no direct DOM write
  * [ ] renderPosition(renderTick) as sole DOM write path
  * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
@@ -33,6 +35,9 @@
  * ✅ [RAFScaffold]
  *    Adds Cursor3 RAF lifecycle fields, start/stop stubs, and destroy cleanup
  *    without routing setTick/setBeat through RAF yet.
+ * ✅ [TickToXExtraction]
+ *    Extracts setTick X-position calculation into tickToX/renderPosition helpers
+ *    without routing setTick through RAF or changing cursor behavior.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -663,146 +668,7 @@ export class MaestroCursorV3 {
         if (this.lastTickApplied >= 0 && tick < this.lastTickApplied) return;
         this.lastTickApplied = tick;
 
-        const beatStart = overrideBeatStart ?? this.beatStart;
-        let progress = (tick - beatStart) / this.expandedBeatDuration;
-        progress = Math.max(0, Math.min(1, progress));
-
-        let interpolatedX: number;
-
-        if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
-            interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
-            interpolatedX = Math.min(interpolatedX, this.nextNoteX);
-        } else if (
-            this.stayPutMode &&
-            !this.barEndGapMode &&
-            !this.terminalSameRowNoAdvanceMode
-        ) {
-            const STAY_DRIFT_PX = 4;
-            interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
-        } else {
-            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
-            const mbBounds = masterBar
-                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
-                : null;
-            const barRight = mbBounds?.visualBounds
-                ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
-                : this.currentNoteX + 24;
-            const effectiveRight = this.loopEndX !== null
-                ? Math.min(barRight, this.loopEndX)
-                : barRight;
-            interpolatedX = this.currentNoteX + (effectiveRight - this.currentNoteX) * progress;
-        }
-
-        const isPlaying = this.api?.player?.isPlaying ?? false;
-        if (!isPlaying && progress >= 0.999) {
-            interpolatedX = this.currentNoteX;
-        }
-
-        let finalX = interpolatedX - BAR_WIDTH / 2;
-
-        // [RowStartOffsetDecay] V1.6: apply a decaying visual offset so the cursor starts
-        // at the left barline and converges to normal interpolation over 2 beats.
-        // Replaces the single-beat Math.pow curve that caused vacuum/sling into beat 1.
-        if (
-            this.rowStartOffsetX !== null &&
-            this.rowStartOffsetBeatStart !== null &&
-            this.rowStartOffsetDuration !== null
-        ) {
-            const elapsed = tick - this.rowStartOffsetBeatStart;
-            const decayProgress = Math.max(0, Math.min(1, elapsed / this.rowStartOffsetDuration));
-            const remainingOffset = Math.pow(1 - decayProgress, 2.35);
-            finalX = finalX + this.rowStartOffsetX * remainingOffset;
-            if (decayProgress >= 1) {
-                this.rowStartOffsetX = null;
-                this.rowStartOffsetBeatStart = null;
-                this.rowStartOffsetDuration = null;
-            }
-        }
-
-        const _shouldDiagTick =
-            cursor3DiagEnabled() &&
-            (this.tickDiagCount < 8 || this.loopEndX !== null);
-        if (_shouldDiagTick) {
-            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
-            const mbBounds = masterBar
-                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
-                : null;
-            const mbX = mbBounds?.visualBounds?.x ?? null;
-            const mbRight = mbBounds?.visualBounds
-                ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
-                : null;
-            console.warn('[cursor3-interpolation-probe]', {
-                phase: 'setTick',
-                tick,
-                beatStart: overrideBeatStart ?? this.beatStart,
-                expandedBeatDuration: this.expandedBeatDuration,
-                progress,
-                currentNoteX: this.currentNoteX,
-                nextNoteX: this.nextNoteX,
-                stayPutMode: this.stayPutMode,
-                loopEndX: this.loopEndX,
-                masterBarX: mbX,
-                masterBarRight: mbRight,
-                loopEndInsideCurrentBar:
-                    this.loopEndX !== null &&
-                    mbX !== null &&
-                    mbRight !== null &&
-                    this.loopEndX >= mbX &&
-                    this.loopEndX <= mbRight,
-                interpolatedX,
-                finalX,
-                lastX: this.lastX,
-                lastY: this.lastY,
-                wouldSkipSmallMove:
-                    Math.abs(finalX - this.lastX) < 0.5 &&
-                    Math.abs(this.currentY - this.lastY) < 0.8,
-                tinyMoveBypassActive: true,
-                isLiveTickTransform: this.isLiveTickTransform,
-                forceRenderSmallMoveTicks: this.forceRenderSmallMoveTicks,
-                wouldBackstepClamp:
-                    Math.abs(this.currentY - this.lastY) < 5 &&
-                    this.lastX > -9000 &&
-                    finalX < this.lastX - BACKSTEP_PX,
-                lastTickApplied: this.lastTickApplied,
-                apiTickPosition: (this.api as any)?.tickPosition ?? null,
-                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
-            });
-            this.tickDiagCount++;
-        }
-        if (
-            cursor3DiagEnabled() &&
-            (
-                progress < 0.03 ||
-                Math.abs(progress - 0.25) < 0.01 ||
-                Math.abs(progress - 0.50) < 0.01 ||
-                Math.abs(progress - 0.75) < 0.01 ||
-                progress > 0.92
-            )
-        ) {
-            console.log('[cursor3-playback-milestone-probe]', {
-                tick,
-                beatStart: overrideBeatStart ?? this.beatStart,
-                progress,
-                currentNoteX: this.currentNoteX,
-                nextNoteX: this.nextNoteX,
-                interpolatedX,
-                finalX,
-                lastX: this.lastX,
-                currentY: this.currentY,
-                styleTransform: this.element.style.transform,
-                apiTickPosition: (this.api as any)?.tickPosition ?? null,
-                currentBeatBarIdx:
-                    this.currentBeat?.voice?.bar?.masterBar?.index ??
-                    this.currentBeat?.voice?.bar?.index ??
-                    null,
-            });
-        }
-        this.isLiveTickTransform = true;
-        try {
-            this._applyTransform(finalX, this.currentY, this.currentH, false);
-        } finally {
-            this.isLiveTickTransform = false;
-        }
+        this.renderPosition(tick, _nextBeat ?? undefined, overrideBeatStart ?? undefined);
     }
 
     /**
@@ -1007,6 +873,168 @@ export class MaestroCursorV3 {
             this.element.style.height = `${h}px`;
             this._renderBarSVG(h);
             this.lastH = h;
+        }
+    }
+
+    // [TickToXExtraction] Phase 3B-B: pure X-position calculation extracted from setTick.
+    // All cursor math is identical to the original setTick body.
+    // nextBeat parameter is accepted for future RAF routing (Phase 3B-C); unused currently.
+    private tickToX(
+        tick: number,
+        _nextBeat?: any,
+        overrideBeatStart?: number,
+    ): number {
+        const beatStart = overrideBeatStart ?? this.beatStart;
+        let progress = (tick - beatStart) / this.expandedBeatDuration;
+        progress = Math.max(0, Math.min(1, progress));
+
+        let interpolatedX: number;
+
+        if (this.nextNoteX !== null && this.nextNoteX > this.currentNoteX) {
+            interpolatedX = this.currentNoteX + (this.nextNoteX - this.currentNoteX) * progress;
+            interpolatedX = Math.min(interpolatedX, this.nextNoteX);
+        } else if (
+            this.stayPutMode &&
+            !this.barEndGapMode &&
+            !this.terminalSameRowNoAdvanceMode
+        ) {
+            const STAY_DRIFT_PX = 4;
+            interpolatedX = this.currentNoteX + STAY_DRIFT_PX * progress;
+        } else {
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = masterBar
+                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
+                : null;
+            const barRight = mbBounds?.visualBounds
+                ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
+                : this.currentNoteX + 24;
+            const effectiveRight = this.loopEndX !== null
+                ? Math.min(barRight, this.loopEndX)
+                : barRight;
+            interpolatedX = this.currentNoteX + (effectiveRight - this.currentNoteX) * progress;
+        }
+
+        const isPlaying = this.api?.player?.isPlaying ?? false;
+        if (!isPlaying && progress >= 0.999) {
+            interpolatedX = this.currentNoteX;
+        }
+
+        let finalX = interpolatedX - BAR_WIDTH / 2;
+
+        // [RowStartOffsetDecay] V1.6: apply a decaying visual offset so the cursor starts
+        // at the left barline and converges to normal interpolation over 2 beats.
+        // Replaces the single-beat Math.pow curve that caused vacuum/sling into beat 1.
+        if (
+            this.rowStartOffsetX !== null &&
+            this.rowStartOffsetBeatStart !== null &&
+            this.rowStartOffsetDuration !== null
+        ) {
+            const elapsed = tick - this.rowStartOffsetBeatStart;
+            const decayProgress = Math.max(0, Math.min(1, elapsed / this.rowStartOffsetDuration));
+            const remainingOffset = Math.pow(1 - decayProgress, 2.35);
+            finalX = finalX + this.rowStartOffsetX * remainingOffset;
+            if (decayProgress >= 1) {
+                this.rowStartOffsetX = null;
+                this.rowStartOffsetBeatStart = null;
+                this.rowStartOffsetDuration = null;
+            }
+        }
+
+        const _shouldDiagTick =
+            cursor3DiagEnabled() &&
+            (this.tickDiagCount < 8 || this.loopEndX !== null);
+        if (_shouldDiagTick) {
+            const masterBar = this.currentBeat?.voice?.bar?.masterBar;
+            const mbBounds = masterBar
+                ? this.api?.renderer?.boundsLookup?.findMasterBar?.(masterBar)
+                : null;
+            const mbX = mbBounds?.visualBounds?.x ?? null;
+            const mbRight = mbBounds?.visualBounds
+                ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
+                : null;
+            console.warn('[cursor3-interpolation-probe]', {
+                phase: 'setTick',
+                tick,
+                beatStart: overrideBeatStart ?? this.beatStart,
+                expandedBeatDuration: this.expandedBeatDuration,
+                progress,
+                currentNoteX: this.currentNoteX,
+                nextNoteX: this.nextNoteX,
+                stayPutMode: this.stayPutMode,
+                loopEndX: this.loopEndX,
+                masterBarX: mbX,
+                masterBarRight: mbRight,
+                loopEndInsideCurrentBar:
+                    this.loopEndX !== null &&
+                    mbX !== null &&
+                    mbRight !== null &&
+                    this.loopEndX >= mbX &&
+                    this.loopEndX <= mbRight,
+                interpolatedX,
+                finalX,
+                lastX: this.lastX,
+                lastY: this.lastY,
+                wouldSkipSmallMove:
+                    Math.abs(finalX - this.lastX) < 0.5 &&
+                    Math.abs(this.currentY - this.lastY) < 0.8,
+                tinyMoveBypassActive: true,
+                isLiveTickTransform: this.isLiveTickTransform,
+                forceRenderSmallMoveTicks: this.forceRenderSmallMoveTicks,
+                wouldBackstepClamp:
+                    Math.abs(this.currentY - this.lastY) < 5 &&
+                    this.lastX > -9000 &&
+                    finalX < this.lastX - BACKSTEP_PX,
+                lastTickApplied: this.lastTickApplied,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
+            });
+            this.tickDiagCount++;
+        }
+        if (
+            cursor3DiagEnabled() &&
+            (
+                progress < 0.03 ||
+                Math.abs(progress - 0.25) < 0.01 ||
+                Math.abs(progress - 0.50) < 0.01 ||
+                Math.abs(progress - 0.75) < 0.01 ||
+                progress > 0.92
+            )
+        ) {
+            console.log('[cursor3-playback-milestone-probe]', {
+                tick,
+                beatStart: overrideBeatStart ?? this.beatStart,
+                progress,
+                currentNoteX: this.currentNoteX,
+                nextNoteX: this.nextNoteX,
+                interpolatedX,
+                finalX,
+                lastX: this.lastX,
+                currentY: this.currentY,
+                styleTransform: this.element.style.transform,
+                apiTickPosition: (this.api as any)?.tickPosition ?? null,
+                currentBeatBarIdx:
+                    this.currentBeat?.voice?.bar?.masterBar?.index ??
+                    this.currentBeat?.voice?.bar?.index ??
+                    null,
+            });
+        }
+
+        return finalX;
+    }
+
+    // [TickToXExtraction] Phase 3B-B: sole synchronous DOM write path from setTick.
+    // Phase 3B-C will route this through the RAF loop instead.
+    private renderPosition(
+        tick: number,
+        nextBeat?: any,
+        overrideBeatStart?: number,
+    ): void {
+        const finalX = this.tickToX(tick, nextBeat, overrideBeatStart);
+        this.isLiveTickTransform = true;
+        try {
+            this._applyTransform(finalX, this.currentY, this.currentH, false);
+        } finally {
+            this.isLiveTickTransform = false;
         }
     }
 
