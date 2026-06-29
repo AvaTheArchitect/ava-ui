@@ -2,7 +2,7 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.3
+ * Current version: V3.0.4
  * Date: June 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
@@ -25,7 +25,7 @@
  * [ ] renderPosition(renderTick) as sole DOM write path
  * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
  * [ ] Deadband snap: absDelta <= 48 → instant
- * [ ] Same-bar gate: curBarIdx === nextBarIdx
+ * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
  * [ ] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
@@ -42,6 +42,9 @@
  *    Routes Cursor3 setTick through targetTick/renderTick and RAF rendering.
  *    Preserves setBeat anchor snaps and hard-snap bypass behavior.
  *    Preserves overrideBeatStart through RAF render path.
+ * ✅ [ExpandedBarWindowGate]
+ *    Adds an occurrence-safe expanded bar-window gate so RAF snaps stale
+ *    renderTick positions instead of slewing across repeat/bar boundaries.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -143,6 +146,11 @@ export class MaestroCursorV3 {
     private rafId: number | null = null;
     private lastFrameTime: number = 0;
     private isRafRunning: boolean = false;
+
+    // [ExpandedBarWindowGate] Phase 3B-D: expanded bar occurrence window, reconstructed
+    // from setBeat arguments. Used to detect stale renderTick behind the current occurrence.
+    private currentBarExpandedStart: number = 0;
+    private currentBarExpandedEnd: number = 0;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -310,6 +318,23 @@ export class MaestroCursorV3 {
                 this.expandedBeatDuration = dur;
             }
         }
+
+        // [ExpandedBarWindowGate] Phase 3B-D: reconstruct the expanded bar occurrence window
+        // using the same linear mapping AlphaTabRenderer uses (beatExpandedStart = ownerExpandedStart
+        // + beat.playbackStart). Inverted: ownerExpandedStart = beatStart - beat.playbackStart.
+        // masterBar.calculateDuration() gives the full bar MIDI duration, same across occurrences.
+        // Falls back to expandedBeatDuration when calculateDuration is unavailable or returns 0.
+        const _beatPlaybackStart =
+            typeof beat?.playbackStart === 'number' ? beat.playbackStart : 0;
+        const _masterBarDurationRaw = beat?.voice?.bar?.masterBar?.calculateDuration?.();
+        const _masterBarDuration =
+            typeof _masterBarDurationRaw === 'number' &&
+            Number.isFinite(_masterBarDurationRaw) &&
+            _masterBarDurationRaw > 0
+                ? _masterBarDurationRaw
+                : this.expandedBeatDuration;
+        this.currentBarExpandedStart = this.beatStart - _beatPlaybackStart;
+        this.currentBarExpandedEnd = this.currentBarExpandedStart + _masterBarDuration;
 
         // ── Out-of-order guard ───────────────────────────────────────────────
         // Defense-in-depth: renderer D1 gate is primary filter.
@@ -1087,7 +1112,23 @@ export class MaestroCursorV3 {
             const dtSeconds = (now - this.lastFrameTime) / 1000;
             this.lastFrameTime = now;
 
-            const delta = this.targetTick - this.renderTick;
+            let delta = this.targetTick - this.renderTick;
+
+            // [ExpandedBarWindowGate] Phase 3B-D: if renderTick is behind the current bar's
+            // expanded occurrence window by more than the deadband, the RAF is chasing a stale
+            // position (e.g. after a repeat-jump that fired requestSnap but left renderTick in
+            // the previous occurrence). Snap immediately instead of slewing across the boundary.
+            const hasCurrentBarWindow =
+                this.currentBarExpandedEnd > this.currentBarExpandedStart;
+            const renderTickBehindCurrentBar =
+                hasCurrentBarWindow &&
+                this.renderTick < this.currentBarExpandedStart - RAF_DEADBAND_TICKS;
+            if (renderTickBehindCurrentBar) {
+                this.renderTick = this.targetTick;
+                this.renderOverrideBeatStart = this.targetOverrideBeatStart;
+                delta = 0;
+            }
+
             if (Math.abs(delta) <= RAF_DEADBAND_TICKS) {
                 this.renderTick = this.targetTick;
                 this.renderOverrideBeatStart = this.targetOverrideBeatStart;
