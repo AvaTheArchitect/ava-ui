@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Last Updated June 24th, 2026
- * Version V1.7
+ * Last Updated June 28th, 2026
+ * Version V1.7.1 
  * File: components/alphaTab/MaestroCursor2.tsx
- *
+ *  
  * V1.7 LOCKS:
  * ✅ [TerminalSameRowNoAdvanceMode] Site B cross-row handoff now scans the current
  *    voice's remaining beats. If the scan is clean and no later same-row forward
@@ -448,11 +448,21 @@ export class MaestroCursorV2 {
                         if (_curBeatIdx >= 0) {
                             const _boundsLookup = this.api?.renderer?.boundsLookup;
                             for (let _i = _curBeatIdx + 1; _i < _curBarBeats.length; _i++) {
+                                // [Patch2-GraceGuard] Skip grace/ornament beats — they are
+                                // sub-primary and would falsely block terminalSameRowNoAdvanceMode.
+                                const _cbDur = _curBarBeats[_i]?.playbackDuration ?? _curBarBeats[_i]?.duration ?? 0;
+                                if (_cbDur < MIN_PRIMARY_BEAT_TICKS) continue;
+
                                 const _bb = _boundsLookup?.findBeat(_curBarBeats[_i]);
                                 if (!_bb?.visualBounds) {
                                     _scanWasClean = false;
                                     break;
                                 }
+
+                                // [Patch2-ZeroWidthGuard] Zero-width bounds are phantom/invisible;
+                                // skip them rather than treating them as blocking same-row beats.
+                                if (_bb.visualBounds.w <= 0) continue;
+
                                 const _bx = typeof _bb.onNotesX === 'number'
                                     ? _bb.onNotesX
                                     : _bb.visualBounds.x;
@@ -509,6 +519,48 @@ export class MaestroCursorV2 {
                 _gapToNextMasterBarStart <= 960;
 
             this.barEndGapMode = _isBarEndGap;
+
+            // [TerminalSameRowNoAdvanceMode-NullCandidate]
+            // resolveNextBeatExpanded returned null because the visual position filter
+            // blocked all cross-row candidates. Run the same forward row scan that the
+            // cross-row nextCandidate path runs, so barline interpolation can fire even
+            // when no nextCandidate was found (e.g. slide/hammer-slur terminal parking).
+            if (!_isBarEndGap) {
+                const _ncBarBeats: any[] = beat?.voice?.beats ?? beat?.voice?.bar?.beats ?? [];
+                const _ncBeatIdx = _ncBarBeats.indexOf(beat);
+                let _ncHasForwardSameRow = false;
+                let _ncScanWasClean = _ncBeatIdx >= 0;
+
+                if (_ncBeatIdx >= 0) {
+                    const _ncLookup = this.api?.renderer?.boundsLookup;
+                    for (let _i = _ncBeatIdx + 1; _i < _ncBarBeats.length; _i++) {
+                        const _ncDur = _ncBarBeats[_i]?.playbackDuration ?? _ncBarBeats[_i]?.duration ?? 0;
+                        if (_ncDur < MIN_PRIMARY_BEAT_TICKS) continue;
+
+                        const _ncBb = _ncLookup?.findBeat(_ncBarBeats[_i]);
+                        if (!_ncBb?.visualBounds) {
+                            _ncScanWasClean = false;
+                            break;
+                        }
+
+                        if (_ncBb.visualBounds.w <= 0) continue;
+
+                        const _ncX = typeof _ncBb.onNotesX === 'number'
+                            ? _ncBb.onNotesX
+                            : _ncBb.visualBounds.x;
+
+                        if (
+                            Math.abs(_ncBb.visualBounds.y - this.currentY) < 5 &&
+                            _ncX > this.currentNoteX + 0.5
+                        ) {
+                            _ncHasForwardSameRow = true;
+                            break;
+                        }
+                    }
+                }
+
+                this.terminalSameRowNoAdvanceMode = _ncScanWasClean && !_ncHasForwardSameRow;
+            }
 
             if (cursor2DiagEnabled()) {
                 const _mbNull = beat?.voice?.bar?.masterBar
