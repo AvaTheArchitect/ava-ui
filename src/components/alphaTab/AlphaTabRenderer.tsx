@@ -6,6 +6,11 @@
  * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * V145.12 Patch:
+ * ✅ [LoopOverlayCursorReanchor] Pass onLoopClickSeek={(tick) => publishCursorAtTick(tick)}
+ *        to BeatCustomLoopOverlay so loop-overlay click seeks reuse the full
+ *        requestSnap + setBeat + setTick anchor chain (see BeatCustomLoopOverlay v1.8.9).
+ *
  * V145.11 Patch:
  * ✅ [ExactOnsetClickSeek]
  *        Fixes post-repeat manual click/play first-note silence by seeking
@@ -1635,6 +1640,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const lastPlaybackOwnerRef = useRef<{ mbIdx: number; occurrence: number | null } | null>(null);
     const stableCurBeatRef = useRef<any>(null);
     const stableExpandedBeatStartRef = useRef<number>(0);
+    const publishCursorAtTickRef = useRef<((tick: number) => void) | null>(null);
     const stableNextBeatRef = useRef<any>(null);
     const stableNextExpandedBeatStartRef = useRef<number | null>(null);
     const stableVisualKeyRef = useRef<string | null>(null);
@@ -6748,6 +6754,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 cursor.setBeat(r.beat, nb, ns, expandedStart);
                 cursor.setTick(expandedTick, nb, expandedStart);
             };
+            publishCursorAtTickRef.current = publishCursorAtTick;
 
             const handleClick = (ev: MouseEvent) => {
                 if (ev.detail > 1) return;
@@ -7003,6 +7010,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     onLoopChange={onLoopChange}
                                     onLoopClear={onLoopClear}
                                     isLandscape={forceHorizontal}
+                                    onLoopClickSeek={(tick) => {
+                                        const publishCursorAtTick = publishCursorAtTickRef.current;
+                                        if (!publishCursorAtTick) return false;
+                                        publishCursorAtTick(tick);
+                                        return true;
+                                    }}
                                 />
                             </div>
                         )}

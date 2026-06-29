@@ -1,8 +1,17 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.8 — Landscape Display-Only Highlight
- * Date: June 9th, 2026
+ * BeatCustomLoopOverlay v1.8.9 — LoopOverlay Click Cursor Re-anchor
+ * Date: June 29th, 2026
+ *
+ * 🔥 V1.8.9 CHANGES:
+ * ✅ [LoopOverlayCursorReanchor]
+ *    Routes loop-overlay click seeks through AlphaTabRenderer publishCursorAtTick
+ *    so Cursor2/Cursor3 receive the same requestSnap + setBeat + setTick anchor chain
+ *    as normal notation clicks.
+ * ✅ V117 backtrack timing fix: __maestroAllowBacktrackUntil is now set BEFORE
+ *    api.tickPosition so backward loop clicks are not blocked when
+ *    playerPositionChanged fires synchronously from the tickPosition setter.
  *
  * 🔥 V1.8.8 CHANGES:
  * ✅ Landscape display-only loop highlight: replaces the unconditional
@@ -194,11 +203,13 @@ interface Props {
     onLoopClear?: () => void;
     /** Stage 4: suppress overlay in landscape until coordinate-space fix is built */
     isLandscape?: boolean;
+    /** Routes loop-overlay click seeks through AlphaTabRenderer's publishCursorAtTick. Returns true on success, false if the publish ref was not ready (triggers fallback). */
+    onLoopClickSeek?: (tick: number) => boolean;
 }
 
 export default function BeatCustomLoopOverlay({
     api, container, loopEnabled, onLoopToggle, onLoopChange, onLoopClear,
-    isLandscape = false,
+    isLandscape = false, onLoopClickSeek,
 }: Props) {
 
     const loopRef = useRef(loopEnabled);
@@ -717,14 +728,13 @@ export default function BeatCustomLoopOverlay({
             // prior touch/landscape seek) would filter out the clickedTick event
             // and both AlphaTab-internal startTick seeks, leaving cursor frozen.
             (window as any).__maestroManualSeekTargetTick = clickedTick;
+            // V117/V1.8.9: Set allowBacktrack BEFORE api.tickPosition — the setter may
+            // fire playerPositionChanged synchronously; backtrack guard must be armed first.
+            (window as any).__maestroAllowBacktrackUntil = Date.now() + 600;
             if (api.tickPosition !== undefined) {
                 api.tickPosition = clickedTick;
             }
             api.player?.seekTicks?.(clickedTick);
-            // V1.8.6: Allow playerPositionChanged regression guard to accept
-            // intentional cursor movement to an earlier tapped beat/bar.
-            // Matches the manual handleClick pattern in AlphaTabRenderer.
-            (window as any).__maestroAllowBacktrackUntil = Date.now() + 600;
             (window as any).__maestroLastIntentionalTick = clickedTick;
             (window as any).__maestroLastIntentionalTickAt = Date.now();
             if (PAGE_ROW_DEBUG) {
@@ -764,8 +774,11 @@ export default function BeatCustomLoopOverlay({
                         ? Date.now() - (window as any).__maestroManualSeek : null,
                 });
             }
-            const cursor = (window as any).__maestroCursor;
-            cursor?.requestSnap?.('loop-click-cursor');
+            const didPublishLoopClickSeek = onLoopClickSeek?.(clickedTick) === true;
+            if (!didPublishLoopClickSeek) {
+                const cursor = (window as any).__maestroCursor;
+                cursor?.requestSnap?.('loop-click-cursor');
+            }
             if (MOBILE_LOOP_TAP_DEBUG) {
                 console.log('[mobile-loop-cursor-probe]', {
                     reason: 'commitBarSnap-click-cursor',
@@ -775,7 +788,7 @@ export default function BeatCustomLoopOverlay({
                     endTick,
                     apiTickAfter: (api as any)?.tickPosition ?? null,
                     calledSeekTicks: typeof (api as any)?.player?.seekTicks === 'function',
-                    calledRequestSnapReason: 'loop-click-cursor',
+                    calledRequestSnapReason: 'via-onLoopClickSeek→publishCursorAtTick',
                     hasCursor: !!(window as any).__maestroCursor,
                     manualSeekFlag: (window as any).__maestroManualSeek ?? null,
                     manualSeekTargetTick: (window as any).__maestroManualSeekTargetTick ?? null,
@@ -784,7 +797,7 @@ export default function BeatCustomLoopOverlay({
                     note: '__maestroLoopReseat NOT set on click — only toggle-ON. __maestroManualSeekTargetTick set to clickedTick.',
                 });
             }
-            console.log('🎼 BeatLoop click cursor preserved:', {
+            console.log('🎼 BeatLoop click cursor re-anchored via publishCursorAtTick:', {
                 clickedTick,
                 barStartTick: startTick,
                 barEndTick: endTick,
