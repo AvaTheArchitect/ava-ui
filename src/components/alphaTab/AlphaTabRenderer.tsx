@@ -2,9 +2,21 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.7
- * Date: June 22nd, 2026
+ * Current version: V145.8
+ * Date: June 28th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.8 Patch:
+ * ✅ [S1ActiveRowComfortZone]
+ *        S1 active-row comfort-zone auto-scroll tuning.
+ *        Row 2 now triggers first meaningful scroll via sysIdx tracking.
+ *        Active row targets a larger focal-zone offset (280px vs prior 100px).
+ *        Larger offset means less initial scroll — target formula subtracts
+ *        the offset, so active row settles lower in the viewport.
+ *        Keeps Row 1/context visible while Row 2 becomes active;
+ *        Row 3 remains previewable below. Can be tuned to 300 if needed.
+ *        TopMenu visible overlap measured directly for headerH.
+ *        snapPortraitToBeatRow aligned with playerPositionChanged S1 semantics.
  *
  * V145.7 Locks:
  * ✅ [RemovePlayStartBeatNormalization]
@@ -1012,6 +1024,13 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
 // S1 and native scroll must not run together; the flag enforces mutual exclusion.
 const MAESTRO_USE_S1_CUSTOM_SCROLL = true;
 
+// [S1] Active row focal-zone offset. Target places the active row headerH + S1_ACTIVE_ROW_COMFORT_Y
+// below the scroll container top. 280px is the first tuned focal-zone value — larger offset means
+// less initial scroll because the target formula subtracts this offset, so the active row settles
+// lower in the viewport. Keeps Row 1/context visible when Row 2 activates; Row 3 stays previewable.
+// Can be tuned to 300 if the active row still feels too high.
+const S1_ACTIVE_ROW_COMFORT_Y = 280;
+
 // ── [S1] Snap debug — activate: localStorage.setItem('maestro_snap_debug','1') ──
 function isSnapDebugEnabled(): boolean {
     if (typeof window === 'undefined') return false;
@@ -1865,11 +1884,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         const sysIdx = findSystemIndexForY(snapSystems, beatY);
         if (sysIdx < 0) return;
-        const anchorIdx = Math.max(0, sysIdx - 1);
-
         // Always update lastAnchorSysRef — prevents next playerPositionChanged from
         // double-firing or skipping the snap for the same row.
-        lastAnchorSysRef.current = anchorIdx;
+        lastAnchorSysRef.current = sysIdx;
 
         const scrollEl = (api.settings.player as any).scrollElement
             ?? scrollContainer
@@ -1878,12 +1895,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
         const scrollElEl = scrollEl as HTMLElement;
         const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
-        const isPlayingNow = (api.playerState ?? 0) === 1;
-        const headerH = (!isPlayingNow && header && getComputedStyle(header).display !== 'none')
-            ? header.getBoundingClientRect().height : 0;
         const GAP = 8;
         const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
         const scrollRect = scrollElEl.getBoundingClientRect();
+        const headerRect = header?.getBoundingClientRect() ?? null;
+        const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
+        const headerH = Math.max(0, trayBottomInScroll);
 
         const allSvgs = Array.from(scrollElEl.querySelectorAll<SVGElement>('.at-surface svg'));
         const staffRows = allSvgs.filter(el => {
@@ -1891,28 +1908,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             return r.height > 100 && r.width > 500;
         });
 
-        let anchorRowRect: DOMRect | null = null; // [PageScrollAuthorityFix] V143: saved for authority tween
+        // [S1-ActiveRow] Comfort-zone target: place active row headerH + COMFORT_Y below scroll top.
+        const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+        const anchorRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143: saved for authority tween
         let clearanceAdjust = 0; // [PageScrollAuthorityFix] V143: tracked for authority tween
         let target: number;
-        if (anchorIdx === 0) {
+        if (sysIdx === 0) {
             target = 0;
-        } else if (staffRows.length > anchorIdx) {
-            const rowRect = staffRows[anchorIdx].getBoundingClientRect();
-            anchorRowRect = rowRect; // [PageScrollAuthorityFix]
-            target = Math.max(0, scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP);
+        } else if (activeRowRect) {
+            const activeRowViewportTop = activeRowRect.top - scrollRect.top;
+            target = Math.max(0, scrollElEl.scrollTop + activeRowViewportTop - headerH - S1_ACTIVE_ROW_COMFORT_Y);
         } else {
-            const anchorVb = (snapSystems[anchorIdx] as any)?.visualBounds;
-            target = Math.max(0, (anchorVb?.y ?? 0) - headerH - GAP);
+            const activeVb = (snapSystems[sysIdx] as any)?.visualBounds;
+            target = Math.max(0, (activeVb?.y ?? 0) - headerH - S1_ACTIVE_ROW_COMFORT_Y);
         }
-
-        const currentVb = (snapSystems[sysIdx] as any)?.visualBounds;
-        const currentTop = currentVb?.y ?? 0;
-        target = Math.min(target, Math.max(0, currentTop - headerH - GAP));
 
         // Previous-row clearance — same absolute-coordinate prediction as S1
         {
             const safeOffset = headerH + GAP;
-            const prevRow = anchorIdx > 0 ? (staffRows[anchorIdx - 1] ?? null) : null;
+            const prevRow = sysIdx > 0 ? (staffRows[sysIdx - 1] ?? null) : null;
             if (prevRow) {
                 const prevRect = prevRow.getBoundingClientRect();
                 const prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
@@ -1940,7 +1954,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             : getPageAuthorityScrollTop(_snapAuthority);
         let tweenTo = target;
         if (!_snapContainerScrollable && _snapAuthority.canScroll) {
-            if (anchorIdx === 0) {
+            if (sysIdx === 0) {
                 tweenTo = 0;
             } else if (anchorRowRect !== null) {
                 tweenTo = Math.max(
@@ -1949,7 +1963,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         authority: _snapAuthority,
                         container: scrollElEl,
                         targetRect: anchorRowRect,
-                        desiredViewportY: headerH + GAP,
+                        desiredViewportY: headerH + S1_ACTIVE_ROW_COMFORT_Y,
                     }) + clearanceAdjust
                 );
             }
@@ -1965,12 +1979,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 containerIsScrollable: _snapContainerScrollable,
                 containerRectY: Math.round(scrollElEl.getBoundingClientRect().y),
                 targetRectY: anchorRowRect !== null ? Math.round(anchorRowRect.top) : null,
-                desiredViewportY: headerH + GAP,
+                desiredViewportY: headerH + S1_ACTIVE_ROW_COMFORT_Y,
             });
         }
         const tweenDelta = tweenTo - tweenFrom;
         const TWEEN_MS = 150;
-        const snapAnchor = anchorIdx;
+        const snapAnchor = sysIdx;
 
         if (isRendererDebugEnabled()) {
             // [rotation-anchor-resolution] snapPortraitToBeatRow — resolved scroll target
@@ -1987,7 +2001,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 systemsLength: snapSystems.length,
                 firstSystemBars: (snapSystems[0] as any)?.bars?.length ?? null,
                 sysIdx,
-                anchorIdx,
                 tweenFrom: Math.round(tweenFrom),
                 tweenTo: Math.round(tweenTo),
             });
@@ -5485,16 +5498,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     if (beatY != null && snapSystems.length > 0) {
                         const sysIdx = findSystemIndexForY(snapSystems, beatY);
-                        const anchorIdx = Math.max(0, sysIdx - 1);
+                        const previousSysIdx = lastAnchorSysRef.current;
 
-                        if (sysIdx >= 0 && anchorIdx !== lastAnchorSysRef.current) {
-                            lastAnchorSysRef.current = anchorIdx;
+                        if (sysIdx >= 0 && sysIdx !== lastAnchorSysRef.current) {
+                            lastAnchorSysRef.current = sysIdx;
                             if (isRendererDebugEnabled()) {
                                 const _c = containerRef.current;
                                 console.log('[page-scroll-authority-probe]', {
                                     reason: 'S1-drift-check',
                                     anchorTick: curBeat?.absolutePlaybackStart ?? tick,
-                                    sysIdx, anchorIdx,
+                                    sysIdx,
                                     apiTickPosition: api?.tickPosition,
                                     containerScrollTop: _c?.scrollTop ?? null,
                                     containerClientH: _c?.clientHeight ?? null,
@@ -5518,13 +5531,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             if (scrollEl) {
                                 const scrollElEl = scrollEl as HTMLElement;
                                 const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
-                                const isPlayingNow = (api.playerState ?? 0) === 1;
-                                const headerH = (!isPlayingNow && header
-                                    && getComputedStyle(header).display !== 'none')
-                                    ? header.getBoundingClientRect().height : 0;
                                 const GAP = 8;
                                 const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
                                 const scrollRect = scrollElEl.getBoundingClientRect();
+                                const headerRect = header?.getBoundingClientRect() ?? null;
+                                const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
+                                const headerH = Math.max(0, trayBottomInScroll);
 
                                 const allSvgs = Array.from(
                                     scrollElEl.querySelectorAll<SVGElement>('.at-surface svg')
@@ -5551,34 +5563,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         };
                                     }));
                                     console.log('[S1 snap choice]', {
-                                        anchorIdx, sysIdx,
+                                        sysIdx,
                                         staffRowsLength: staffRows.length,
                                         headerH, GAP,
                                         currentScrollTop: scrollElEl.scrollTop,
-                                        chosenHeight: staffRows[anchorIdx]?.getBoundingClientRect().height,
+                                        activeRowHeight: staffRows[sysIdx]?.getBoundingClientRect().height,
                                     });
                                 }
 
-                                let _s1AnchorRowRect: DOMRect | null = null; // [PageScrollAuthorityFix] V143
+                                // [S1-ActiveRow] Comfort-zone target: place active row headerH + COMFORT_Y
+                                // below the scroll container top. sysIdx === 0 stays at top.
+                                const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+                                const _s1ActiveRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143
                                 let _s1ClearanceAdjust = 0; // [PageScrollAuthorityFix] V143
                                 let target: number;
-                                if (anchorIdx === 0) {
+                                if (sysIdx === 0) {
                                     target = 0;
-                                } else if (staffRows.length > anchorIdx) {
-                                    const rowRect = staffRows[anchorIdx].getBoundingClientRect();
-                                    _s1AnchorRowRect = rowRect; // [PageScrollAuthorityFix]
+                                } else if (activeRowRect) {
+                                    const activeRowViewportTop = activeRowRect.top - scrollRect.top;
                                     target = Math.max(
                                         0,
-                                        scrollElEl.scrollTop + rowRect.top - scrollRect.top - headerH - GAP
+                                        scrollElEl.scrollTop + activeRowViewportTop - headerH - S1_ACTIVE_ROW_COMFORT_Y
                                     );
                                 } else {
-                                    const anchorVb = (snapSystems[anchorIdx] as any)?.visualBounds;
-                                    target = Math.max(0, (anchorVb?.y ?? 0) - headerH - GAP);
+                                    const activeVb = (snapSystems[sysIdx] as any)?.visualBounds;
+                                    target = Math.max(0, (activeVb?.y ?? 0) - headerH - S1_ACTIVE_ROW_COMFORT_Y);
                                 }
-
-                                const currentVb = (snapSystems[sysIdx] as any)?.visualBounds;
-                                const currentTop = currentVb?.y ?? 0;
-                                target = Math.min(target, Math.max(0, currentTop - headerH - GAP));
 
                                 // ── Previous-row clearance — absolute-coordinate prediction [S1-clearance] ──
                                 // Old: measured prevRect.bottom in current viewport → same value
@@ -5589,7 +5599,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 {
                                     const safeOffset = headerH + GAP;
                                     const targetBeforeClearance = target;
-                                    const prevRow = anchorIdx > 0 ? (staffRows[anchorIdx - 1] ?? null) : null;
+                                    const prevRow = sysIdx > 0 ? (staffRows[sysIdx - 1] ?? null) : null;
                                     let danglingAfterTarget = 0;
                                     let prevBottomAbs: number | null = null;
                                     let safeTopAbsAfterTarget: number | null = null;
@@ -5610,7 +5620,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                                     if (isSnapDebugEnabled()) {
                                         console.log('[S1 prev-row clearance ABS]', {
-                                            anchorIdx,
+                                            sysIdx,
                                             scrollTopBefore: Math.round(scrollElEl.scrollTop),
                                             safeOffset,
                                             targetBeforeClearance: Math.round(targetBeforeClearance),
@@ -5622,11 +5632,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     }
                                 }
 
+                                // [S1-ActiveRow] Prevent backward recoil on normal forward row advance.
+                                // Loop wrap, upward seek, and restart allow backward scroll (no clamp).
+                                const isForwardRowAdvance = previousSysIdx >= 0 && sysIdx > previousSysIdx;
+                                if (isForwardRowAdvance) {
+                                    target = Math.max(scrollElEl.scrollTop, target);
+                                }
+
                                 target = Math.min(target, maxScroll);
 
                                 if (isSnapDebugEnabled()) {
                                     console.log('[S1 snap apply]', {
-                                        anchorIdx, sysIdx,
+                                        sysIdx, previousSysIdx, isForwardRowAdvance,
                                         target: Math.round(target),
                                         fromScroll: Math.round(scrollElEl.scrollTop),
                                         delta: Math.round(target - scrollElEl.scrollTop),
@@ -5648,16 +5665,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     : getPageAuthorityScrollTop(_s1Authority);
                                 let tweenTo = target;
                                 if (!_s1ContainerScrollable && _s1Authority.canScroll) {
-                                    if (anchorIdx === 0) {
+                                    if (sysIdx === 0) {
                                         tweenTo = 0;
-                                    } else if (_s1AnchorRowRect !== null) {
+                                    } else if (_s1ActiveRowRect !== null) {
                                         tweenTo = Math.max(
                                             0,
                                             computePageAuthorityTargetTop({
                                                 authority: _s1Authority,
                                                 container: scrollElEl,
-                                                targetRect: _s1AnchorRowRect,
-                                                desiredViewportY: headerH + GAP,
+                                                targetRect: _s1ActiveRowRect,
+                                                desiredViewportY: headerH + S1_ACTIVE_ROW_COMFORT_Y,
                                             }) + _s1ClearanceAdjust
                                         );
                                     }
@@ -5676,7 +5693,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 }
                                 const tweenDelta = tweenTo - tweenFrom;
                                 const TWEEN_MS = 150;
-                                const snapAnchor = anchorIdx; // capture for cancel guard
+                                const snapAnchor = sysIdx; // capture for cancel guard
 
                                 const _s1AnchorTick = curBeat?.absolutePlaybackStart ?? tick ?? null;
                                 if (Math.abs(tweenDelta) < 2) {
@@ -5767,14 +5784,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 if (isSnapDebugEnabled()) {
                                     const driftCheck = (delay: number) => {
                                         window.setTimeout(() => {
-                                            if (lastAnchorSysRef.current !== anchorIdx) return;
+                                            if (lastAnchorSysRef.current !== sysIdx) return;
                                             const drift = scrollElEl.scrollTop - target;
                                             const scrollRectNow = scrollElEl.getBoundingClientRect();
-                                            const prevNow = staffRows[anchorIdx - 1]?.getBoundingClientRect();
+                                            const prevNow = staffRows[sysIdx - 1]?.getBoundingClientRect();
                                             const safeNow = scrollRectNow.top + headerH + GAP;
                                             const prevDanglingNow = prevNow ? prevNow.bottom - safeNow : null;
                                             console.log('[S1 DRIFT CHECK]', {
-                                                delay, anchorIdx,
+                                                delay, sysIdx,
                                                 target: Math.round(target),
                                                 scrollTopNow: Math.round(scrollElEl.scrollTop),
                                                 drift: Math.round(drift),
