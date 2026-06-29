@@ -2,9 +2,16 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.10
- * Date: June 28th, 2026
+ * Current version: V145.11
+ * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.11 Patch:
+ * ✅ [ExactOnsetClickSeek]
+ *        Fixes post-repeat manual click/play first-note silence by seeking
+ *        Page-mode clicks to the exact expanded NoteOn boundary instead of
+ *        target + 2, allowing AlphaSynth to schedule the first note/chord
+ *        attack correctly.
  *
  * V145.10 Patch:
  * ✅ [RepeatOwnerTransitionSnap]
@@ -5121,12 +5128,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 let curBeat: any = null;
                 const masterBarsArr = (tickCache as any).masterBars as any[];
+                let ownerMbIdx: number | null = null;
+                let ownerOccurrence = 0;
+                let ownerExpandedStart = 0;
 
                 if (masterBarsArr?.length) {
                     const occurrenceMap = new Map<number, number>();
-                    let ownerMbIdx: number | null = null;
-                    let ownerOccurrence = 0;
-                    let ownerExpandedStart = 0;
 
                     for (const mb of masterBarsArr) {
                         const mbIdx = mb?.masterBar?.index;
@@ -6782,8 +6789,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (!candidates.length) return;
                 const target = candidates.reduce((prev: number, curr: number) =>
                     Math.abs(curr - currentTick) < Math.abs(prev - currentTick) ? curr : prev);
-                const beatDurForClamp = beat.playbackDuration ?? beat.duration ?? 480;
-                const safeTarget = Math.min(target + 2, target + Math.max(0, beatDurForClamp - 1));
+                // [ExactOnsetClickSeek] V145.11: seek to exact expanded NoteOn boundary.
+                // target + 2 caused AlphaSynth to miss the first NoteOn after repeat clicks.
+                const safeTarget = target;
                 seekTargetTickRef.current = safeTarget;
                 seekFreezeUntilRef.current = Date.now() + 250;
                 // [StaleStartAnchorOverride] V145: publish authoritative intent so
