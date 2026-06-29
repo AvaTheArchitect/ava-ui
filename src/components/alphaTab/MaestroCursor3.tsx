@@ -2,7 +2,7 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.0
+ * Current version: V3.0.1
  * Date: June 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
@@ -28,10 +28,21 @@
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
+ *
+ * Patch history:
+ * ✅ [RAFScaffold]
+ *    Adds Cursor3 RAF lifecycle fields, start/stop stubs, and destroy cleanup
+ *    without routing setTick/setBeat through RAF yet.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MIN_PRIMARY_BEAT_TICKS = 30;
+
+// [RAFScaffold] Phase 3B-A — lifecycle constants, not yet wired into behavior.
+// Prefixed with _ per ESLint unused-vars rule; prefix drops when wired in Phase 3B-D/E.
+const _RAF_SLEW_BASE_TICKS_PER_SEC = 2400;
+const _RAF_SLEW_BOOST_TICKS_PER_SEC = 4800;
+const _RAF_DEADBAND_TICKS = 48;
 
 // [PageCursorPlayStartHardSnap] V145.2 — clear interpolation memory on click/touch/play-start hard snaps.
 // These reasons trigger forceHardSnapNextSetBeat so the following setBeat fully resets
@@ -113,6 +124,13 @@ export class MaestroCursorV3 {
     private rowStartOffsetX: number | null = null;
     private rowStartOffsetBeatStart: number | null = null;
     private rowStartOffsetDuration: number | null = null;
+
+    // [RAFScaffold] Phase 3B-A: RAF lifecycle fields. Not yet wired into setTick/setBeat.
+    private targetTick: number = 0;
+    private renderTick: number = 0;
+    private rafId: number | null = null;
+    private lastFrameTime: number = 0;
+    private isRafRunning: boolean = false;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -907,6 +925,7 @@ export class MaestroCursorV3 {
     }
 
     public destroy(): void {
+        this.stopRaf();
         this.element.parentElement?.removeChild(this.element);
         console.log('🧹 MaestroCursorV3: Destroyed');
     }
@@ -989,6 +1008,39 @@ export class MaestroCursorV3 {
             this._renderBarSVG(h);
             this.lastH = h;
         }
+    }
+
+    // [RAFScaffold] Phase 3B-A: RAF lifecycle stubs. Not called from setTick/setBeat yet.
+    private startRaf(): void {
+        if (this.isRafRunning) return;
+        if (typeof requestAnimationFrame === 'undefined') return;
+
+        this.isRafRunning = true;
+        this.lastFrameTime = 0;
+
+        const step = (now: number) => {
+            if (!this.isRafRunning) return;
+
+            this.lastFrameTime = now;
+
+            // Phase 3B-A scaffold only.
+            // Do not render or mutate cursor position yet.
+
+            this.rafId = requestAnimationFrame(step);
+        };
+
+        this.rafId = requestAnimationFrame(step);
+    }
+
+    private stopRaf(): void {
+        this.isRafRunning = false;
+
+        if (this.rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
+            cancelAnimationFrame(this.rafId);
+        }
+
+        this.rafId = null;
+        this.lastFrameTime = 0;
     }
 
     private _show(): void {
