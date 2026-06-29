@@ -552,6 +552,7 @@ import {
     type LayoutProfileName,
 } from '@/lib/alphaTab/initAlphaTab';
 import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
+import { attachMaestroCursorV3 } from '@/components/alphaTab/MaestroCursor3';
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
@@ -1042,6 +1043,10 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
 // false → bypass S1; portrait can use native AlphaTab ScrollMode.Continuous
 // S1 and native scroll must not run together; the flag enforces mutual exclusion.
 const MAESTRO_USE_S1_CUSTOM_SCROLL = true;
+
+// ── Cursor engine flag ───────────────────────────────────────────────────────
+// false → Cursor2 (production default); true → Cursor3 experimental RAF-slew engine
+const MAESTRO_USE_CURSOR3 = false;
 
 // [S1] Active row focal-zone offset. Target places the active row headerH + S1_ACTIVE_ROW_COMFORT_Y
 // below the scroll container top. 280px is the first tuned focal-zone value — larger offset means
@@ -2944,7 +2949,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 new Promise(resolve => {
                     const host = containerRef.current;
                     if (!host || renderTokenRef.current !== tok) return resolve(false);
-                    const attachCursor = () => attachMaestroCursorV2(api, host);
+                    const attachCursor = MAESTRO_USE_CURSOR3
+                        ? () => attachMaestroCursorV3(api, host)
+                        : () => attachMaestroCursorV2(api, host);
                     if (!cursorRef.current) {
                         cursorRef.current = attachCursor();
                     } else {
