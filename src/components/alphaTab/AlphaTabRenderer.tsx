@@ -2,9 +2,21 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.8
+ * Current version: V145.10
  * Date: June 28th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.10 Patch:
+ * ✅ [RepeatOwnerTransitionSnap]
+ *        Native repeat/volta transitions are detected by playback owner masterBar
+ *        discontinuity, not only by raw tick delta. This triggers requestSnap('repeat-jump')
+ *        before renderer gates/setBeat so visually-left repeat destinations are accepted.
+ *
+ * V145.9 Patch:
+ * ✅ [RepeatJumpCursorSnap]
+ *        Normal repeat/volta jumps now call requestSnap('repeat-jump')
+ *        before renderer stable beat refs are cleared, preventing stale cursor ordering
+ *        guards from rejecting visually-left repeat destinations.
  *
  * V145.8 Patch:
  * ✅ [S1ActiveRowComfortZone]
@@ -1608,6 +1620,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const forceRevealCancelRef = useRef(0);
 
     const lastTickRef = useRef<number | null>(null);
+    const lastPlaybackOwnerRef = useRef<{ mbIdx: number; occurrence: number | null } | null>(null);
     const stableCurBeatRef = useRef<any>(null);
     const stableExpandedBeatStartRef = useRef<number>(0);
     const stableNextBeatRef = useRef<any>(null);
@@ -4814,6 +4827,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
                         stableVisualKeyRef.current = null;
+                        lastPlaybackOwnerRef.current = null;
                         if (isRendererDebugEnabled()) {
                             const stack = new Error().stack;
                             console.warn('[page-cursor-reset-source]', {
@@ -5040,6 +5054,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         stableExpandedBeatStartRef.current = 0;
                         stableNextBeatRef.current = null;
                         stableNextExpandedBeatStartRef.current = null;
+                        lastPlaybackOwnerRef.current = null;
                         if (isRendererDebugEnabled()) {
                             const stack = new Error().stack;
                             console.warn('[page-cursor-reset-source]', {
@@ -5084,8 +5099,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const hugeJump = delta > 30000;
                 lastTickRef.current = tick;
 
+                let didHandleJumpSnap = false;
                 if (jumped) {
-                    if (hugeJump) cursorRef.current.requestSnap('huge-jump');
+                    if (hugeJump) {
+                        cursorRef.current?.requestSnap('huge-jump');
+                    } else {
+                        cursorRef.current?.requestSnap('repeat-jump');
+                    }
+                    didHandleJumpSnap = true;
                     resetBeatAcceptance();
                     stableCurBeatRef.current = null;
                     stableExpandedBeatStartRef.current = 0;
@@ -5116,6 +5137,35 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (tick >= mb.start && tick < mb.start + dur) {
                             ownerMbIdx = mbIdx; ownerOccurrence = occ; ownerExpandedStart = mb.start;
                         }
+                    }
+
+                    // [RepeatOwnerTransitionSnap] V145.10: detect repeat/volta by owner masterBar
+                    // discontinuity when expanded ticks are monotonic (delta stays small).
+                    const previousPlaybackOwner = lastPlaybackOwnerRef.current;
+                    const hasPlaybackOwner = typeof ownerMbIdx === 'number';
+                    const ownerMbIdxJumped =
+                        previousPlaybackOwner !== null &&
+                        hasPlaybackOwner &&
+                        (
+                            (ownerMbIdx as number) < previousPlaybackOwner.mbIdx ||
+                            (ownerMbIdx as number) > previousPlaybackOwner.mbIdx + 1
+                        );
+
+                    if (ownerMbIdxJumped && !didHandleJumpSnap) {
+                        cursorRef.current?.requestSnap('repeat-jump');
+                        resetBeatAcceptance();
+                        stableCurBeatRef.current = null;
+                        stableExpandedBeatStartRef.current = 0;
+                        stableNextBeatRef.current = null;
+                        stableNextExpandedBeatStartRef.current = null;
+                        stableVisualKeyRef.current = null;
+                    }
+
+                    if (hasPlaybackOwner) {
+                        lastPlaybackOwnerRef.current = {
+                            mbIdx: ownerMbIdx as number,
+                            occurrence: typeof ownerOccurrence === 'number' ? ownerOccurrence : null,
+                        };
                     }
 
                     if (ownerMbIdx != null) {
@@ -5875,6 +5925,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 });
             }
             lastTickRef.current = null;
+            lastPlaybackOwnerRef.current = null;
             stableCurBeatRef.current = null;
             stableExpandedBeatStartRef.current = 0;
             stableNextBeatRef.current = null;
