@@ -2,7 +2,7 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.2
+ * Current version: V3.0.3
  * Date: June 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
@@ -21,7 +21,7 @@
  * [x] RAF loop lifecycle (startRaf / stopRaf)
  * [x] tickToX(tick) extracted from setTick math
  * [x] renderPosition(tick) helper added
- * [ ] setTick → targetTick only, no direct DOM write
+ * [x] setTick → targetTick only, no direct DOM write
  * [ ] renderPosition(renderTick) as sole DOM write path
  * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
  * [ ] Deadband snap: absDelta <= 48 → instant
@@ -38,16 +38,21 @@
  * ✅ [TickToXExtraction]
  *    Extracts setTick X-position calculation into tickToX/renderPosition helpers
  *    without routing setTick through RAF or changing cursor behavior.
+ * ✅ [RafSetTickRouting]
+ *    Routes Cursor3 setTick through targetTick/renderTick and RAF rendering.
+ *    Preserves setBeat anchor snaps and hard-snap bypass behavior.
+ *    Preserves overrideBeatStart through RAF render path.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MIN_PRIMARY_BEAT_TICKS = 30;
 
-// [RAFScaffold] Phase 3B-A — lifecycle constants, not yet wired into behavior.
-// Prefixed with _ per ESLint unused-vars rule; prefix drops when wired in Phase 3B-D/E.
-const _RAF_SLEW_BASE_TICKS_PER_SEC = 2400;
+// [RAFScaffold] Phase 3B-A / [RafSetTickRouting] Phase 3B-C — lifecycle constants.
+// RAF_SLEW_BASE_TICKS_PER_SEC and RAF_DEADBAND_TICKS are wired in Phase 3B-C.
+// _RAF_SLEW_BOOST_TICKS_PER_SEC remains prefixed until Phase 3B-D/E.
+const RAF_SLEW_BASE_TICKS_PER_SEC = 2400;
 const _RAF_SLEW_BOOST_TICKS_PER_SEC = 4800;
-const _RAF_DEADBAND_TICKS = 48;
+const RAF_DEADBAND_TICKS = 48;
 
 // [PageCursorPlayStartHardSnap] V145.2 — clear interpolation memory on click/touch/play-start hard snaps.
 // These reasons trigger forceHardSnapNextSetBeat so the following setBeat fully resets
@@ -133,6 +138,8 @@ export class MaestroCursorV3 {
     // [RAFScaffold] Phase 3B-A: RAF lifecycle fields. Not yet wired into setTick/setBeat.
     private targetTick: number = 0;
     private renderTick: number = 0;
+    private targetOverrideBeatStart: number | undefined = undefined;
+    private renderOverrideBeatStart: number | undefined = undefined;
     private rafId: number | null = null;
     private lastFrameTime: number = 0;
     private isRafRunning: boolean = false;
@@ -180,7 +187,7 @@ export class MaestroCursorV3 {
             guardedStart: expandedBeatStart,
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
-        if (!beat) { this._hide(); return; }
+        if (!beat) { this.stopRaf(); this._hide(); return; }
 
         const _incomingScanStart =
             expandedBeatStart ??
@@ -239,6 +246,7 @@ export class MaestroCursorV3 {
         if (!bb?.visualBounds) {
             // Do not consume a pending play-start hard snap on a failed bounds lookup.
             // Leave forceHardSnapNextSetBeat true so the next valid setBeat can hard-place.
+            this.stopRaf();
             this._hide();
             return;
         }
@@ -615,6 +623,10 @@ export class MaestroCursorV3 {
         if (this.rowStartX !== null) {
             this.lastX = this.rowStartX;
         }
+        this.targetTick = scanStart;
+        this.renderTick = scanStart;
+        this.targetOverrideBeatStart = undefined;
+        this.renderOverrideBeatStart = undefined;
         this.hasInitialPosition = true;
         this.lastBeatX = this.currentNoteX;
         this.lastBeatY = this.currentY;
@@ -668,7 +680,13 @@ export class MaestroCursorV3 {
         if (this.lastTickApplied >= 0 && tick < this.lastTickApplied) return;
         this.lastTickApplied = tick;
 
-        this.renderPosition(tick, _nextBeat ?? undefined, overrideBeatStart ?? undefined);
+        this.targetTick = tick;
+        this.targetOverrideBeatStart = overrideBeatStart ?? undefined;
+        if (this.renderTick <= 0) {
+            this.renderTick = tick;
+            this.renderOverrideBeatStart = overrideBeatStart ?? undefined;
+        }
+        this.startRaf();
     }
 
     /**
@@ -784,6 +802,16 @@ export class MaestroCursorV3 {
             });
         }
         console.log('[CursorV3] requestSnap', { reason: _reason ?? 'unknown' });
+        // [RafSetTickRouting] Phase 3B-C: on hard-snap, re-render the anchor position
+        // immediately so the cursor doesn't drift from a stale RAF frame.
+        if (_reason && HARD_SNAP_REASONS.has(_reason)) {
+            this.renderTick = this.targetTick;
+            this.targetOverrideBeatStart = undefined;
+            this.renderOverrideBeatStart = undefined;
+            if (this.hasInitialPosition && this.expandedBeatDuration > 0) {
+                this.renderPosition(this.renderTick);
+            }
+        }
     }
 
     public hasPendingHardSnap(): boolean {
@@ -878,10 +906,8 @@ export class MaestroCursorV3 {
 
     // [TickToXExtraction] Phase 3B-B: pure X-position calculation extracted from setTick.
     // All cursor math is identical to the original setTick body.
-    // nextBeat parameter is accepted for future RAF routing (Phase 3B-C); unused currently.
     private tickToX(
         tick: number,
-        _nextBeat?: any,
         overrideBeatStart?: number,
     ): number {
         const beatStart = overrideBeatStart ?? this.beatStart;
@@ -1023,13 +1049,12 @@ export class MaestroCursorV3 {
     }
 
     // [TickToXExtraction] Phase 3B-B: sole synchronous DOM write path from setTick.
-    // Phase 3B-C will route this through the RAF loop instead.
+    // Phase 3B-C routes this through the RAF loop; overrideBeatStart preserved via renderOverrideBeatStart.
     private renderPosition(
         tick: number,
-        nextBeat?: any,
         overrideBeatStart?: number,
     ): void {
-        const finalX = this.tickToX(tick, nextBeat, overrideBeatStart);
+        const finalX = this.tickToX(tick, overrideBeatStart);
         this.isLiveTickTransform = true;
         try {
             this._applyTransform(finalX, this.currentY, this.currentH, false);
@@ -1038,7 +1063,9 @@ export class MaestroCursorV3 {
         }
     }
 
-    // [RAFScaffold] Phase 3B-A: RAF lifecycle stubs. Not called from setTick/setBeat yet.
+    // [RafSetTickRouting] Phase 3B-C: RAF loop with BASE slew toward targetTick.
+    // Deadband snaps instantly when delta <= RAF_DEADBAND_TICKS to avoid micro-drift.
+    // Boosted slew, same-bar gate, and slide/triplet/rest logic are wired in later phases.
     private startRaf(): void {
         if (this.isRafRunning) return;
         if (typeof requestAnimationFrame === 'undefined') return;
@@ -1049,10 +1076,33 @@ export class MaestroCursorV3 {
         const step = (now: number) => {
             if (!this.isRafRunning) return;
 
+            if (this.lastFrameTime === 0) {
+                // First frame — initialize timestamp and defer render to next frame
+                // so dtSeconds is always a valid, positive elapsed interval.
+                this.lastFrameTime = now;
+                this.rafId = requestAnimationFrame(step);
+                return;
+            }
+
+            const dtSeconds = (now - this.lastFrameTime) / 1000;
             this.lastFrameTime = now;
 
-            // Phase 3B-A scaffold only.
-            // Do not render or mutate cursor position yet.
+            const delta = this.targetTick - this.renderTick;
+            if (Math.abs(delta) <= RAF_DEADBAND_TICKS) {
+                this.renderTick = this.targetTick;
+                this.renderOverrideBeatStart = this.targetOverrideBeatStart;
+            } else {
+                this.renderTick += Math.sign(delta) *
+                    Math.min(Math.abs(delta), RAF_SLEW_BASE_TICKS_PER_SEC * dtSeconds);
+                this.renderOverrideBeatStart = this.targetOverrideBeatStart;
+            }
+
+            this.renderPosition(this.renderTick, this.renderOverrideBeatStart);
+
+            if (this.renderTick === this.targetTick) {
+                this.stopRaf();
+                return;
+            }
 
             this.rafId = requestAnimationFrame(step);
         };
