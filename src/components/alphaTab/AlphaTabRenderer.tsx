@@ -3085,7 +3085,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                             }
                                         }
                                         try {
-                                            cursorRef.current.setBeat(r.beat);
+                                            const _repaintEs = r.beat?.absolutePlaybackStart ?? tick;
+                                            const { nextBeat: _repaintNb, nextStart: _repaintNs } = resolveNextBeatExpanded(api, trackSet, _repaintEs, r.beat);
+                                            cursorRef.current.setBeat(r.beat, _repaintNb, _repaintNs ?? null, _repaintEs);
                                             cursorRef.current.setTick(tick);
                                             if (isRendererDebugEnabled()) {
                                                 console.warn('[page-cursor-reset-source]', {
@@ -3130,8 +3132,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 isSettling: isSettlingRef.current,
                             });
                         }
+                        const _songLoadEs = r.beat?.absolutePlaybackStart ?? tick;
+                        const { nextBeat: _songLoadNb, nextStart: _songLoadNs } = resolveNextBeatExpanded(api, trackSet, _songLoadEs, r.beat);
                         cursorRef.current?.requestSnap('song-load');
-                        cursorRef.current?.setBeat(r.beat);
+                        cursorRef.current?.setBeat(r.beat, _songLoadNb, _songLoadNs ?? null, _songLoadEs);
                         cursorRef.current?.setTick(tick);
                         // [rotation-anchor-gate-probe] Point 8: before snapPortraitToBeatRow
                         if (isRendererDebugEnabled()) {
