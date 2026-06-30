@@ -2,7 +2,7 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.4
+ * Current version: V3.0.5
  * Date: June 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
@@ -45,6 +45,10 @@
  * ✅ [ExpandedBarWindowGate]
  *    Adds an occurrence-safe expanded bar-window gate so RAF snaps stale
  *    renderTick positions instead of slewing across repeat/bar boundaries.
+ * ✅ [SlideParkingDiagnostics]
+ *    Adds CURSOR3_SLIDE_DIAG-gated probes around Cursor3 stayPut/terminal
+ *    slide parking branches to inspect nextCandidate, voice scan, tie-destination,
+ *    slide flags, and bounds data without changing cursor behavior.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -80,6 +84,43 @@ function cursor3DiagEnabled(): boolean {
         (window as any).LANDSCAPE_LOOP_DEBUG === true ||
         window.localStorage?.getItem('CURSOR3_DIAG') === 'true'
     );
+}
+
+// [SlideParkingDiagnostics] Phase 3C-A: separate flag so slide probes do not fire
+// during normal CURSOR3_DIAG sessions. Enable via:
+//   window.CURSOR3_SLIDE_DIAG = true
+//   localStorage.setItem('CURSOR3_SLIDE_DIAG', 'true')
+function cursor3SlideDiagEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+        return (
+            (window as any).CURSOR3_SLIDE_DIAG === true ||
+            window.localStorage?.getItem('CURSOR3_SLIDE_DIAG') === 'true'
+        );
+    } catch {
+        return (window as any).CURSOR3_SLIDE_DIAG === true;
+    }
+}
+
+// [SlideParkingDiagnostics] Phase 3C-A: compact note-shape snapshot for slide probes.
+// Returns allTieDestination, anyTieDestination, and per-note slide type arrays.
+function summarizeSlideNotes(beat: any): {
+    notesCount: number;
+    allTieDestination: boolean;
+    anyTieDestination: boolean;
+    slideInTypes: (any | null)[] | null;
+    slideOutTypes: (any | null)[] | null;
+} {
+    return {
+        notesCount: beat?.notes?.length ?? 0,
+        allTieDestination:
+            (beat?.notes?.length ?? 0) > 0 &&
+            beat.notes.every((n: any) => n?.isTieDestination === true),
+        anyTieDestination:
+            beat?.notes?.some?.((n: any) => n?.isTieDestination === true) ?? false,
+        slideInTypes: beat?.notes?.map?.((n: any) => n?.slideInType ?? null) ?? null,
+        slideOutTypes: beat?.notes?.map?.((n: any) => n?.slideOutType ?? null) ?? null,
+    };
 }
 
 // ─── Class ────────────────────────────────────────────────────────────────────
@@ -119,6 +160,9 @@ export class MaestroCursorV3 {
     // causes the next setBeat to flush all interpolation state before re-anchoring.
     private forceHardSnapNextSetBeat = false;
     private tickDiagCount = 0;
+    // [SlideParkingDiagnostics] Phase 3C-A: per-beatStart call counter for the
+    // tickToX parking probe. Keyed by beatStart; capped at 12 per anchor.
+    private _slideParkTickCount: { [beatStart: number]: number } = {};
     private forceRenderSmallMoveTicks = 0;
     private isLiveTickTransform = false;
 
@@ -609,6 +653,104 @@ export class MaestroCursorV3 {
             }
         }
 
+        // [SlideParkingDiagnostics] Phase 3C-A: gated probe to confirm SRV stayPut
+        // parking branch and inspect nextCandidate/voice-scan beat shapes.
+        if (cursor3SlideDiagEnabled()) {
+            const _spBranch = this.nextNoteX !== null
+                ? 'lerp'
+                : nextCandidate && this.stayPutMode
+                    ? 'stayPut-sameRow-or-behind'
+                    : !nextCandidate
+                        ? 'no-candidate'
+                        : 'other';
+
+            let _spNcBounds: any = null;
+            let _spNcNx: number | null = null;
+            let _spNcSameRow: boolean | null = null;
+            let _spNcXDelta: number | null = null;
+            if (nextCandidate) {
+                _spNcBounds = this.api?.renderer?.boundsLookup?.findBeat(nextCandidate);
+                if (_spNcBounds?.visualBounds) {
+                    _spNcNx = typeof _spNcBounds.onNotesX === 'number'
+                        ? _spNcBounds.onNotesX
+                        : _spNcBounds.visualBounds.x;
+                    _spNcSameRow = Math.abs(_spNcBounds.visualBounds.y - this.currentY) < 5;
+                    _spNcXDelta = _spNcNx !== null ? _spNcNx - this.currentNoteX : null;
+                }
+            }
+
+            const _spVoiceBeats: any[] = beat?.voice?.beats ?? beat?.voice?.bar?.beats ?? [];
+            const _spCurIdx = _spVoiceBeats.indexOf(beat);
+            const _spVoiceScan: any[] = [];
+            if (_spCurIdx >= 0) {
+                const _spLookup = this.api?.renderer?.boundsLookup;
+                for (
+                    let _vi = _spCurIdx + 1;
+                    _vi < _spVoiceBeats.length && _spVoiceScan.length < 12;
+                    _vi++
+                ) {
+                    const _vb = _spVoiceBeats[_vi];
+                    const _vbb = _spLookup?.findBeat(_vb);
+                    const _vw = _vbb?.visualBounds?.w ?? null;
+                    const _vx = _vbb
+                        ? (typeof _vbb.onNotesX === 'number' ? _vbb.onNotesX : _vbb.visualBounds?.x ?? null)
+                        : null;
+                    const _vy = _vbb?.visualBounds?.y ?? null;
+                    const _vDur = _vb?.playbackDuration ?? _vb?.duration ?? 0;
+                    _spVoiceScan.push({
+                        indexOffset: _vi - _spCurIdx,
+                        absStart: _vb?.absolutePlaybackStart ?? null,
+                        playbackStart: _vb?.playbackStart ?? null,
+                        dur: _vDur,
+                        x: _vx,
+                        y: _vy,
+                        w: _vw,
+                        sameRow: _vy !== null ? Math.abs(_vy - this.currentY) < 5 : null,
+                        xDeltaFromCurrent: _vx !== null ? _vx - this.currentNoteX : null,
+                        ...summarizeSlideNotes(_vb),
+                        isSubPrimary: _vDur < MIN_PRIMARY_BEAT_TICKS,
+                        isZeroWidth: _vw !== null ? _vw <= 0 : null,
+                    });
+                }
+            }
+
+            console.warn('[cursor3-slide-parking-probe]', {
+                branch: _spBranch,
+                beatAbsolutePlaybackStart: beat?.absolutePlaybackStart ?? null,
+                beatPlaybackStart: beat?.playbackStart ?? null,
+                scanStart,
+                beatStart: this.beatStart,
+                expandedBeatDuration: this.expandedBeatDuration,
+                barIdx: beat?.voice?.bar?.index ?? null,
+                masterBarIdx: beat?.voice?.bar?.masterBar?.index ?? null,
+                currentNoteX: this.currentNoteX,
+                currentY: this.currentY,
+                currentH: this.currentH,
+                nextNoteX: this.nextNoteX,
+                stayPutMode: this.stayPutMode,
+                terminalSameRowNoAdvanceMode: this.terminalSameRowNoAdvanceMode,
+                barEndGapMode: this.barEndGapMode,
+                loopEndX: this.loopEndX,
+                nextCandidate: nextCandidate ? {
+                    absolutePlaybackStart: nextCandidate?.absolutePlaybackStart ?? null,
+                    playbackStart: nextCandidate?.playbackStart ?? null,
+                    duration: nextCandidate?.playbackDuration ?? nextCandidate?.duration ?? null,
+                    ...summarizeSlideNotes(nextCandidate),
+                    bounds: _spNcBounds ? {
+                        x: _spNcBounds.visualBounds?.x ?? null,
+                        y: _spNcBounds.visualBounds?.y ?? null,
+                        w: _spNcBounds.visualBounds?.w ?? null,
+                        h: _spNcBounds.visualBounds?.h ?? null,
+                        onNotesX: _spNcBounds.onNotesX ?? null,
+                    } : null,
+                    nx: _spNcNx,
+                    sameRow: _spNcSameRow,
+                    xDeltaFromCurrent: _spNcXDelta,
+                } : null,
+                voiceScanSummary: _spVoiceScan,
+            });
+        }
+
         (this as any)._currentBeat = beat;
 
         const finalX = this.currentNoteX - BAR_WIDTH / 2;
@@ -971,6 +1113,46 @@ export class MaestroCursorV3 {
         }
 
         let finalX = interpolatedX - BAR_WIDTH / 2;
+
+        // [SlideParkingDiagnostics] Phase 3C-A: gated stayPut tick probe, throttled to
+        // first 12 calls per beatStart so rapid tick streams don't flood the console.
+        if (cursor3SlideDiagEnabled() && this.stayPutMode) {
+            const _tKey = overrideBeatStart ?? this.beatStart;
+            const _tCount = this._slideParkTickCount[_tKey] ?? 0;
+            if (_tCount < 12) {
+                this._slideParkTickCount[_tKey] = _tCount + 1;
+                const _tBranch =
+                    this.stayPutMode && !this.barEndGapMode && !this.terminalSameRowNoAdvanceMode
+                        ? 'stayDrift4px'
+                        : this.terminalSameRowNoAdvanceMode
+                            ? 'barRight-terminal'
+                            : this.barEndGapMode
+                                ? 'barRight-gap'
+                                : 'lerp-or-other';
+                console.warn('[cursor3-slide-parking-tick]', {
+                    tick,
+                    targetTick: this.targetTick,
+                    renderTick: this.renderTick,
+                    beatStart: overrideBeatStart ?? this.beatStart,
+                    expandedBeatDuration: this.expandedBeatDuration,
+                    progress,
+                    currentNoteX: this.currentNoteX,
+                    nextNoteX: this.nextNoteX,
+                    interpolatedX,
+                    finalX,
+                    stayPutMode: this.stayPutMode,
+                    terminalSameRowNoAdvanceMode: this.terminalSameRowNoAdvanceMode,
+                    barEndGapMode: this.barEndGapMode,
+                    branch: _tBranch,
+                    masterBarIdx:
+                        this.currentBeat?.voice?.bar?.masterBar?.index ??
+                        this.currentBeat?.voice?.bar?.index ??
+                        null,
+                    currentBeatNotes: summarizeSlideNotes(this.currentBeat),
+                    probeCount: _tCount + 1,
+                });
+            }
+        }
 
         // [RowStartOffsetDecay] V1.6: apply a decaying visual offset so the cursor starts
         // at the left barline and converges to normal interpolation over 2 beats.
