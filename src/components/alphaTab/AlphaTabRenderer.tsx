@@ -2,9 +2,42 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.11
+ * Current version: V145.17-CANDIDATE
  * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.17-CANDIDATE Patch (not yet OFFICIAL or LOCKED):
+ * ✅ [MAESTRO-CURSOR-001] Resolves Dense Slide / Gliss Cursor Boundary Collapse
+ *        by keeping the unconditional same-bar micro-backtrack allowance out
+ *        of the V117 guard, removing over-broad dense-slide candidate
+ *        rejections, making left-of-current row-aware, and preserving
+ *        M24/M128 validated behavior. The V145.14-PROBE diagnostic scaffolding
+ *        (module-level probe state/logger/window dump helpers) used to
+ *        isolate this has been removed.
+ *
+ * V145.16-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [M24DurationRejectAB] Keeps the confirmed M128 14px-filter fix and M24
+ *        row-aware left guard, then disables the 120-tick duration rejection
+ *        after the M24 probe showed legitimate 60-tick dense-slide candidates
+ *        being rejected as durationBelowThreshold before next-measure fallback.
+ *
+ * V145.15-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [M24RowAwareLeftGuard] Tests a row-aware left-of-current guard in
+ *        resolveNextBeatExpanded after the M24 boundary probe showed forward
+ *        candidates being rejected as leftOfCurrent during row/system wrap,
+ *        followed by premature next-measure fallback.
+ *
+ * V145.14-PROBE Patch (TEMPORARY DIAGNOSTIC — not for commit):
+ * ✅ [M24BoundaryProbe] Temporary M24 boundary-ownership probe for dense-slide
+ *        bounce. Logs whether cursor alternates between local slide anchors
+ *        and bar-right/M25 fallback targets. Not for commit.
+ *
+ * V145.12-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [M24DenseSlideBounceAB] The unconditional same-bar micro-backtrack allowance
+ *        stays removed from the V117 backtrack guard. V117 A/B reset (local-ref
+ *        bypass restored) and the resolveNextBeatExpanded same-row 14px candidate
+ *        filter are being isolated one at a time to find the M24 dense-slide
+ *        bounce cause. Not for commit until a single confirmed cause is found.
  *
  * V145.12 Patch:
  * ✅ [LoopOverlayCursorReanchor] Pass onLoopClickSeek={(tick) => publishCursorAtTick(tick)}
@@ -376,6 +409,11 @@
  *         playerPositionChanged regression guard to accept intentional cursor
  *         movement to an earlier tapped beat/bar. Matches manual handleClick
  *         pattern. Do not remove.
+ *
+ * ✅ [ClickSeekBacktrackParity]
+ *         Arms window.__maestroAllowBacktrackUntil during normal notation click-seek,
+ *         matching LoopOverlay behavior so AlphaSynth same-bar lookahead events
+ *         cannot be blocked by V117 before cursor.setBeat/setTick.
  *
  * ✅ [LandscapeAnchorCurrentTick] landscapeInitialAnchor prepends
  *         api.tickPosition to PROBE_TICKS. Ensures current beat position is
@@ -1028,7 +1066,12 @@ function resolveNextBeatExpanded(api: any, trackSet: Set<number>, expandedStart:
             const cBb = api?.renderer?.boundsLookup?.findBeat?.(b);
             if (cBb?.visualBounds) {
                 const cX = typeof cBb.onNotesX === 'number' ? cBb.onNotesX : cBb.visualBounds.x + cBb.visualBounds.w / 2;
-                if (cX < curX - 6) continue;
+                // Only reject visually-left candidates when they're on the same rendered
+                // row/system. A forward-in-time candidate that wrapped to the next
+                // row/system can appear left of curX in raw pixel space — that's a
+                // layout artifact, not a backward-in-time candidate.
+                const _cSameRow = Math.abs(cBb.visualBounds.y - (curBb?.visualBounds?.y ?? cBb.visualBounds.y)) < 5;
+                if (_cSameRow && cX < curX - 6) continue;
             }
         }
         return { nextBeat: b, nextStart: t };
@@ -5374,11 +5417,42 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (stableCurBeatRef.current) {
                         const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
                         if (incomingStart >= 0 && prevAbs >= 0 && incomingStart < prevAbs) {
+                            const _v117Now = Date.now();
+                            const _v117GlobalUntil = (window as any).__maestroAllowBacktrackUntil ?? 0;
+                            const _v117GlobalRemaining = _v117GlobalUntil - _v117Now;
+                            const _v117LocalUntil = allowBacktrackUntilRef.current ?? 0;
+                            const _v117LocalRemaining = _v117LocalUntil - _v117Now;
+                            const _v117LastIntentionalTick = (window as any).__maestroLastIntentionalTick;
+                            const _v117BackDelta = prevAbs - incomingStart;
+                            const _v117TickLeadFromIncoming = tick - incomingStart;
+
+                            const incomingBarIdx = curBeat?.voice?.bar?.index
+                                ?? curBeat?.voice?.bar?.masterBar?.index ?? null;
+                            const prevBarIdx = stableCurBeatRef.current?.voice?.bar?.index
+                                ?? stableCurBeatRef.current?.voice?.bar?.masterBar?.index ?? null;
+
+                            const sameBarIntentionalBacktrack =
+                                incomingBarIdx === prevBarIdx &&
+                                incomingStart >= 0 &&
+                                prevAbs >= 0 &&
+                                incomingStart < prevAbs &&
+                                typeof _v117LastIntentionalTick === 'number' &&
+                                Math.abs(_v117LastIntentionalTick - prevAbs) <= 2 &&
+                                _v117BackDelta > 0 &&
+                                _v117BackDelta <= 720 &&
+                                _v117TickLeadFromIncoming >= 0 &&
+                                _v117TickLeadFromIncoming <= 720;
+
                             const allowBacktrack =
-                                Date.now() < ((window as any).__maestroAllowBacktrackUntil ?? 0);
+                                _v117GlobalRemaining > 0 ||
+                                _v117LocalRemaining > 0 ||
+                                sameBarIntentionalBacktrack;
+
                             if (allowBacktrack) {
                                 if (isRendererDebugEnabled()) {
-                                    console.log('[V117] structural regression allowed — manual backtrack seek');
+                                    console.log('[V117] structural regression allowed — manual backtrack seek', {
+                                        sameBarIntentionalBacktrack,
+                                    });
                                 }
                             } else {
                                 const regKey = `${incomingStart}:${prevAbs}`;
@@ -5404,10 +5478,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         reason: 'V117-regression-blocked-cursor',
                                         incomingStart,
                                         prevAbs,
-                                        incomingBarIdx: curBeat?.voice?.bar?.index
-                                            ?? curBeat?.voice?.bar?.masterBar?.index ?? null,
-                                        prevBarIdx: stableCurBeatRef.current?.voice?.bar?.index
-                                            ?? stableCurBeatRef.current?.voice?.bar?.masterBar?.index ?? null,
+                                        incomingBarIdx,
+                                        prevBarIdx,
                                         tick,
                                         liveRangeStartTick: liveRange?.startTick ?? null,
                                         manualSeekAge: (window as any).__maestroManualSeek
@@ -5416,6 +5488,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         allowBacktrackActive: Date.now()
                                             < ((window as any).__maestroAllowBacktrackUntil ?? 0),
                                         note: 'cursor blocked — loop click did not set __maestroAllowBacktrackUntil',
+                                        backDelta: _v117BackDelta,
+                                        tickLeadFromIncoming: _v117TickLeadFromIncoming,
+                                        lastIntentionalTick: _v117LastIntentionalTick,
+                                        allowBacktrack,
+                                        sameBarIntentionalBacktrack,
                                     });
                                 }
                                 return;
@@ -6823,6 +6900,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
                 const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
                 if (seekTicks) seekTicks(safeTarget);
+                // [ClickSeekBacktrackParity] Arm V117 backtrack window before api.tickPosition
+                // which can synchronously fire playerPositionChanged. Without this, AlphaSynth
+                // same-bar lookahead events (e.g. tick 480 after seek to 600) are blocked by
+                // V117 because only BeatCustomLoopOverlay previously set this global.
+                (window as any).__maestroAllowBacktrackUntil = Date.now() + 600;
                 api.tickPosition = safeTarget;
                 resetBeatAcceptance();
                 setLastStableRotationAnchorTick(safeTarget, 'click-seek');
