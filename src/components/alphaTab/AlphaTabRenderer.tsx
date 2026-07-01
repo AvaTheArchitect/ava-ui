@@ -2,18 +2,34 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.17-CANDIDATE
+ * Current version: V145.17-LOCKED
  * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
- * V145.17-CANDIDATE Patch (not yet OFFICIAL or LOCKED):
+ * V145.17-LOCKED Patch:
  * ✅ [MAESTRO-CURSOR-001] Resolves Dense Slide / Gliss Cursor Boundary Collapse
  *        by keeping the unconditional same-bar micro-backtrack allowance out
  *        of the V117 guard, removing over-broad dense-slide candidate
  *        rejections, making left-of-current row-aware, and preserving
  *        M24/M128 validated behavior. The V145.14-PROBE diagnostic scaffolding
  *        (module-level probe state/logger/window dump helpers) used to
- *        isolate this has been removed.
+ *        isolate this has been removed. Validated: M24 DevTools open/closed at
+ *        25%, M24 click-seek (first/middle pick slide, finger slide), M24 loop
+ *        mid-M23-to-end-M24, M128 dive bomb, SRV slide, repeat first-note
+ *        attack unchanged.
+ *        LOCK NOTES:
+ *        - Do not reintroduce the unconditional same-bar micro-backtrack
+ *          allowance in the V117 guard.
+ *        - Do not restore the fixed 14px same-row rejection in
+ *          resolveNextBeatExpanded.
+ *        - Do not restore the fixed 120-tick duration rejection for dense
+ *          slide/gliss candidates.
+ *        - Keep left-of-current rejection row-aware; only reject
+ *          visually-left candidates on the same rendered row/system.
+ *        - Do not promote dense slide/gliss passages to barline/next-measure
+ *          fallback while valid local anchors remain.
+ *        - Future page/mobile scroll snapping must not rewrite beat
+ *          candidates, stable beat ownership, or Cursor2 interpolation.
  *
  * V145.16-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
  * ✅ [M24DurationRejectAB] Keeps the confirmed M128 14px-filter fix and M24
