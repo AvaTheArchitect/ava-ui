@@ -2,9 +2,57 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.17-LOCKED
+ * Current version: V145.24-CANDIDATE
  * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.24-CANDIDATE Patch (not yet OFFICIAL or LOCKED):
+ * ✅ [MAESTRO-SCROLL-001] Confirms the playback S1 row-boundary scroll
+ *        candidate: page-owned header intent, accepted sysIdx-driven TopMenu
+ *        hide, live headerH=0 when header intent is hidden, V145.23 anti-dangle
+ *        gate reverted, V145.22 chrome clamp retained for revalidation, S1
+ *        probes retained temporarily. Not OFFICIAL or LOCKED.
+ *        MAESTRO-UI-002 remains open: manual scroll-down TopMenu hide
+ *        responsiveness is a separate lane, not addressed here.
+ *        Future architecture note: Songsterr appears to use an in-flow header
+ *        that naturally scrolls away; Maestro's current fixed/translated tray
+ *        requires intent synchronization instead. Do not refactor to an
+ *        in-flow tray in this patch.
+ *
+ * V145.23-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [MAESTRO-CURSOR-003] Gates S1 previous-row anti-dangle correction for
+ *        early/header transitions so Songsterr-style page context can remain
+ *        visible when the active row is already safely visible. Not OFFICIAL
+ *        or LOCKED.
+ *
+ * V145.22-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [MAESTRO-CURSOR-003] Applies S1 active-row chrome clamp after the probe
+ *        showed currentTarget could clear the previous row while clipping the
+ *        active SVG top under chrome. Not OFFICIAL or LOCKED.
+ *
+ * V145.21-PROBE Patch (TEMPORARY DIAGNOSTIC — not for commit):
+ * ✅ [S1BoundaryProbe] Clarifies S1 boundary diagnostics by separating chrome
+ *        clearance, active-row comfort, active SVG top, and previous SVG
+ *        bottom. No behavior change.
+ *        Follow-up: S1 probe comparison booleans now use container-relative
+ *        coordinates consistently.
+ *
+ * V145.20-PROBE Patch (TEMPORARY DIAGNOSTIC — not for commit):
+ * ✅ [S1BoundaryProbe] Adds temporary visual S1 row-boundary diagnostics to
+ *        compare actual SVG row bounds, visible TopMenuTray bounds, scroll
+ *        container bounds, and computed scroll target. Not for commit.
+ *
+ * V145.19-A/B Patch (EXPERIMENTAL — local A/B test state, not a committed production lock):
+ * ✅ [MAESTRO-CURSOR-003] Isolates MAESTRO-CURSOR-003 by keeping visible
+ *        TopMenuTray measurement while reverting the staff-row surplus-shift
+ *        mapping after V145.18 caused global SVG/staff top clipping. Not
+ *        OFFICIAL or LOCKED.
+ *
+ * V145.18-A/B Patch (superseded by V145.19-A/B above — surplus-shift mapping reverted):
+ * ✅ [MAESTRO-CURSOR-003] Tested page/mobile scroll measurement fixes: measure
+ *        the visible TopMenuTray instead of the first tray shell, and protect
+ *        staff-row DOM mapping from Header2/chord-chart SVG offset when
+ *        positioning accepted curBeat rows.
  *
  * V145.17-LOCKED Patch:
  * ✅ [MAESTRO-CURSOR-001] Resolves Dense Slide / Gliss Cursor Boundary Collapse
@@ -647,6 +695,10 @@ export interface AlphaTabRendererV102Props {
     theme?: 'light' | 'dark';
     className?: string;
     scrollContainer?: HTMLElement | null;
+    // MAESTRO-SCROLL-001: synchronous header-visibility intent, read by the live S1
+    // scroll path instead of measuring the transform-animated TopMenuTray DOM rect.
+    headerVisibleRef?: React.MutableRefObject<boolean>;
+    onRequestHeaderHide?: () => void;
     forceHorizontal?: boolean;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     externalMediaHandler?: any;
@@ -1142,6 +1194,252 @@ function findSystemIndexForY(systems: any[], y: number): number {
     return -1;
 }
 
+// ── [MAESTRO-CURSOR-003] Visible TopMenuTray rect ────────────────────────────
+// Both mobile and desktop tray shells share [data-top-menu-tray] and are always
+// mounted (CSS toggles visibility, avoids hydration flash) — a plain
+// querySelector() always returns the first (mobile) shell in DOM order, even
+// when it's the hidden one, silently reading a zero-size rect. This walks all
+// matches and returns the rect of whichever one is actually rendered.
+function getVisibleTopMenuTrayRect(): DOMRect | null {
+    if (typeof document === 'undefined') return null;
+    const candidates = document.querySelectorAll('[data-top-menu-tray]');
+    for (const el of Array.from(candidates)) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const cs = getComputedStyle(el as Element);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        return rect;
+    }
+    return null;
+}
+
+// ── [S1BoundaryProbe] V145.20-PROBE — temporary diagnostic, not for commit ──
+// Read-only comparison of the live S1 scroll target against the historical
+// alphaTab #2690 approach (measure rendered SVG/system row bounds directly,
+// keep the previous row fully clear). Never applies any candidate target —
+// every value below is computed and logged only. Toggle the visual overlay
+// with window.__maestroShowS1BoundaryProbe = true/false.
+type S1ProbeEvent = Record<string, unknown>;
+const S1_PROBE_MAX_EVENTS = 200;
+const s1BoundaryProbeState: { events: S1ProbeEvent[] } = { events: [] };
+
+function s1ProbeRecord(evt: S1ProbeEvent): void {
+    s1BoundaryProbeState.events.push(evt);
+    if (s1BoundaryProbeState.events.length > S1_PROBE_MAX_EVENTS) s1BoundaryProbeState.events.shift();
+}
+
+let s1ProbeOverlayEls: {
+    red: HTMLDivElement; orange: HTMLDivElement; blue: HTMLDivElement; purple: HTMLDivElement; green: HTMLDivElement;
+} | null = null;
+
+function ensureS1ProbeOverlayEls(): typeof s1ProbeOverlayEls {
+    if (typeof document === 'undefined') return null;
+    if (s1ProbeOverlayEls) return s1ProbeOverlayEls;
+    const make = (color: string, label: string): HTMLDivElement => {
+        const el = document.createElement('div');
+        el.style.cssText = `position:fixed; left:0; right:0; height:0; border-top:2px solid ${color}; z-index:2147483000; pointer-events:none; display:none;`;
+        const tag = document.createElement('span');
+        tag.textContent = label;
+        tag.style.cssText = `position:absolute; right:4px; top:-14px; font:10px monospace; color:${color}; background:rgba(0,0,0,0.6); padding:0 3px; white-space:nowrap;`;
+        el.appendChild(tag);
+        document.body.appendChild(el);
+        return el;
+    };
+    s1ProbeOverlayEls = {
+        red: make('red', 'active SVG row top'),
+        orange: make('orange', 'previous SVG row bottom'),
+        blue: make('#3b82f6', 'chrome clearance line'),
+        purple: make('#a855f7', 'active row comfort line'),
+        green: make('#22c55e', 'active beat/cursor proxy'),
+    };
+    return s1ProbeOverlayEls;
+}
+
+function updateS1ProbeOverlay(lines: { red: number | null; orange: number | null; blue: number | null; purple: number | null; green: number | null }): void {
+    if (typeof window === 'undefined') return;
+    if ((window as any).__maestroShowS1BoundaryProbe !== true) {
+        if (s1ProbeOverlayEls) {
+            (Object.values(s1ProbeOverlayEls) as HTMLDivElement[]).forEach(el => { el.style.display = 'none'; });
+        }
+        return;
+    }
+    const els = ensureS1ProbeOverlayEls();
+    if (!els) return;
+    (Object.keys(els) as Array<keyof typeof els>).forEach(key => {
+        const y = lines[key];
+        const el = els[key];
+        if (typeof y === 'number' && Number.isFinite(y)) {
+            el.style.top = `${Math.round(y)}px`;
+            el.style.display = 'block';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+}
+
+// Computes (without applying) the current live target alongside clarified
+// candidate targets. V145.21 separates two lines that V145.20 conflated under
+// one "desiredSafeTop" name: chromeClearanceY (just past the tray, small) vs.
+// activeRowComfortY (the much larger S1 comfort-zone offset). Records a
+// compact probe event and updates the visual overlay. Purely additive — reads
+// existing values, writes nothing back into the scroll formula.
+function computeAndRecordS1BoundaryProbe(params: {
+    label: string;
+    sysIdx: number;
+    scrollTopBefore: number;
+    currentTarget: number;
+    scrollElEl: HTMLElement;
+    scrollRect: DOMRect;
+    visibleTopMenuRect: DOMRect | null;
+    headerH: number;
+    GAP: number;
+    activeRowRect: DOMRect | null;
+    prevRowRect: DOMRect | null;
+    // MAESTRO-SCROLL-001: synchronous header-visibility intent, when available (live-playback
+    // site only) — lets the probe distinguish "measured a hidden tray" from "skipped the read".
+    headerIntent?: boolean | null;
+}): void {
+    const {
+        label, sysIdx, scrollTopBefore, currentTarget, scrollElEl, scrollRect,
+        visibleTopMenuRect, headerH, GAP, activeRowRect, prevRowRect, headerIntent,
+    } = params;
+
+    // [Follow-up V145.21] All comparison math below stays in one frame — container-relative
+    // (i.e. relative to scrollRect.top) — so booleans never mix an absolute viewport value
+    // against a container-relative one. Absolute viewport values are kept only for the
+    // *ViewportY overlay-drawing locals further down and the explicitly-named Viewport fields.
+    const activeTopRelBefore = activeRowRect != null ? activeRowRect.top - scrollRect.top : null;
+    const activeBottomRelBefore = activeRowRect != null ? activeRowRect.bottom - scrollRect.top : null;
+    const prevTopRelBefore = prevRowRect != null ? prevRowRect.top - scrollRect.top : null;
+    const prevBottomRelBefore = prevRowRect != null ? prevRowRect.bottom - scrollRect.top : null;
+    const rowTopRelativeToScrollContainer = activeTopRelBefore;
+    const prevBottomRelativeToScrollContainer = prevBottomRelBefore;
+    const visibleTopMenuBottomRelativeToScrollContainer =
+        visibleTopMenuRect != null ? visibleTopMenuRect.bottom - scrollRect.top : null;
+
+    // chromeClearanceY: just past the tray — small (~headerH+GAP), container-relative.
+    // activeRowComfortY: the S1 comfort-zone offset (headerH + 280px) — much larger,
+    // and NOT the same line as chrome clearance. Conflating the two under one
+    // "desiredSafeTop" name is the V145.20 bug this patch clarifies.
+    const chromeClearanceY = visibleTopMenuBottomRelativeToScrollContainer != null
+        ? visibleTopMenuBottomRelativeToScrollContainer + GAP
+        : null;
+    const activeRowComfortY = headerH + S1_ACTIVE_ROW_COMFORT_Y;
+
+    const scrollDelta = currentTarget - scrollTopBefore;
+    const activeTopRelAfterCurrentTarget = activeTopRelBefore != null ? activeTopRelBefore - scrollDelta : null;
+    const activeBottomRelAfterCurrentTarget = activeBottomRelBefore != null ? activeBottomRelBefore - scrollDelta : null;
+    const prevBottomRelAfterCurrentTarget = prevBottomRelBefore === null ? null : prevBottomRelBefore - scrollDelta;
+
+    const currentTargetClipsActiveUnderChrome = (activeTopRelAfterCurrentTarget != null && chromeClearanceY != null)
+        ? activeTopRelAfterCurrentTarget < chromeClearanceY
+        : null;
+    const currentTargetClearsPrevRow = (prevBottomRelAfterCurrentTarget === null || chromeClearanceY == null)
+        ? null
+        : prevBottomRelAfterCurrentTarget <= chromeClearanceY;
+
+    const prevBottomClearTarget = (prevBottomRelativeToScrollContainer != null && chromeClearanceY != null)
+        ? scrollTopBefore + prevBottomRelativeToScrollContainer - chromeClearanceY
+        : null;
+    const activeComfortTarget = rowTopRelativeToScrollContainer != null
+        ? scrollTopBefore + rowTopRelativeToScrollContainer - activeRowComfortY
+        : null;
+    const activeChromeClampTarget = (rowTopRelativeToScrollContainer != null && chromeClearanceY != null)
+        ? scrollTopBefore + rowTopRelativeToScrollContainer - chromeClearanceY
+        : null;
+
+    const activeRowHeight = activeRowRect?.height ?? null;
+    const prevRowHeight = prevRowRect?.height ?? null;
+
+    const evt: S1ProbeEvent = {
+        label,
+        at: Date.now(),
+        sysIdx,
+        scrollTopBefore,
+        computedTarget: currentTarget,
+        scrollTopAfter: null, // filled in on next frame below, if available
+        scrollRectTop: scrollRect.top,
+        scrollRectBottom: scrollRect.bottom,
+        visibleTopMenuRectTop: visibleTopMenuRect?.top ?? null,
+        visibleTopMenuRectBottom: visibleTopMenuRect?.bottom ?? null,
+        headerH,
+        headerIntent: headerIntent ?? null,
+        S1_ACTIVE_ROW_COMFORT_Y,
+        GAP,
+        // [Follow-up V145.21] Explicitly-labeled raw viewport (absolute) values — kept for
+        // reference, but never fed into the clearance booleans below.
+        activeRowRectTopViewport: activeRowRect?.top ?? null,
+        activeRowRectBottom: activeRowRect?.bottom ?? null,
+        activeRowHeight,
+        prevRowRectTop: prevRowRect?.top ?? null,
+        prevRowRectBottomViewport: prevRowRect?.bottom ?? null,
+        prevRowHeight,
+        // [Stairway/Header2] Flags tiny Header/Tuning-style SVGs (e.g. Stairway's
+        // 1118x12 row) that pass the .at-surface size filter but aren't real staff rows.
+        activeRowLooksTinySvg: activeRowHeight != null ? activeRowHeight < 40 : null,
+        prevRowLooksTinySvg: prevRowHeight != null ? prevRowHeight < 40 : null,
+        // No reliable per-beat DOM pixel lookup exists at these call sites — the active
+        // row's own rect is the closest available stand-in (see overlay green line).
+        activeBeatRectTop: activeRowRect?.top ?? null,
+        activeBeatRectBottom: activeRowRect?.bottom ?? null,
+        // Container-relative frame — used consistently for all comparison booleans.
+        activeTopRelBefore,
+        activeBottomRelBefore,
+        prevTopRelBefore,
+        prevBottomRelBefore,
+        rowTopRelativeToScrollContainer,
+        prevBottomRelativeToScrollContainer,
+        visibleTopMenuBottomRelativeToScrollContainer,
+        chromeClearanceY,
+        activeRowComfortY,
+        activeTopRelAfterCurrentTarget,
+        activeBottomRelAfterCurrentTarget,
+        prevBottomRelAfterCurrentTarget,
+        currentTargetClipsActiveUnderChrome,
+        currentTargetClearsPrevRow,
+        currentTarget,
+        prevBottomClearTarget,
+        activeComfortTarget,
+        activeChromeClampTarget,
+    };
+
+    s1ProbeRecord(evt);
+    if (isRendererDebugEnabled() || isSnapDebugEnabled()) {
+        console.log('[s1-boundary-probe]', evt);
+    }
+    if (typeof window !== 'undefined' && typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => {
+            evt.scrollTopAfter = scrollElEl.scrollTop;
+        });
+    }
+
+    // Overlay lines are position:fixed and need absolute viewport Y, unlike the
+    // container-relative values logged above — computed separately here so the
+    // logged fields stay exactly as specified while the drawn lines land correctly.
+    const chromeClearanceViewportY = visibleTopMenuRect != null ? visibleTopMenuRect.bottom + GAP : null;
+    const activeRowComfortViewportY = scrollRect.top + activeRowComfortY;
+    updateS1ProbeOverlay({
+        red: activeRowRect?.top ?? null,
+        orange: prevRowRect?.bottom ?? null,
+        blue: chromeClearanceViewportY,
+        purple: activeRowComfortViewportY,
+        green: activeRowRect?.top ?? null,
+    });
+}
+
+if (typeof window !== 'undefined') {
+    (window as any).__maestroDumpS1BoundaryProbe = () => ({
+        count: s1BoundaryProbeState.events.length,
+        events: s1BoundaryProbeState.events.slice(-40),
+    });
+    (window as any).__maestroClearS1BoundaryProbe = () => {
+        s1BoundaryProbeState.events.length = 0;
+        if (s1ProbeOverlayEls) {
+            (Object.values(s1ProbeOverlayEls) as HTMLDivElement[]).forEach(el => { el.style.display = 'none'; });
+        }
+    };
+}
+
 // ── Redundant rest suppression (tick-collision strategy) ─────────────────────
 const ENABLE_REDUNDANT_REST_STRIP = false;
 
@@ -1341,6 +1639,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     theme = 'light',
     className,
     scrollContainer,
+    headerVisibleRef,
+    onRequestHeaderHide,
     forceHorizontal = false,
     playerMode = 'synthesizer',
     externalMediaHandler,
@@ -1984,11 +2284,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (!scrollEl) return;
 
         const scrollElEl = scrollEl as HTMLElement;
-        const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
+        const headerRect = getVisibleTopMenuTrayRect();
         const GAP = 8;
         const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
         const scrollRect = scrollElEl.getBoundingClientRect();
-        const headerRect = header?.getBoundingClientRect() ?? null;
         const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
         const headerH = Math.max(0, trayBottomInScroll);
 
@@ -2002,6 +2301,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
         const anchorRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143: saved for authority tween
         let clearanceAdjust = 0; // [PageScrollAuthorityFix] V143: tracked for authority tween
+        // [S1BoundaryProbe] diagnostic-only capture — read alongside the real calc below.
+        const _s1ProbeScrollTopBefore = scrollElEl.scrollTop;
+        let _s1ProbePrevRowRect: DOMRect | null = null;
         let target: number;
         if (sysIdx === 0) {
             target = 0;
@@ -2019,9 +2321,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const prevRow = sysIdx > 0 ? (staffRows[sysIdx - 1] ?? null) : null;
             if (prevRow) {
                 const prevRect = prevRow.getBoundingClientRect();
+                _s1ProbePrevRowRect = prevRect; // [S1BoundaryProbe] diagnostic-only capture
                 const prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
                 const safeTopAbsAfterTarget = target + safeOffset;
                 const danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
+                // V145.24: sysIdx gate reverted — was masking tray-visibility
+                // miscalibration (MAESTRO-SCROLL-001).
                 if (danglingAfterTarget > 0.5) {
                     clearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
                     target = Math.max(0, target + clearanceAdjust);
@@ -2030,6 +2335,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }
 
         target = Math.min(target, maxScroll);
+
+        // [MAESTRO-CURSOR-003] V145.22-A/B: never scroll so far that the active SVG row
+        // top is pushed above visible top chrome + GAP, even after previous-row clearance.
+        if (activeRowRect) {
+            const activeChromeClampTarget =
+                _s1ProbeScrollTopBefore + activeRowRect.top - scrollRect.top - (headerH + GAP);
+            target = Math.min(target, activeChromeClampTarget);
+        }
+
+        // [S1BoundaryProbe] diagnostic-only — computes and logs comparison targets, applies nothing.
+        computeAndRecordS1BoundaryProbe({
+            label: 'snapPortraitToBeatRow',
+            sysIdx,
+            scrollTopBefore: _s1ProbeScrollTopBefore,
+            currentTarget: target,
+            scrollElEl,
+            scrollRect,
+            visibleTopMenuRect: headerRect,
+            headerH,
+            GAP,
+            activeRowRect,
+            prevRowRect: _s1ProbePrevRowRect,
+        });
 
         if (s1AnimRafRef.current !== null) {
             cancelAnimationFrame(s1AnimRafRef.current);
@@ -5697,11 +6025,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                             if (scrollEl) {
                                 const scrollElEl = scrollEl as HTMLElement;
-                                const header = document.querySelector('[data-top-menu-tray]') as HTMLElement | null;
+                                // MAESTRO-SCROLL-001: hide tray on first row exit — BEFORE computing
+                                // headerH, so the Row 1→2 snap itself lands flush (headerH=0), not
+                                // short by the tray height.
+                                if (sysIdx >= 1 && headerVisibleRef?.current) {
+                                    onRequestHeaderHide?.(); // flips intent synchronously via wrapper
+                                }
                                 const GAP = 8;
                                 const maxScroll = Math.max(0, scrollElEl.scrollHeight - scrollElEl.clientHeight);
                                 const scrollRect = scrollElEl.getBoundingClientRect();
-                                const headerRect = header?.getBoundingClientRect() ?? null;
+                                // MAESTRO-SCROLL-001: core fix — never read the transform-animated tray
+                                // DOM rect when intent says hidden; headerH is simply 0. When intent
+                                // says visible (or the ref isn't wired), fall back to the existing
+                                // visible-tray measurement path unchanged.
+                                const headerRect = headerVisibleRef?.current === false ? null : getVisibleTopMenuTrayRect();
                                 const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
                                 const headerH = Math.max(0, trayBottomInScroll);
 
@@ -5743,6 +6080,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
                                 const _s1ActiveRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143
                                 let _s1ClearanceAdjust = 0; // [PageScrollAuthorityFix] V143
+                                // [S1BoundaryProbe] diagnostic-only capture — read alongside the real calc below.
+                                const _s1ProbeScrollTopBefore = scrollElEl.scrollTop;
+                                let _s1ProbePrevRowRect: DOMRect | null = null;
                                 let target: number;
                                 if (sysIdx === 0) {
                                     target = 0;
@@ -5773,12 +6113,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                                     if (prevRow) {
                                         const prevRect = prevRow.getBoundingClientRect();
+                                        _s1ProbePrevRowRect = prevRect; // [S1BoundaryProbe] diagnostic-only capture
                                         // Convert viewport-relative bottom → scroll-content absolute y
                                         prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
                                         // Where the safe top line will sit after target is applied
                                         safeTopAbsAfterTarget = target + safeOffset;
                                         danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
                                         // ε=0.5 avoids sub-pixel jitter; +3 prevents SVG hairline ghost
+                                        // V145.24: sysIdx gate reverted — was masking tray-visibility
+                                        // miscalibration (MAESTRO-SCROLL-001).
                                         if (danglingAfterTarget > 0.5) {
                                             _s1ClearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
                                             target = Math.max(0, target + _s1ClearanceAdjust);
@@ -5807,6 +6150,30 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 }
 
                                 target = Math.min(target, maxScroll);
+
+                                // [MAESTRO-CURSOR-003] V145.22-A/B: never scroll so far that the active SVG
+                                // row top is pushed above visible top chrome + GAP, even after previous-row clearance.
+                                if (activeRowRect) {
+                                    const activeChromeClampTarget =
+                                        _s1ProbeScrollTopBefore + activeRowRect.top - scrollRect.top - (headerH + GAP);
+                                    target = Math.min(target, activeChromeClampTarget);
+                                }
+
+                                // [S1BoundaryProbe] diagnostic-only — computes and logs comparison targets, applies nothing.
+                                computeAndRecordS1BoundaryProbe({
+                                    label: 'playerPositionChanged',
+                                    sysIdx,
+                                    scrollTopBefore: _s1ProbeScrollTopBefore,
+                                    currentTarget: target,
+                                    scrollElEl,
+                                    scrollRect,
+                                    visibleTopMenuRect: headerRect,
+                                    headerH,
+                                    headerIntent: headerVisibleRef?.current ?? null,
+                                    GAP,
+                                    activeRowRect,
+                                    prevRowRect: _s1ProbePrevRowRect,
+                                });
 
                                 if (isSnapDebugEnabled()) {
                                     console.log('[S1 snap apply]', {

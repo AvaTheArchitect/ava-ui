@@ -5,6 +5,12 @@
  * Date: June 27, 2026
  * Cloned from V102.16 — TopMenuTray scroll reveal + native scrollbar gutter stabilization.
  *
+ * MAESTRO-UI-001 candidate (checkpoint, not yet OFFICIAL or LOCKED):
+ * ✅ Synchronous headerIntentRef, S1 sysIdx-driven TopMenu hide after Row 1,
+ *        playback-safe near-top reveal gate.
+ *        MAESTRO-UI-002 remains open: manual scroll-down TopMenu hide
+ *        responsiveness is a separate lane, not addressed here.
+ *
  * V102.17 CHANGES:
  * ✅ TopMenuTray reveals immediately on manual upward scroll/pull.
  * ✅ Manual reveal works during playback; playback-start still hides the tray once.
@@ -289,6 +295,18 @@ export default function SynthPlayerPage() {
     // ==================== SCROLL / LAYOUT ====================
     const mainScrollContainerRef = useRef<HTMLElement>(null);
     const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
+    // MAESTRO-SCROLL-001: synchronous header intent. S1 reads this, never the
+    // transform-animated DOM rect. Mirrors the isPlayingRef pattern (line 79/487).
+    const headerIntentRef = useRef<boolean>(true);
+    const setHeaderVisible = useCallback((v: boolean) => {
+        headerIntentRef.current = v;   // synchronous — before React commit or CSS transition
+        setIsHeaderVisible(v);
+    }, []);
+    // MAESTRO-SCROLL-001: passed to AlphaTabRenderer so the live S1 scroll path can
+    // request the hide itself (Row-1 hide trigger) instead of reading tray DOM geometry.
+    const requestHeaderHide = useCallback(() => {
+        if (headerIntentRef.current) setHeaderVisible(false);
+    }, [setHeaderVisible]);
     const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
     useEffect(() => {
@@ -342,9 +360,9 @@ export default function SynthPlayerPage() {
     useEffect(() => {
         if (isPlaying) {
             const curr = mainScrollContainerRef.current?.scrollTop ?? 0;
-            if (curr > 80) setIsHeaderVisible(false);
+            if (curr > 80) setHeaderVisible(false);
         }
-    }, [isPlaying]);
+    }, [isPlaying, setHeaderVisible]);
 
     // [PS2 + TG1/TG2/TG3] Scroll / wheel / pointer intent listeners.
     useEffect(() => {
@@ -414,7 +432,9 @@ export default function SynthPlayerPage() {
 
             if (curr < 10) {
                 // Position-based: always reveal at top, no cooldown gate.
-                setIsHeaderVisible(true);
+                // MAESTRO-SCROLL-001: gated on !isPlayingRef so Row-1 hide-on-sysIdx>=1
+                // isn't fought by a near-top scroll event during active playback.
+                if (!isPlayingRef.current) setHeaderVisible(true);
                 headerToggleLockUntilRef.current = now + 160;
                 return;
             }
@@ -422,7 +442,7 @@ export default function SynthPlayerPage() {
             if (delta > 4) {
                 // Downward: cooldown-protected to block rapid mid-animation flip-flops.
                 if (!inCooldown) {
-                    setIsHeaderVisible(false);
+                    setHeaderVisible(false);
                     headerToggleLockUntilRef.current = now + 160;
                 }
                 return;
@@ -447,7 +467,7 @@ export default function SynthPlayerPage() {
                         !inCooldown
                     );
                 if (allowReveal) {
-                    setIsHeaderVisible(true);
+                    setHeaderVisible(true);
                     headerToggleLockUntilRef.current = now + 160;
                 }
             }
@@ -463,7 +483,7 @@ export default function SynthPlayerPage() {
             window.removeEventListener('mouseup', onMouseUp, { capture: true });
             el.removeEventListener('scroll', onScroll);
         };
-    }, []);
+    }, [setHeaderVisible]);
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data, error }) => {
@@ -954,6 +974,8 @@ export default function SynthPlayerPage() {
                             fileUrl={signedUrl}
                             trackIndices={trackIndices}
                             scrollContainer={mainScrollContainerRef.current}
+                            headerVisibleRef={headerIntentRef}
+                            onRequestHeaderHide={requestHeaderHide}
                             isPlaying={isPlaying}
                             onPlayStateChange={setIsPlaying}
                             onApiReady={handleApiReady}
