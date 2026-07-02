@@ -2,9 +2,32 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.24-CANDIDATE
+ * Current version: V145.26-CANDIDATE
  * Date: June 29th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * V145.26-CANDIDATE Patch (not yet OFFICIAL or LOCKED):
+ * ✅ [MAESTRO-SCROLL-001] Adds production S1 beat-center contained-row
+ *        resolution and previous-row top anchor. Replaces raw
+ *        staffRows[sysIdx] lookup and active-row-top target policy at both
+ *        S1 scroll sites. Falls back to legacy behavior if containment
+ *        fails. Validated by V145.25 six-song dry-run matrix.
+ *        Follow-up: restores sysIdx 0 root guard ahead of contained-prev
+ *        anchors so load/Row-1 prime snaps cannot scroll away from top.
+ *
+ * V145.25-PROBE Patch (TEMPORARY DIAGNOSTIC — not for commit):
+ * ✅ [S1RowClassificationProbe] Adds S1 rendered-row classification diagnostics
+ *        to distinguish playable staff SVGs from header/title/tuning/chord-chart
+ *        SVGs after V145.24 fixed TopMenu intent timing. No behavior change.
+ *        Follow-up: adds mechanism discriminator and independent beat-bounds
+ *        containment checks to S1 row classification probe.
+ *        Follow-up: adds .at-surface viewport-offset beat-bounds conversion
+ *        candidate after Uncle Tom's control proved the scroll-container
+ *        conversion was wrong.
+ *        Follow-up: adds dry-run beat-center contained-row resolver and
+ *        previous-row target candidates for final S1 row-boundary validation.
+ *        Follow-up: adds prev-any/path equality flag and no-prev contained-row
+ *        recommendation for final S1 resolver validation.
  *
  * V145.24-CANDIDATE Patch (not yet OFFICIAL or LOCKED):
  * ✅ [MAESTRO-SCROLL-001] Confirms the playback S1 row-boundary scroll
@@ -1277,6 +1300,233 @@ function updateS1ProbeOverlay(lines: { red: number | null; orange: number | null
     });
 }
 
+// ── [S1RowClassificationProbe] V145.25-PROBE — temporary diagnostic, not for commit ──
+// Best-effort classification of each rendered `.at-surface svg` row so the probe can
+// distinguish real playable staff rows from header/title/tuning/chord-chart SVGs that
+// pass the same size filter used to build staffRows. Diagnostic only — the classification
+// result is never read by staffRows[sysIdx] or any other live scroll-target computation.
+interface S1RowMeta {
+    domIndex: number;
+    dataMaestroRowKey: string | null;
+    className: string;
+    top: number;
+    bottom: number;
+    height: number;
+    width: number;
+    textContentSample: string | null;
+    firstRectCount: number;
+    pathCount: number;
+    textCount: number;
+    looksTinySvg: boolean;
+    looksPlayableStaffBySize: boolean;
+    looksHeaderOrLegendBySize: boolean;
+    looksChordChartLike: boolean;
+    looksPlayableCandidate: boolean;
+    // V145.25-PROBE follow-up: flags rows worth a human look — chord-chart-like or with a
+    // high rect/path count — even when they pass the plain size heuristic (Stairway-style
+    // two-bank chord charts can be tall/wide enough to look playable by size alone).
+    classificationConfidenceNote: 'manual-review-needed' | null;
+}
+
+function classifyRenderedRow(svg: SVGElement, domIndex: number): S1RowMeta {
+    const r = svg.getBoundingClientRect();
+    const height = r.height;
+    const width = r.width;
+    let firstRectCount = 0;
+    let pathCount = 0;
+    let textCount = 0;
+    let textContentSample: string | null = null;
+    try {
+        firstRectCount = svg.querySelectorAll('rect').length;
+        pathCount = svg.querySelectorAll('path').length;
+        textCount = svg.querySelectorAll('text').length;
+        const raw = (svg.textContent ?? '').replace(/\s+/g, ' ').trim();
+        textContentSample = raw.length > 0 ? raw.slice(0, 120) : null;
+    } catch {
+        // best-effort diagnostic only — leave counts/sample at their defaults on failure
+    }
+    const looksTinySvg = height < 40;
+    const looksPlayableStaffBySize = height >= 90 && width >= 500;
+    const looksHeaderOrLegendBySize = height < 90;
+    // Best-effort: chord-chart grids tend to render many small rects (fret
+    // dots/grid lines) with little to no running tab/notation text.
+    const looksChordChartLike = firstRectCount >= 8 && textCount <= 2;
+    const looksPlayableCandidate = looksPlayableStaffBySize && !looksChordChartLike;
+    // Diagnostic-only thresholds — not tuned against real data, just flags for manual review.
+    const classificationConfidenceNote: 'manual-review-needed' | null =
+        (looksChordChartLike || firstRectCount > 20 || pathCount > 50) ? 'manual-review-needed' : null;
+    return {
+        domIndex,
+        dataMaestroRowKey: svg.getAttribute('data-maestro-row-key'),
+        className: svg.getAttribute('class') ?? '',
+        top: r.top,
+        bottom: r.bottom,
+        height,
+        width,
+        textContentSample,
+        firstRectCount,
+        pathCount,
+        textCount,
+        looksTinySvg,
+        looksPlayableStaffBySize,
+        looksHeaderOrLegendBySize,
+        looksChordChartLike,
+        looksPlayableCandidate,
+        classificationConfidenceNote,
+    };
+}
+
+function classifyStaffRows(staffRows: SVGElement[]): S1RowMeta[] {
+    return staffRows.map((svg, idx) => classifyRenderedRow(svg, idx));
+}
+
+// Index of the first row that looks like a real playable staff row — everything
+// before it is the estimated "surplus" of leading header/title/tuning/chord-chart rows.
+function findLeadingNonPlayableCount(rowsMeta: S1RowMeta[]): number {
+    for (let i = 0; i < rowsMeta.length; i++) {
+        if (rowsMeta[i].looksPlayableStaffBySize || rowsMeta[i].looksPlayableCandidate) return i;
+    }
+    return rowsMeta.length;
+}
+
+// Nearest playable-looking row at or above `fromIndex`, scanning backward.
+function findNearestPlayableAtOrAbove(rowsMeta: S1RowMeta[], fromIndex: number): S1RowMeta | null {
+    for (let i = Math.min(fromIndex, rowsMeta.length - 1); i >= 0; i--) {
+        if (rowsMeta[i]?.looksPlayableCandidate) return rowsMeta[i];
+    }
+    return null;
+}
+
+// V145.25-PROBE follow-up: diagnostic-only guess at which of the two suspected
+// mechanisms is in play for this song/layout. Never read by any live scroll code.
+//   "index-shift"        — staffRows has more entries than snapSystems, so
+//                           staffRows[sysIdx] is very likely the wrong DOM row.
+//   "inflated-row-rect"  — row/system counts line up, but one of the first two
+//                           rows is unusually tall next to the playable rows —
+//                           consistent with a header/chord block being folded
+//                           into (or inflating) a row rect rather than adding
+//                           a whole extra row.
+//   "mixed-or-unknown"   — neither signal is clean; needs manual inspection.
+function computeMechanismGuess(rowsMeta: S1RowMeta[], staffRowsMinusSnapSystemsVal: number): string {
+    if (staffRowsMinusSnapSystemsVal > 0) return 'index-shift';
+    if (staffRowsMinusSnapSystemsVal === 0) {
+        const playableHeights = rowsMeta.filter(r => r.looksPlayableCandidate).map(r => r.height);
+        if (playableHeights.length > 0) {
+            const avgPlayableHeight = playableHeights.reduce((a, b) => a + b, 0) / playableHeights.length;
+            // 1.5x threshold is a diagnostic-only heuristic, not tuned against real data.
+            const unusuallyTall = rowsMeta.slice(0, 2).some(r => r.height > avgPlayableHeight * 1.5);
+            if (unusuallyTall) return 'inflated-row-rect';
+        }
+    }
+    return 'mixed-or-unknown';
+}
+
+// V145.25-PROBE follow-up: strict containment predicate for the .at-surface-relative beat
+// conversion candidate — deliberately separate from the existing closure-based containment
+// check above (independentBeatBounds*) so that check stays byte-for-byte unchanged.
+function containsBeatRange(
+    beatTop: number | null,
+    beatBottom: number | null,
+    rect: { top: number; bottom: number } | null
+): boolean | null {
+    if (beatTop == null || beatBottom == null || rect == null) return null;
+    return beatTop >= rect.top && beatBottom <= rect.bottom;
+}
+
+// ── [S1SurfaceRowCollector] V145.26-CANDIDATE mobile hotfix ──────────────────
+// V145.26 mobile: do not use fixed width > 500. iPhone portrait rows are valid at ~430px.
+// Desktop staff rows are ~1118px wide; mobile portrait rows are ~430px wide — a fixed
+// width > 500 threshold rejects every mobile row, leaving staffRows empty and forcing
+// legacy-fallback. Width is now relative to .at-surface's own rendered width instead.
+// Deliberately does not require pathCount > 0: the active-row resolver needs the full
+// DOM row stream — including title/chord/header surplus rows — to preserve DOM order
+// and index-shift detection; prev-path logic (in resolveS1RowByBeatCenter) still
+// handles picking a genuinely playable previous row from that stream.
+function collectS1SurfaceRows(scrollElEl: HTMLElement): SVGElement[] {
+    const surfaceEl = scrollElEl.querySelector('.at-surface') as HTMLElement | null;
+    const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
+    const minRowWidth = Math.max(240, (surfaceRect?.width ?? 0) * 0.6);
+    const allSvgs = Array.from(scrollElEl.querySelectorAll<SVGElement>('.at-surface svg'));
+    return allSvgs.filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.width >= minRowWidth && r.height >= 40;
+    });
+}
+
+// ── [S1ProductionRowResolver] V145.26-CANDIDATE ──────────────────────────────
+// Production version of the V145.25-PROBE dry-run contained-row resolver,
+// validated across the six-song matrix (see header changelog). Finds the
+// staffRows entry whose own rect contains the calibrated beat center —
+// independent of staffRows[sysIdx] — and pairs it with the nearest row above
+// that has real path content (falling back to the nearest row above at all).
+type S1ResolvedRowByBeatCenter = {
+    activeIdx: number;
+    activeRect: DOMRect;
+    prevIdx: number | null;
+    prevRect: DOMRect | null;
+    prevKind: 'path' | 'any' | 'none';
+};
+
+function resolveS1RowByBeatCenter(
+    staffRows: Element[],
+    surfaceRect: DOMRect | null,
+    beatVisualBounds: { y: number; h: number } | null
+): S1ResolvedRowByBeatCenter | null {
+    if (!surfaceRect || !beatVisualBounds || staffRows.length === 0) return null;
+
+    const centerY = surfaceRect.top + beatVisualBounds.y + beatVisualBounds.h / 2;
+
+    for (let i = 0; i < staffRows.length; i++) {
+        const activeRect = staffRows[i].getBoundingClientRect();
+
+        // Rows are DOM-ordered; once row top is below center, no later row can contain it.
+        if (activeRect.top > centerY) break;
+
+        // Inclusive bounds are intentional: if a beat center lands exactly on a shared row edge,
+        // the first matching DOM row wins deterministically.
+        if (activeRect.top <= centerY && centerY <= activeRect.bottom) {
+            let prevPathIdx: number | null = null;
+
+            for (let p = i - 1; p >= 0; p--) {
+                if (staffRows[p].querySelector('path')) {
+                    prevPathIdx = p;
+                    break;
+                }
+            }
+
+            if (prevPathIdx != null) {
+                return {
+                    activeIdx: i,
+                    activeRect,
+                    prevIdx: prevPathIdx,
+                    prevRect: staffRows[prevPathIdx].getBoundingClientRect(),
+                    prevKind: 'path',
+                };
+            }
+
+            if (i > 0) {
+                return {
+                    activeIdx: i,
+                    activeRect,
+                    prevIdx: i - 1,
+                    prevRect: staffRows[i - 1].getBoundingClientRect(),
+                    prevKind: 'any',
+                };
+            }
+
+            return {
+                activeIdx: i,
+                activeRect,
+                prevIdx: null,
+                prevRect: null,
+                prevKind: 'none',
+            };
+        }
+    }
+
+    return null;
+}
+
 // Computes (without applying) the current live target alongside clarified
 // candidate targets. V145.21 separates two lines that V145.20 conflated under
 // one "desiredSafeTop" name: chromeClearanceY (just past the tray, small) vs.
@@ -1298,10 +1548,34 @@ function computeAndRecordS1BoundaryProbe(params: {
     // MAESTRO-SCROLL-001: synchronous header-visibility intent, when available (live-playback
     // site only) — lets the probe distinguish "measured a hidden tray" from "skipped the read".
     headerIntent?: boolean | null;
+    // V145.25-PROBE: AlphaTab's semantic system count and the classified rendered-row
+    // metadata for every staffRows candidate — diagnostic only, see S1RowClassificationProbe.
+    snapSystemsLength: number;
+    staffRowsMeta: S1RowMeta[];
+    // V145.25-PROBE follow-up: raw beat visual bounds from the same boundsLookup.findBeat(curBeat)
+    // call already used to derive beatY/sysIdx — an independent cross-check, not derived from
+    // activeRowRect. AlphaTab reports x/y/w/h in content-absolute score coordinates (the same
+    // space as the alternate target-formula branch: target = activeVb.y - headerH - COMFORT_Y).
+    beatVisualBounds?: { x: number; y: number; w: number; h: number } | null;
+    // V145.25-PROBE follow-up: .at-surface's own viewport rect — Uncle Tom's control showed
+    // the scroll-container-relative beat conversion fails containment, so this is the
+    // candidate surface-offset conversion, diagnostic only.
+    surfaceRect?: DOMRect | null;
+    // V145.26-CANDIDATE: production resolver outcome for this snap — reflects what
+    // resolveS1RowByBeatCenter actually decided, not a dry-run estimate.
+    productionResolverUsed?: 'contained-prev-path' | 'contained-prev-any' | 'contained-no-prev' | 'legacy-fallback' | 'sysIdx0-root';
+    productionActiveDomIndex?: number | null;
+    productionPrevDomIndex?: number | null;
+    productionPrevKind?: 'path' | 'any' | 'none' | null;
+    productionTarget?: number;
+    antiDangleSkippedForContainedPrevAnchor?: boolean;
 }): void {
     const {
         label, sysIdx, scrollTopBefore, currentTarget, scrollElEl, scrollRect,
         visibleTopMenuRect, headerH, GAP, activeRowRect, prevRowRect, headerIntent,
+        snapSystemsLength, staffRowsMeta, beatVisualBounds, surfaceRect,
+        productionResolverUsed, productionActiveDomIndex, productionPrevDomIndex,
+        productionPrevKind, productionTarget, antiDangleSkippedForContainedPrevAnchor,
     } = params;
 
     // [Follow-up V145.21] All comparison math below stays in one frame — container-relative
@@ -1350,6 +1624,260 @@ function computeAndRecordS1BoundaryProbe(params: {
 
     const activeRowHeight = activeRowRect?.height ?? null;
     const prevRowHeight = prevRowRect?.height ?? null;
+
+    // [S1RowClassificationProbe] V145.25-PROBE — diagnostic only. staffRows[sysIdx] /
+    // staffRows[sysIdx-1] remain the actual DOM elements used as activeRowRect/prevRowRect
+    // (audited unchanged in Step 2); everything below only estimates what the corrected
+    // mapping would look like, for comparison, never applied.
+    const staffRowsLength = staffRowsMeta.length;
+    const selectedActiveDomIndex = staffRowsMeta[sysIdx] ? sysIdx : null;
+    const selectedPrevDomIndex = (sysIdx > 0 && staffRowsMeta[sysIdx - 1]) ? sysIdx - 1 : null;
+    const rawSysIdxDomRowMeta = staffRowsMeta[sysIdx] ?? null;
+    const rawPrevDomRowMeta = sysIdx > 0 ? (staffRowsMeta[sysIdx - 1] ?? null) : null;
+    const leadingNonPlayableCountEstimate = findLeadingNonPlayableCount(staffRowsMeta);
+    const shiftedActiveByLeadingEstimateMeta = staffRowsMeta[sysIdx + leadingNonPlayableCountEstimate] ?? null;
+    const shiftedPrevByLeadingEstimateMeta =
+        (sysIdx + leadingNonPlayableCountEstimate - 1) >= 0
+            ? staffRowsMeta[sysIdx + leadingNonPlayableCountEstimate - 1] ?? null
+            : null;
+    const previousPlayableCandidateMeta = findNearestPlayableAtOrAbove(
+        staffRowsMeta,
+        sysIdx + leadingNonPlayableCountEstimate - 1
+    );
+    const activePlayableCandidateMeta =
+        shiftedActiveByLeadingEstimateMeta?.looksPlayableCandidate ? shiftedActiveByLeadingEstimateMeta : null;
+    const expectedVisualRowFromSurplusEstimate = leadingNonPlayableCountEstimate + 1;
+
+    const previousPlayableTopTarget = previousPlayableCandidateMeta != null
+        ? scrollTopBefore + previousPlayableCandidateMeta.top - scrollRect.top - GAP
+        : null;
+    const activePlayableTopTarget = activePlayableCandidateMeta != null
+        ? scrollTopBefore + activePlayableCandidateMeta.top - scrollRect.top - GAP
+        : null;
+
+    // [S1RowClassificationProbe follow-up] V145.25-PROBE — mechanism discriminator.
+    // Diagnostic only; mechanismGuess is never read by any live scroll code.
+    const staffRowsMinusSnapSystems = staffRowsLength - snapSystemsLength;
+    const firstRowsHeightProfile = staffRowsMeta.slice(0, 8).map(r => ({
+        domIndex: r.domIndex,
+        dataMaestroRowKey: r.dataMaestroRowKey,
+        height: r.height,
+        width: r.width,
+        top: r.top,
+        bottom: r.bottom,
+        looksTinySvg: r.looksTinySvg,
+        looksPlayableStaffBySize: r.looksPlayableStaffBySize,
+        looksChordChartLike: r.looksChordChartLike,
+        looksPlayableCandidate: r.looksPlayableCandidate,
+        textContentSample: r.textContentSample,
+    }));
+    const mechanismGuess = computeMechanismGuess(staffRowsMeta, staffRowsMinusSnapSystems);
+
+    // [S1RowClassificationProbe follow-up] V145.25-PROBE — independent beat-bounds
+    // cross-check. Sourced from the same boundsLookup.findBeat(curBeat) call already used
+    // for beatY/sysIdx, NOT from activeRowRect — so this can validate (or contradict)
+    // whether activeRowRect actually corresponds to where the beat itself reports being.
+    // visualBounds.y is content-absolute (see param comment); converted to viewport-absolute
+    // here so top/bottom are directly comparable to the row rects' .top/.bottom below.
+    const beatTopViewport = beatVisualBounds != null
+        ? beatVisualBounds.y - scrollTopBefore + scrollRect.top
+        : null;
+    const beatBottomViewport = (beatTopViewport != null && beatVisualBounds != null)
+        ? beatTopViewport + beatVisualBounds.h
+        : null;
+    const independentBeatBounds = beatVisualBounds != null ? {
+        top: beatTopViewport,
+        bottom: beatBottomViewport,
+        height: beatVisualBounds.h,
+        x: beatVisualBounds.x,
+        y: beatVisualBounds.y,
+        w: beatVisualBounds.w,
+        h: beatVisualBounds.h,
+        source: 'boundsLookup.findBeat(curBeat).visualBounds',
+    } : null;
+    const isBeatContainedByRect = (rect: { top: number; bottom: number } | null): boolean | null => {
+        if (beatTopViewport == null || beatBottomViewport == null || rect == null) return null;
+        return beatTopViewport >= rect.top && beatBottomViewport <= rect.bottom;
+    };
+    const independentBeatBoundsContainedBySelectedActiveRow = isBeatContainedByRect(activeRowRect);
+    const independentBeatBoundsContainedByRawSysIdxRow = isBeatContainedByRect(rawSysIdxDomRowMeta);
+    const independentBeatBoundsContainedByShiftedActiveCandidate = isBeatContainedByRect(shiftedActiveByLeadingEstimateMeta);
+    const independentBeatBoundsContainedByPreviousPlayableCandidate = isBeatContainedByRect(previousPlayableCandidateMeta);
+
+    // [S1SurfaceOffsetProbe] V145.25-PROBE follow-up — .at-surface-relative beat viewport
+    // conversion candidate. Uncle Tom's control showed the scroll-container-relative
+    // conversion above fails containment even where target-policy math is otherwise
+    // correct — visualBounds.y is likely relative to .at-surface's own origin, not the
+    // scroll container's. Diagnostic only; independentBeatBounds above stays unchanged.
+    const surfaceRectTop = surfaceRect?.top ?? null;
+    const surfaceRectBottom = surfaceRect?.bottom ?? null;
+    const surfaceRectHeight = surfaceRect?.height ?? null;
+    const surfaceRectLeft = surfaceRect?.left ?? null;
+    const surfaceRectRight = surfaceRect?.right ?? null;
+    const surfaceRectWidth = surfaceRect?.width ?? null;
+
+    const surfaceBeatTopViewport = (surfaceRect != null && beatVisualBounds != null)
+        ? surfaceRect.top + beatVisualBounds.y
+        : null;
+    const surfaceBeatBottomViewport = (surfaceBeatTopViewport != null && beatVisualBounds != null)
+        ? surfaceBeatTopViewport + beatVisualBounds.h
+        : null;
+    const independentBeatBoundsViewportViaSurface = (surfaceRect != null && beatVisualBounds != null) ? {
+        top: surfaceBeatTopViewport,
+        bottom: surfaceBeatBottomViewport,
+        height: beatVisualBounds.h,
+        x: surfaceRect.left + beatVisualBounds.x,
+        y: surfaceBeatTopViewport,
+        w: beatVisualBounds.w,
+        h: beatVisualBounds.h,
+        source: '.at-surface.getBoundingClientRect().top + boundsLookup.findBeat(curBeat).visualBounds.y',
+    } : null;
+
+    const independentBeatBoundsViaSurfaceContainedBySelectedActiveRow =
+        containsBeatRange(surfaceBeatTopViewport, surfaceBeatBottomViewport, activeRowRect);
+    const independentBeatBoundsViaSurfaceContainedByRawSysIdxRow =
+        containsBeatRange(surfaceBeatTopViewport, surfaceBeatBottomViewport, rawSysIdxDomRowMeta);
+    const independentBeatBoundsViaSurfaceContainedByShiftedActiveCandidate =
+        containsBeatRange(surfaceBeatTopViewport, surfaceBeatBottomViewport, shiftedActiveByLeadingEstimateMeta);
+    const independentBeatBoundsViaSurfaceContainedByPreviousPlayableCandidate =
+        containsBeatRange(surfaceBeatTopViewport, surfaceBeatBottomViewport, previousPlayableCandidateMeta);
+
+    const independentBeatViaSurfaceCenterViewport =
+        (surfaceBeatTopViewport != null && surfaceBeatBottomViewport != null)
+            ? (surfaceBeatTopViewport + surfaceBeatBottomViewport) / 2
+            : null;
+
+    // [S1ContainedRowResolverProbe] V145.25-PROBE follow-up — dry-run production-resolver
+    // candidate. Walks staffRowsMeta to find the row whose OWN rect actually contains the
+    // calibrated via-surface beat center, independent of staffRows[sysIdx]. Diagnostic only
+    // — never assigned to activeRowRect, prevRowRect, or read by the live target formula.
+    let containedBySurfaceBeatCenterRowMeta: S1RowMeta | null = null;
+    if (independentBeatViaSurfaceCenterViewport != null) {
+        for (const rowMeta of staffRowsMeta) {
+            // Inclusive bounds are intentional: if a beat center lands exactly on a shared row edge,
+            // the first matching DOM row wins deterministically.
+            if (rowMeta.top <= independentBeatViaSurfaceCenterViewport
+                && independentBeatViaSurfaceCenterViewport <= rowMeta.bottom) {
+                containedBySurfaceBeatCenterRowMeta = rowMeta;
+                break;
+            }
+        }
+    }
+    const containedBySurfaceBeatCenterDomIndex = containedBySurfaceBeatCenterRowMeta?.domIndex ?? null;
+    const containedBySurfaceBeatCenterDeltaFromSysIdx =
+        containedBySurfaceBeatCenterDomIndex != null ? containedBySurfaceBeatCenterDomIndex - sysIdx : null;
+    const containedBySurfaceBeatCenterDeltaFromSelectedActive =
+        (containedBySurfaceBeatCenterDomIndex != null && selectedActiveDomIndex != null)
+            ? containedBySurfaceBeatCenterDomIndex - selectedActiveDomIndex
+            : null;
+
+    // A. Nearest row above the contained row by plain DOM order.
+    const containedPrevAnyRowMeta =
+        (containedBySurfaceBeatCenterDomIndex != null && containedBySurfaceBeatCenterDomIndex > 0)
+            ? (staffRowsMeta[containedBySurfaceBeatCenterDomIndex - 1] ?? null)
+            : null;
+    const containedPrevAnyTopTarget = containedPrevAnyRowMeta != null
+        ? scrollTopBefore + containedPrevAnyRowMeta.top - scrollRect.top - GAP
+        : null;
+
+    // B. Nearest row above the contained row that has actual path content (pathCount > 0) —
+    // a best-effort "looks like real notation" filter, distinct from the size-only heuristics.
+    let containedPrevPathRowMeta: S1RowMeta | null = null;
+    if (containedBySurfaceBeatCenterDomIndex != null) {
+        for (let i = containedBySurfaceBeatCenterDomIndex - 1; i >= 0; i--) {
+            if ((staffRowsMeta[i]?.pathCount ?? 0) > 0) {
+                containedPrevPathRowMeta = staffRowsMeta[i];
+                break;
+            }
+        }
+    }
+    const containedPrevPathTopTarget = containedPrevPathRowMeta != null
+        ? scrollTopBefore + containedPrevPathRowMeta.top - scrollRect.top - GAP
+        : null;
+
+    // C. Target for the contained active row itself.
+    const containedActiveTopTarget = containedBySurfaceBeatCenterRowMeta != null
+        ? scrollTopBefore + containedBySurfaceBeatCenterRowMeta.top - scrollRect.top - GAP
+        : null;
+
+    const currentTargetMinusContainedPrevAnyTopTarget = containedPrevAnyTopTarget != null
+        ? currentTarget - containedPrevAnyTopTarget
+        : null;
+    const currentTargetMinusContainedPrevPathTopTarget = containedPrevPathTopTarget != null
+        ? currentTarget - containedPrevPathTopTarget
+        : null;
+    const currentTargetMinusContainedActiveTopTarget = containedActiveTopTarget != null
+        ? currentTarget - containedActiveTopTarget
+        : null;
+
+    // Diagnostic-only prev-any/prev-path agreement flag — null unless both candidates exist.
+    const prevAnyEqualsPrevPath =
+        (containedPrevAnyRowMeta != null && containedPrevPathRowMeta != null)
+            ? containedPrevAnyRowMeta.domIndex === containedPrevPathRowMeta.domIndex
+            : null;
+
+    // Diagnostic-only production-shape recommendation. Falls back to the current raw-sysIdx
+    // path only when no contained row was found at all; a contained row with no usable
+    // previous-row anchor gets its own explicit "no-prev" case.
+    const containedResolverRecommendation = containedBySurfaceBeatCenterRowMeta == null
+        ? 'fallback-current-raw-sysIdx'
+        : containedPrevPathRowMeta != null
+            ? 'use-contained-row-and-prev-path-row'
+            : containedPrevAnyRowMeta != null
+                ? 'use-contained-row-and-prev-any-row'
+                : 'use-contained-row-no-prev';
+    const containedNoPrevTopTarget =
+        (containedBySurfaceBeatCenterRowMeta != null
+            && containedPrevAnyRowMeta == null
+            && containedPrevPathRowMeta == null)
+            ? 0
+            : null;
+
+    const centerContainedBy = (rect: { top: number; bottom: number } | null): boolean | null => {
+        if (independentBeatViaSurfaceCenterViewport == null || rect == null) return null;
+        return independentBeatViaSurfaceCenterViewport >= rect.top && independentBeatViaSurfaceCenterViewport <= rect.bottom;
+    };
+    const independentBeatViaSurfaceCenterContainedBySelectedActiveRow = centerContainedBy(activeRowRect);
+    const independentBeatViaSurfaceCenterContainedByRawSysIdxRow = centerContainedBy(rawSysIdxDomRowMeta);
+
+    const verticalOverlapWith = (rect: { top: number; bottom: number } | null): number | null => {
+        if (surfaceBeatTopViewport == null || surfaceBeatBottomViewport == null || rect == null) return null;
+        return Math.max(0, Math.min(surfaceBeatBottomViewport, rect.bottom) - Math.max(surfaceBeatTopViewport, rect.top));
+    };
+    const independentBeatViaSurfaceVerticalOverlapWithSelectedActiveRow = verticalOverlapWith(activeRowRect);
+    const independentBeatViaSurfaceVerticalOverlapWithRawSysIdxRow = verticalOverlapWith(rawSysIdxDomRowMeta);
+    const independentBeatViaSurfaceVerticalOverlapWithPreviousPlayableCandidate = verticalOverlapWith(previousPlayableCandidateMeta);
+
+    const surfaceBeatDeltaAgainst = (rect: { top: number; bottom: number } | null) => {
+        if (rect == null || surfaceBeatTopViewport == null || surfaceBeatBottomViewport == null
+            || independentBeatViaSurfaceCenterViewport == null) {
+            return { topMinusBeatTop: null, bottomMinusBeatBottom: null, centerMinusBeatCenter: null };
+        }
+        const rowCenter = (rect.top + rect.bottom) / 2;
+        return {
+            topMinusBeatTop: rect.top - surfaceBeatTopViewport,
+            bottomMinusBeatBottom: rect.bottom - surfaceBeatBottomViewport,
+            centerMinusBeatCenter: rowCenter - independentBeatViaSurfaceCenterViewport,
+        };
+    };
+    const _selDelta = surfaceBeatDeltaAgainst(activeRowRect);
+    const selectedRowVsSurfaceBeatDelta = {
+        selectedRowTopMinusBeatTop: _selDelta.topMinusBeatTop,
+        selectedRowBottomMinusBeatBottom: _selDelta.bottomMinusBeatBottom,
+        selectedRowCenterMinusBeatCenter: _selDelta.centerMinusBeatCenter,
+    };
+    const _rawDelta = surfaceBeatDeltaAgainst(rawSysIdxDomRowMeta);
+    const rawSysIdxRowVsSurfaceBeatDelta = {
+        rawSysIdxRowTopMinusBeatTop: _rawDelta.topMinusBeatTop,
+        rawSysIdxRowBottomMinusBeatBottom: _rawDelta.bottomMinusBeatBottom,
+        rawSysIdxRowCenterMinusBeatCenter: _rawDelta.centerMinusBeatCenter,
+    };
+    const _prevDelta = surfaceBeatDeltaAgainst(previousPlayableCandidateMeta);
+    const previousPlayableRowVsSurfaceBeatDelta = {
+        previousPlayableRowTopMinusBeatTop: _prevDelta.topMinusBeatTop,
+        previousPlayableRowBottomMinusBeatBottom: _prevDelta.bottomMinusBeatBottom,
+        previousPlayableRowCenterMinusBeatCenter: _prevDelta.centerMinusBeatCenter,
+    };
 
     const evt: S1ProbeEvent = {
         label,
@@ -1401,6 +1929,78 @@ function computeAndRecordS1BoundaryProbe(params: {
         prevBottomClearTarget,
         activeComfortTarget,
         activeChromeClampTarget,
+        // [S1RowClassificationProbe] V145.25-PROBE — diagnostic only, see block above.
+        staffRowsLength,
+        snapSystemsLength,
+        selectedActiveDomIndex,
+        selectedPrevDomIndex,
+        rawSysIdxDomRowMeta,
+        rawPrevDomRowMeta,
+        leadingNonPlayableCountEstimate,
+        shiftedActiveByLeadingEstimateMeta,
+        shiftedPrevByLeadingEstimateMeta,
+        previousPlayableCandidateMeta,
+        activePlayableCandidateMeta,
+        expectedVisualRowFromSurplusEstimate,
+        previousPlayableTopTarget,
+        activePlayableTopTarget,
+        // [S1RowClassificationProbe follow-up] V145.25-PROBE — mechanism discriminator
+        // and independent beat-bounds cross-check, diagnostic only.
+        staffRowsMinusSnapSystems,
+        firstRowsHeightProfile,
+        mechanismGuess,
+        independentBeatBounds,
+        independentBeatBoundsContainedBySelectedActiveRow,
+        independentBeatBoundsContainedByRawSysIdxRow,
+        independentBeatBoundsContainedByShiftedActiveCandidate,
+        independentBeatBoundsContainedByPreviousPlayableCandidate,
+        // [S1SurfaceOffsetProbe] V145.25-PROBE follow-up — .at-surface offset candidate,
+        // diagnostic only, see block above.
+        surfaceRectTop,
+        surfaceRectBottom,
+        surfaceRectHeight,
+        surfaceRectLeft,
+        surfaceRectRight,
+        surfaceRectWidth,
+        independentBeatBoundsViewportViaSurface,
+        independentBeatBoundsViaSurfaceContainedBySelectedActiveRow,
+        independentBeatBoundsViaSurfaceContainedByRawSysIdxRow,
+        independentBeatBoundsViaSurfaceContainedByShiftedActiveCandidate,
+        independentBeatBoundsViaSurfaceContainedByPreviousPlayableCandidate,
+        independentBeatViaSurfaceCenterViewport,
+        independentBeatViaSurfaceCenterContainedBySelectedActiveRow,
+        independentBeatViaSurfaceCenterContainedByRawSysIdxRow,
+        independentBeatViaSurfaceVerticalOverlapWithSelectedActiveRow,
+        independentBeatViaSurfaceVerticalOverlapWithRawSysIdxRow,
+        independentBeatViaSurfaceVerticalOverlapWithPreviousPlayableCandidate,
+        selectedRowVsSurfaceBeatDelta,
+        rawSysIdxRowVsSurfaceBeatDelta,
+        previousPlayableRowVsSurfaceBeatDelta,
+        // [S1ContainedRowResolverProbe] V145.25-PROBE follow-up — dry-run production-resolver
+        // candidate, diagnostic only, see block above.
+        containedBySurfaceBeatCenterRowMeta,
+        containedBySurfaceBeatCenterDomIndex,
+        containedBySurfaceBeatCenterDeltaFromSysIdx,
+        containedBySurfaceBeatCenterDeltaFromSelectedActive,
+        containedPrevAnyRowMeta,
+        containedPrevAnyTopTarget,
+        containedPrevPathRowMeta,
+        containedPrevPathTopTarget,
+        containedActiveTopTarget,
+        currentTargetMinusContainedPrevAnyTopTarget,
+        currentTargetMinusContainedPrevPathTopTarget,
+        currentTargetMinusContainedActiveTopTarget,
+        containedResolverRecommendation,
+        prevAnyEqualsPrevPath,
+        containedNoPrevTopTarget,
+        // [S1ProductionRowResolver] V145.26-CANDIDATE — actual production resolver outcome
+        // for this snap (as opposed to the V145.25 dry-run estimate fields above).
+        productionResolverUsed: productionResolverUsed ?? null,
+        productionActiveDomIndex: productionActiveDomIndex ?? null,
+        productionPrevDomIndex: productionPrevDomIndex ?? null,
+        productionPrevKind: productionPrevKind ?? null,
+        productionTarget: productionTarget ?? null,
+        antiDangleSkippedForContainedPrevAnchor: antiDangleSkippedForContainedPrevAnchor ?? false,
     };
 
     s1ProbeRecord(evt);
@@ -2291,21 +2891,57 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
         const headerH = Math.max(0, trayBottomInScroll);
 
-        const allSvgs = Array.from(scrollElEl.querySelectorAll<SVGElement>('.at-surface svg'));
-        const staffRows = allSvgs.filter(el => {
-            const r = el.getBoundingClientRect();
-            return r.height > 100 && r.width > 500;
-        });
+        // [S1SurfaceRowCollector] V145.26-CANDIDATE mobile hotfix — surface-relative width,
+        // not fixed > 500 (see collectS1SurfaceRows).
+        const staffRows = collectS1SurfaceRows(scrollElEl);
+        // [S1RowClassificationProbe] V145.25-PROBE diagnostic-only capture — see call below.
+        const _s1ProbeStaffRowsMeta = classifyStaffRows(staffRows);
+        // [S1SurfaceOffsetProbe] V145.25-PROBE follow-up diagnostic-only capture — see call below.
+        const _s1ProbeSurfaceEl = scrollElEl.querySelector('.at-surface') as HTMLElement | null;
+        const _s1ProbeSurfaceRect = _s1ProbeSurfaceEl?.getBoundingClientRect() ?? null;
+        // [S1ProductionRowResolver] V145.26-CANDIDATE: production surface rect — same query as
+        // the diagnostic capture above, kept as a distinctly-named variable so production
+        // behavior never depends on a "_s1Probe"-prefixed variable.
+        const s1SurfaceEl = scrollElEl.querySelector('.at-surface') as HTMLElement | null;
+        const s1SurfaceRect = s1SurfaceEl?.getBoundingClientRect() ?? null;
 
         // [S1-ActiveRow] Comfort-zone target: place active row headerH + COMFORT_Y below scroll top.
-        const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+        // Legacy raw staffRows[sysIdx] lookup — preserved byte-identically as the fallback path.
+        const legacyActiveRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+        const legacyPrevRowRect = sysIdx > 0
+            ? staffRows[sysIdx - 1]?.getBoundingClientRect() ?? null
+            : null;
+
+        // [S1ProductionRowResolver] V145.26-CANDIDATE: beat-center contained-row resolution,
+        // validated against the V145.25 six-song dry-run matrix. Falls back to legacy above
+        // when containment fails (no surface rect, no beat bounds, or center outside every row).
+        const s1ResolvedRow = resolveS1RowByBeatCenter(
+            staffRows,
+            s1SurfaceRect,
+            snapBb?.visualBounds ?? null
+        );
+        const activeRowRect = s1ResolvedRow?.activeRect ?? legacyActiveRowRect;
+        const prevRowRect = s1ResolvedRow?.prevRect ?? legacyPrevRowRect;
+
         const anchorRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143: saved for authority tween
         let clearanceAdjust = 0; // [PageScrollAuthorityFix] V143: tracked for authority tween
         // [S1BoundaryProbe] diagnostic-only capture — read alongside the real calc below.
         const _s1ProbeScrollTopBefore = scrollElEl.scrollTop;
-        let _s1ProbePrevRowRect: DOMRect | null = null;
+        const _s1ProbePrevRowRect: DOMRect | null = prevRowRect;
         let target: number;
+        // [S1RowResolverHotfix] V145.26-CANDIDATE: sysIdx === 0 is the highest-priority root
+        // guard — Row 1 / load-prime must never anchor to a previous row, even when the
+        // resolver finds one (e.g. prevKind 'any' pairing sysIdx 0's DOM row with a preceding
+        // non-path header/title row). Checked before the resolver branches below.
+        // [S1ProductionRowResolver] V145.26-CANDIDATE: target policy — anchor to the previous
+        // path/playable row's top when the resolver found one; this is the validated fix for
+        // the Row-1/Row-3 target-policy bug. Legacy active-row-top formula below is preserved
+        // byte-identically as the fallback when resolution didn't succeed.
         if (sysIdx === 0) {
+            target = 0;
+        } else if (s1ResolvedRow?.prevRect) {
+            target = scrollElEl.scrollTop + (s1ResolvedRow.prevRect.top - scrollRect.top) - GAP;
+        } else if (s1ResolvedRow) {
             target = 0;
         } else if (activeRowRect) {
             const activeRowViewportTop = activeRowRect.top - scrollRect.top;
@@ -2315,21 +2951,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             target = Math.max(0, (activeVb?.y ?? 0) - headerH - S1_ACTIVE_ROW_COMFORT_Y);
         }
 
+        // [S1ProductionRowResolver] V145.26-CANDIDATE: the contained-prev target intentionally
+        // preserves the previous row as visible context — the old anti-dangle correction (built
+        // to clear/push the previous row out of view) must not fight that on contained-prev snaps.
+        const s1PreservePreviousRowContext =
+            s1ResolvedRow != null && s1ResolvedRow.prevRect != null;
+        let antiDangleSkippedForContainedPrevAnchor = false;
+
         // Previous-row clearance — same absolute-coordinate prediction as S1
         {
             const safeOffset = headerH + GAP;
             const prevRow = sysIdx > 0 ? (staffRows[sysIdx - 1] ?? null) : null;
             if (prevRow) {
                 const prevRect = prevRow.getBoundingClientRect();
-                _s1ProbePrevRowRect = prevRect; // [S1BoundaryProbe] diagnostic-only capture
                 const prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
                 const safeTopAbsAfterTarget = target + safeOffset;
                 const danglingAfterTarget = prevBottomAbs - safeTopAbsAfterTarget;
                 // V145.24: sysIdx gate reverted — was masking tray-visibility
                 // miscalibration (MAESTRO-SCROLL-001).
-                if (danglingAfterTarget > 0.5) {
+                if (!s1PreservePreviousRowContext && danglingAfterTarget > 0.5) {
                     clearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
                     target = Math.max(0, target + clearanceAdjust);
+                } else if (s1PreservePreviousRowContext && danglingAfterTarget > 0.5) {
+                    antiDangleSkippedForContainedPrevAnchor = true;
                 }
             }
         }
@@ -2357,6 +3001,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             GAP,
             activeRowRect,
             prevRowRect: _s1ProbePrevRowRect,
+            snapSystemsLength: snapSystems.length,
+            staffRowsMeta: _s1ProbeStaffRowsMeta,
+            beatVisualBounds: snapBb?.visualBounds ?? null,
+            surfaceRect: _s1ProbeSurfaceRect,
+            // [S1RowResolverHotfix] V145.26-CANDIDATE — sysIdx 0 always wins target selection
+            // and production reporting, even when the resolver internally found a (diagnostic-
+            // only, in that case) previous-row candidate.
+            productionResolverUsed:
+                sysIdx === 0
+                    ? 'sysIdx0-root'
+                    : s1ResolvedRow == null
+                        ? 'legacy-fallback'
+                        : s1ResolvedRow.prevKind === 'path'
+                            ? 'contained-prev-path'
+                            : s1ResolvedRow.prevKind === 'any'
+                                ? 'contained-prev-any'
+                                : 'contained-no-prev',
+            productionActiveDomIndex: s1ResolvedRow?.activeIdx ?? null,
+            productionPrevDomIndex: sysIdx === 0 ? null : (s1ResolvedRow?.prevIdx ?? null),
+            productionPrevKind: sysIdx === 0 ? null : (s1ResolvedRow?.prevKind ?? null),
+            productionTarget: target,
+            antiDangleSkippedForContainedPrevAnchor,
         });
 
         if (s1AnimRafRef.current !== null) {
@@ -6042,13 +6708,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 const trayBottomInScroll = headerRect ? headerRect.bottom - scrollRect.top : 0;
                                 const headerH = Math.max(0, trayBottomInScroll);
 
-                                const allSvgs = Array.from(
-                                    scrollElEl.querySelectorAll<SVGElement>('.at-surface svg')
-                                );
-                                const staffRows = allSvgs.filter(el => {
-                                    const r = el.getBoundingClientRect();
-                                    return r.height > 100 && r.width > 500;
-                                });
+                                // [S1SurfaceRowCollector] V145.26-CANDIDATE mobile hotfix — surface-relative
+                                // width, not fixed > 500 (see collectS1SurfaceRows).
+                                const staffRows = collectS1SurfaceRows(scrollElEl);
+                                // [S1RowClassificationProbe] V145.25-PROBE diagnostic-only capture — see call below.
+                                const _s1ProbeStaffRowsMeta = classifyStaffRows(staffRows);
+                                // [S1SurfaceOffsetProbe] V145.25-PROBE follow-up diagnostic-only capture — see call below.
+                                const _s1ProbeSurfaceEl = scrollElEl.querySelector('.at-surface') as HTMLElement | null;
+                                const _s1ProbeSurfaceRect = _s1ProbeSurfaceEl?.getBoundingClientRect() ?? null;
+                                // [S1ProductionRowResolver] V145.26-CANDIDATE: production surface rect — same
+                                // query as the diagnostic capture above, kept as a distinctly-named variable so
+                                // production behavior never depends on a "_s1Probe"-prefixed variable.
+                                const s1SurfaceEl = scrollElEl.querySelector('.at-surface') as HTMLElement | null;
+                                const s1SurfaceRect = s1SurfaceEl?.getBoundingClientRect() ?? null;
 
                                 if (isSnapDebugEnabled()) {
                                     console.table(staffRows.map((svg, idx) => {
@@ -6077,14 +6749,44 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                                 // [S1-ActiveRow] Comfort-zone target: place active row headerH + COMFORT_Y
                                 // below the scroll container top. sysIdx === 0 stays at top.
-                                const activeRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+                                // Legacy raw staffRows[sysIdx] lookup — preserved byte-identically as the fallback path.
+                                const legacyActiveRowRect = staffRows[sysIdx]?.getBoundingClientRect() ?? null;
+                                const legacyPrevRowRect = sysIdx > 0
+                                    ? staffRows[sysIdx - 1]?.getBoundingClientRect() ?? null
+                                    : null;
+
+                                // [S1ProductionRowResolver] V145.26-CANDIDATE: beat-center contained-row
+                                // resolution, validated against the V145.25 six-song dry-run matrix. Falls
+                                // back to legacy above when containment fails (no surface rect, no beat
+                                // bounds, or center outside every row).
+                                const s1ResolvedRow = resolveS1RowByBeatCenter(
+                                    staffRows,
+                                    s1SurfaceRect,
+                                    snapBb?.visualBounds ?? null
+                                );
+                                const activeRowRect = s1ResolvedRow?.activeRect ?? legacyActiveRowRect;
+                                const prevRowRect = s1ResolvedRow?.prevRect ?? legacyPrevRowRect;
+
                                 const _s1ActiveRowRect: DOMRect | null = activeRowRect; // [PageScrollAuthorityFix] V143
                                 let _s1ClearanceAdjust = 0; // [PageScrollAuthorityFix] V143
                                 // [S1BoundaryProbe] diagnostic-only capture — read alongside the real calc below.
                                 const _s1ProbeScrollTopBefore = scrollElEl.scrollTop;
-                                let _s1ProbePrevRowRect: DOMRect | null = null;
+                                const _s1ProbePrevRowRect: DOMRect | null = prevRowRect;
                                 let target: number;
+                                // [S1RowResolverHotfix] V145.26-CANDIDATE: sysIdx === 0 is the highest-priority
+                                // root guard — Row 1 / load-prime must never anchor to a previous row, even
+                                // when the resolver finds one (e.g. prevKind 'any' pairing sysIdx 0's DOM row
+                                // with a preceding non-path header/title row). Checked before resolver branches.
+                                // [S1ProductionRowResolver] V145.26-CANDIDATE: target policy — anchor to the
+                                // previous path/playable row's top when the resolver found one; this is the
+                                // validated fix for the Row-1/Row-3 target-policy bug. Legacy active-row-top
+                                // formula below is preserved byte-identically as the fallback when resolution
+                                // didn't succeed.
                                 if (sysIdx === 0) {
+                                    target = 0;
+                                } else if (s1ResolvedRow?.prevRect) {
+                                    target = scrollElEl.scrollTop + (s1ResolvedRow.prevRect.top - scrollRect.top) - GAP;
+                                } else if (s1ResolvedRow) {
                                     target = 0;
                                 } else if (activeRowRect) {
                                     const activeRowViewportTop = activeRowRect.top - scrollRect.top;
@@ -6096,6 +6798,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     const activeVb = (snapSystems[sysIdx] as any)?.visualBounds;
                                     target = Math.max(0, (activeVb?.y ?? 0) - headerH - S1_ACTIVE_ROW_COMFORT_Y);
                                 }
+
+                                // [S1ProductionRowResolver] V145.26-CANDIDATE: the contained-prev target
+                                // intentionally preserves the previous row as visible context — the old
+                                // anti-dangle correction (built to clear/push the previous row out of view)
+                                // must not fight that on contained-prev snaps.
+                                const s1PreservePreviousRowContext =
+                                    s1ResolvedRow != null && s1ResolvedRow.prevRect != null;
+                                let antiDangleSkippedForContainedPrevAnchor = false;
 
                                 // ── Previous-row clearance — absolute-coordinate prediction [S1-clearance] ──
                                 // Old: measured prevRect.bottom in current viewport → same value
@@ -6113,7 +6823,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                                     if (prevRow) {
                                         const prevRect = prevRow.getBoundingClientRect();
-                                        _s1ProbePrevRowRect = prevRect; // [S1BoundaryProbe] diagnostic-only capture
                                         // Convert viewport-relative bottom → scroll-content absolute y
                                         prevBottomAbs = scrollElEl.scrollTop + (prevRect.bottom - scrollRect.top);
                                         // Where the safe top line will sit after target is applied
@@ -6122,9 +6831,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         // ε=0.5 avoids sub-pixel jitter; +3 prevents SVG hairline ghost
                                         // V145.24: sysIdx gate reverted — was masking tray-visibility
                                         // miscalibration (MAESTRO-SCROLL-001).
-                                        if (danglingAfterTarget > 0.5) {
+                                        if (!s1PreservePreviousRowContext && danglingAfterTarget > 0.5) {
                                             _s1ClearanceAdjust = danglingAfterTarget + 3; // [PageScrollAuthorityFix]
                                             target = Math.max(0, target + _s1ClearanceAdjust);
+                                        } else if (s1PreservePreviousRowContext && danglingAfterTarget > 0.5) {
+                                            antiDangleSkippedForContainedPrevAnchor = true;
                                         }
                                     }
 
@@ -6173,6 +6884,28 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     GAP,
                                     activeRowRect,
                                     prevRowRect: _s1ProbePrevRowRect,
+                                    snapSystemsLength: snapSystems.length,
+                                    staffRowsMeta: _s1ProbeStaffRowsMeta,
+                                    beatVisualBounds: snapBb?.visualBounds ?? null,
+                                    surfaceRect: _s1ProbeSurfaceRect,
+                                    // [S1RowResolverHotfix] V145.26-CANDIDATE — sysIdx 0 always wins target
+                                    // selection and production reporting, even when the resolver internally
+                                    // found a (diagnostic-only, in that case) previous-row candidate.
+                                    productionResolverUsed:
+                                        sysIdx === 0
+                                            ? 'sysIdx0-root'
+                                            : s1ResolvedRow == null
+                                                ? 'legacy-fallback'
+                                                : s1ResolvedRow.prevKind === 'path'
+                                                    ? 'contained-prev-path'
+                                                    : s1ResolvedRow.prevKind === 'any'
+                                                        ? 'contained-prev-any'
+                                                        : 'contained-no-prev',
+                                    productionActiveDomIndex: s1ResolvedRow?.activeIdx ?? null,
+                                    productionPrevDomIndex: sysIdx === 0 ? null : (s1ResolvedRow?.prevIdx ?? null),
+                                    productionPrevKind: sysIdx === 0 ? null : (s1ResolvedRow?.prevKind ?? null),
+                                    productionTarget: target,
+                                    antiDangleSkippedForContainedPrevAnchor,
                                 });
 
                                 if (isSnapDebugEnabled()) {
