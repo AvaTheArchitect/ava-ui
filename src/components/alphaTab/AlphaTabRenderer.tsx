@@ -1152,6 +1152,32 @@ function forceRevealSurface(host: HTMLElement, cancelRef: { current: number }, m
 function showCurtain(curtain: HTMLDivElement | null): void { if (curtain) curtain.style.display = 'block'; }
 function hideCurtainAtomic(curtain: HTMLDivElement | null): void { if (curtain) curtain.style.display = 'none'; }
 
+// [MAESTRO-PLAYER-001] alphaTab 1.8.x's AlphaSynth output can hold a
+// buffer source that was created (via play()) but not yet started when
+// destroy() is called mid-teardown — e.g. a song switch interrupting the
+// async AudioWorklet-creation promise. Its internal pause()/destroy()
+// chain calls source.stop() unconditionally, throwing an uncaught
+// InvalidStateError ("cannot call stop without calling start first") that
+// can abort our cleanup/remount effect and leave playerReady stuck false.
+// This wrapper suppresses only that known, harmless cleanup race and
+// rethrows anything else so real destroy() failures stay visible.
+function safeDestroyAlphaTabApi(api: any, context: string): void {
+    try {
+        api?.destroy();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const isKnownStopBeforeStartRace =
+            error instanceof Error &&
+            error.name === 'InvalidStateError' &&
+            /cannot call stop without calling start/i.test(message);
+        if (isKnownStopBeforeStartRace) {
+            console.warn(`[MAESTRO-PLAYER-001] Suppressed alphaTab cleanup InvalidStateError (stop-before-start race) during ${context}`, error);
+            return;
+        }
+        throw error;
+    }
+}
+
 function isSurfacePaintable(host: HTMLElement): boolean {
     const surf = host.querySelector('.at-surface') as HTMLElement | null;
     if (!surf) return false;
@@ -3147,7 +3173,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
         gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
         lyricsOverlayHandleRef.current?.destroy(); lyricsOverlayHandleRef.current = null;
-        if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
+        if (apiRef.current) { safeDestroyAlphaTabApi(apiRef.current, 'hardReset'); apiRef.current = null; }
         collapseFixAttemptsRef.current = 0;
         lastReassertTokenRef.current = null;
         isRecoveringCollapseRef.current = false;
@@ -3655,7 +3681,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 layoutProfile: initProfile,
                 hasLyrics: false,
             });
-            if (destroyed || token !== initTokenRef.current) { api.destroy(); return; }
+            if (destroyed || token !== initTokenRef.current) { safeDestroyAlphaTabApi(api, 'stale-init-race'); return; }
 
             apiRef.current = api;
             if (typeof window !== 'undefined') {
@@ -6985,7 +7011,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             gp8PmOverlayHandleRef.current?.destroy(); gp8PmOverlayHandleRef.current = null;
             gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
             gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
-            if (apiRef.current) { apiRef.current.destroy(); apiRef.current = null; }
+            if (apiRef.current) { safeDestroyAlphaTabApi(apiRef.current, 'fileUrl-effect-cleanup'); apiRef.current = null; }
             lastAcceptedBeatStartRef.current = -1;
             lastRegressionLogRef.current = '';
             if (isRendererDebugEnabled()) {
