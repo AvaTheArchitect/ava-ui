@@ -5,213 +5,32 @@
  * Date: June 27, 2026
  * Cloned from V102.16 — TopMenuTray scroll reveal + native scrollbar gutter stabilization.
  *
- * MAESTRO-UI-002J (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Adds isPausedCanvasUpReveal to onScroll's delta < 0 hasReasonToReveal: probe evidence
- *        showed the canvas visibly scrolling upward while paused (isPlaying: false) still hit
- *        reason: 'no-recent-user-intent' when every touch/wheel/momentum intent window had
- *        already expired, so reveal only ever happened via the onScroll curr < 10 near-top
- *        fallback. The [TG3-PlaybackGuard] recent-intent gate exists to stop AlphaTab/S1
- *        programmatic scroll corrections from revealing the tray mid-playback — S1 only
- *        scrolls during active playback, so isPlayingRef.current === false already proves this
- *        delta < 0 can't be a programmatic S1 correction, making the canvas moving upward
- *        reason enough on its own while paused, independent of any intent-window state.
- *        isPausedCanvasUpReveal = !isPlayingRef.current, folded into the existing
- *        hasReasonToReveal OR-chain — reuses the existing allowReveal/apply block unchanged,
- *        so it inherits setHeaderVisible(true), the manualHeaderHideIntentUntilRef/
- *        deferredTopReveal clears, and the 160ms headerToggleLockUntilRef cooldown for free.
- *        When isPlayingRef.current is true, isPausedCanvasUpReveal is false and
- *        hasReasonToReveal falls back to exactly the pre-existing three checks — playback
- *        protection is unchanged. New probe reason: 'paused-canvas-up' (the last fallback in
- *        the appliedReason chain, after applied/momentum-reveal/recent-touch-activity).
- *        onWheel (both hide and up-reveal-marking), the scrollbar-explicit branch,
- *        touchmove's directional branches, and requestHeaderHide are unchanged. The V145.26
- *        S1 playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002I (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Two additions on top of UI-002G's deferred-touch-reveal/momentum-bridge machinery,
- *        aimed at long/sparse-event mobile flicks:
- *        (1) Momentum continuation renewal — a touch-owned delta < 0 onScroll tick (i.e.
- *        hasRecentTouchActivity or hasMomentumRevealIntent is live) now renews both windows
- *        to Date.now() + 700 and sets the new lastManualScrollDirectionRef to 'up', so a
- *        long sustained upward flick's own scroll events keep the window alive instead of
- *        letting it expire mid-flick. Inherently guarded: renewal can only extend a window
- *        that was already live, and both refs are only ever set by real touch events, never
- *        playback/programmatic scroll. If the header is already visible on a touch-owned
- *        tick, skips the redundant re-lock/re-reveal (same churn-avoidance pattern UI-002H
- *        applied to curr < 10), logging reason: 'momentum-renewed'.
- *        (2) scheduleDeferredTouchReveal now takes an explicit lockRemaining and gained the
- *        full re-check/probe surface from the spec (aborted-header-visible/aborted-no-main/
- *        aborted-scroll-not-up/aborted-no-touch-window/fired-applied), and the delta < 0
- *        "blocked by cooldown" branch now computes headerHidden/lockRemaining explicitly and
- *        distinguishes cooldown-deferred (schedules) from cooldown (nothing to defer,
- *        already visible) from no-recent-user-intent.
- *        Important finding, reported in detail: allowReveal's existing formula was
- *        deliberately left unchanged (bypasses cooldown entirely for any non-scrollbar-drag
- *        source, which covers touch) to avoid any risk to desktop wheel-up responsiveness —
- *        so cooldown-deferred remains reachable today mainly through the scrollbar-drag-
- *        direction-unknown-in-cooldown edge case (dead code for real scrollbar drags, which
- *        never reach this branch), same as before. The momentum-renewal fix (1) is the one
- *        that actually targets the reported long-flick/sparse-event symptom. onWheel, the
- *        scrollbar-explicit branch, and requestHeaderHide are unchanged. The V145.26 S1
- *        playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002H (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Fixes the actual root cause behind UI-002G's remaining mid-document touch-reveal
- *        gap: touchstart/touchmove/touchend were already window-capture (not on <main>), but
- *        onTouchStart's el.contains(e.target) filter was observed (via a window-capture edge
- *        probe) silently rejecting legitimate score-surface gestures — svg score rows,
- *        .at-surface, the score wrapper div — leaving the touch never armed, so the whole
- *        touch-directional path (UI-002D/F/G) sat out and only the onScroll curr < 10
- *        rubber-band-at-top fallback ever caught the reveal. Adds isTouchOnMainScrollSurface
- *        (target-based containment OR document.elementFromPoint geometry-based containment,
- *        both excluding the TopMenu tray / buttons / links / inputs / selects / textareas) as
- *        the new touchstart gate — reuses window capture / passive: true, no preventDefault,
- *        no duplicate listener path. onTouchMove keeps working purely off isTouchActiveRef for
- *        an already-armed gesture (only re-checks isTouchOnMainScrollSurface to self-heal a
- *        move that arrives without a matching touchstart). onTouchEnd now only marks activity/
- *        arms the momentum bridge when the touch was actually active, so an untracked
- *        touchend (e.g. from a tap on a button) can't re-arm the bridge off a stale
- *        lastTouchIntentDirectionRef left by an earlier gesture. Also fixes a lock-churn bug
- *        in onScroll's curr < 10 branch: iOS rubber-band bounce at the top fired many curr < 10
- *        events while the header was already visible, each one needlessly refreshing
- *        headerToggleLockUntilRef — now short-circuits with reason: 'already-visible' before
- *        touching setHeaderVisible or the lock at all. onWheel, the scrollbar-explicit branch,
- *        and requestHeaderHide are unchanged. The V145.26 S1 playback resolver in
- *        AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002G (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Adds a direction-agnostic touch-ownership bridge for onScroll's delta < 0 reveal branch:
- *        fast mobile "thumb spin" upward scrolling could still require several swipes before
- *        the tray revealed, because Safari sometimes reports momentum scroll deltas that
- *        don't line up 1:1 with raw touchmove Y deltas, so UI-002F's reveal-direction-only
- *        momentum bridge (touchMomentumRevealIntentUntilRef) could miss it. New
- *        recentTouchActivityUntilRef (Date.now()-based, markRecentTouchActivity() helper) is
- *        set from touchstart/touchmove/touchend regardless of direction — it only proves "a
- *        real touch gesture recently owned this scroll," never toggling visibility itself.
- *        onScroll's delta < 0 hasReasonToReveal now also accepts a live
- *        recentTouchActivityUntilRef window. Also adds a deferredTouchRevealTimerRef safety
- *        net (mirroring UI-002C's deferredTopRevealTimerRef) for the case where a touch/
- *        momentum-backed reveal is valid but blocked only by the headerToggleLockUntilRef
- *        cooldown — currently unreachable given the existing allowReveal formula (real
- *        scrollbar drags never reach this branch), kept as defense in depth. Cleared on a
- *        successful reveal, and by two pure additive one-line clears inside onWheel's
- *        deltaY > 0 branch and the scrollbar-explicit hide branch (neither branch's existing
- *        hide decision/timing changed) — deliberately NOT cleared inside touch-hide, per
- *        spec, since the point is touch ownership, not direction. Probe gets a
- *        recentTouchActivityRemaining field and onScroll-delta-lt-0's reason now
- *        distinguishes applied/momentum-reveal/recent-touch-activity/cooldown/
- *        no-recent-user-intent. requestHeaderHide, the wheel-down branch's own hide logic,
- *        and the scrollbar branch's own hide/reveal logic are otherwise unchanged. The
- *        V145.26 S1 playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002F (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Bridges mobile inertial/momentum scroll for reveal: UI-002E's probe showed repeated
- *        onScroll-delta-lt-0 events after a fast upward flick with isTouchActive: false and
- *        userIntentRemaining: 0 — native momentum keeps firing delta < 0 scroll events after
- *        touch-up, but both intent windows had already expired, so the reveal gate rejected
- *        them. Adds lastTouchIntentDirectionRef (set by onTouchMove past the deadzone, reset
- *        at touchstart) and touchMomentumRevealIntentUntilRef (armed by onTouchMove's reveal
- *        branch, re-extended to Date.now() + 1800 by onTouchEnd/onTouchCancel only when the
- *        last active-gesture direction was 'reveal'). onScroll's delta < 0 branch now accepts
- *        either hasRecentUserIntent OR a live touchMomentumRevealIntentUntilRef window.
- *        Momentum ref is only ever written from real touchmove/touchend, cleared on any real
- *        downward scroll delta (single choke point at the top of onScroll — covers wheel-down/
- *        scrollbar-drag-down/touch-hide without touching those branches) and after a
- *        successful reveal. Also fixes a units bug in the UI-002E probe itself:
- *        userIntentRemaining compared a performance.now()-based ref against Date.now(),
- *        always reading 0 — diagnostic-only fix, the real userScrollIntentUntilRef gate
- *        elsewhere was never affected. The wheel-down immediate-hide path, the desktop
- *        scrollbar explicit branch, and requestHeaderHide are unchanged. The V145.26 S1
- *        playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002E (TEMPORARY DIAGNOSTIC — not for commit):
- * ✅ Adds a tiny header-intent probe ring buffer (headerIntentProbeState, 80 events max) to
- *        help diagnose why mobile touch reveal is still sometimes sluggish/missed on Safari
- *        LAN and Chrome mobile emulator. Records from onTouchMove (before branching, the
- *        hide/reveal branches, the interactive/tray skip), requestHeaderHide (immediate/
- *        deferred/blocked/deferred-fire), and onScroll's curr < 10 and delta < 0 reveal
- *        paths. Read-only: every recorded value is already computed by the real logic; no
- *        branch, threshold, or condition was changed to make this observable (guard booleans
- *        like canHide/canReveal/canApply are pure extractions of the pre-existing inline
- *        conditions). Console output only when localStorage.getItem('maestro_header_debug')
- *        === '1'; dump with window.__maestroDumpHeaderIntentProbe(), clear with
- *        window.__maestroClearHeaderIntentProbe(). No behavior change.
- *
- * MAESTRO-UI-002D (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Makes mobile touchmove directional and explicit, matching the UI-002C scrollbar-drag
- *        branch: onTouchMove now computes dy against a small (2px) deadzone and, past that
- *        deadzone, clears the opposing manual-intent ref and toggles header visibility
- *        immediately (cooldown-checked via headerToggleLockUntilRef) instead of only marking
- *        reveal intent and waiting for a later onScroll delta — closing the sluggish/missed
- *        hide-reveal gap reported on mobile Safari/Chrome mobile emulator. Touches starting
- *        on an interactive control (button/link/input/select/textarea) or the TopMenu tray
- *        never toggle the header directly (the tray is already excluded by the existing
- *        el.contains(e.target) check in onTouchStart, since it isn't a descendant of <main>).
- *        userScrollIntentUntilRef is still extended on every touchmove regardless of the
- *        deadzone. Momentum/inertial scroll after finger-lift is untouched — touchmove stops
- *        firing at that point, so any hide/reveal during momentum is still owned entirely by
- *        the existing onScroll delta handling. The UI-002B wheel-down path, the UI-002C
- *        scrollbar-drag branch, and requestHeaderHide (playback S1 hide) are unchanged. The
- *        V145.26 S1 playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002C (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Fixes two scrollbar-drag issues left by UI-002B: (1) drag-down then drag-back-to-top
- *        could leave the tray stranded hidden at scrollTop 0 because manualHeaderHideIntentUntilRef
- *        stayed live and no further scroll event arrived to recheck it once the window
- *        expired; (2) drag-up mid-document could have delayed/missed reveal because it relied
- *        on the same accumulated-delta inference as ambient scroll. onScroll now: (a) clears
- *        the opposing manual intent ref on any direction reversal (delta < 0 clears
- *        manualHeaderHideIntentUntilRef, delta > 0 clears manualHeaderRevealIntentUntilRef);
- *        (b) treats an active scrollbar drag (isPointerOnScrollbarRef) as fully explicit,
- *        directional intent — bypasses the accumulated delta > 4 / delta < 0 thresholds
- *        entirely and hides/reveals immediately (cooldown-checked); (c) adds a
- *        deferredTopRevealTimerRef safety net — when curr < 10 would reveal but is
- *        suppressed only by a still-live hide-intent window, schedules exactly one recheck
- *        for when that window expires, so the header can never stay stranded hidden with no
- *        further scroll event to re-evaluate it. The UI-002B wheel-down immediate-hide path
- *        in onWheel is unchanged. Manual hide/reveal intent remains a page.tsx-only concern,
- *        fully separate from playback S1 hide intent (requestHeaderHide) — the V145.26 S1
- *        playback resolver in AlphaTabRenderer.tsx is untouched.
- *
- * MAESTRO-UI-002B (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Adds manual header-HIDE-intent arbitration (manualHeaderHideIntentUntilRef,
- *        markManualHeaderHideIntent) mirroring UI-002A's reveal-intent ref for the opposite
- *        direction. Fixes: a deliberate wheel-down gesture near the top/start of playback
- *        did not hide the tray immediately — it waited for either an accumulated onScroll
- *        delta > 4 (a single fine-grained wheel/trackpad tick is often smaller than that) or
- *        for S1's Row 1 → Row 2 auto-hide trigger. onWheel now hides immediately on
- *        deltaY > 0 (cooldown-protected), and marks manual hide intent so the curr < 10
- *        "always reveal near top" guard doesn't immediately undo it while scrollTop is still
- *        small. Scrollbar-drag-down gets the same top-guard protection (isPointerOnScrollbarRef
- *        is only ever set by a real pointerdown on the rail, never programmatic scroll).
- *        Manual scroll/touch reveal intent and manual hide intent remain two separate,
- *        independently-arbitrated concerns from playback S1 hide intent — nothing here
- *        changes when/why AlphaTabRenderer requests a hide, only whether/when page.tsx's own
- *        position-based reveal guard is allowed to override a just-requested manual hide. The
- *        V145.26 S1 playback resolver/scroll math in AlphaTabRenderer.tsx, and the existing
- *        Row 1 → Row 2 auto-hide trigger, are intentionally untouched.
- *
- * MAESTRO-UI-002A (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Adds manual header-reveal-intent arbitration (manualHeaderRevealIntentUntilRef,
- *        markManualHeaderRevealIntent, deferredHeaderHideTimerRef) so a playback-driven
- *        requestHeaderHide() call from AlphaTabRenderer's S1 row-advance trigger no longer
- *        immediately stomps a tray the user just manually revealed (scroll-up, upward touch
- *        drag) — the hide is deferred until the manual-reveal window expires, then
- *        re-validated (still playing, scrollTop > 80, window actually expired) before
- *        applying. Manual scroll/touch reveal intent is a separate concern from playback S1
- *        hide intent — the two are arbitrated in requestHeaderHide, not merged into one ref.
- *        Adds passive touchstart/touchmove/touchend/touchcancel listeners (no preventDefault)
- *        to extend userScrollIntentUntilRef and mark manual-reveal intent on upward touch
- *        drags, closing the gap where mobile Safari/touch inertia can outlast the existing
- *        500ms pointerdown intent window. The V145.26 S1 playback resolver/scroll math in
- *        AlphaTabRenderer.tsx is intentionally untouched — this only changes whether/when
- *        page.tsx applies a hide that AlphaTab already requested.
- *
- * MAESTRO-UI-001 candidate (checkpoint, not yet OFFICIAL or LOCKED):
- * ✅ Synchronous headerIntentRef, S1 sysIdx-driven TopMenu hide after Row 1,
- *        playback-safe near-top reveal gate.
- *        MAESTRO-UI-002 remains open: manual scroll-down TopMenu hide
- *        responsiveness is a separate lane, not addressed here.
+ * MAESTRO-UI-002 (LOCKED — desktop + Safari LAN manual scroll pass):
+ * ✅ Wheel: wheel-down hides immediately; wheel-up marks reveal intent, applied on the next
+ *        onScroll delta < 0 tick. Both cooldown-protected (160ms, headerToggleLockUntilRef).
+ * ✅ Scrollbar drag: explicit, direction-based hide/reveal off isPointerOnScrollbarRef — real
+ *        scrollbar drags are intercepted before onScroll's ambient delta thresholds.
+ * ✅ Mobile touch: touchstart/touchmove/touchend/touchcancel run on window capture, filtered
+ *        by isTouchOnMainScrollSurface (target- and point-based containment; excludes the
+ *        TopMenu tray and interactive controls). touchmove toggles hide/reveal directly off
+ *        finger direction past a 2px deadzone. recentTouchActivityUntilRef and
+ *        touchMomentumRevealIntentUntilRef bridge native momentum/inertial scroll after
+ *        finger-lift — with continuation renewal for long sustained flicks and a deferred
+ *        recheck if a valid reveal is ever blocked only by the cooldown lock.
+ * ✅ Paused canvas-up reveal: any delta < 0 while !isPlayingRef.current reveals — S1 only
+ *        scrolls during active playback, so isPlaying === false already proves a given
+ *        upward scroll can't be a programmatic correction.
+ * ✅ Playback/S1 protection preserved: the [TG3-PlaybackGuard] recent-intent gate still
+ *        requires real manual/touch intent to reveal while isPlayingRef.current is true, so
+ *        AlphaTab/S1 programmatic scroll corrections cannot self-reveal the tray.
+ * ✅ requestHeaderHide unchanged — a playback-requested hide still arbitrates against a live
+ *        manual-reveal window (defers instead of stomping it) exactly as before.
+ * ✅ AlphaTabRenderer.tsx / the V145.26 S1 playback resolver are untouched throughout — this
+ *        lane only changes whether/when page.tsx applies a hide/reveal AlphaTab already
+ *        requested, never the resolver's own scroll target math.
+ *        Open/parked, not addressed by this lane: MAESTRO-MOBILE-CHORDS-001 (mobile
+ *        chord-chart row handling) and a GP8 row-bound layout sliver remain open, tracked
+ *        separately.
  *
  * V102.17 CHANGES:
  * ✅ TopMenuTray reveals immediately on manual upward scroll/pull.
@@ -273,42 +92,6 @@ const SCROLL_THRESHOLD = 50;
 // ── V102.6: Cursor A/B toggle ─────────────────────────────────────────────────
 const CURSOR_V2_ACTIVE = true;
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── [MAESTRO-UI-002E] Header-intent probe — TEMPORARY DIAGNOSTIC, not for commit ──
-// Tiny ring buffer for mobile touch/header-intent gates, in the spirit of
-// AlphaTabRenderer's S1BoundaryProbe but much smaller. Read-only: every value recorded is
-// already computed by the real hide/reveal logic below — this only records it, never applies
-// anything and never changes a threshold or branch. Console output only when
-// localStorage.getItem('maestro_header_debug') === '1'; dump with
-// window.__maestroDumpHeaderIntentProbe(), clear with window.__maestroClearHeaderIntentProbe().
-type HeaderIntentProbeEvent = Record<string, unknown>;
-const HEADER_INTENT_PROBE_MAX_EVENTS = 80;
-const headerIntentProbeState: { events: HeaderIntentProbeEvent[] } = { events: [] };
-
-function isHeaderDebugEnabled(): boolean {
-    if (typeof window === 'undefined') return false;
-    try { return localStorage.getItem('maestro_header_debug') === '1'; } catch { return false; }
-}
-
-function recordHeaderIntentProbe(evt: HeaderIntentProbeEvent): void {
-    headerIntentProbeState.events.push(evt);
-    if (headerIntentProbeState.events.length > HEADER_INTENT_PROBE_MAX_EVENTS) {
-        headerIntentProbeState.events.shift();
-    }
-    if (isHeaderDebugEnabled()) {
-        console.log('[header-intent-probe]', evt);
-    }
-}
-
-if (typeof window !== 'undefined') {
-    (window as any).__maestroDumpHeaderIntentProbe = () => ({
-        count: headerIntentProbeState.events.length,
-        events: headerIntentProbeState.events.slice(-HEADER_INTENT_PROBE_MAX_EVENTS),
-    });
-    (window as any).__maestroClearHeaderIntentProbe = () => {
-        headerIntentProbeState.events.length = 0;
-    };
-}
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -541,43 +324,6 @@ export default function SynthPlayerPage() {
         setIsHeaderVisible(v);
     }, []);
 
-    // [MAESTRO-UI-002E] Assembles the shared header-intent probe fields from component-scope
-    // refs and forwards to the module-level ring buffer (recordHeaderIntentProbe above).
-    // Diagnostic only — reads existing refs, computes nothing that feeds back into any
-    // hide/reveal decision. headerIntentRef.current stands in for the isHeaderVisible state
-    // value: setHeaderVisible always writes headerIntentRef synchronously, so the two are
-    // never observably out of sync at any call site that would invoke this probe.
-    const probeHeaderIntent = useCallback((label: string, extra: Record<string, unknown> = {}) => {
-        const nowP = performance.now();
-        const dateNow = Date.now();
-        recordHeaderIntentProbe({
-            label,
-            nowP,
-            dateNow,
-            scrollTop: mainScrollContainerRef.current?.scrollTop ?? null,
-            headerIntent: headerIntentRef.current,
-            isHeaderVisible: headerIntentRef.current,
-            isPlaying: isPlayingRef.current,
-            lockRemaining: Math.max(0, headerToggleLockUntilRef.current - nowP),
-            revealIntentRemaining: Math.max(0, manualHeaderRevealIntentUntilRef.current - dateNow),
-            hideIntentRemaining: Math.max(0, manualHeaderHideIntentUntilRef.current - dateNow),
-            // [MAESTRO-UI-002F] Fix: userScrollIntentUntilRef is always written in
-            // performance.now() units (onWheel/onTouchMove/onPointerDown) — comparing it
-            // against dateNow (Date.now()) made this field read 0 unconditionally. Diagnostic
-            // field only; does not touch the real userScrollIntentUntilRef gate anywhere else.
-            userIntentRemaining: Math.max(0, userScrollIntentUntilRef.current - nowP),
-            // [MAESTRO-UI-002F] Verifies the momentum-reveal bridge is active — see
-            // touchMomentumRevealIntentUntilRef.
-            touchMomentumRevealRemaining: Math.max(0, touchMomentumRevealIntentUntilRef.current - dateNow),
-            // [MAESTRO-UI-002G] Verifies the direction-agnostic touch-ownership bridge is
-            // active — see recentTouchActivityUntilRef.
-            recentTouchActivityRemaining: Math.max(0, recentTouchActivityUntilRef.current - dateNow),
-            isTouchActive: isTouchActiveRef.current,
-            isPointerOnScrollbar: isPointerOnScrollbarRef.current,
-            ...extra,
-        });
-    }, []);
-
     // MAESTRO-SCROLL-001: passed to AlphaTabRenderer so the live S1 scroll path can
     // request the hide itself (Row-1 hide trigger) instead of reading tray DOM geometry.
     // [MAESTRO-UI-002] Arbitrates against a recent manual reveal: if the user just revealed
@@ -586,11 +332,7 @@ export default function SynthPlayerPage() {
     // when/why AlphaTabRenderer *requests* a hide (V145.26 S1 resolver untouched) — only
     // whether/when page.tsx applies it.
     const requestHeaderHide = useCallback(() => {
-        if (!headerIntentRef.current) {
-            // [MAESTRO-UI-002E] Diagnostic only.
-            probeHeaderIntent('requestHeaderHide', { action: 'none', reason: 'already-hidden' });
-            return;
-        }
+        if (!headerIntentRef.current) return;
 
         const now = Date.now();
         if (now >= manualHeaderRevealIntentUntilRef.current) {
@@ -599,18 +341,13 @@ export default function SynthPlayerPage() {
                 deferredHeaderHideTimerRef.current = null;
             }
             setHeaderVisible(false);
-            probeHeaderIntent('requestHeaderHide', { action: 'hide', reason: 'immediate' });
             return;
         }
 
         // Manual reveal intent still active — defer rather than override it immediately.
-        if (deferredHeaderHideTimerRef.current != null) {
-            probeHeaderIntent('requestHeaderHide', { action: 'none', reason: 'defer-already-scheduled' });
-            return; // already scheduled
-        }
+        if (deferredHeaderHideTimerRef.current != null) return; // already scheduled
 
         const delay = Math.max(0, manualHeaderRevealIntentUntilRef.current - now);
-        probeHeaderIntent('requestHeaderHide', { action: 'none', reason: 'deferred' });
         deferredHeaderHideTimerRef.current = setTimeout(() => {
             deferredHeaderHideTimerRef.current = null;
             const curr = mainScrollContainerRef.current?.scrollTop ?? 0;
@@ -624,13 +361,8 @@ export default function SynthPlayerPage() {
             if (canApply) {
                 setHeaderVisible(false);
             }
-            // [MAESTRO-UI-002E] Diagnostic only.
-            probeHeaderIntent('requestHeaderHide-deferred-fire', {
-                action: canApply ? 'hide' : 'none',
-                reason: canApply ? 'deferred-applied' : 'deferred-revalidation-failed',
-            });
         }, delay);
-    }, [setHeaderVisible, probeHeaderIntent]);
+    }, [setHeaderVisible]);
     const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
     useEffect(() => {
@@ -917,7 +649,6 @@ export default function SynthPlayerPage() {
             // touchmove arriving without a matching touchstart, e.g. multi-touch edge cases).
             if (!isTouchActiveRef.current && !isTouchOnMainScrollSurface(e)) return;
             const y = e.touches[0]?.clientY ?? lastTouchYRef.current;
-            const prevY = lastTouchYRef.current; // [MAESTRO-UI-002E] pre-update value, for probe's lastTouchY
             const dy = y - lastTouchYRef.current;
             lastTouchYRef.current = y;
             // [MAESTRO-UI-002] Extend generic user-scroll intent on every touchmove,
@@ -927,30 +658,11 @@ export default function SynthPlayerPage() {
             // deadzone) proves continued real touch ownership.
             markRecentTouchActivity();
 
-            // [MAESTRO-UI-002E] Diagnostic-only capture before any branching below — never
-            // read by hide/reveal logic.
-            const touchTargetEl = e.target instanceof Element ? e.target : null;
-            probeHeaderIntent('onTouchMove', {
-                dy,
-                lastTouchY: prevY,
-                currentY: y,
-                targetTag: touchTargetEl?.tagName ?? null,
-                targetClass: touchTargetEl ? String(touchTargetEl.className).slice(0, 60) : null,
-            });
-
             // [MAESTRO-UI-002D/H] A drag starting on a button/link/input/the TopMenu tray must
             // not itself flip header visibility. Structurally redundant now that
             // isTouchOnMainScrollSurface (above) already excludes these before isTouchActiveRef
-            // is ever set — kept as a defensive re-check and because it produces its own
-            // distinct diagnostic probe event below.
-            if (isInteractiveOrTrayTouchTarget(e.target)) {
-                // [MAESTRO-UI-002E] Diagnostic only.
-                probeHeaderIntent('onTouchMove-skip', {
-                    dy, currentY: y, action: 'none', reason: 'interactive-or-tray-target',
-                    skippedInteractiveOrTray: true,
-                });
-                return;
-            }
+            // is ever set — kept as a defensive re-check.
+            if (isInteractiveOrTrayTouchTarget(e.target)) return;
 
             // [MAESTRO-UI-002D] Explicit directional touch intent — mirrors the explicit
             // scrollbar-drag branch in onScroll below: bypasses the accumulated-delta
@@ -970,14 +682,6 @@ export default function SynthPlayerPage() {
                 if (canHide) {
                     setHeaderVisible(false);
                     headerToggleLockUntilRef.current = nowP + 160;
-                    probeHeaderIntent('onTouchMove-hide', { dy, currentY: y, action: 'hide', reason: 'applied' });
-                } else {
-                    // [MAESTRO-UI-002E] Diagnostic only — distinguishes "already hidden" from
-                    // "blocked by cooldown" without changing the gate above.
-                    probeHeaderIntent('onTouchMove-hide', {
-                        dy, currentY: y, action: 'none',
-                        reason: !headerIntentRef.current ? 'already-hidden' : 'cooldown',
-                    });
                 }
             } else if (dy > TOUCH_DIRECTION_DEADZONE) {
                 // Finger moved down-screen → content scrolls up — the same reveal direction
@@ -995,14 +699,6 @@ export default function SynthPlayerPage() {
                     setHeaderVisible(true);
                     headerToggleLockUntilRef.current = nowP + 160;
                     clearDeferredTopReveal();
-                    probeHeaderIntent('onTouchMove-reveal', { dy, currentY: y, action: 'reveal', reason: 'applied' });
-                } else {
-                    // [MAESTRO-UI-002E] Diagnostic only — distinguishes "already visible" from
-                    // "blocked by cooldown" without changing the gate above.
-                    probeHeaderIntent('onTouchMove-reveal', {
-                        dy, currentY: y, action: 'none',
-                        reason: headerIntentRef.current ? 'already-visible' : 'cooldown',
-                    });
                 }
             }
         };
@@ -1037,12 +733,6 @@ export default function SynthPlayerPage() {
                     // not Date.now(), to avoid desyncing that shared ref's units.
                     userScrollIntentUntilRef.current = performance.now() + 1800;
                 }
-                // [MAESTRO-UI-002E] Diagnostic only.
-                probeHeaderIntent('onTouchEnd', {
-                    lastTouchIntentDirection: lastTouchIntentDirectionRef.current,
-                    action: 'none',
-                    reason: lastTouchIntentDirectionRef.current === 'reveal' ? 'momentum-armed' : 'no-momentum',
-                });
             }
         };
         window.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
@@ -1084,43 +774,21 @@ export default function SynthPlayerPage() {
             const delay = Math.max(0, lockRemainingMs) + 20;
             deferredTouchRevealTimerRef.current = setTimeout(() => {
                 deferredTouchRevealTimerRef.current = null;
-                if (headerIntentRef.current) {
-                    probeHeaderIntent('onScroll-deferred-touch-reveal-fire', { action: 'none', reason: 'aborted-header-visible' });
-                    return;
-                }
+                if (headerIntentRef.current) return;
                 const container = mainScrollContainerRef.current;
-                if (!container) {
-                    probeHeaderIntent('onScroll-deferred-touch-reveal-fire', { action: 'none', reason: 'aborted-no-main' });
-                    return;
-                }
+                if (!container) return;
                 const scrollTopNow = container.scrollTop;
                 const scrollMovedUpEnough = scrollTopNow < scrollTopAtSchedule || scrollTopNow < 10;
-                if (!scrollMovedUpEnough) {
-                    probeHeaderIntent('onScroll-deferred-touch-reveal-fire', {
-                        action: 'none', reason: 'aborted-scroll-not-up',
-                        scheduledScrollTop: scrollTopAtSchedule, currentScrollTop: scrollTopNow,
-                    });
-                    return;
-                }
+                if (!scrollMovedUpEnough) return;
                 const stillWithinTouchWindow =
                     Date.now() < recentTouchActivityUntilRef.current ||
                     Date.now() < touchMomentumRevealIntentUntilRef.current ||
                     scrollTopNow < 10;
-                if (!stillWithinTouchWindow) {
-                    probeHeaderIntent('onScroll-deferred-touch-reveal-fire', {
-                        action: 'none', reason: 'aborted-no-touch-window',
-                        scheduledScrollTop: scrollTopAtSchedule, currentScrollTop: scrollTopNow,
-                    });
-                    return;
-                }
+                if (!stillWithinTouchWindow) return;
                 setHeaderVisible(true);
                 headerToggleLockUntilRef.current = performance.now() + 160;
                 manualHeaderHideIntentUntilRef.current = 0;
                 touchMomentumRevealIntentUntilRef.current = 0;
-                probeHeaderIntent('onScroll-deferred-touch-reveal-fire', {
-                    action: 'reveal', reason: 'fired-applied',
-                    scheduledScrollTop: scrollTopAtSchedule, currentScrollTop: scrollTopNow,
-                });
             }, delay);
         };
 
@@ -1195,30 +863,21 @@ export default function SynthPlayerPage() {
                 // succession while the header is already shown. Without this, every single
                 // one refreshed headerToggleLockUntilRef, which could keep the 160ms cooldown
                 // lock perpetually extended for as long as the bounce lasted.
-                if (headerIntentRef.current) {
-                    probeHeaderIntent('onScroll-curr-lt-10', { action: 'none', reason: 'already-visible' });
-                    return;
-                }
+                if (headerIntentRef.current) return;
                 const hideIntentUntil = manualHeaderHideIntentUntilRef.current;
                 if (!isPlayingRef.current) {
                     if (Date.now() >= hideIntentUntil) {
                         setHeaderVisible(true);
                         clearDeferredTopReveal();
                         headerToggleLockUntilRef.current = now + 160;
-                        // [MAESTRO-UI-002E] Diagnostic only.
-                        probeHeaderIntent('onScroll-curr-lt-10', { action: 'reveal', reason: 'applied' });
                     } else {
                         // [MAESTRO-UI-002C] Suppressed only by a live hide-intent window —
                         // schedule a recheck for when it expires (see helper above).
                         scheduleDeferredTopReveal(hideIntentUntil);
                         headerToggleLockUntilRef.current = now + 160;
-                        // [MAESTRO-UI-002E] Diagnostic only.
-                        probeHeaderIntent('onScroll-curr-lt-10', { action: 'none', reason: 'deferred-hide-intent-live' });
                     }
                 } else {
                     headerToggleLockUntilRef.current = now + 160;
-                    // [MAESTRO-UI-002E] Diagnostic only.
-                    probeHeaderIntent('onScroll-curr-lt-10', { action: 'none', reason: 'playing' });
                 }
                 return;
             }
@@ -1284,7 +943,6 @@ export default function SynthPlayerPage() {
                     // Avoids the same redundant re-lock/re-reveal churn UI-002H fixed for
                     // curr < 10, scoped narrowly to the touch-owned case so wheel/pointer-
                     // driven reveal behavior below is completely untouched.
-                    probeHeaderIntent('onScroll-delta-lt-0', { action: 'none', reason: 'momentum-renewed' });
                     return;
                 }
 
@@ -1312,24 +970,14 @@ export default function SynthPlayerPage() {
                     // unrelated reveal-toggle later in the same momentum tail.
                     touchMomentumRevealIntentUntilRef.current = 0;
                     recentTouchActivityUntilRef.current = 0;
-                    // [MAESTRO-UI-002E] Diagnostic only.
-                    let appliedReason: string;
-                    if (hasRecentUserIntent) appliedReason = 'applied';
-                    else if (hasMomentumRevealIntent) appliedReason = 'momentum-reveal';
-                    else if (hasRecentTouchActivity) appliedReason = 'recent-touch-activity';
-                    // [MAESTRO-UI-002J] isPausedCanvasUpReveal is hasReasonToReveal's last
-                    // fallback — if none of the three touch/user-intent reasons applied, this
-                    // is why hasReasonToReveal was true.
-                    else appliedReason = 'paused-canvas-up';
-                    probeHeaderIntent('onScroll-delta-lt-0', { action: 'reveal', reason: appliedReason });
                 } else {
                     // [MAESTRO-UI-002I] allowReveal is false here. Under the (unchanged)
                     // formula above that only happens via the scrollbar-drag-direction-
                     // unknown-in-cooldown case (real scrollbar drags never reach this branch —
                     // intercepted earlier) or when hasReasonToReveal itself is false. Compute
                     // lockRemaining/headerHidden explicitly (rather than only inCooldown) so
-                    // this reads the same way the requirement describes it, and so a header
-                    // that's already visible doesn't get a pointless deferred timer scheduled.
+                    // a header that's already visible doesn't get a pointless deferred timer
+                    // scheduled.
                     const lockRemaining = headerToggleLockUntilRef.current - now;
                     const headerHidden = !headerIntentRef.current;
                     if (headerHidden && hasReasonToReveal && lockRemaining > 0) {
@@ -1337,16 +985,6 @@ export default function SynthPlayerPage() {
                         // flicks are event-sparse, so there may be no later scroll event once
                         // the lock naturally expires. Defer instead of losing the reveal.
                         scheduleDeferredTouchReveal(lockRemaining);
-                        // [MAESTRO-UI-002E] Diagnostic only.
-                        probeHeaderIntent('onScroll-delta-lt-0', { action: 'none', reason: 'cooldown-deferred' });
-                    } else if (hasReasonToReveal) {
-                        // Valid reason, but header already visible (nothing to defer) — or
-                        // lockRemaining resolved to <= 0 at the exact instant checked.
-                        // [MAESTRO-UI-002E] Diagnostic only.
-                        probeHeaderIntent('onScroll-delta-lt-0', { action: 'none', reason: 'cooldown' });
-                    } else {
-                        // [MAESTRO-UI-002E] Diagnostic only.
-                        probeHeaderIntent('onScroll-delta-lt-0', { action: 'none', reason: 'no-recent-user-intent' });
                     }
                 }
             }
@@ -1366,7 +1004,7 @@ export default function SynthPlayerPage() {
             window.removeEventListener('touchcancel', onTouchEnd, { capture: true });
             el.removeEventListener('scroll', onScroll);
         };
-    }, [setHeaderVisible, markManualHeaderRevealIntent, markManualHeaderHideIntent, probeHeaderIntent, markRecentTouchActivity]);
+    }, [setHeaderVisible, markManualHeaderRevealIntent, markManualHeaderHideIntent, markRecentTouchActivity]);
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data, error }) => {
