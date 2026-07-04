@@ -93,6 +93,11 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     const drawerRef = useRef<HTMLDivElement>(null);
     const touchStartX = useRef<number>(0);
     const touchStartTime = useRef<number>(0);
+    // [MAESTRO-UI-003] Tracks whether the in-flight touch series started on a
+    // valid swipe surface (not excluded chrome, not outside the active breakpoint).
+    // touchend consults this instead of re-deriving target/breakpoint state, so a
+    // gesture that started off-limits can never produce an open on release.
+    const touchStartAllowedRef = useRef<boolean>(false);
 
     // 🆕 V6: LANDSCAPE MODE - Auto-close when switching to landscape
     useEffect(() => {
@@ -178,11 +183,60 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         }
     };
 
+    // [MAESTRO-UI-003] Only visible/interactive at portrait mobile widths; matches
+    // the breakpoint the rest of the app chrome uses to decide the drawer is on screen.
+    const MOBILE_SWIPE_MEDIA_QUERY = '(max-width: 649px)';
+
+    // [MAESTRO-UI-003] Chrome/interactive-region guard for OPEN gestures only. A left
+    // swipe starting on app chrome (top tray, footer controls, other drawers) should
+    // never arm this drawer — only a swipe that begins on plain content counts. Not
+    // applied to CLOSE gestures: closing starts on this drawer's own panel, which is
+    // itself one of the excluded selectors, so a uniform gate would break swipe-to-close.
+    const isExcludedFromOpenSwipe = useCallback((target: EventTarget | null): boolean => {
+        if (!(target instanceof Element)) return false;
+        // [MAESTRO-UI-003.2] The closed-state orange reveal handle is itself a
+        // <button> and lives inside the drawer's fixed-position wrapper, so it would
+        // otherwise match the generic 'button' selector below. It must stay a valid
+        // open-swipe start, so it's allowed before the broader exclusion check runs.
+        if (target.closest('[data-swipe-reveal-handle]')) return false;
+        return !!target.closest(
+            [
+                '[data-top-menu-tray]',
+                '[data-mobile-tools-slideout]',
+                '[data-mobile-tools-slideout-backdrop]',
+                '[data-mobile-drawer]',
+                '[data-mobile-drawer-backdrop]',
+                '[data-maestro-control-panel]',
+                '[data-transport-bar]',
+                'button',
+                'a',
+                'input',
+                'select',
+                'textarea',
+                '[role="button"]',
+                '[aria-haspopup]',
+                '[data-no-swipe-reveal]',
+            ].join(', ')
+        );
+    }, []);
+
     // Handle touch start
     const handleTouchStart = (e: TouchEvent) => {
         // 🆕 V6: Block touch events in landscape mode
-        if (isMobileLandscape) return;
+        if (isMobileLandscape) {
+            touchStartAllowedRef.current = false;
+            return;
+        }
 
+        // [MAESTRO-UI-003] Opening gestures must not start on excluded chrome.
+        // Closing gestures legitimately start on this drawer's own panel, so the
+        // exclusion only applies while the drawer is closed.
+        if (!isOpen && isExcludedFromOpenSwipe(e.target)) {
+            touchStartAllowedRef.current = false;
+            return;
+        }
+
+        touchStartAllowedRef.current = true;
         touchStartX.current = e.touches[0].clientX;
         touchStartTime.current = Date.now();
     };
@@ -191,6 +245,10 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
     const handleTouchEnd = (e: TouchEvent) => {
         // 🆕 V6: Block touch events in landscape mode
         if (isMobileLandscape) return;
+
+        // [MAESTRO-UI-003] An excluded/ignored touchstart can never produce an open
+        // (or a spurious close) on release.
+        if (!touchStartAllowedRef.current) return;
 
         const touchEndX = e.changedTouches[0].clientX;
         const touchDuration = Date.now() - touchStartTime.current;
@@ -213,12 +271,47 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
         // 🆕 V6: Don't add listeners in landscape mode
         if (isMobileLandscape) return;
 
-        document.addEventListener('touchstart', handleTouchStart, { passive: true });
-        document.addEventListener('touchend', handleTouchEnd, { passive: true });
+        const mql = window.matchMedia(MOBILE_SWIPE_MEDIA_QUERY);
+        let listenersAttached = false;
 
-        return () => {
+        const clearInFlightGesture = () => {
+            // [MAESTRO-UI-003] Crossing above the breakpoint must invalidate any
+            // gesture already in progress so it cannot complete after listeners
+            // are removed (touchend would otherwise never fire to reset state).
+            touchStartAllowedRef.current = false;
+            touchStartX.current = 0;
+            touchStartTime.current = 0;
+        };
+
+        const attachListeners = () => {
+            if (listenersAttached) return;
+            document.addEventListener('touchstart', handleTouchStart, { passive: true });
+            document.addEventListener('touchend', handleTouchEnd, { passive: true });
+            listenersAttached = true;
+        };
+
+        const detachListeners = () => {
+            if (!listenersAttached) return;
             document.removeEventListener('touchstart', handleTouchStart);
             document.removeEventListener('touchend', handleTouchEnd);
+            listenersAttached = false;
+            clearInFlightGesture();
+        };
+
+        const syncToBreakpoint = () => {
+            if (mql.matches) {
+                attachListeners();
+            } else {
+                detachListeners();
+            }
+        };
+
+        syncToBreakpoint();
+        mql.addEventListener('change', syncToBreakpoint);
+
+        return () => {
+            mql.removeEventListener('change', syncToBreakpoint);
+            detachListeners();
         };
     }, [isOpen, isMobileLandscape]);
 
@@ -254,6 +347,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
             {/* Backdrop */}
             {isOpen && (
                 <div
+                    data-mobile-tools-slideout-backdrop
                     className="fixed inset-0 bg-black/20 z-[9998] transition-opacity duration-300"
                     onClick={() => setIsOpen(false)}
                 />
@@ -276,6 +370,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                 {showEdgeTab && showVisualAid && (
                     <button
                         onClick={handleToggle}
+                        data-swipe-reveal-handle
                         className={`
                             absolute -left-3 bottom-4 
                             w-3 h-20
@@ -289,7 +384,7 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
                 )}
 
                 {/* Drawer Content */}
-                <div className="h-full flex flex-col">
+                <div data-mobile-tools-slideout className="h-full flex flex-col">
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/50">
                         <h3 className="text-white font-bold text-sm uppercase tracking-wide">Tools</h3>

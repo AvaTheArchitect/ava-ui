@@ -59,13 +59,14 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     <>
       {/* Backdrop */}
       <div
+        data-mobile-drawer-backdrop
         className={`fixed inset-0 bg-black/50 z-[9998] ${visibilityClass}`}
         onClick={onClose}
       />
 
       {/* 🔥 V99: FAR RIGHT, TIGHT TO BOTTOM TRAY - no gaps */}
       <div className={`fixed right-0 bottom-0 z-[9999] flex items-end justify-end pb-[80px] pointer-events-none ${visibilityClass}`}>
-        <div className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col pointer-events-auto">
+        <div data-mobile-drawer className="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 rounded-xl shadow-2xl border-2 border-purple-500/50 w-[220px] max-h-[320px] overflow-hidden flex flex-col pointer-events-auto">
           
           {/* Header - Minimal */}
           <div className="bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
