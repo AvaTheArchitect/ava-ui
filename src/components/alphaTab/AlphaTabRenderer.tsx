@@ -6,22 +6,34 @@
  * Date: July 2nd, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
- * MAESTRO-PLAYER-002-A1 Patch (bug fix, not part of the V145.26 scroll/cursor lock):
- * ✅ notifyPlayerReady now latches props.onPlayerReady to fire at most once per
+ * MAESTRO-PLAYER-002 — CLOSED (bug fixes below, not part of the V145.26 scroll/cursor lock):
+ * ✅ A1: notifyPlayerReady latches props.onPlayerReady to fire at most once per
  *        AlphaTabRenderer init generation (see playerReadyLatchedForGen, [P5]
  *        notifyPlayerReady). alphaTab can legitimately re-emit playerReady and/or
  *        soundFontLoaded to the same registered handler during post-load
  *        render/re-ready cycles; page.tsx was receiving multiple
- *        setPlayerReady(true) calls for a single song switch as a result —
- *        confirmed via the temporary MAESTRO-PLAYER-002 (P002) generation/
- *        handler-id probe (isPlayerDebugEnabled(), localStorage
- *        maestro_player_debug). The api.isReadyForPlayback gate and the timing
- *        of the first successful notification are unchanged; only redundant
- *        later notifications for the same generation are suppressed. hardReset,
- *        resetKey, and api creation/destroy behavior are untouched by this patch.
- *        The P002 probe itself remains in place (gated, silent by default)
- *        pending the separate MAESTRO-PLAYER-002 F1 hardReset/collapse-race
- *        investigation.
+ *        setPlayerReady(true) calls for a single song switch as a result. The
+ *        api.isReadyForPlayback gate and the timing of the first successful
+ *        notification are unchanged; only redundant later notifications for the
+ *        same generation are suppressed.
+ * ✅ D/B: genDestroyedRef/pendingPlayerReadyTimeoutIdsRef/stateDebounceRef +
+ *        markGenerationDestroyed guard destroyed renderer generations during
+ *        teardown — a stale generation's deferred playerReady timer or a zombie
+ *        playerStateChanged event arriving after cleanup/hardReset now bails
+ *        before touching api.isReadyForPlayback or calling onPlayStateChange,
+ *        instead of potentially reaching page-level state for an api that no
+ *        longer exists.
+ *        Investigation findings that did not require code changes: the
+ *        AudioContext lifecycle on the clean destroy path is healthy (contexts
+ *        close normally); the long soundFontLoaded/playerReady delay traced
+ *        during investigation was a DevTools/diagnostic-logging observer effect,
+ *        not reproducible with DevTools closed; the hardReset/collapse false-
+ *        ready path never reproduced (existing V117 collapse tripwire retained
+ *        unchanged); the brief blink/dimming during song switch is the known
+ *        key={signedUrl} remount/render transition, parked post-beta.
+ *        hardReset, resetKey, and api creation/destroy order are unchanged by
+ *        either fix. The temporary MAESTRO-PLAYER-002 (P002) diagnostic probe
+ *        used to investigate and verify both fixes has been fully removed.
  *
  * V145.26-LOCKED Patch (Phase C — behavior-preserving cleanup/lock):
  * ✅ [MAESTRO-SCROLL-001] Locks the V145.26 S1 beat-center contained-row
@@ -1279,33 +1291,6 @@ function isRendererDebugEnabled(): boolean {
     try { return localStorage.getItem('maestro_renderer_debug') === '1'; } catch { return false; }
 }
 
-// ── [P002] MAESTRO-PLAYER-002 temporary probe — activate:
-//    localStorage.setItem('maestro_player_debug','1')
-//    Confirms/refutes whether hardReset() destroys an AlphaTab instance that
-//    page.tsx has already accepted as api-ready/player-ready (the false-ready
-//    Play button race). Logs primitive snapshots only — no api/DOM/settings/
-//    Error object references — so DevTools console retention cannot mask the
-//    condition it's meant to detect. Remove after MAESTRO-PLAYER-002 closes.
-function isPlayerDebugEnabled(): boolean {
-    if (typeof window === 'undefined') return false;
-    try { return localStorage.getItem('maestro_player_debug') === '1'; } catch { return false; }
-}
-
-// [P002-A0.1] Module-level (not component-scoped) so `gen` is globally unique across
-// every AlphaTabRendererV102 mount/remount — including key={signedUrl} song-switch
-// remounts, React StrictMode's dev double-invoke, and hardReset's resetKey rerun.
-// A component-scoped useRef(0) would restart at 1 on every fresh mount, letting
-// different component lifetimes reuse the same gen label and making traces ambiguous.
-// Never React state; never referenced from an effect dependency array.
-let maestroPlayer002GlobalGen = 0;
-
-// [P002-A0.2] Module-level handler-instance id counter — one per `.on()` registration
-// call (not per fire). Lets a trace distinguish "the same handler instance fired twice"
-// (alphaTab re-emitting / renderTracks-triggered re-ready) from "two different handler
-// instances both fired" (duplicate registration). Same rules as gen: never React state,
-// never in a dependency array, always closure-captured at registration time.
-let maestroPlayer002HandlerSeq = 0;
-
 // ── [S1] Portrait system-snap helper ─────────────────────────────────────────
 // Returns the index of the staff system that contains pixel-y `y`.
 function findSystemIndexForY(systems: any[], y: number): number {
@@ -2203,48 +2188,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const scoreBytesRef = useRef<Uint8Array | null>(null);
     const lastHardResetAtRef = useRef<number>(0);
 
-    // ── [P002] probe-only state — no effect deps, no React state, ref-mutable only.
-    // currentGenRef/genStartTimeRef/apiReadyFiredGenRef/playerReadyFiredGenRef are written
-    // using closure-captured generation ids (never read-then-attributed at event-fire time
-    // inside scoreLoaded/renderStarted/renderFinished/playerReady/soundFontLoaded/onApiReady
-    // handlers), per MAESTRO-PLAYER-002 probe-correctness requirements.
-    const currentGenRef = useRef<number>(0);
-    const genStartTimeRef = useRef<Map<number, number>>(new Map());
-    const apiReadyFiredGenRef = useRef<number | null>(null);
-    const playerReadyFiredGenRef = useRef<number | null>(null);
-    // [P002-A0.1] Detects whether an init run was caused by a fileUrl change (real song
-    // switch / remount) vs a resetKey bump (hardReset rerun) vs first mount — read/written
-    // only at init-effect registration time, never inside an api event handler.
-    const lastFileUrlForP002Ref = useRef<string | undefined>(undefined);
-    const lastResetKeyForP002Ref = useRef<number | undefined>(undefined);
-    // [P002-A0.2] Per (gen, eventName) attach counts — distinguishes "alphaTab emits the
-    // same event twice" from "we registered two handlers for the same event" per
-    // MAESTRO-PLAYER-002 requirement 3. Keyed by a flat "gen:eventName" string so
-    // multiple call sites attaching the *same* event name for the *same* gen accumulate
-    // into one count (countForGenEvent below), while `site` is logged alongside purely
-    // for human attribution and `hid` identifies this specific handler instance so a
-    // later raw-fire log can be matched back to the exact registration that produced it.
-    // Semantics, explicit per requirement 3: countForGenEvent is PER (gen, eventName) —
-    // NOT global-cumulative across generations and NOT per-api-instance-only; a second
-    // attach for the same gen+event from a different site still increments the same counter.
-    const p002AttachCountsRef = useRef<Map<string, number>>(new Map());
-    const p002Attach = useCallback((gen: number, hid: number, eventName: string, site: string) => {
-        if (!isPlayerDebugEnabled()) return;
-        const key = `${gen}:${eventName}`;
-        const next = (p002AttachCountsRef.current.get(key) ?? 0) + 1;
-        p002AttachCountsRef.current.set(key, next);
-        const start = genStartTimeRef.current.get(gen) ?? performance.now();
-        console.log(`[P002][gen:${gen}][hid:${hid}][+${Math.round(performance.now() - start)}ms] attach ${eventName} site=${site} countForGenEvent=${next}`);
-    }, []);
-
     // [PLAYER-002-D/B] Lifecycle hardening — genDestroyedRef/pendingPlayerReadyTimeoutIdsRef/
     // stateDebounceRef are component-scoped (not closure-local to the init effect) because
     // hardReset destroys apiRef.current SYNCHRONOUSLY, while the effect's own cleanup only
     // runs later, on the next render, once React processes the resetKey bump hardReset
     // triggers. A closure-local flag would leave exactly that gap open for hardReset's
     // destroy path. Both hardReset and the effect's normal cleanup mark/clear through the
-    // same markGenerationDestroyed helper below, keyed by the caller's own closure-captured
-    // gen (never re-derived from a "current" pointer at event-fire time).
+    // same markGenerationDestroyed helper below, keyed by the init effect's own `token`
+    // (the pre-existing per-mount generation counter, closure-captured at registration
+    // time — never re-derived from a "current" pointer at event-fire time).
     const genDestroyedRef = useRef<Set<number>>(new Set());
     const pendingPlayerReadyTimeoutIdsRef = useRef<Map<number, Set<ReturnType<typeof setTimeout>>>>(new Map());
     const stateDebounceRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -3261,9 +3213,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         };
     }, []);
 
-    // [P002] destroyingGen is passed in by the caller (closure-captured at the call site,
-    // e.g. renderFinished's collapse check) rather than read from a ref here — see probe
-    // requirement 1. Purely additive/logging-only; no reset behavior depends on it.
+    // [PLAYER-002-D/B] destroyingGen is passed in by the caller (closure-captured at the
+    // call site, e.g. renderFinished's collapse check, as `token`) rather than read from a
+    // ref here, so markGenerationDestroyed below always marks the correct generation.
     const hardReset = useCallback((destroyingGen?: number) => {
         if (isHardResettingRef.current) return;
         const now = Date.now();
@@ -3273,10 +3225,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         }
         lastHardResetAtRef.current = now;
         isHardResettingRef.current = true;
-        if (isPlayerDebugEnabled() && destroyingGen != null) {
-            const start = genStartTimeRef.current.get(destroyingGen) ?? performance.now();
-            console.log(`[P002][gen:${destroyingGen}][+${Math.round(performance.now() - start)}ms] hardReset begin`);
-        }
         console.warn('[V117] hardReset: destroying wedged AlphaTab instance');
         stopLandscapeScrollLoop();
         landscapeScrollStateRef.current = null;
@@ -3288,17 +3236,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
         lyricsOverlayHandleRef.current?.destroy(); lyricsOverlayHandleRef.current = null;
         if (apiRef.current) {
-            if (isPlayerDebugEnabled() && destroyingGen != null) {
-                const start = genStartTimeRef.current.get(destroyingGen) ?? performance.now();
-                // [P002] Confirmation line — answers "did hardReset destroy an instance that
-                // page.tsx had already accepted as api-ready/player-ready?"
-                console.log(`[P002][gen:${destroyingGen}][+${Math.round(performance.now() - start)}ms] hardReset destroy call`, {
-                    destroyingGen,
-                    currentGen: currentGenRef.current,
-                    apiReadyFiredForGen: apiReadyFiredGenRef.current === destroyingGen,
-                    playerReadyFiredForGen: playerReadyFiredGenRef.current === destroyingGen,
-                });
-            }
             // [PLAYER-002-D/B] Synchronous — must happen before destroy, not deferred to the
             // effect's own cleanup (which only runs later, after React processes the
             // resetKey bump below), so a stale notifyPlayerReady/playerStateChanged firing
@@ -3315,10 +3252,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         setIsSettling(true);
         requestAnimationFrame(() => {
             isHardResettingRef.current = false;
-            if (isPlayerDebugEnabled() && destroyingGen != null) {
-                const start = genStartTimeRef.current.get(destroyingGen) ?? performance.now();
-                console.log(`[P002][gen:${destroyingGen}][+${Math.round(performance.now() - start)}ms] hardReset resetKey bump`);
-            }
             setResetKey(k => k + 1);
         });
     }, [stopLandscapeScrollLoop, markGenerationDestroyed]);
@@ -3789,45 +3722,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         let destroyed = false;
         const token = ++initTokenRef.current;
 
-        // [P002-A0.1] `gen` is allocated from the MODULE-level counter (not `token`,
-        // which is a per-component-instance useRef that restarts at 1 on every fresh
-        // mount) so it is globally unique across song-switch remounts, StrictMode's dev
-        // double-invoke, and hardReset's resetKey rerun. Captured once here, at effect
-        // registration time — every handler registered below closes over this same
-        // value rather than re-reading a ref at fire time.
-        const gen = ++maestroPlayer002GlobalGen;
-        const genStartTime = performance.now();
-        currentGenRef.current = gen;
-        genStartTimeRef.current.set(gen, genStartTime);
-        const p002 = (msg: string, extra?: Record<string, unknown>) => {
-            if (!isPlayerDebugEnabled()) return;
-            const delta = Math.round(performance.now() - genStartTime);
-            if (extra) console.log(`[P002][gen:${gen}][+${delta}ms] ${msg}`, extra);
-            else console.log(`[P002][gen:${gen}][+${delta}ms] ${msg}`);
-        };
-        // [P002-A0.2] Handler-id-aware variant — `hid` must be the value closure-captured
-        // at that handler's `.on()` registration (see maestroPlayer002HandlerSeq above),
-        // never re-read from a ref inside the fired callback.
-        const p002H = (hid: number, msg: string) => {
-            if (!isPlayerDebugEnabled()) return;
-            const delta = Math.round(performance.now() - genStartTime);
-            console.log(`[P002][gen:${gen}][hid:${hid}][+${delta}ms] ${msg}`);
-        };
-
-        // [P002-A0.1] requirement 4 — distinguish why this init run happened, without
-        // chasing StrictMode as a product bug (only tagged as a hint; the same trace
-        // taken from a production build is what actually matters for MAESTRO-PLAYER-002).
-        const prevFileUrl = lastFileUrlForP002Ref.current;
-        const prevResetKey = lastResetKeyForP002Ref.current;
-        const mountReason =
-            prevFileUrl === undefined ? 'first-mount'
-                : prevFileUrl !== fileUrl ? 'fileUrl-changed'
-                    : prevResetKey !== resetKey ? 'resetKey-rerun'
-                        : 'unknown-rerun';
-        lastFileUrlForP002Ref.current = fileUrl;
-        lastResetKeyForP002Ref.current = resetKey;
-        p002(`init start mountReason=${mountReason} env=${process.env.NODE_ENV ?? 'unknown'}`);
-
         if (typeof window !== 'undefined') (window as any).__LAST_FILE_URL__ = fileUrl;
 
         const isGP8 = isGp8Url(fileUrl);
@@ -3835,10 +3729,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const init = async () => {
             const container = containerRef.current!;
             await waitForContainerWidth(container);
-            if (destroyed || token !== initTokenRef.current) {
-                p002('stale-init-abort (post-waitForContainerWidth)');
-                return;
-            }
+            if (destroyed || token !== initTokenRef.current) return;
 
             const alphaTab = await import('@coderline/alphatab');
             alphaTabModuleRef.current = alphaTab;
@@ -3860,11 +3751,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 layoutProfile: initProfile,
                 hasLyrics: false,
             });
-            if (destroyed || token !== initTokenRef.current) {
-                p002('stale-init-abort (post-initAlphaTab, destroying orphaned instance)');
-                safeDestroyAlphaTabApi(api, 'stale-init-race');
-                return;
-            }
+            if (destroyed || token !== initTokenRef.current) { safeDestroyAlphaTabApi(api, 'stale-init-race'); return; }
 
             apiRef.current = api;
             if (typeof window !== 'undefined') {
@@ -3890,16 +3777,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 },
             };
 
-            // [P002] apiReadyFiredGenRef written using the closure-captured `gen` — never
-            // a ref-read — so hardReset's later cross-check can't misattribute this fire.
-            apiReadyFiredGenRef.current = gen;
-            p002('onApiReady emit');
             onApiReady?.(api as unknown as AlphaTabApi);
 
-            const scoreLoadedHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, scoreLoadedHid, 'scoreLoaded', 'main-init');
             api.scoreLoaded.on(() => {
-                p002H(scoreLoadedHid, 'scoreLoaded event observed raw');
                 const score = api.score;
                 if (!score?.tracks?.length) return;
 
@@ -4006,11 +3886,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 if (ENABLE_REDUNDANT_REST_STRIP) stripRedundantRests(api.score);
 
-                // [P002-A0.2] requirement 4 — if extra playerReady/soundFontLoaded raw
-                // events show up AFTER this line in the trace, that supports "alphaTab
-                // legitimately re-readies after MIDI regeneration from renderTracks" rather
-                // than duplicate handler registration.
-                p002H(scoreLoadedHid, `renderTracks called trackCount=${tr.length} reason=scoreLoaded`);
                 api.renderTracks(tr);
 
                 if (onScoreLoaded && api.score) {
@@ -4023,10 +3898,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             });
 
-            const renderStartedHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, renderStartedHid, 'renderStarted', 'main-init');
             api.renderStarted.on(() => {
-                p002H(renderStartedHid, 'renderStarted event observed raw');
                 // [rotation-anchor-gate-probe] Point 2: renderStarted
                 if (isRendererDebugEnabled()) {
                     console.log('[rotation-anchor-gate-probe]', {
@@ -4728,10 +4600,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 });
             };
 
-            const renderFinishedHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, renderFinishedHid, 'renderFinished', 'main-init');
             api.renderFinished.on(() => {
-                p002H(renderFinishedHid, 'renderFinished event observed raw');
                 // [rotation-anchor-gate-probe] Point 3: renderFinished
                 if (isRendererDebugEnabled()) {
                     console.log('[rotation-anchor-gate-probe]', {
@@ -5060,11 +4929,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const postIsPage = (api?.settings?.display?.layoutMode ?? -1) === 0;
                     const postFirstBars = (postSystems[0] as any)?.bars?.length ?? 0;
                     if (postIsPage && postSystems.length === 1 && postFirstBars > 4) {
-                        p002(`renderFinished collapse detected postSystemsLength=${postSystems.length} postFirstBars=${postFirstBars}`);
                         console.warn('[V117] post-render collapse detected — hardReset to recover');
-                        // [P002] `gen` passed explicitly (closure-captured here, at registration
+                        // `token` passed explicitly (closure-captured here, at registration
                         // time) rather than left for hardReset to infer from a ref read later.
-                        hardReset(gen);
+                        hardReset(token);
                         return;
                     }
                     collapseFixAttemptsRef.current = 0;
@@ -5258,90 +5126,59 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             });
 
             // ─── [P5] notifyPlayerReady ───────────────────────────────────────
-            // [P002-A0.2] sourceHid identifies WHICH raw handler instance triggered this
-            // call (playerReady's or soundFontLoaded's) — passed in explicitly by the
-            // caller (closure-captured at that caller's own registration time), never
-            // read from a ref here.
             // [PLAYER-002-A1] playerReadyLatchedForGen is closure-local to this init run
             // (redeclared fresh every time this effect/generation runs), so it resets
-            // naturally on the next generation with no explicit reset needed. The P002
-            // hid trace confirmed alphaTab can legitimately re-emit playerReady and/or
-            // soundFontLoaded to this same handler more than once per generation — this
-            // latch dedupes only the page-facing onPlayerReady?.() call. It does not
-            // change the api.isReadyForPlayback gate, does not change when readiness
-            // first becomes true, and does not suppress the raw events the probe logs.
+            // naturally on the next generation with no explicit reset needed. alphaTab can
+            // legitimately re-emit playerReady and/or soundFontLoaded to this same handler
+            // more than once per generation — this latch dedupes only the page-facing
+            // onPlayerReady?.() call. It does not change the api.isReadyForPlayback gate or
+            // when readiness first becomes true.
             let playerReadyLatchedForGen = false;
-            const notifyPlayerReady = (sourceHid: number) => {
+            const notifyPlayerReady = () => {
                 // [PLAYER-002-D] Must be the first check, before api.isReadyForPlayback —
                 // if this generation has already been torn down (normal cleanup or
                 // hardReset), the api getter below may be reading a destroyed instance.
-                if (genDestroyedRef.current.has(gen)) {
-                    p002H(sourceHid, 'notifyPlayerReady bail — generation destroyed');
-                    return;
-                }
-                if (!api.isReadyForPlayback) {
-                    p002H(sourceHid, 'notifyPlayerReady bail — not ready for playback');
-                    return;
-                }
+                if (genDestroyedRef.current.has(token)) return;
+                if (!api.isReadyForPlayback) return;
                 if (playerModeRef.current === 'external' && api.player?.output) {
                     const out = api.player.output as any;
                     out.handler = externalMediaHandlerRef.current ?? null;
                     if (isRendererDebugEnabled()) console.log('[renderer] external handler attached on playerReady', !!out.handler);
                 }
-                if (playerReadyLatchedForGen) {
-                    p002H(sourceHid, 'notifyPlayerReady duplicate suppressed');
-                    return;
-                }
+                if (playerReadyLatchedForGen) return;
                 playerReadyLatchedForGen = true;
-                // [P002] playerReadyFiredGenRef written using the closure-captured `gen` —
-                // never a ref-read — so hardReset's later cross-check can't misattribute this fire.
-                playerReadyFiredGenRef.current = gen;
-                p002H(sourceHid, 'playerReady fired — onPlayerReady called');
                 onPlayerReady?.();
             };
-            const playerReadyHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, playerReadyHid, 'playerReady', 'main-init-notifyPlayerReady');
             api.playerReady?.on(() => {
-                p002H(playerReadyHid, 'playerReady event observed raw');
                 // [PLAYER-002-D] Track this timer under its own generation so a teardown
                 // (normal cleanup or hardReset) can cancel it outright instead of relying
                 // solely on notifyPlayerReady's genDestroyed bail to catch it 100ms later.
                 const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
-                    const pending = pendingPlayerReadyTimeoutIdsRef.current.get(gen);
+                    const pending = pendingPlayerReadyTimeoutIdsRef.current.get(token);
                     if (pending) {
                         pending.delete(timeoutId);
-                        if (pending.size === 0) pendingPlayerReadyTimeoutIdsRef.current.delete(gen);
+                        if (pending.size === 0) pendingPlayerReadyTimeoutIdsRef.current.delete(token);
                     }
-                    notifyPlayerReady(playerReadyHid);
+                    notifyPlayerReady();
                 }, 100);
-                let pendingForGen = pendingPlayerReadyTimeoutIdsRef.current.get(gen);
+                let pendingForGen = pendingPlayerReadyTimeoutIdsRef.current.get(token);
                 if (!pendingForGen) {
                     pendingForGen = new Set();
-                    pendingPlayerReadyTimeoutIdsRef.current.set(gen, pendingForGen);
+                    pendingPlayerReadyTimeoutIdsRef.current.set(token, pendingForGen);
                 }
                 pendingForGen.add(timeoutId);
             });
-            const soundFontLoadedHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, soundFontLoadedHid, 'soundFontLoaded', 'main-init-notifyPlayerReady');
             api.soundFontLoaded?.on(() => {
-                p002H(soundFontLoadedHid, 'soundFontLoaded event observed raw');
-                notifyPlayerReady(soundFontLoadedHid);
+                notifyPlayerReady();
             });
 
             let stateDebounce: ReturnType<typeof setTimeout>;
-            const playerStateChangedHid = ++maestroPlayer002HandlerSeq;
-            p002Attach(gen, playerStateChangedHid, 'playerStateChanged', 'main-init');
             api.playerStateChanged.on((e: any) => {
                 // [PLAYER-002-B] Confirmed via trace: a destroyed generation's api can still
-                // emit one more playerStateChanged (observed state=0, ~15-20ms after cleanup
-                // destroy). This bails before any of the handler's normal raw-event logging,
-                // ref resets, or the stateDebounce/onPlayStateChange path below — replacing
-                // them with a single stale-event line rather than adding to them.
-                if (genDestroyedRef.current.has(gen)) {
-                    p002H(playerStateChangedHid, 'playerStateChanged bail — generation destroyed');
-                    return;
-                }
-                p002H(playerStateChangedHid, `playerStateChanged event observed raw state=${(e?.state ?? e) ?? 'null'}`);
+                // emit one more playerStateChanged (observed state=0, several seconds after
+                // cleanup destroy in some traces). This bails before any of the handler's
+                // normal work, ref resets, or the stateDebounce/onPlayStateChange path below.
+                if (genDestroyedRef.current.has(token)) return;
                 if (isRendererDebugEnabled()) {
                     const stack = new Error().stack;
                     console.log('[landscape-playback-state-sync]', {
@@ -5395,10 +5232,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     // and hardReset), so this should be unreachable in practice. Kept as a
                     // second guard in case a future call site schedules stateDebounce some
                     // other way, or timer clearing races the callback microtask.
-                    if (genDestroyedRef.current.has(gen)) {
-                        p002H(playerStateChangedHid, 'playerStateChanged debounce bail — generation destroyed');
-                        return;
-                    }
+                    if (genDestroyedRef.current.has(token)) return;
                     const playing = (e.state ?? 0) === 1;
                     if (playing !== isPlayingRef.current) {
                         if (isRendererDebugEnabled() && !playing) {
@@ -5418,7 +5252,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // destroys apiRef.current synchronously, outside this closure) can also
                 // cancel this specific generation's pending debounce — not just the effect's
                 // own (later-running) cleanup.
-                stateDebounceRef.current.set(gen, stateDebounce);
+                stateDebounceRef.current.set(token, stateDebounce);
                 const isStripNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                 if ((e.state ?? 0) === 1 && isStripNow) {
                     const ctr = containerRef.current;
@@ -7282,19 +7116,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // [PLAYER-002-D/B] Mark this generation destroyed and cancel its pending
             // playerReady timers / stateDebounce timer as early in cleanup as possible —
             // before the eventual safeDestroyAlphaTabApi call below. Idempotent: if
-            // hardReset already marked/cleared this same gen synchronously (see hardReset's
+            // hardReset already marked/cleared this same token synchronously (see hardReset's
             // own destroy path), this is a harmless no-op re-run.
-            markGenerationDestroyed(gen);
-            // [P002-A0.1] Cleanup can fire before `init()`'s async work ever produced an api
-            // (e.g. React StrictMode's dev-only mount→cleanup→mount double-invoke aborting
-            // this generation almost immediately). Tagged as a hint only, not a verdict —
-            // requirement 4 explicitly says not to chase StrictMode as a product bug unless
-            // the same behavior reproduces in a production build.
-            {
-                const elapsed = Math.round(performance.now() - genStartTime);
-                const strictModeLikely = process.env.NODE_ENV !== 'production' && elapsed < 50 && !apiRef.current;
-                p002(`cleanup begin hadApi=${!!apiRef.current} strictModeLikely=${strictModeLikely}`);
-            }
+            markGenerationDestroyed(token);
             activeRendersRef.current = 0;
             renderTokenRef.current = 0;
             hasRevealedRef.current = false;
@@ -7316,7 +7140,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             gp8ChordOverlayHandleRef.current?.destroy(); gp8ChordOverlayHandleRef.current = null;
             gp8VibratoOverlayHandleRef.current?.destroy(); gp8VibratoOverlayHandleRef.current = null;
             if (apiRef.current) {
-                p002('cleanup destroy');
                 safeDestroyAlphaTabApi(apiRef.current, 'fileUrl-effect-cleanup');
                 apiRef.current = null;
             }
@@ -8311,45 +8134,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     useEffect(() => {
         const api = apiRef.current;
         if (!api) return;
-        // [P002-A0.1] Captured once at effect-registration time (not re-read inside
-        // attachOnce at fire time) — this is a distinct playerReady registration site
-        // from the main-init one above; logging it under the SAME event-name key with a
-        // different `site` tag lets a trace reveal whether attach-count for `playerReady`
-        // on a given gen ever exceeds 1 (duplicate registration) vs. stays at 1 while the
-        // raw event still logs more than once (alphaTab itself re-emitting).
-        const attachGen = currentGenRef.current;
         const attach = () => {
             const out = (api.player?.output as any) ?? null;
             if (!out) return;
             out.handler = playerMode === 'external' ? (externalMediaHandler ?? null) : null;
         };
+        const attachOnce = () => { attach(); api.playerReady?.off(attachOnce); };
         if (!api.player?.output) {
-            // [P002-A0.2] requirement 2 — this attach log must fire unconditionally
-            // whenever this branch actually attaches (previous trace showed none,
-            // meaning `api.player.output` already existed by the time this effect ran
-            // in that repro — logged here so that remains directly observable).
-            const p6Hid = ++maestroPlayer002HandlerSeq;
-            p002Attach(attachGen, p6Hid, 'playerReady', 'P6-output-handler');
-            const attachOnce = () => {
-                if (isPlayerDebugEnabled()) {
-                    const start = genStartTimeRef.current.get(attachGen) ?? performance.now();
-                    console.log(`[P002][gen:${attachGen}][hid:${p6Hid}][+${Math.round(performance.now() - start)}ms] playerReady event observed raw site=P6-output-handler`);
-                }
-                attach();
-                api.playerReady?.off(attachOnce);
-            };
             api.playerReady?.on(attachOnce);
             return () => { api.playerReady?.off(attachOnce); };
         }
-        // [P002-A0.2] requirement 2 — cheap primitive skip reason: this branch means
-        // api.player.output already existed, so P6 never registered a playerReady
-        // handler for this gen at all (no attach line will appear for it in the trace).
-        if (isPlayerDebugEnabled()) {
-            const start = genStartTimeRef.current.get(attachGen) ?? performance.now();
-            console.log(`[P002][gen:${attachGen}][+${Math.round(performance.now() - start)}ms] P6-output-handler skipped reason=output-already-existed`);
-        }
         attach();
-    }, [playerMode, externalMediaHandler, p002Attach]);
+    }, [playerMode, externalMediaHandler]);
 
     // ─── [P7] Switch PlayerMode enum when prop changes ────────────────────────
     useEffect(() => {
