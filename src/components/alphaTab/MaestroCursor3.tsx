@@ -1297,15 +1297,12 @@ export class MaestroCursorV3 {
         const step = (now: number) => {
             if (!this.isRafRunning) return;
 
-            if (this.lastFrameTime === 0) {
-                // First frame — initialize timestamp and defer render to next frame
-                // so dtSeconds is always a valid, positive elapsed interval.
-                this.lastFrameTime = now;
-                this.rafId = requestAnimationFrame(step);
-                return;
-            }
-
-            const dtSeconds = (now - this.lastFrameTime) / 1000;
+            // [C3-002] Exact seek boundary rule: a snap (deadband or stale-bar gate) needs
+            // no elapsed-time measurement, so it must not wait on a valid dtSeconds. Only the
+            // slew branch below depends on dt, so dtSeconds is computed but unused when this
+            // is the first frame — it is never read unless we fall through to the slew branch.
+            const isFirstFrame = this.lastFrameTime === 0;
+            const dtSeconds = isFirstFrame ? 0 : (now - this.lastFrameTime) / 1000;
             this.lastFrameTime = now;
 
             let delta = this.targetTick - this.renderTick;
@@ -1325,7 +1322,18 @@ export class MaestroCursorV3 {
                 delta = 0;
             }
 
-            if (Math.abs(delta) <= RAF_DEADBAND_TICKS) {
+            const withinDeadband = Math.abs(delta) <= RAF_DEADBAND_TICKS;
+
+            // [C3-002] A real slew (non-zero delta, no gate trigger) still requires a valid
+            // elapsed interval — defer exactly as before. A snap-eligible frame (gate trigger
+            // or within-deadband, which includes the targetTick === renderTick / 0px-delta
+            // case) falls through and renders on this very first frame instead of frame 2.
+            if (isFirstFrame && !withinDeadband) {
+                this.rafId = requestAnimationFrame(step);
+                return;
+            }
+
+            if (withinDeadband) {
                 this.renderTick = this.targetTick;
                 this.renderOverrideBeatStart = this.targetOverrideBeatStart;
             } else {
