@@ -17,19 +17,22 @@
  * while preserving MaestroCursor2 as rollback.
  *
  * Architecture additions planned:
- * [ ] targetTick / renderTick separation
+ * [x] targetTick / renderTick separation
  * [x] RAF loop lifecycle (startRaf / stopRaf)
  * [x] tickToX(tick) extracted from setTick math
  * [x] renderPosition(tick) helper added
  * [x] setTick → targetTick only, no direct DOM write
- * [ ] renderPosition(renderTick) as sole DOM write path
+ * [x] renderPosition(renderTick) as sole DOM write path
  * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
- * [ ] Deadband snap: absDelta <= 48 → instant
+ * [x] Deadband snap: absDelta <= 48 → instant
  * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
  * [ ] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
+ * [ ] Monotonic cursor parking guard for slide/gliss visual bucking
+
+[ ] Native cursor comparison notes from LouisLam / alphaTab playground
  *
  * Patch history:
  * ✅ [RAFScaffold]
@@ -782,7 +785,18 @@ export class MaestroCursorV3 {
                 apiPlaybackRangeStart: (this.api as any)?.playbackRange?.startTick ?? null,
             });
         }
-        this._applyTransform(finalX, finalY, this.currentH, /* snap */ !isBackward);
+        // [C3-001] targetTick/renderTick and their overrides are set to the new anchor
+        // before rendering so renderPosition(renderTick) reproduces the same finalX that
+        // the previous direct _applyTransform(finalX, ...) call used (progress === 0 at
+        // tick === beatStart for every tickToX branch — see tickToX).
+        this.targetTick = scanStart;
+        this.renderTick = scanStart;
+        this.targetOverrideBeatStart = undefined;
+        this.renderOverrideBeatStart = undefined;
+        // [C3-001] renderPosition(renderTick) is now the sole DOM write path; the snap
+        // flag preserves the exact backstep-clamp behavior the direct _applyTransform
+        // call used (snap=true unless isBackward, matching the guard above).
+        this.renderPosition(this.renderTick, this.renderOverrideBeatStart, /* snap */ !isBackward);
         // [RowStartAnchorGlide] V145.6: prime lastX to the glide origin so the backstep
         // clamp in _applyTransform doesn't suppress the first row-start glide frames.
         // The snap above set lastX to currentNoteX - BAR_WIDTH/2 (the notehead); row-start
@@ -790,10 +804,6 @@ export class MaestroCursorV3 {
         if (this.rowStartX !== null) {
             this.lastX = this.rowStartX;
         }
-        this.targetTick = scanStart;
-        this.renderTick = scanStart;
-        this.targetOverrideBeatStart = undefined;
-        this.renderOverrideBeatStart = undefined;
         this.hasInitialPosition = true;
         this.lastBeatX = this.currentNoteX;
         this.lastBeatY = this.currentY;
@@ -1257,14 +1267,18 @@ export class MaestroCursorV3 {
 
     // [TickToXExtraction] Phase 3B-B: sole synchronous DOM write path from setTick.
     // Phase 3B-C routes this through the RAF loop; overrideBeatStart preserved via renderOverrideBeatStart.
+    // [C3-001] snap defaults to false so the RAF loop and requestSnap hard-snap call
+    // sites (which omit this arg) are unchanged; setBeat's anchor render passes its own
+    // snap value to preserve the pre-C3-001 backstep-clamp behavior.
     private renderPosition(
         tick: number,
         overrideBeatStart?: number,
+        snap: boolean = false,
     ): void {
         const finalX = this.tickToX(tick, overrideBeatStart);
         this.isLiveTickTransform = true;
         try {
-            this._applyTransform(finalX, this.currentY, this.currentH, false);
+            this._applyTransform(finalX, this.currentY, this.currentH, snap);
         } finally {
             this.isLiveTickTransform = false;
         }
