@@ -62,6 +62,13 @@
  * ✅ [PS1b] Tray hides immediately when isPlaying → true.
  * ✅ [PS3-removed] No auto-restore on pause.
  * ✅ All V102.11/V102.10/V102.9/V102.7 changes intact.
+ *
+ * MAESTRO-PLAYER-002 (temporary probe, unrelated to the scroll/tray work above):
+ * ✅ p002Page/isPlayerDebugEnabled log page-level song-switch timing (handleSongSelect →
+ *        signed URL → handleApiReady → playerReady), gated behind localStorage
+ *        maestro_player_debug and silent by default. The actual PLAYER-002-A1 fix
+ *        (latching onPlayerReady to fire once per generation) lives in
+ *        AlphaTabRenderer.tsx — this file's readiness/state logic is unchanged.
  */
 
 import React, {
@@ -180,6 +187,32 @@ export default function SynthPlayerPage() {
     const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
     const signedUrlRetryRef = useRef<Set<string>>(new Set());
 
+    // ==================== [P002] MAESTRO-PLAYER-002 temporary probe ====================
+    // Activate: localStorage.setItem('maestro_player_debug','1'). Times the page-level
+    // half of the song-switch chain (handleSongSelect → signed URL → handleApiReady →
+    // playerReady) so a slow-but-normal init chain can be distinguished from the
+    // renderer-side hardReset false-ready race (see AlphaTabRenderer.tsx [P002] logs).
+    // Logs primitive values only. Remove after MAESTRO-PLAYER-002 closes.
+    const isPlayerDebugEnabled = () => {
+        if (typeof window === 'undefined') return false;
+        try { return localStorage.getItem('maestro_player_debug') === '1'; } catch { return false; }
+    };
+    const songSwitchSeqRef = useRef<number>(0);
+    const songSwitchStartRef = useRef<number>(0);
+    // [P002-A0.1] requirement 5 — flat strings only, never object payloads (even
+    // primitive-only ones), so nothing gets retained as a DevTools console object ref.
+    const p002Page = useCallback((msg: string) => {
+        if (!isPlayerDebugEnabled()) return;
+        const delta = Math.round(performance.now() - songSwitchStartRef.current);
+        const seq = songSwitchSeqRef.current;
+        console.log(`[P002][switch:${seq}][+${delta}ms] ${msg}`);
+    }, []);
+    // [P002-A0.1] requirement 3 — attach-count for playerPositionChanged, attached from
+    // handleApiReady below. A monotonic session counter (not per-gen — page.tsx has no
+    // renderer generation id) so repeated attach calls within/across song switches are
+    // visible against the switch-relative timestamps logged alongside.
+    const playerPositionChangedAttachCountRef = useRef<number>(0);
+
     // ==================== FETCH SONGS + BATCH SIGN ====================
     // [C1] Extracted to useCallback so NewTabPanel can trigger a re-fetch after upload.
     // ?? preserves the currently playing song instead of jumping back to index 0.
@@ -236,6 +269,7 @@ export default function SynthPlayerPage() {
                 : null);
         if (!path) return;
         setSignedUrl(null);
+        p002Page('setSignedUrl(null)');
         setSongInfo(null);
         setTracks([]);
         setSelectedTrack(0);
@@ -244,6 +278,7 @@ export default function SynthPlayerPage() {
         const cached = signedUrlCacheRef.current.get(path);
         if (cached && cached.expiresAt > Date.now()) {
             setSignedUrl(cached.url);
+            p002Page('setSignedUrl(url) — cache hit');
         } else {
             supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
                 if (error || !data?.signedUrl) {
@@ -253,9 +288,10 @@ export default function SynthPlayerPage() {
                 const expiresAt = Date.now() + 55 * 60 * 1000;
                 signedUrlCacheRef.current.set(path, { url: data.signedUrl, expiresAt });
                 setSignedUrl(data.signedUrl);
+                p002Page('setSignedUrl(url) — resolved');
             });
         }
-    }, [currentSong]);
+    }, [currentSong, p002Page]);
 
     // ==================== EXTERNAL CLOCK DRIVER ====================
     // RAF-based monotonic clock driver for Original mode cursor.
@@ -1031,15 +1067,18 @@ export default function SynthPlayerPage() {
 
     const handleApiReady = useCallback((alphaTabApi: AlphaTabApi) => {
         console.log('✅ Phase 3: API ready');
+        p002Page('handleApiReady');
         setApi(alphaTabApi);
         alphaTabApi.masterVolume = masterVolumeRef.current;
         if (alphaTabApi.playerPositionChanged) {
+            playerPositionChangedAttachCountRef.current += 1;
+            p002Page(`attach playerPositionChanged count=${playerPositionChangedAttachCountRef.current}`);
             alphaTabApi.playerPositionChanged.on((e: any) => {
                 currentTimeRef.current = e.currentTime;
                 durationRef.current = e.endTime;
             });
         }
-    }, []);
+    }, [p002Page]);
 
     /** onScoreLoaded — V102.7: Songsterr-style tone-first track scoring. */
     const handleScoreLoaded = useCallback((info: SongInfo, trackList: Track[]) => {
@@ -1312,6 +1351,9 @@ export default function SynthPlayerPage() {
             setIsSongSelectorOpen(false);
             return;
         }
+        songSwitchSeqRef.current += 1;
+        songSwitchStartRef.current = performance.now();
+        p002Page(`handleSongSelect songId=${songId}`);
         setIsPlaying(false);
         setPlayerReady(false);
         if (api) {
@@ -1325,7 +1367,7 @@ export default function SynthPlayerPage() {
         setSongState(prev => ({ ...prev, currentSongId: songId }));
         setIsSongSelectorOpen(false);
         if (mainScrollContainerRef.current) mainScrollContainerRef.current.scrollTop = 0;
-    }, [songState.currentSongId, api]);
+    }, [songState.currentSongId, api, p002Page]);
 
     const handleMetadataSave = useCallback((
         savedTabId: string,
@@ -1503,7 +1545,7 @@ export default function SynthPlayerPage() {
                             onScoreLoaded={handleScoreLoaded}
                             onRendered={handleRenderFinished}
                             onBoundsReady={() => { }}
-                            onPlayerReady={() => setPlayerReady(true)}
+                            onPlayerReady={() => { p002Page('setPlayerReady true'); setPlayerReady(true); }}
                             loopEnabled={isLooping}
                             playbackRange={playbackRange}
                             onLoopToggle={(enabled) => {
