@@ -217,7 +217,11 @@ export const YouTubePlayer = React.memo(
                         // Desktop (md+): Songsterr exact pixel sizes
                         // Mobile portrait: 52vw normal | full-width large
                         : isLargeVariant
-                            ? 'bottom-[80px] right-0 w-full md:bottom-[74px] md:right-4 md:w-[min(912px,95vw)]'
+                            // [MAESTRO-UI-005A] Mobile portrait: no forced height class here —
+                            // the panel's height is driven by the 35px header + aspect-video
+                            // area below instead. Desktop (md+) keeps its exact prior height via
+                            // md:h-[min(548px,85vh)] (identical value, now breakpoint-scoped).
+                            ? 'bottom-[80px] right-0 w-full md:bottom-[74px] md:right-4 md:w-[min(912px,95vw)] md:h-[min(548px,85vh)]'
                             : 'bottom-[80px] right-0 w-[52vw] md:bottom-[74px] md:right-4 md:w-[355px]'
                     }
                 `}
@@ -227,8 +231,11 @@ export const YouTubePlayer = React.memo(
                     height: isMobileLandscape
                         ? '235px'
                         : isLargeVariant
-                            // Large: 548px desktop | full-height-ish mobile portrait
-                            ? 'min(548px, 85vh)'
+                            // [MAESTRO-UI-005A] Mobile portrait Playthrough/Tutorial uses natural
+                            // header + aspect-video height to avoid the old forced-height
+                            // letterbox/takeover panel. Desktop's 548px cap now lives in the
+                            // md:h-[...] class above instead of here.
+                            ? undefined
                             // Normal: 235px desktop (fixed) | auto mobile (58vw video drives it)
                             : undefined,
                     // [MAESTRO-UI-004] Landscape-only: keeps the right edge clear of the iPhone
@@ -279,7 +286,10 @@ export const YouTubePlayer = React.memo(
                     [MAESTRO-UI-004.3] Mobile landscape: h-[200px], matching Songsterr's measured
                        230×200 video area under its 35px header (230 + 35 = 235 container height).
                        Desktop normal:         200px (235 total - 35 bar)
-                       Desktop/mobile large:   flex-1 fills remaining wrapper height */}
+                    [MAESTRO-UI-005A] Mobile portrait Playthrough/Tutorial uses natural header +
+                       aspect-video height to avoid the old forced-height letterbox/takeover
+                       panel. Desktop (md+) restores the original flex-1-fills-remaining-height
+                       behavior against the md:h-[...] container above. */}
                 <div
                     ref={containerRef}
                     className={`
@@ -287,7 +297,7 @@ export const YouTubePlayer = React.memo(
                         ${isMobileLandscape
                             ? 'h-[200px]'
                             : isLargeVariant
-                                ? 'flex-1'
+                                ? 'aspect-video md:aspect-auto md:flex-1'
                                 : 'h-[58vw] md:h-[200px]'
                         }
                     `}
