@@ -1625,11 +1625,14 @@ export default function SynthPlayerPage() {
                     />
                 </div>
             )}
-            {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display */}
+            {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display.
+                [MAESTRO-UI-004] This wrapper is visibility-only: YouTubePlayer.tsx's own root
+                owns all fixed positioning/sizing (including the locked landscape/portrait
+                footprints). Kept only because its display gate also checks activeVideoId,
+                which the isVisible prop below does not — without it, a truthy
+                isYouTubePlayerVisible with an empty activeVideoId would render visible instead
+                of staying hidden. No position/size styles belong here. */}
             <div style={{
-                position: 'fixed', bottom: isMobileLandscape ? 0 : 80,
-                right: isMobileLandscape ? 0 : 16, zIndex: 40,
-                width: 240, height: 427, borderRadius: 8, overflow: 'hidden',
                 display: audioSource === 'original' && isYouTubePlayerVisible && activeVideoId ? 'block' : 'none',
             }}>
                 <YouTubePlayer

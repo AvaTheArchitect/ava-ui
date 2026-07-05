@@ -197,8 +197,10 @@ export const YouTubePlayer = React.memo(
                 className={`
                     fixed z-40 bg-black overflow-hidden shadow-2xl border border-gray-300 flex flex-col
                     ${isMobileLandscape
-                        // 🔒 Landscape: always compact (backup locked)
-                        ? 'bottom-[80px] right-0 w-[180px]'
+                        // 🔒 Landscape: right/bottom offsets moved to inline style below.
+                        // [MAESTRO-UI-004.3] Fixed 230×235 panel matching Songsterr's measured
+                        // landscape geometry (230×235 container, 35px header, 200px video).
+                        ? 'w-[230px]'
                         // Desktop (md+): Songsterr exact pixel sizes
                         // Mobile portrait: 52vw normal | full-width large
                         : isLargeVariant
@@ -207,14 +209,28 @@ export const YouTubePlayer = React.memo(
                     }
                 `}
                 style={{
+                    // [MAESTRO-UI-004.3] Landscape: fixed 235px, matching Songsterr's measured
+                    // container height (35px header + 200px video, no extra padding/border).
                     height: isMobileLandscape
-                        // 🔒 Landscape: 100px (backup locked)
-                        ? '100px'
+                        ? '235px'
                         : isLargeVariant
                             // Large: 548px desktop | full-height-ish mobile portrait
                             ? 'min(548px, 85vh)'
                             // Normal: 235px desktop (fixed) | auto mobile (58vw video drives it)
                             : undefined,
+                    // [MAESTRO-UI-004] Landscape-only: keeps the right edge clear of the iPhone
+                    // landscape notch/home-indicator safe area. max(0px, ...) preserves today's
+                    // flush-right-0 behavior on devices/orientations with a zero inset. Portrait
+                    // keeps its plain right-0/right-4 classes above, untouched.
+                    right: isMobileLandscape ? 'max(0px, env(safe-area-inset-right))' : undefined,
+                    // [MAESTRO-UI-004.4] Landscape: bottom-anchored above the visible
+                    // MaestroControlPanel mobile bar. 80px = MaestroControlPanel mobile bar
+                    // h-[80px], the visible landscape footer. Do not use the 96px
+                    // desktop/footer-wrapper measurement; that was the wrong bar for this
+                    // landscape layout. Replaces the UI-004.1 top: 72px anchor — the reference
+                    // panel is bottom-anchored above its footer, not top-anchored under its
+                    // header.
+                    bottom: isMobileLandscape ? '80px' : undefined,
                 }}
             >
                 {/* Top bar — 35px, matches Songsterr */}
@@ -247,7 +263,8 @@ export const YouTubePlayer = React.memo(
 
                 {/* Video container
                     🔒 Mobile portrait normal: h-[58vw] (backup locked)
-                    🔒 Mobile landscape:       h-[100px] minus 35px bar = effectively ~65px (iframe fills)
+                    [MAESTRO-UI-004.3] Mobile landscape: h-[200px], matching Songsterr's measured
+                       230×200 video area under its 35px header (230 + 35 = 235 container height).
                        Desktop normal:         200px (235 total - 35 bar)
                        Desktop/mobile large:   flex-1 fills remaining wrapper height */}
                 <div
@@ -255,7 +272,7 @@ export const YouTubePlayer = React.memo(
                     className={`
                         w-full bg-black
                         ${isMobileLandscape
-                            ? 'h-[65px]'
+                            ? 'h-[200px]'
                             : isLargeVariant
                                 ? 'flex-1'
                                 : 'h-[58vw] md:h-[200px]'
