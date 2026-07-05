@@ -286,10 +286,14 @@ export const YouTubePlayer = React.memo(
                     [MAESTRO-UI-004.3] Mobile landscape: h-[200px], matching Songsterr's measured
                        230×200 video area under its 35px header (230 + 35 = 235 container height).
                        Desktop normal:         200px (235 total - 35 bar)
-                    [MAESTRO-UI-005A] Mobile portrait Playthrough/Tutorial uses natural header +
-                       aspect-video height to avoid the old forced-height letterbox/takeover
-                       panel. Desktop (md+) restores the original flex-1-fills-remaining-height
-                       behavior against the md:h-[...] container above. */}
+                    [MAESTRO-UI-005A.1] Mobile portrait Playthrough/Tutorial forces video height
+                       from viewport width (inline style, not the aspect-video class) to avoid
+                       the iframe's default 300×150 intrinsic sizing winning out — matches
+                       Songsterr-style full-width 16:9 page-view video. Desktop (md+) restores
+                       the original flex-1-fills-remaining-height behavior against the
+                       md:h-[...] container above; md:flex-1's explicit flex-basis: 0% makes the
+                       inline height/aspectRatio below inert at desktop, so no !important or
+                       extra gating is needed to keep desktop unchanged. */}
                 <div
                     ref={containerRef}
                     className={`
@@ -297,10 +301,22 @@ export const YouTubePlayer = React.memo(
                         ${isMobileLandscape
                             ? 'h-[200px]'
                             : isLargeVariant
-                                ? 'aspect-video md:aspect-auto md:flex-1'
+                                ? 'md:aspect-auto md:flex-1'
                                 : 'h-[58vw] md:h-[200px]'
                         }
                     `}
+                    style={
+                        isLargeVariant && !isMobileLandscape
+                            ? {
+                                  // [MAESTRO-UI-005A.1] Must-apply 16:9 sizing — the aspect-video
+                                  // utility alone wasn't forcing the iframe's actual height, so
+                                  // this gives the container a genuinely definite (non-auto)
+                                  // height that the iframe's height="100%" can resolve against.
+                                  height: 'calc(100vw * 9 / 16)',
+                                  aspectRatio: '16 / 9',
+                              }
+                            : undefined
+                    }
                 />
             </div>
         );
