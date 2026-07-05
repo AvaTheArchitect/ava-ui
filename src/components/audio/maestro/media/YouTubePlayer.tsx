@@ -2,12 +2,15 @@
 
 /**
  * YouTube Player Component
- * V99.2 — Mobile sizing blueprint merged from backup (V99).
- * Date: April 29th, 2026
+ * V99.3 — MAESTRO-UI-004: landscape panel redocked to measured Songsterr-style geometry.
+ * Date: July 5th, 2026
  *
  * LAYOUT MATRIX (all 5 cases):
  * ─────────────────────────────────────────────────────────────────
- * Mobile landscape   (any variant):   180×100px  right-0 bottom-[80px]  🔒 backup
+ * Mobile landscape   (any variant):   230×235px (35px header + 200px video),
+ *                                      safe-area-aware right offset,
+ *                                      bottom-[80px] above MaestroControlPanel
+ *                                      mobile bar                        🔒 locked
  * Mobile portrait    normal variant:  52vw wide  58vw video h            🔒 backup
  * Mobile portrait    large variant:   full-width 548px tall               ← same as "big" normal was before
  * Desktop            normal variant:  355×235px  right-4 md:bottom-[74px] 🔒 locked
@@ -16,6 +19,16 @@
  *
  * Bottom clearance: use CSS var approach when TransportBar height is confirmed.
  * Currently: landscape=80px, portrait-mobile=80px, desktop=74px.
+ *
+ * MAESTRO-UI-004 (page.tsx + this file):
+ * ✅ The page-level wrapper around <YouTubePlayer> in page.tsx is visibility-only — it
+ *        carries no position/size styles. It's kept (not removed) solely because its
+ *        display gate also checks activeVideoId, which this component's isVisible prop
+ *        does not. This file owns all positioning/sizing for every layout case above.
+ * ✅ iframe/embed init, time-heartbeat, and variant-change/sync logic are unchanged by
+ *        this lane — only the outer container's className/style geometry moved.
+ * ⏳ Future cleanup (not done): fold activeVideoId into the isVisible path so the page.tsx
+ *        wrapper can be removed entirely.
  *
  * V99.1 PRESERVED:
  * ✅ isLargeVariant (playthrough | lesson)

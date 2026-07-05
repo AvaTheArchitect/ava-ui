@@ -1,9 +1,17 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.17
- * Date: June 27, 2026
- * Cloned from V102.16 — TopMenuTray scroll reveal + native scrollbar gutter stabilization.
+ * Synth Player Page — Phase 4 V102.18
+ * Date: July 5, 2026
+ * Cloned from V102.17 — YouTube landscape panel docking + recent lane closures.
+ *
+ * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-PLAYER-002 closed: A1 playerReady latch + D/B destroyed-generation guards
+ *        retained in AlphaTabRenderer.tsx; diagnostic probe removed.
+ * ✅ MAESTRO-UI-002 closed: TopMenuTray landscape CSS threshold aligned to JS
+ *        isMobileLandscape's innerHeight < 600 via globals.css max-height: 599px (was 500px).
+ * ✅ MAESTRO-UI-004 closed: page-level YouTube wrapper simplified to a visibility-only gate;
+ *        YouTubePlayer.tsx is now the single positioning authority for the media panel.
  *
  * MAESTRO-UI-002 (LOCKED — desktop + Safari LAN manual scroll pass):
  * ✅ Wheel: wheel-down hides immediately; wheel-up marks reveal intent, applied on the next
