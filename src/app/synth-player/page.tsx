@@ -1449,8 +1449,14 @@ export default function SynthPlayerPage() {
              *   - ternary now wrapped in ${} so it actually executes
              *   - 100vh → 100dvh (fixes iOS dynamic toolbar clipping)
              *   - overflow-y-hidden → overflow-y-auto (allows Page-mode vertical scroll)
-             *   - header padding applies in BOTH portrait and landscape (removed !isMobileLandscape guard)
              *   - style prop removed (maxWidth/100vw was strip-mode pairing)
+             *
+             * [MAESTRO-UI-002] Header top padding is intentionally still gated on
+             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(79px+...)] otherwise) —
+             * landscape mode relies on TopMenuTray's CSS shell query (globals.css, now
+             * max-height: 600px to match isMobileLandscape's own innerHeight < 600 threshold)
+             * rendering its compact mobile shell instead of the tall desktop one, so zero
+             * reserved padding is correct once those two thresholds agree.
              */}
             <main
                 ref={mainScrollContainerRef}

@@ -249,8 +249,19 @@ body {
    This prevents JS matchMedia first-render flash and avoids hydration mismatch.
 
    Mobile portrait:   max-width: 649px
-   Mobile landscape:  max-height: 500px AND max-width: 1024px
+   Mobile landscape:  max-height: 599px AND max-width: 1024px
    Desktop/tablet:    everything else
+
+   [MAESTRO-UI-002] The landscape max-height was 500px; page.tsx's isMobileLandscape
+   (touch && orientation:landscape && innerHeight < 600) already treats up to 599px as
+   mobile landscape — that JS flag drives <main> top padding, control-panel shell
+   behavior, and MobileToolsSlideout unmounting, so it's the behavioral authority. This
+   CSS threshold is raised to 599px to match it, so TopMenuTray's shell agrees with the
+   layout that's already active instead of still showing the 80px desktop header (which
+   left content sitting underneath it) in the 500–599px band. CSS still can't check
+   touch capability the way the JS flag does, and this query still caps at max-width:
+   1024px while the JS flag doesn't — full breakpoint unification is a separate,
+   larger refactor, not done here.
 */
 
 .maestro-tray-desktop {
@@ -271,7 +282,7 @@ body {
   }
 }
 
-@media (max-height: 500px) and (max-width: 1024px) {
+@media (max-height: 599px) and (max-width: 1024px) {
   .maestro-tray-desktop {
     display: none;
   }

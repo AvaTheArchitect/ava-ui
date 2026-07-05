@@ -20,14 +20,21 @@
  *    MOBILE_TRANSPORT_CYAN and MOBILE_ACTIVE unchanged.
  * ✅ No layout, height, z-index, breakpoint, or menu behavior changes.
  *
- * 🔒 V2.0.5 PRESERVED — mobile landscape detection:
- * ✅ [MB1c] isMobileTopTray covers portrait AND landscape mobile.
- *           Portrait:  max-width 649px after TransportBar breakpoint alignment.
- *           Landscape: max-height 500px and max-width 1024px.
- *           Separate matchMedia listeners are cleaned up on unmount.
+ * 🔒 CURRENT mobile/desktop shell selection — [MAESTRO-UI-002]:
+ * ✅ There is no isMobileTopTray JS/matchMedia state anymore. Both <MobileTopMenuTray>
+ *    and the desktop <header> below are always rendered; visibility is CSS-only via the
+ *    .maestro-tray-mobile / .maestro-tray-desktop classes (globals.css), which avoids the
+ *    matchMedia first-render flash and hydration mismatch the old JS-state approach had.
+ * ✅ globals.css switches to the mobile shell on:
+ *           Portrait:  max-width 649px (aligned with the TransportBar breakpoint).
+ *           Landscape: max-height 600px and max-width 1024px — the height threshold
+ *                      matches page.tsx's isMobileLandscape (touch && orientation:landscape
+ *                      && innerHeight < 600) so the two systems agree on when this
+ *                      component's mobile shell should be showing.
  *           Either condition triggers the 5-icon mobile shell.
  *
- * 🔒 V2.0.4 PRESERVED:
+ * 🔒 V2.0.4 PRESERVED (historical — MB1's matchMedia state was later replaced by the
+ *    CSS-only dual-shell model described above):
  * ✅ [MB4b] Mobile blue token path preserved, now aligned with tray color token usage.
  * ✅ [MB8]  BackIcon: chevron-style (< shape), strokeWidth 2.5.
  * ✅ [MB1]  isMobileTopTray state via matchMedia — own useEffect, own cleanup.
