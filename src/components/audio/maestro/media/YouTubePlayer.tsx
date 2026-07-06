@@ -210,10 +210,15 @@ export const YouTubePlayer = React.memo(
                 className={`
                     fixed z-40 bg-black overflow-hidden shadow-2xl border border-gray-300 flex flex-col
                     ${isMobileLandscape
-                        // 🔒 Landscape: right/bottom offsets moved to inline style below.
-                        // [MAESTRO-UI-004.3] Fixed 230×235 panel matching Songsterr's measured
-                        // landscape geometry (230×235 container, 35px header, 200px video).
-                        ? 'w-[230px]'
+                        ? (isLargeVariant
+                            // [MAESTRO-UI-005B] Landscape Playthrough/Tutorial: larger custom
+                            // 16:9 docked panel instead of the locked compact companion
+                            // footprint. Height stays natural (see style below) — driven by
+                            // the 35px header + the video container's own calc-based height.
+                            ? 'w-[min(432px,55vw)]'
+                            // 🔒 Landscape normal: locked 230×235 companion panel — unchanged
+                            // from MAESTRO-UI-004 (230×235 container, 35px header, 200px video).
+                            : 'w-[230px]')
                         // Desktop (md+): Songsterr exact pixel sizes
                         // Mobile portrait: 52vw normal | full-width large
                         : isLargeVariant
@@ -226,10 +231,16 @@ export const YouTubePlayer = React.memo(
                     }
                 `}
                 style={{
-                    // [MAESTRO-UI-004.3] Landscape: fixed 235px, matching Songsterr's measured
-                    // container height (35px header + 200px video, no extra padding/border).
                     height: isMobileLandscape
-                        ? '235px'
+                        ? (isLargeVariant
+                            // [MAESTRO-UI-005B] Landscape Playthrough/Tutorial: no forced
+                            // container height — driven by the 35px header + the video
+                            // container's own calc-based 16:9 height below.
+                            ? undefined
+                            // [MAESTRO-UI-004.3] Landscape normal: fixed 235px, matching
+                            // Songsterr's measured container height (35px header + 200px
+                            // video, no extra padding/border). Unchanged from UI-004.
+                            : '235px')
                         : isLargeVariant
                             // [MAESTRO-UI-005A] Mobile portrait Playthrough/Tutorial uses natural
                             // header + aspect-video height to avoid the old forced-height
@@ -238,18 +249,23 @@ export const YouTubePlayer = React.memo(
                             ? undefined
                             // Normal: 235px desktop (fixed) | auto mobile (58vw video drives it)
                             : undefined,
-                    // [MAESTRO-UI-004] Landscape-only: keeps the right edge clear of the iPhone
-                    // landscape notch/home-indicator safe area. max(0px, ...) preserves today's
-                    // flush-right-0 behavior on devices/orientations with a zero inset. Portrait
-                    // keeps its plain right-0/right-4 classes above, untouched.
-                    right: isMobileLandscape ? 'max(0px, env(safe-area-inset-right))' : undefined,
+                    // [MAESTRO-UI-005B] Landscape: deliberately flush-right (0px), replacing the
+                    // prior safe-area-aware max(0px, env(safe-area-inset-right)) offset. This
+                    // follows the old Songsterr-style tradeoff — the video may approach the
+                    // physical right edge, but the interactive header stays inboard enough, and
+                    // preserving score/staff real estate takes priority. The visible left/right
+                    // white gutters some devices show in landscape are a separate, pre-existing
+                    // canvas/safe-area layout concern, not caused by this panel — out of scope
+                    // here, tracked as a future MAESTRO-UI-006 audit. Portrait keeps its plain
+                    // right-0/right-4 classes above, untouched.
+                    right: isMobileLandscape ? '0px' : undefined,
                     // [MAESTRO-UI-004.4] Landscape: bottom-anchored above the visible
                     // MaestroControlPanel mobile bar. 80px = MaestroControlPanel mobile bar
                     // h-[80px], the visible landscape footer. Do not use the 96px
                     // desktop/footer-wrapper measurement; that was the wrong bar for this
                     // landscape layout. Replaces the UI-004.1 top: 72px anchor — the reference
                     // panel is bottom-anchored above its footer, not top-anchored under its
-                    // header.
+                    // header. Unchanged by UI-005B — applies to both normal and large landscape.
                     bottom: isMobileLandscape ? '80px' : undefined,
                 }}
             >
@@ -283,9 +299,10 @@ export const YouTubePlayer = React.memo(
 
                 {/* Video container
                     🔒 Mobile portrait normal: h-[58vw] (backup locked)
-                    [MAESTRO-UI-004.3] Mobile landscape: h-[200px], matching Songsterr's measured
-                       230×200 video area under its 35px header (230 + 35 = 235 container height).
-                       Desktop normal:         200px (235 total - 35 bar)
+                    [MAESTRO-UI-004.3] Mobile landscape normal: h-[200px], matching Songsterr's
+                       measured 230×200 video area under its 35px header (230 + 35 = 235
+                       container height). Unchanged from UI-004. Desktop normal: 200px (235
+                       total - 35 bar).
                     [MAESTRO-UI-005A.1] Mobile portrait Playthrough/Tutorial forces video height
                        from viewport width (inline style, not the aspect-video class) to avoid
                        the iframe's default 300×150 intrinsic sizing winning out — matches
@@ -293,28 +310,45 @@ export const YouTubePlayer = React.memo(
                        the original flex-1-fills-remaining-height behavior against the
                        md:h-[...] container above; md:flex-1's explicit flex-basis: 0% makes the
                        inline height/aspectRatio below inert at desktop, so no !important or
-                       extra gating is needed to keep desktop unchanged. */}
+                       extra gating is needed to keep desktop unchanged.
+                    [MAESTRO-UI-005B] Mobile landscape Playthrough/Tutorial: same must-apply
+                       inline-style approach as portrait, scaled to the landscape panel's own
+                       w-[min(432px,55vw)] width instead of 100vw. Not relying on aspect-video
+                       alone here either, for the same iframe-intrinsic-sizing reason as
+                       UI-005A.1. */}
                 <div
                     ref={containerRef}
                     className={`
                         w-full bg-black
                         ${isMobileLandscape
-                            ? 'h-[200px]'
+                            ? (isLargeVariant
+                                // [MAESTRO-UI-005B] No height class — inline style below
+                                // supplies the calc-based 16:9 height.
+                                ? ''
+                                : 'h-[200px]')
                             : isLargeVariant
                                 ? 'md:aspect-auto md:flex-1'
                                 : 'h-[58vw] md:h-[200px]'
                         }
                     `}
                     style={
-                        isLargeVariant && !isMobileLandscape
-                            ? {
-                                  // [MAESTRO-UI-005A.1] Must-apply 16:9 sizing — the aspect-video
-                                  // utility alone wasn't forcing the iframe's actual height, so
-                                  // this gives the container a genuinely definite (non-auto)
-                                  // height that the iframe's height="100%" can resolve against.
-                                  height: 'calc(100vw * 9 / 16)',
-                                  aspectRatio: '16 / 9',
-                              }
+                        isLargeVariant
+                            ? (isMobileLandscape
+                                ? {
+                                      // [MAESTRO-UI-005B] Must-apply 16:9 sizing, scaled to the
+                                      // landscape panel's own clamped width.
+                                      height: 'calc(min(432px, 55vw) * 9 / 16)',
+                                      aspectRatio: '16 / 9',
+                                  }
+                                : {
+                                      // [MAESTRO-UI-005A.1] Must-apply 16:9 sizing — the
+                                      // aspect-video utility alone wasn't forcing the iframe's
+                                      // actual height, so this gives the container a genuinely
+                                      // definite (non-auto) height that the iframe's
+                                      // height="100%" can resolve against.
+                                      height: 'calc(100vw * 9 / 16)',
+                                      aspectRatio: '16 / 9',
+                                  })
                             : undefined
                     }
                 />
