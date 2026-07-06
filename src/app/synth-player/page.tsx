@@ -1634,31 +1634,23 @@ export default function SynthPlayerPage() {
                 </div>
             )}
             {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display.
-                [MAESTRO-UI-004] This wrapper is visibility-only: YouTubePlayer.tsx's own root
-                owns all fixed positioning/sizing (including the locked landscape/portrait
-                footprints). Kept only because its display gate also checks activeVideoId,
-                which the isVisible prop below does not — without it, a truthy
-                isYouTubePlayerVisible with an empty activeVideoId would render visible instead
-                of staying hidden. No position/size styles belong here. */}
-            <div style={{
-                display: audioSource === 'original' && isYouTubePlayerVisible && activeVideoId ? 'block' : 'none',
-            }}>
-                <YouTubePlayer
-                    ref={youtubePlayerRef}
-                    videoId={activeVideoId ?? ''}
-                    isVisible={audioSource === 'original' && isYouTubePlayerVisible}
-                    onClose={handleYouTubeClose}
-                    currentTime={displayTime}
-                    isPlaying={isPlaying}
-                    onTimeUpdate={handleYouTubeTimeUpdate}
-                    onStateChange={handleYouTubeStateChange}
-                    onPlayerReady={handleYouTubePlayerReady}
-                    isMobileLandscape={isMobileLandscape}
-                    videoVariants={(currentSong as any)?.youtubeVariants}
-                    onVariantChange={handleVideoVariantChange}
-                    videoStartOffset={(currentSong as any)?.videoStartOffset}
-                />
-            </div>
+                [MAESTRO-VIDEO-001] YouTubePlayer visibility is gated by activeVideoId so it
+                does not mount/init with an empty videoId. */}
+            <YouTubePlayer
+                ref={youtubePlayerRef}
+                videoId={activeVideoId || ''}
+                isVisible={audioSource === 'original' && isYouTubePlayerVisible && !!activeVideoId}
+                onClose={handleYouTubeClose}
+                currentTime={displayTime}
+                isPlaying={isPlaying}
+                onTimeUpdate={handleYouTubeTimeUpdate}
+                onStateChange={handleYouTubeStateChange}
+                onPlayerReady={handleYouTubePlayerReady}
+                isMobileLandscape={isMobileLandscape}
+                videoVariants={(currentSong as any)?.youtubeVariants}
+                onVariantChange={handleVideoVariantChange}
+                videoStartOffset={(currentSong as any)?.videoStartOffset}
+            />
         </div>
     );
 }

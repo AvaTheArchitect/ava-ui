@@ -100,6 +100,12 @@ export const YouTubePlayer = React.memo(
 
         const isLargeVariant = selectedVariant === 'playthrough' || selectedVariant === 'lesson';
 
+        // Reset local variant selector when the song/default video changes so stale
+        // Playthrough/Tutorial state does not carry into the next song.
+        useEffect(() => {
+            setSelectedVariant('main');
+        }, [videoVariants?.main]);
+
         useImperativeHandle(ref, () => ({
             playVideo: () => {
                 if (initialSeekRef.current >= 0) {
