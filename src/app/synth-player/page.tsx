@@ -1492,6 +1492,9 @@ export default function SynthPlayerPage() {
                  *   - className simplified to w-full (works portrait + landscape)
                  */}
                 {/* [TH3-restored] Dark wrapper matches AlphaTab dark canvas — eliminates white gutter bleed. */}
+                {/* [MAESTRO-LAYOUT-001B] The 74px below is the desktop TransportBar height
+                    (TransportBar.tsx, h-[74px]) — also mirrored in YouTubePlayer.tsx's desktop
+                    bottom offset (md:bottom-[74px]). Keep all three in sync if it changes. */}
                 <div
                     id="maestro-player"
                     className={`relative w-full ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}`}
@@ -1605,6 +1608,10 @@ export default function SynthPlayerPage() {
                 onComplete={() => { }}
             />
 
+            {/* [MAESTRO-LAYOUT-001B] min-width:650px marks the desktop threshold, paired with the
+                max-width:649px complement in globals.css's TopMenuTray shell query and
+                MobileToolsSlideout.tsx's MOBILE_SWIPE_MEDIA_QUERY — same intentional
+                inclusive-CSS-max split as the documented 599/600 landscape-height pairing. */}
             {!isMobileLandscape && (
                 <div className="block [@media(min-width:650px)]:hidden" style={{ zIndex: 50 }}>
                     <MobileToolsSlideout

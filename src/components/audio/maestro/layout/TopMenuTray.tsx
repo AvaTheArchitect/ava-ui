@@ -398,6 +398,11 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                 className="maestro-tray-desktop"
                 style={{
                 position: 'relative',
+                // [MAESTRO-LAYOUT-001B] This 80px is the desktop top-header height (page.tsx's
+                // main top padding, pt-[calc(80px+...)], is sized to clear exactly this). It is a
+                // separate concept from MaestroControlPanel.tsx's mobile bottom bar 80px — the
+                // two are unrelated UI elements that happen to share a value today; do not merge
+                // them into one shared constant.
                 height: 'calc(80px + env(safe-area-inset-top))',
                 width: '100%',
                 background: 'linear-gradient(to bottom right, rgb(3,7,18), rgb(17,24,39), rgb(3,7,18))',

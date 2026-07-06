@@ -185,6 +185,10 @@ export const MobileToolsSlideout: React.FC<MobileToolsSlideoutProps> = ({
 
     // [MAESTRO-UI-003] Only visible/interactive at portrait mobile widths; matches
     // the breakpoint the rest of the app chrome uses to decide the drawer is on screen.
+    // [MAESTRO-LAYOUT-001B] 649px is the intentional CSS-max complement of the app's
+    // min-width:650px desktop threshold (MaestroControlPanel.tsx, page.tsx Tailwind
+    // arbitrary variants, globals.css's TopMenuTray shell query) — same inclusive-CSS-max
+    // vs exclusive-JS-min split as the documented 599/600 landscape-height pairing.
     const MOBILE_SWIPE_MEDIA_QUERY = '(max-width: 649px)';
 
     // [MAESTRO-UI-003] Chrome/interactive-region guard for OPEN gestures only. A left

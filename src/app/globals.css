@@ -262,6 +262,15 @@ body {
    touch capability the way the JS flag does, and this query still caps at max-width:
    1024px while the JS flag doesn't — full breakpoint unification is a separate,
    larger refactor, not done here.
+
+   [MAESTRO-LAYOUT-001B] The 649px above is the same kind of intentional pairing as the
+   599/600 one: the rest of the app (MaestroControlPanel.tsx, page.tsx Tailwind arbitrary
+   variants, MobileToolsSlideout.tsx's MOBILE_SWIPE_MEDIA_QUERY) treats 650px as the
+   desktop/non-mobile threshold, using min-width:650px to mark desktop and CSS max-width:
+   649px here to mark mobile — the one-pixel split exists because CSS max-width is
+   inclusive of the boundary value while the app's own threshold is 650px. Do not
+   "reconcile" 649 and 650 to the same number; that would either open a 1px gap where
+   neither shell renders or a 1px overlap where both do.
 */
 
 .maestro-tray-desktop {

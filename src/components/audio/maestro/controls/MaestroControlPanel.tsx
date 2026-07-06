@@ -190,6 +190,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   return (
     <>
+      {/* [MAESTRO-LAYOUT-001B] min-width:650px here (and the paired [@media(min-width:650px)]:hidden
+          on the mobile layout below) marks the desktop/non-mobile threshold used throughout the
+          app's Tailwind arbitrary variants. Its CSS max-width:649px complement lives in
+          globals.css's TopMenuTray shell query and MobileToolsSlideout.tsx's
+          MOBILE_SWIPE_MEDIA_QUERY — same intentional inclusive-CSS-max split as the documented
+          599/600 landscape-height pairing (see globals.css). Do not change 650/649 independently. */}
       {/* DESKTOP LAYOUT */}
       {!props.isMobileLandscape && (
         <div className="hidden [@media(min-width:650px)]:block">
@@ -245,6 +251,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
       {/* MOBILE LAYOUT */}
       <div className={props.isMobileLandscape ? 'block' : 'block [@media(min-width:650px)]:hidden'}>
         <div data-maestro-control-panel className="fixed bottom-0 left-0 right-0 pointer-fine:right-3.75 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm pb-safe">
+          {/* [MAESTRO-LAYOUT-001B] This 80px is the mobile bottom control bar height (also
+              referenced by page.tsx and YouTubePlayer.tsx as the landscape/portrait mobile bar
+              clearance). It is a separate concept from TopMenuTray.tsx's desktop top-header
+              80px — the two are unrelated UI elements that happen to share a value today; do
+              not merge them into one shared constant. */}
           <div className="h-[80px] px-6 flex items-center justify-between">
 
             {/* 1. Track Mixer */}

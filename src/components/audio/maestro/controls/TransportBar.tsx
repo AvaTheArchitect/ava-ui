@@ -262,6 +262,10 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 
   return (
     <div data-transport-bar className="fixed bottom-0 left-0 right-0 pointer-fine:right-3.75 !z-[9999] bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 border-t border-purple-500/30 shadow-2xl backdrop-blur-sm">
+      {/* [MAESTRO-LAYOUT-001B] This 74px desktop TransportBar height is mirrored in two other
+          places that clear it: page.tsx's desktop/portrait bottom padding
+          (calc(74px + env(safe-area-inset-bottom) + 24px)) and YouTubePlayer.tsx's desktop
+          bottom offset (md:bottom-[74px]). Keep all three in sync if this height ever changes. */}
       <div className="w-full h-[74px] flex items-center">
 
         {/* ── MIDDLE BAND: TrackMixer → Export ────────────────────────────────────────────────
