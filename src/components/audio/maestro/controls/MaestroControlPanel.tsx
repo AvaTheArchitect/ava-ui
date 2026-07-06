@@ -372,7 +372,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             {/* 3. Loop */}
             <button
               onClick={handleLoopToggle}
-              disabled={!controlsReady}
+              disabled={!controlsReady || (props.isMobileLandscape && !props.isLooping)}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
               title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >
