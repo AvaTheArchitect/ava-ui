@@ -1460,7 +1460,7 @@ export default function SynthPlayerPage() {
              *   - style prop removed (maxWidth/100vw was strip-mode pairing)
              *
              * [MAESTRO-UI-002] Header top padding is intentionally still gated on
-             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(79px+...)] otherwise) —
+             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(80px+...)] otherwise) —
              * landscape mode relies on TopMenuTray's CSS shell query (globals.css, now
              * max-height: 600px to match isMobileLandscape's own innerHeight < 600 threshold)
              * rendering its compact mobile shell instead of the tall desktop one, so zero
@@ -1474,7 +1474,7 @@ export default function SynthPlayerPage() {
         ${isMobileLandscape
                         ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
                         : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain [scrollbar-gutter:stable]'}
-        ${!isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+        ${!isMobileLandscape ? 'pt-[calc(80px+env(safe-area-inset-top))]' : 'pt-0'}
     `}
             >
                 {error && (
