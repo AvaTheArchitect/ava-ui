@@ -184,6 +184,10 @@ const DIFFICULTY_OPTIONS = [
     { label: 'Beginner', value: '1' }, { label: 'Intermediate', value: '2' }, { label: 'Advanced', value: '3' },
 ];
 
+// TUNINGS includes the "any" filter sentinel (used by My Tabs/library filtering).
+// It is not a real tunings row, so it must never be offered or saved here.
+const TUNING_OPTIONS = TUNINGS.filter(t => t.value !== 'any');
+
 // V3.9.1: Source vocabulary — normalized slugs stored in tabs.source
 const SOURCE_OPTIONS = [
     { label: 'Songsterr', value: 'songsterr' },
@@ -842,7 +846,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
         if (!form.genre) e.genre = 'Genre is required';
         if (!form.difficulty) e.difficulty = 'Difficulty is required';
         if (!form.instrument) e.instrument = 'Instrument is required';
-        if (!form.tuning) e.tuning = 'Tuning is required';
+        if (!form.tuning || form.tuning === 'any') e.tuning = 'Tuning is required';
         if (form.year) { const y = Number(form.year); if (isNaN(y) || y < 1900 || y > new Date().getFullYear() + 1) e.year = 'Enter a valid year (1900–present)'; }
         // Tempo is optional — only validate range if the user typed something
         if (form.tempo) { const t = Number(form.tempo); if (isNaN(t) || t < 30 || t > 300) e.tempo = 'Tempo must be 30–300 BPM'; }
@@ -1042,7 +1046,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                         <Field label="Genre" required error={errors.genre}><SelectInput value={form.genre} onChange={v => set('genre', v)} options={GENRE_OPTIONS} placeholder="Select genre" dark={dark} hasError={!!errors.genre} /></Field>
                                         <Field label="Difficulty" required error={errors.difficulty}><SelectInput value={form.difficulty} onChange={v => set('difficulty', v)} options={DIFFICULTY_OPTIONS} placeholder="Select difficulty" dark={dark} hasError={!!errors.difficulty} /></Field>
                                         <Field label="Instrument" required error={errors.instrument}><SelectInput value={form.instrument} onChange={v => set('instrument', v)} options={INSTRUMENT_OPTIONS} placeholder="Select instrument" dark={dark} hasError={!!errors.instrument} /></Field>
-                                        <Field label="Tuning" required error={errors.tuning}><SelectInput value={form.tuning} onChange={v => set('tuning', v)} options={TUNINGS} placeholder="Select tuning" dark={dark} hasError={!!errors.tuning} /></Field>
+                                        <Field label="Tuning" required error={errors.tuning}><SelectInput value={form.tuning} onChange={v => set('tuning', v)} options={TUNING_OPTIONS} placeholder="Select tuning" dark={dark} hasError={!!errors.tuning} /></Field>
                                     </div>
                                     {/* Source | Tempo — technical metadata row */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
