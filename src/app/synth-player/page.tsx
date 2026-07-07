@@ -1,11 +1,14 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.18
- * Date: July 5, 2026
- * Cloned from V102.17 — YouTube landscape panel docking + recent lane closures.
+ * Synth Player Page — Phase 4 V102.19
+ * Date: July 7, 2026
+ * Cloned from V102.18 — Metadata-only save reload guard + recent lane closures.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-PLAYER-003 closed: Signed URL resolver is keyed by playable file identity
+ *        primitives instead of currentSong object reference, preventing metadata-only
+ *        saves from clearing/reloading the active score, tracks, and selected track.
  * ✅ MAESTRO-PLAYER-002 closed: A1 playerReady latch + D/B destroyed-generation guards
  *        retained in AlphaTabRenderer.tsx; diagnostic probe removed.
  * ✅ MAESTRO-UI-002 closed: TopMenuTray landscape CSS threshold aligned to JS
@@ -239,12 +242,24 @@ export default function SynthPlayerPage() {
     }, [defaultYouTubeId]);
 
     // ==================== SIGNED URL RESOLVER ====================
+    // [MAESTRO-PLAYER-003] Keyed by playable file identity (id + file path/name/extension),
+    // not the currentSong object. MetadataEditorPanel saves (title/tempo/tuning/time_signature/
+    // etc.) always allocate a new currentSong reference even when the underlying file is
+    // unchanged — depending on the object itself would re-fire this resolver on every
+    // metadata-only save, wiping tracks/selectedTrack/songInfo and forcing an unnecessary
+    // score reparse (which can land the track heuristic on a different/rest-only track).
+    // These primitives only change on an actual song switch or a tab-file replacement.
+    const currentSongId = currentSong?.id ?? null;
+    const currentSongFilePath = currentSong?.file_path ?? null;
+    const currentSongFileName = currentSong?.file_name ?? null;
+    const currentSongFileExtension = currentSong?.file_extension ?? null;
+    const currentSongTitle = currentSong?.title ?? null;
     useEffect(() => {
         // [C4] Support file_path-only rows (new uploads) alongside legacy file_name+extension rows.
         const path =
-            currentSong?.file_path ||
-            (currentSong?.file_name && currentSong?.file_extension
-                ? `${currentSong.file_name}.${currentSong.file_extension}`
+            currentSongFilePath ||
+            (currentSongFileName && currentSongFileExtension
+                ? `${currentSongFileName}.${currentSongFileExtension}`
                 : null);
         if (!path) return;
         setSignedUrl(null);
@@ -259,7 +274,7 @@ export default function SynthPlayerPage() {
         } else {
             supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
                 if (error || !data?.signedUrl) {
-                    setError(`Failed to load tab for "${currentSong?.title ?? 'this tab'}"`);
+                    setError(`Failed to load tab for "${currentSongTitle ?? 'this tab'}"`);
                     return;
                 }
                 const expiresAt = Date.now() + 55 * 60 * 1000;
@@ -267,7 +282,7 @@ export default function SynthPlayerPage() {
                 setSignedUrl(data.signedUrl);
             });
         }
-    }, [currentSong]);
+    }, [currentSongId, currentSongFilePath, currentSongFileName, currentSongFileExtension, currentSongTitle]);
 
     // ==================== EXTERNAL CLOCK DRIVER ====================
     // RAF-based monotonic clock driver for Original mode cursor.
