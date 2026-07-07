@@ -381,9 +381,13 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             </div>
 
             {/* 3. Loop */}
+            {/* [MAESTRO-LOOP-002B] Landscape Loop ON is now allowed because LOOP-002B's
+                relaxed LandscapeToggleOnGuard creates a real bar-snapped range (BeatCustomLoopOverlay.tsx).
+                The LOOP-001A block on landscape ON (added when it was fake/inert) no longer
+                applies. Landscape click/drag/handle editing remain guarded and unaffected. */}
             <button
               onClick={handleLoopToggle}
-              disabled={!controlsReady || (props.isMobileLandscape && !props.isLooping)}
+              disabled={!controlsReady}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
               title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >

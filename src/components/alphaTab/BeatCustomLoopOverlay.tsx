@@ -214,6 +214,16 @@ export default function BeatCustomLoopOverlay({
 
     const loopRef = useRef(loopEnabled);
     const isLandscapeRef = useRef(isLandscape);
+    // [MAESTRO-LOOP-002D] Short-lived render bridge for landscape toggle-ON only.
+    // AlphaTabRenderer owns a separate effect that resyncs api.playbackRange from
+    // page.tsx's own playbackRange prop; that prop is still null on the same commit
+    // commitBarSnap runs in, so it clobbers commitBarSnap's direct write back to null
+    // before page.tsx's state round-trips back down. This ref carries the just-committed
+    // tick range across that gap for the landscape display branch ONLY — it is not a new
+    // long-term source of truth: onLoopChange still owns page/parent state, this is never
+    // read for handle drag/editing, and it self-clears the moment api.playbackRange
+    // settles or loopEnabled goes false.
+    const pendingCommittedRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
     const isDragging = useRef(false);
     const startBeat = useRef<any>(null);
     const endBeat = useRef<any>(null);
@@ -293,6 +303,11 @@ export default function BeatCustomLoopOverlay({
 
     useEffect(() => { loopRef.current = loopEnabled; }, [loopEnabled]);
     useEffect(() => { isLandscapeRef.current = isLandscape; }, [isLandscape]);
+    // [MAESTRO-LOOP-002D] Clear the pending-range bridge the moment Loop turns off —
+    // it must never outlive the loop it was bridging for.
+    useEffect(() => {
+        if (!loopEnabled) pendingCommittedRangeRef.current = null;
+    }, [loopEnabled]);
 
     // Landscape display-only highlight: sync scrollLeft so rects are positioned
     // in viewport space. container (alphatab-container) is the scroll element in
@@ -698,6 +713,11 @@ export default function BeatCustomLoopOverlay({
 
         api.playbackRange = { startTick, endTick };
         api.isLooping = true;
+        // [MAESTRO-LOOP-002D] Bridge for the landscape display branch only (see
+        // pendingCommittedRangeRef declaration). Harmless for the 'click' source too —
+        // that path is unreachable in landscape (LandscapeLoopClickGuard/LandscapeOnUpGuard
+        // are untouched), and this ref is never read outside the landscape render branch.
+        pendingCommittedRangeRef.current = { startTick, endTick };
         // Clear override when loop is moved — new loop start takes precedence
         (window as any).__maestroLoopPlayStartOverrideTick = null;
 
@@ -1320,7 +1340,15 @@ export default function BeatCustomLoopOverlay({
 
     useEffect(() => {
         if (!loopEnabled || !api) return;
-        if (isLandscapeRef.current) return;
+        // [MAESTRO-LOOP-002B] LandscapeToggleOnGuard relaxed: bar-snap creation is now
+        // authorized in landscape (range math is tickCache-based via getExpandedBarRange,
+        // layout-independent — unlike the click/drag path's boundsLookup-based hit-testing,
+        // which remains guarded and untouched). commitBarSnap's rect population
+        // (buildBarRects) and the landscape display branch's own y-band dedup are the exact
+        // same pipeline already exercised by the verified-healthy "create in portrait, rotate
+        // to landscape" baseline — this just lets it run starting from landscape instead.
+        // LandscapeLoopClickGuard/LandscapeOnUpGuard/LandscapeDragEndGuard and handle
+        // rendering remain fully guarded — this effect never renders/drags handles.
         if (api.playbackRange) return;
 
         const tick = (api as any).tickPosition ?? 0;
@@ -1334,6 +1362,24 @@ export default function BeatCustomLoopOverlay({
             if (result?.beat) {
                 const snapBeat = result.beat;
                 commitBarSnap(snapBeat, 'toggle ON');
+                // [MAESTRO-LOOP-002C] AlphaTabRenderer owns a separate effect
+                // (api.playbackRange = (loopEnabled && playbackRange) ? playbackRange : null)
+                // that resyncs api.playbackRange from page.tsx's own playbackRange state.
+                // That state is still null on THIS render (onLoopChange's setPlaybackRange
+                // hasn't round-tripped back down as a prop yet), so that effect clobbers
+                // commitBarSnap's write back to null in the same commit's effects phase —
+                // and since none of this component's OWN props change afterward, it never
+                // re-renders to pick up the eventual correct value once page.tsx's state
+                // does catch up. Re-check on a later tick (reusing the existing double-RAF
+                // pattern already used elsewhere in this file for the same "wait for a
+                // settle" purpose) and resync via the existing rebuildFromPlaybackRange —
+                // no new source of truth, just an extra read of the same api.playbackRange
+                // once the clobber has had time to resolve.
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        if (api.playbackRange) rebuildFromPlaybackRange('toggle-ON-resync');
+                    });
+                });
                 return;
             }
         }
@@ -1343,6 +1389,8 @@ export default function BeatCustomLoopOverlay({
             console.log('🎼 BeatLoop bar-snap (toggle ON, tick-only fallback):', range);
             api.playbackRange = { startTick: range.startTick, endTick: range.endTick };
             api.isLooping = true;
+            // [MAESTRO-LOOP-002D] Same bridge as the commitBarSnap path above.
+            pendingCommittedRangeRef.current = { startTick: range.startTick, endTick: range.endTick };
 
             // V1.8.4: set reseat flag on fallback path too — same contract as
             // commitBarSnap. Renderer flushes stale refs on next position event.
@@ -1353,6 +1401,12 @@ export default function BeatCustomLoopOverlay({
             };
 
             onLoopChange?.(range.startTick, range.endTick);
+            // [MAESTRO-LOOP-002C] Same resync as the commitBarSnap path above.
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (api.playbackRange) rebuildFromPlaybackRange('toggle-ON-fallback-resync');
+                });
+            });
         }
     }, [loopEnabled]);
 
@@ -2017,7 +2071,18 @@ export default function BeatCustomLoopOverlay({
     // produces one rect per bar — e.g. 6 tracks × 2 bars = 12 rects.
     // TODO: match the y-band used by FixedLandscapeCursor (active track row).
     if (isLandscape) {
-        const lsRange = api?.playbackRange as { startTick: number; endTick: number } | null;
+        // [MAESTRO-LOOP-002D] The real value has settled — the bridge is no longer
+        // needed. Cleared here (not just superseded by ?? below) so a later, unrelated
+        // transient null on api.playbackRange can't incorrectly resurrect a stale bridge.
+        if (api?.playbackRange && pendingCommittedRangeRef.current) {
+            pendingCommittedRangeRef.current = null;
+        }
+        // api.playbackRange is the primary source of truth; the bridge only covers the
+        // gap between commitBarSnap's direct write and AlphaTabRenderer's own
+        // page-state-driven resync effect catching up (see pendingCommittedRangeRef
+        // declaration) — only ever consulted while loopEnabled is true, never for
+        // handle drag/editing, and never used to bypass onLoopChange.
+        const lsRange = (api?.playbackRange ?? (loopEnabled ? pendingCommittedRangeRef.current : null)) as { startTick: number; endTick: number } | null;
         const scrollLeft = landscapeScrollLeft;
         const containerWidth = (container as HTMLElement | null)?.clientWidth ?? 390;
         const surfaceEl = (container ?? document).querySelector?.('.at-surface') as HTMLElement | null;
