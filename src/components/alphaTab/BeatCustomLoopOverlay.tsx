@@ -1019,7 +1019,15 @@ export default function BeatCustomLoopOverlay({
         // On click: onUp paints the full bar directly (no single-beat flash).
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
-            if (!loopRef.current) return;
+            // [MAESTRO-LOOP-002A.1] Debug-only bypass. LOOP-002A's probe never logged because
+            // it sat behind this original `if (!loopRef.current) return;` — in landscape,
+            // Loop can only be enabled when a loop already exists (LOOP-001A), so testing "where
+            // creation would be expected" (no loop yet) meant loopRef.current was false and this
+            // line returned before the landscape block below was ever reached. When the debug
+            // flag is false, debugLandscapeProbe is always false, so this line is byte-for-byte
+            // identical to the original `if (!loopRef.current) return;` — no production change.
+            const debugLandscapeProbe = LOOP_LANDSCAPE_HITTEST_DEBUG && isLandscapeRef.current;
+            if (!loopRef.current && !debugLandscapeProbe) return;
             if (isLandscapeRef.current) {
                 // [MAESTRO-LOOP-002A][LandscapeHitTest] Read-only probe only — this is the
                 // LandscapeLoopClickGuard. The guard itself is unchanged: no range is created,
@@ -1029,6 +1037,14 @@ export default function BeatCustomLoopOverlay({
                 // and return computed values — no writes to api, refs, or state), so calling
                 // them here for logging is safe.
                 if (LOOP_LANDSCAPE_HITTEST_DEBUG) {
+                    // [MAESTRO-LOOP-002A.1] Best-effort capture so a debug tap doesn't also
+                    // trigger AlphaTab's own tap-to-seek/play on the same gesture. This cannot
+                    // be guaranteed to suppress AlphaTab's internal click handling if that
+                    // behavior isn't a separate DOM listener on .at-surface — verify with the
+                    // manual test whether playback still starts.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    (e as any).stopImmediatePropagation?.();
                     const surfaceEl = (e.target as HTMLElement)?.closest?.('.at-surface') as HTMLElement | null;
                     const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
                     const diagBeat = resolveBeatWithX(e);
