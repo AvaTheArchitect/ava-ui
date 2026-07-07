@@ -251,6 +251,13 @@ export default function BeatCustomLoopOverlay({
     // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
     const LANDSCAPE_LOOP_DEBUG = true;
 
+    // [MAESTRO-LOOP-002A] Read-only landscape hit-test probe. Logs what resolveBeatWithX/
+    // buildRects would resolve for a landscape tap, WITHOUT creating/moving a loop, setting
+    // api.playbackRange/api.isLooping, or calling onLoopChange. Does not relax any landscape
+    // guard — the guarded return in onDown still returns after logging. Must stay false here;
+    // flip locally only for manual LOOP-002A hit-test investigation.
+    const LOOP_LANDSCAPE_HITTEST_DEBUG = false;
+
     // ── Landscape highlight geometry constants ────────────────────────
     const LOOP_X_OFFSET = 0;                    // ← change to 55 to test gutter alignment
     const LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28;   // probe-confirmed June 2026 iPhone 16 Pro Max
@@ -1013,7 +1020,68 @@ export default function BeatCustomLoopOverlay({
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
             if (!loopRef.current) return;
-            if (isLandscapeRef.current) return;
+            if (isLandscapeRef.current) {
+                // [MAESTRO-LOOP-002A][LandscapeHitTest] Read-only probe only — this is the
+                // LandscapeLoopClickGuard. The guard itself is unchanged: no range is created,
+                // no ref/state used for dragging/selection is touched, and we still return
+                // below exactly as before. resolveBeatWithX/buildRects are pure read-only
+                // functions (verified: they only read api.renderer.boundsLookup/api.tickCache
+                // and return computed values — no writes to api, refs, or state), so calling
+                // them here for logging is safe.
+                if (LOOP_LANDSCAPE_HITTEST_DEBUG) {
+                    const surfaceEl = (e.target as HTMLElement)?.closest?.('.at-surface') as HTMLElement | null;
+                    const surfaceRect = surfaceEl?.getBoundingClientRect() ?? null;
+                    const diagBeat = resolveBeatWithX(e);
+                    const probeRects = diagBeat?.beat ? buildRects(diagBeat.beat, diagBeat.beat) : [];
+
+                    const yBands: number[] = [];
+                    for (const r of probeRects) {
+                        const band = Math.round(r.y / 4) * 4;
+                        if (!yBands.includes(band)) yBands.push(band);
+                    }
+
+                    console.log('[LOOP-002A][LandscapeHitTest]', {
+                        pointer: {
+                            clientX: Number(e.clientX.toFixed(1)),
+                            clientY: Number(e.clientY.toFixed(1)),
+                            pointerType: (e as any).pointerType ?? null,
+                        },
+                        surfaceRect: surfaceRect ? {
+                            left: Number(surfaceRect.left.toFixed(1)),
+                            top: Number(surfaceRect.top.toFixed(1)),
+                            width: Number(surfaceRect.width.toFixed(1)),
+                            height: Number(surfaceRect.height.toFixed(1)),
+                            scrollLeft: surfaceEl?.scrollLeft ?? null,
+                            scrollTop: surfaceEl?.scrollTop ?? null,
+                        } : null,
+                        resolvedMouseX: diagBeat?.mouseX != null ? Number(diagBeat.mouseX.toFixed(1)) : null,
+                        resolvedBeatTick: diagBeat?.beat ? tickOf(diagBeat.beat) : null,
+                        resolvedBeatBarIdx: diagBeat?.beat?.voice?.bar?.index
+                            ?? diagBeat?.beat?.voice?.bar?.masterBar?.index ?? null,
+                        beatResolved: !!diagBeat?.beat,
+                        // Single-beat probe range (lo === hi) — buildRects doesn't return
+                        // per-rect tick data, so this is the only start/end available here.
+                        probeRangeStartTick: diagBeat?.beat ? tickOf(diagBeat.beat) : null,
+                        probeRangeEndTick: diagBeat?.beat ? tickOf(diagBeat.beat) : null,
+                        buildRects: {
+                            totalRects: probeRects.length,
+                            distinctYBands: yBands.length,
+                            multipleTrackLanesDetected: yBands.length > 1,
+                            yBands,
+                            firstRects: probeRects.slice(0, 5).map(r => ({
+                                x: Number(r.x.toFixed(1)),
+                                y: Number(r.y.toFixed(1)),
+                                w: Number(r.w.toFixed(1)),
+                                h: Number(r.h.toFixed(1)),
+                            })),
+                        },
+                        currentApiPlaybackRange: api?.playbackRange ?? null,
+                        currentApiIsLooping: (api as any)?.isLooping ?? null,
+                        note: 'read-only probe — no loop created/moved, no api writes, guard still returns below',
+                    });
+                }
+                return;
+            }
             if (MOBILE_LOOP_TAP_DEBUG) {
                 const diagBeat = resolveBeatWithX(e);
                 console.log('[mobile-loop-tap-probe]', {
