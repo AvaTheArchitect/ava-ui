@@ -121,6 +121,10 @@ export default function SynthPlayerPage() {
     const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
     const [isYouTubeReady, setIsYouTubeReady] = useState(false);
     const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+    // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable — this
+    // drives the no-video empty-state panel WITHOUT ever setting audioSource to
+    // 'original' when there's no video, so Synth stays selected/active underneath it.
+    const [showNoVideoPanel, setShowNoVideoPanel] = useState(false);
     const youtubePlayerRef = useRef<any>(null);
     const pauseTransitionRef = useRef<boolean>(false);
 
@@ -1144,10 +1148,12 @@ export default function SynthPlayerPage() {
 
     // ==================== PLAY / PAUSE ====================
     const handlePlayPause = useCallback(() => {
-        // [MAESTRO-VIDEO-003B] Original mode with no linked video: the empty-state panel
-        // (rendered in the YouTube slot below) already communicates this — just block the
-        // inert playback attempt without touching isPlaying. YouTubePlayer never mounts
-        // here anyway (VIDEO-001 gate), so this is a backstop, not the primary UX.
+        // [MAESTRO-VIDEO-003C] After the source-selector fix, handleAudioSourceChange never
+        // sets audioSource to 'original' when there's no video, so this condition should be
+        // unreachable via normal UI flow. Kept as dead-man insurance for the transient
+        // window right after a video-song's Original mode switches to a no-video song
+        // (before the 003B fallback effect flips audioSource back to synth) and any other
+        // stale/unexpected state — never remove.
         if (audioSource === 'original' && !activeVideoId) return;
         setIsPlaying(p => !p);
     }, [audioSource, activeVideoId]);
@@ -1256,6 +1262,15 @@ export default function SynthPlayerPage() {
     // ==================== AUDIO SOURCE CHANGE ====================
     // [C5] Restored from V98.67 — mutes synth when switching to YouTube, restores on return.
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
+        // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable —
+        // intercept BEFORE setAudioSource so 'original' is never entered when there's
+        // nothing to play. Synth stays selected/active; the empty-state panel communicates
+        // why Original isn't available.
+        if (source === 'original' && !activeVideoId) {
+            setShowNoVideoPanel(true);
+            return;
+        }
+        setShowNoVideoPanel(false);
         setAudioSource(source);
         if (source === 'original') {
             // Don't mute yet — wait for handleYouTubePlayerReady to confirm iframe is live
@@ -1266,7 +1281,7 @@ export default function SynthPlayerPage() {
             // Restore synth volume immediately on switch back
             if (api) api.masterVolume = masterVolumeRef.current;
         }
-    }, [api]);
+    }, [api, activeVideoId]);
 
     // [MAESTRO-VIDEO-003B] Songsterr-style safety fallback: if the current song has no
     // video while Original is active, fall back to Synth (reusing handleAudioSourceChange
@@ -1280,6 +1295,13 @@ export default function SynthPlayerPage() {
             handleAudioSourceChange('synth');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeVideoId]);
+
+    // [MAESTRO-VIDEO-003C] Dismiss the no-video panel on any song/video-context change —
+    // a stale panel from a previous no-video song must not carry into the next one
+    // (whether the next song has a video or is itself another no-video song).
+    useEffect(() => {
+        setShowNoVideoPanel(false);
     }, [activeVideoId]);
 
     // ==================== SPEED / VOLUME ====================
@@ -1678,11 +1700,12 @@ export default function SynthPlayerPage() {
                 videoStartOffset={(currentSong as any)?.videoStartOffset}
             />
 
-            {/* [MAESTRO-VIDEO-003B] Songsterr-style empty state — rendered in the same
-                bottom-docked slot YouTubePlayer normally occupies, shown as soon as Original
-                is selected on a song with no linked video (not gated on Play/isYouTubePlayerVisible).
+            {/* [MAESTRO-VIDEO-003C] Songsterr-style empty state — rendered in the same
+                bottom-docked slot YouTubePlayer normally occupies. Driven by showNoVideoPanel,
+                NOT audioSource === 'original' — audioSource stays 'synth' the whole time this
+                is open, since the source selector must only reflect what's actually playable.
                 Static/disabled controls only — not wired to Media & Sync or any sync action. */}
-            {audioSource === 'original' && !activeVideoId && (
+            {showNoVideoPanel && !activeVideoId && (
                 <div
                     className={`fixed z-40 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-2xl overflow-hidden flex flex-col ${isMobileLandscape
                         ? 'w-[230px] bottom-[80px] right-0'
@@ -1691,7 +1714,15 @@ export default function SynthPlayerPage() {
                 >
                     <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                         <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-red-600 text-white text-[10px] font-bold shrink-0">▶</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">Sync tab with YouTube video</span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate flex-1">Sync tab with YouTube video</span>
+                        <button
+                            type="button"
+                            onClick={() => setShowNoVideoPanel(false)}
+                            aria-label="Dismiss"
+                            className="shrink-0 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 text-lg leading-none px-1"
+                        >
+                            &times;
+                        </button>
                     </div>
                     <div className="flex-1 flex flex-col gap-3 p-4">
                         <p className="text-sm text-gray-700 dark:text-gray-300">
