@@ -1,8 +1,29 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.9 — LoopOverlay Click Cursor Re-anchor
- * Date: June 29th, 2026
+ * BeatCustomLoopOverlay v1.8.10 — Landscape Bar-Snap Loop Creation
+ * Date: July 7th, 2026
+ *
+ * 🔥 V1.8.10 CHANGES (MAESTRO-LOOP-002 series):
+ * ✅ LOOP-002A / LOOP-002A.1: Debug-only landscape hit-test instrumentation
+ *    (LOOP_LANDSCAPE_HITTEST_DEBUG, default false — no behavior change when off).
+ *    LOOP-002A.1 added a debug-only bypass of the loop-must-already-exist gate so the
+ *    probe still logs from a cold, no-loop landscape state.
+ * ✅ LOOP-002B: LandscapeToggleOnGuard relaxed — toggling Loop ON in landscape now
+ *    creates a real bar-snapped range via the same commitBarSnap/getExpandedBarRange
+ *    path portrait already used (tickCache-based, layout-independent). The button-level
+ *    restriction this depended on (MaestroControlPanel.tsx) was also removed, since it
+ *    existed only to prevent a fake/inert landscape ON.
+ * ✅ Pending-range bridge (pendingCommittedRangeRef): AlphaTabRenderer independently
+ *    resyncs api.playbackRange from page.tsx's own playbackRange prop, which is still
+ *    null on the same commit commitBarSnap runs in — clobbering commitBarSnap's direct
+ *    write before page.tsx's state round-trips back down. The bridge carries the
+ *    just-committed range across that gap for the landscape display branch only; it
+ *    self-clears once api.playbackRange settles or loopEnabled goes false, and is never
+ *    used for handle drag/editing or to bypass onLoopChange.
+ * ⛔ Landscape click-to-create, drag-to-edit, and handle rendering remain intentionally
+ *    guarded (LandscapeLoopClickGuard, LandscapeOnUpGuard, LandscapeDragEndGuard, and the
+ *    handle-JSX structural gate) — not yet authorized, reserved for a later phase.
  *
  * 🔥 V1.8.9 CHANGES:
  * ✅ [LoopOverlayCursorReanchor]
@@ -107,9 +128,11 @@
  *    - AlphaTabRenderer wrapper div must remove pointer-events-none (see note below)
  *    - Highlight rects stay pointer-events: none; handle tabs are auto
  *
- * ✅ STAGE 4 — Landscape suppress:
+ * ✅ STAGE 4 — Landscape suppress (superseded — see V1.8.8 and V1.8.10 above):
  *    - isLandscape prop added; returns null in landscape mode
  *    - Prevents coordinate-space mismatch until landscape loop system is designed
+ *    - No longer a blanket "return null": V1.8.8 added the display-only highlight, and
+ *      V1.8.10 added real bar-snapped creation. Click/drag/handles remain guarded.
  *
  * 🔒 ALL V1.7.6 INTERNALS PRESERVED — nothing removed:
  *    tickOf, durOf, loHi, resolveBeatWithX, commitBarSnap, getBarEdgesFromBeat,
@@ -1040,12 +1063,16 @@ export default function BeatCustomLoopOverlay({
         // On drag: first onMove paints the drag range (imperceptible delay).
         const onDown = (e: MouseEvent) => {
             // [MAESTRO-LOOP-002A.1] Debug-only bypass. LOOP-002A's probe never logged because
-            // it sat behind this original `if (!loopRef.current) return;` — in landscape,
-            // Loop can only be enabled when a loop already exists (LOOP-001A), so testing "where
-            // creation would be expected" (no loop yet) meant loopRef.current was false and this
-            // line returned before the landscape block below was ever reached. When the debug
-            // flag is false, debugLandscapeProbe is always false, so this line is byte-for-byte
-            // identical to the original `if (!loopRef.current) return;` — no production change.
+            // it sat behind this original `if (!loopRef.current) return;` — at the time, in
+            // landscape, Loop could only be enabled when a loop already existed (LOOP-001A's
+            // button gating), so testing "where creation would be expected" (no loop yet) meant
+            // loopRef.current was false and this line returned before the landscape block below
+            // was ever reached. LOOP-001A's button restriction was since removed by LOOP-002B
+            // (landscape ON now creates a real bar-snapped loop, so it no longer needs to stay
+            // disabled with no loop present) — this bypass is kept as-is since it's still
+            // needed for probing with the debug flag on. When the debug flag is false,
+            // debugLandscapeProbe is always false, so this line is byte-for-byte identical to
+            // the original `if (!loopRef.current) return;` — no production change.
             const debugLandscapeProbe = LOOP_LANDSCAPE_HITTEST_DEBUG && isLandscapeRef.current;
             if (!loopRef.current && !debugLandscapeProbe) return;
             if (isLandscapeRef.current) {

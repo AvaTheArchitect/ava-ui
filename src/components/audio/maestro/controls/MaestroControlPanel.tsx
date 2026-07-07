@@ -1,9 +1,17 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V100: FULL PANEL COORDINATION FIX
- * Date: January 5th, 2026
- * 
+ * MaestroControlPanel.tsx - V101: Landscape Loop button re-enabled
+ * Date: July 7th, 2026
+ *
+ * 🔧 NEW IN V101:
+ * ✅ MAESTRO-LOOP-002B: Loop button disabled condition simplified back to
+ *    `!controlsReady` — the landscape-specific `isMobileLandscape && !isLooping` clause
+ *    (LOOP-001A) is removed. Landscape Loop ON now creates a real bar-snapped loop
+ *    (BeatCustomLoopOverlay.tsx) instead of being a fake/inert toggle, so the button no
+ *    longer needs to stay disabled with no loop present. See the comment above the Loop
+ *    button below for details.
+ *
  * 🔧 NEW IN V100:
  * ✅ FIXED: MobileDrawer now closes when Speed/Track panels open
  * ✅ FIXED: Speed/Track panels close when MobileDrawer opens
