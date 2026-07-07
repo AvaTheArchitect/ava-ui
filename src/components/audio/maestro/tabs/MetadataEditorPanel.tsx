@@ -3,14 +3,19 @@
 /**
  * MetadataEditorPanel.tsx
  * src/components/audio/maestro/tabs/MetadataEditorPanel.tsx
- * V3.9 — time_signature + source persisted on file replacement
- * Date: March 24th, 2026
+ * V3.10 — Time Signature exposed as an editable Song Info field
+ * Date: July 7th, 2026
  *
- * 🔥 V3.9 CHANGES:
+ * 🔥 V3.10 CHANGES:
+ * ✅ FormState: timeSignature added — loads from tabs.time_signature, editable, optional
+ * ✅ Song Info → Classification: Time Signature input added beside Tempo (BPM)
+ * ✅ handleSave section C: time_signature now saved from form on every save
+ *    — file-replacement auto-extract (pendingTimeSignature) still takes
+ *      precedence when a new file is staged, unchanged from V3.9.2
+ *
+ * 🔒 V3.9 PRESERVED:
  * ✅ ExtractedMeta: source field added
  * ✅ handleTabFile: source defaults to 'songsterr' on file stage
- * ✅ handleSave section C: time_signature + source written to tabs row
- *    — only when pendingFile is staged (safe: never wipes on metadata-only saves)
  *
  * 🔒 V3.8 PRESERVED:
  * ✅ Import GENRE_OPTIONS, TUNINGS, detectTuningSlug, detectInstrumentFromMidi from @/lib/song-data
@@ -57,6 +62,7 @@ interface FormState {
     title: string; artist: string; album: string; year: string;
     genre: string; difficulty: string; instrument: string; tuning: string;
     source: string; tempo: string;                              // ← V3.9.1: source added
+    timeSignature: string;                                      // ← V3.10: editable, optional
 }
 
 // V3.9: source added — set to 'songsterr' when a file is staged
@@ -674,7 +680,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
     const [originalUserId, setOriginalUserId] = useState('');
     const [showHelp, setShowHelp] = useState(false);
 
-    const [form, setFormState] = useState<FormState>({ title: '', artist: '', album: '', year: '', genre: '', difficulty: '', instrument: '', tuning: '', source: '', tempo: '' });
+    const [form, setFormState] = useState<FormState>({ title: '', artist: '', album: '', year: '', genre: '', difficulty: '', instrument: '', tuning: '', source: '', tempo: '', timeSignature: '' });
     const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'general' | VideoKey, string>>>({});
     const [dupWarning, setDupWarning] = useState('');
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -750,6 +756,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                 instrument: data.instrument ?? '', tuning: data.tuning ?? '',
                 source: data.source ?? '',                      // ← V3.9.1
                 tempo: data.tempo != null ? String(data.tempo) : '',
+                timeSignature: data.time_signature ?? '',        // ← V3.10
             });
             const newVideos = EMPTY_VIDEO_STATE();
             (ytRows ?? []).forEach((row: any) => {
@@ -914,8 +921,6 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
             }
 
             // ── C. Core metadata ───────────────────────────────────────────────
-            // V3.9: time_signature + source written only when a file is staged —
-            // prevents wiping these fields on metadata-only saves.
             const metadataPatch: any = {
                 title: form.title.trim(),
                 artist: form.artist.trim(),
@@ -927,10 +932,11 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                 tuning: form.tuning || null,
                 tempo: form.tempo ? parseInt(form.tempo) : null,
                 source: form.source || null,                    // ← V3.9.1: always from form
+                time_signature: form.timeSignature.trim() || null, // ← V3.10: always from form
             };
 
             if (pendingFile && pendingTimeSignature) {
-                metadataPatch.time_signature = pendingTimeSignature; // ← V3.9.2: survives Apply button
+                metadataPatch.time_signature = pendingTimeSignature; // ← V3.9.2: file-extracted value wins on replacement
             }
             // source is now form-driven — remove the extractedMeta fallback
 
@@ -1048,14 +1054,21 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                         <Field label="Instrument" required error={errors.instrument}><SelectInput value={form.instrument} onChange={v => set('instrument', v)} options={INSTRUMENT_OPTIONS} placeholder="Select instrument" dark={dark} hasError={!!errors.instrument} /></Field>
                                         <Field label="Tuning" required error={errors.tuning}><SelectInput value={form.tuning} onChange={v => set('tuning', v)} options={TUNING_OPTIONS} placeholder="Select tuning" dark={dark} hasError={!!errors.tuning} /></Field>
                                     </div>
-                                    {/* Source | Tempo — technical metadata row */}
+                                    {/* Source (full left column) | Tempo + Time Signature (nested compact row, right column) */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                                         <Field label="Source">
                                             <SelectInput value={form.source} onChange={v => set('source', v)} options={SOURCE_OPTIONS} placeholder="Select source" dark={dark} />
                                         </Field>
-                                        <Field label="Tempo (BPM)" error={errors.tempo}>
-                                            <TextInput value={form.tempo} onChange={v => set('tempo', v)} placeholder="e.g. 120" dark={dark} type="number" hasError={!!errors.tempo} style={{ maxWidth: 180 }} />
-                                        </Field>
+                                        {/* marginBottom: 12 here (not on the inner Fields) reproduces Field's own
+                                            content+margin box model, so this group's footprint matches Source's Field wrapper exactly */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px', marginBottom: 12 }}>
+                                            <Field label="Tempo (BPM)" error={errors.tempo} style={{ marginBottom: 0 }}>
+                                                <TextInput value={form.tempo} onChange={v => set('tempo', v)} placeholder="e.g. 120" dark={dark} type="number" hasError={!!errors.tempo} />
+                                            </Field>
+                                            <Field label="Time Signature" style={{ marginBottom: 0 }}>
+                                                <TextInput value={form.timeSignature} onChange={v => set('timeSignature', v)} placeholder="e.g. 4/4" dark={dark} />
+                                            </Field>
+                                        </div>
                                     </div>
                                 </div>
                             )}
