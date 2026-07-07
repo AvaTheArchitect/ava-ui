@@ -3,10 +3,17 @@
 /**
  * MetadataEditorPanel.tsx
  * src/components/audio/maestro/tabs/MetadataEditorPanel.tsx
- * V3.10 — Time Signature exposed as an editable Song Info field
+ * V3.11 — MAESTRO-VIDEO-004 Media & Sync deep-link + Main / Full Mix focus
  * Date: July 7th, 2026
  *
- * 🔥 V3.10 CHANGES:
+ * 🔥 V3.11 CHANGES:
+ * ✅ MetadataEditorPanelProps: initialSection + focusMainVideoRow added — lets the
+ *    no-video panel gateway (page.tsx) open this editor directly to Media & Sync and
+ *    highlight the Main / Full Mix row. One-shot scroll/highlight effect + rowRef
+ *    wiring through VideoRow. No new tabs.* columns exposed; tab_youtube remains the
+ *    sole write path.
+ *
+ * 🔒 V3.10 PRESERVED:
  * ✅ FormState: timeSignature added — loads from tabs.time_signature, editable, optional
  * ✅ Song Info → Classification: Time Signature input added beside Tempo (BPM)
  * ✅ handleSave section C: time_signature now saved from form on every save
@@ -78,6 +85,10 @@ export interface MetadataEditorPanelProps {
     tabId: string | null;
     onClose?: () => void;
     onSave?: (tabId: string, patch: { title: string; artist: string; album?: string }) => void;
+    /** MAESTRO-VIDEO-004: opens directly to a given tab instead of the default 'info'. */
+    initialSection?: 'info' | 'media' | 'file';
+    /** MAESTRO-VIDEO-004: scrolls to + briefly highlights the Main / Full Mix row once loaded. */
+    focusMainVideoRow?: boolean;
 }
 
 // ─── Video row definitions ────────────────────────────────────────────────────
@@ -467,7 +478,8 @@ const VideoRow: React.FC<{
     onOffsetChange: (v: string) => void; onPointsChange: (pts: SyncPoint[]) => void;
     onClear: () => void; syncOpen: boolean; onToggleSync: () => void;
     dark: boolean; error?: string;
-}> = ({ label, data, onUrlChange, onSyncModeChange, onOffsetChange, onPointsChange, onClear, syncOpen, onToggleSync, dark, error }) => {
+    rowRef?: React.Ref<HTMLDivElement>; highlighted?: boolean;
+}> = ({ label, data, onUrlChange, onSyncModeChange, onOffsetChange, onPointsChange, onClear, syncOpen, onToggleSync, dark, error, rowRef, highlighted }) => {
     const ytId = extractYouTubeId(data.url);
     const hasContent = !!data.url;
     const hasOffset = data.startOffset !== '0' && data.startOffset !== '';
@@ -480,7 +492,12 @@ const VideoRow: React.FC<{
         onPointsChange(data.advancedPoints.map((p, idx) => idx === i ? { ...p, ...patch } : p));
 
     return (
-        <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--panel-border)' }}>
+        <div ref={rowRef} style={{
+            marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--panel-border)',
+            borderRadius: highlighted ? 8 : 0,
+            boxShadow: highlighted ? `0 0 0 2px ${PURPLE}` : 'none',
+            transition: 'box-shadow 0.3s ease',
+        }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, fontFamily: 'inherit' }}>{label}</div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <div style={{ width: 96, height: 54, flexShrink: 0, borderRadius: 5, overflow: 'hidden', background: dark ? 'rgba(255,255,255,0.05)' : 'rgb(240,240,244)', border: `1px solid ${ytId ? 'transparent' : 'var(--upload-border)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -670,15 +687,21 @@ const SectionNav: React.FC<{ active: SectionKey; onChange: (s: SectionKey) => vo
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId, onClose, onSave, }) => {
+export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId, onClose, onSave, initialSection, focusMainVideoRow }) => {
     const router = useRouter();
     const dark = useDark();
 
     const [loadStatus, setLoadStatus] = useState<LoadStatus>(tabId ? 'loading' : 'missing-id');
-    const [section, setSection] = useState<SectionKey>('info');
+    const [section, setSection] = useState<SectionKey>(initialSection ?? 'info');
     const [originalFileName, setOriginalFileName] = useState('');
     const [originalUserId, setOriginalUserId] = useState('');
     const [showHelp, setShowHelp] = useState(false);
+    // [MAESTRO-VIDEO-004] One-shot scroll/highlight target for the Main / Full Mix
+    // VideoRow, applied once after load when opened via the no-video panel's
+    // Add Main / Full Mix Video action.
+    const mainVideoRowRef = useRef<HTMLDivElement>(null);
+    const [highlightMainVideoRow, setHighlightMainVideoRow] = useState(false);
+    const hasAppliedMainVideoFocusRef = useRef(false);
 
     const [form, setFormState] = useState<FormState>({ title: '', artist: '', album: '', year: '', genre: '', difficulty: '', instrument: '', tuning: '', source: '', tempo: '', timeSignature: '' });
     const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'general' | VideoKey, string>>>({});
@@ -782,6 +805,20 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
             setIsDirty(false);
         });
     }, [tabId]);
+
+    // [MAESTRO-VIDEO-004] Scroll to + briefly highlight the Main / Full Mix row once,
+    // after the tab has finished loading. Guarded by a ref so it only fires the first
+    // time this panel instance becomes ready, not on every subsequent save/re-render.
+    useEffect(() => {
+        if (loadStatus !== 'ready' || !focusMainVideoRow || hasAppliedMainVideoFocusRef.current) return;
+        hasAppliedMainVideoFocusRef.current = true;
+        const t = setTimeout(() => {
+            mainVideoRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setHighlightMainVideoRow(true);
+            setTimeout(() => setHighlightMainVideoRow(false), 2200);
+        }, 50); // let the Media & Sync section finish mounting before measuring/scrolling
+        return () => clearTimeout(t);
+    }, [loadStatus, focusMainVideoRow]);
 
     const getAlphaTab = useCallback(async () => {
         if (!alphaTabRef.current) alphaTabRef.current = await import('@coderline/alphatab');
@@ -1102,6 +1139,8 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                             onToggleSync={() => toggleSync(key)}
                                             dark={dark}
                                             error={(errors as any)[key]}
+                                            rowRef={key === 'main' ? mainVideoRowRef : undefined}
+                                            highlighted={key === 'main' && highlightMainVideoRow}
                                         />
                                     ))}
                                     <Divider label="Audio Tracks" />

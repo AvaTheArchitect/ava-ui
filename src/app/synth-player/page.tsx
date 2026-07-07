@@ -1,11 +1,24 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.19
+ * Synth Player Page — Phase 4 V102.20
  * Date: July 7, 2026
- * Cloned from V102.18 — Metadata-only save reload guard + recent lane closures.
+ * Cloned from V102.19 — No-video panel Add Video gateway + recent lane closures.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-VIDEO-004 closed: No-video empty-state panel is a gateway, not an inline
+ *        editor — removed the disabled paste/sync controls; "Add Main / Full Mix Video"
+ *        opens MetadataEditorPanel on Media & Sync with the Main / Full Mix row scrolled
+ *        into view and highlighted. Other slot rows (Lesson, Playthrough, Live, Solo, etc.)
+ *        remain manually selectable for Practice Generator/lesson-style tabs.
+ *        tabs.youtube_video_id/video_start_offset stay untouched — tab_youtube remains
+ *        the sole write path.
+ *        [004C] handleMetadataSave now also calls refetchSongs() after every Metadata
+ *        Editor save, so a newly-saved tab_youtube main row (youtubeVideoId/videoVariants/
+ *        videoStartOffset, re-derived via fetchSongs()'s queries.ts bridge) reaches Original
+ *        Mode immediately — no hard refresh needed. Safe under PLAYER-003: the signed URL
+ *        resolver keys off file-identity primitives, not the currentSong reference, so this
+ *        does not reload the score or reset the selected track.
  * ✅ MAESTRO-PLAYER-003 closed: Signed URL resolver is keyed by playable file identity
  *        primitives instead of currentSong object reference, preventing metadata-only
  *        saves from clearing/reloading the active score, tracks, and selected track.
@@ -187,7 +200,10 @@ export default function SynthPlayerPage() {
     const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
-    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | null }>
+    // [MAESTRO-VIDEO-004/004A] 'novideo' source: opened via the no-video panel's
+    // Add Main / Full Mix Video action — routes MetadataEditorPanel straight to
+    // Media & Sync / Main / Full Mix.
+    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | 'novideo' | null }>
         ({ tabId: null, source: null });
 
     // ==================== SIGNED URL CACHE ====================
@@ -1401,7 +1417,17 @@ export default function SynthPlayerPage() {
                 s.id === savedTabId ? { ...s, ...patch } : s
             ),
         }));
-    }, []);
+        // [MAESTRO-VIDEO-004C] Re-derive youtubeVideoId/videoVariants/videoStartOffset from
+        // tab_youtube via the same fetchSongs() bridge queries.ts already uses, so Original
+        // Mode sees a Media & Sync video save immediately instead of requiring a hard
+        // refresh. Reuses the same refetchSongs() NewTabPanel already calls after uploads.
+        // Safe for PLAYER-003: the signed URL resolver is keyed on file-identity primitives
+        // (id/file_path/file_name/file_extension/title) derived from currentSong, not the
+        // object reference itself — none of those change from a tab_youtube-only save, so
+        // the new songs array/currentSong reference from this refetch does not re-trigger
+        // the resolver, reload the score, or reset the selected track.
+        refetchSongs();
+    }, [refetchSongs]);
 
     const handleToggleFavorite = useCallback((songId: string) => {
         setSongState(prev => ({
@@ -1500,6 +1526,10 @@ export default function SynthPlayerPage() {
                 <MetadataEditorPanel
                     tabId={metaEditorState.tabId}
                     onSave={handleMetadataSave}
+                    // [MAESTRO-VIDEO-004] 'novideo' opens straight to Media & Sync with the
+                    // Main / Full Mix row scrolled into view and briefly highlighted.
+                    initialSection={metaEditorState.source === 'novideo' ? 'media' : undefined}
+                    focusMainVideoRow={metaEditorState.source === 'novideo'}
                     onClose={() => {
                         const src = metaEditorState.source;
                         setMetaEditorState({ tabId: null, source: null });
@@ -1715,11 +1745,14 @@ export default function SynthPlayerPage() {
                 videoStartOffset={(currentSong as any)?.videoStartOffset}
             />
 
-            {/* [MAESTRO-VIDEO-003C] Songsterr-style empty state — rendered in the same
+            {/* [MAESTRO-VIDEO-003C/004A] Songsterr-style empty state — rendered in the same
                 bottom-docked slot YouTubePlayer normally occupies. Driven by showNoVideoPanel,
                 NOT audioSource === 'original' — audioSource stays 'synth' the whole time this
                 is open, since the source selector must only reflect what's actually playable.
-                Static/disabled controls only — not wired to Media & Sync or any sync action. */}
+                [004A] This is a gateway, not an inline editor: no inline paste/sync controls —
+                the only action routes into MetadataEditorPanel → Media & Sync, where the real
+                tab_youtube save path (and the other slot rows, for Practice Generator/lesson
+                tabs) already lives. */}
             {showNoVideoPanel && !activeVideoId && (
                 <div
                     className={`fixed z-40 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-2xl overflow-hidden flex flex-col ${isMobileLandscape
@@ -1741,22 +1774,26 @@ export default function SynthPlayerPage() {
                     </div>
                     <div className="flex-1 flex flex-col gap-3 p-4">
                         <p className="text-sm text-gray-700 dark:text-gray-300">
-                            No video linked for this song. Add a YouTube video in Media &amp; Sync.
+                            No Main / Full Mix video is linked for this song. Add a YouTube video in Media &amp; Sync.
                         </p>
-                        <input
-                            type="text"
-                            disabled
-                            readOnly
-                            placeholder="Paste YouTube link"
-                            className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 cursor-not-allowed"
-                        />
-                        <button
-                            type="button"
-                            disabled
-                            className="w-full px-3 py-2 text-sm font-bold rounded bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
-                        >
-                            Sync
-                        </button>
+                        {/* [MAESTRO-VIDEO-004A] Opens the existing Metadata Editor straight to
+                            Media & Sync → Main / Full Mix, the row that actually feeds Original
+                            Mode (tab_youtube main row → queries.ts bridge → activeVideoId). Main
+                            is only pre-focused guidance — Media & Sync still exposes every other
+                            slot row (Lesson, Tutorial, Playthrough, Live, Solo, etc.) for
+                            Practice Generator/lesson-style tabs that need a different slot. */}
+                        {currentSong && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowNoVideoPanel(false);
+                                    setMetaEditorState({ tabId: currentSong.id, source: 'novideo' });
+                                }}
+                                className="w-full px-3 py-2 text-sm font-bold rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
+                            >
+                                Add Main / Full Mix Video
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
