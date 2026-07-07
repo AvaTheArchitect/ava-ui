@@ -1144,8 +1144,13 @@ export default function SynthPlayerPage() {
 
     // ==================== PLAY / PAUSE ====================
     const handlePlayPause = useCallback(() => {
+        // [MAESTRO-VIDEO-003B] Original mode with no linked video: the empty-state panel
+        // (rendered in the YouTube slot below) already communicates this — just block the
+        // inert playback attempt without touching isPlaying. YouTubePlayer never mounts
+        // here anyway (VIDEO-001 gate), so this is a backstop, not the primary UX.
+        if (audioSource === 'original' && !activeVideoId) return;
         setIsPlaying(p => !p);
-    }, []);
+    }, [audioSource, activeVideoId]);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -1262,6 +1267,20 @@ export default function SynthPlayerPage() {
             if (api) api.masterVolume = masterVolumeRef.current;
         }
     }, [api]);
+
+    // [MAESTRO-VIDEO-003B] Songsterr-style safety fallback: if the current song has no
+    // video while Original is active, fall back to Synth (reusing handleAudioSourceChange
+    // so isYouTubePlayerVisible/isYouTubeReady/masterVolume all settle consistently, same
+    // as any manual switch-to-Synth). Keyed ONLY on activeVideoId, not audioSource — this
+    // effect must re-evaluate when video availability changes (i.e. on a song switch), but
+    // NOT on every audioSource toggle, otherwise explicitly selecting Original on a
+    // no-video song would be immediately stomped back to Synth on the same render.
+    useEffect(() => {
+        if (!activeVideoId && audioSource === 'original') {
+            handleAudioSourceChange('synth');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeVideoId]);
 
     // ==================== SPEED / VOLUME ====================
     const handleSpeedChange = useCallback((speed: number) => {
@@ -1658,6 +1677,43 @@ export default function SynthPlayerPage() {
                 onVariantChange={handleVideoVariantChange}
                 videoStartOffset={(currentSong as any)?.videoStartOffset}
             />
+
+            {/* [MAESTRO-VIDEO-003B] Songsterr-style empty state — rendered in the same
+                bottom-docked slot YouTubePlayer normally occupies, shown as soon as Original
+                is selected on a song with no linked video (not gated on Play/isYouTubePlayerVisible).
+                Static/disabled controls only — not wired to Media & Sync or any sync action. */}
+            {audioSource === 'original' && !activeVideoId && (
+                <div
+                    className={`fixed z-40 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-2xl overflow-hidden flex flex-col ${isMobileLandscape
+                        ? 'w-[230px] bottom-[80px] right-0'
+                        : 'w-[52vw] bottom-[80px] right-0 md:w-[355px] md:bottom-[74px] md:right-4'
+                        }`}
+                >
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-red-600 text-white text-[10px] font-bold shrink-0">▶</span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">Sync tab with YouTube video</span>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-3 p-4">
+                        <p className="text-sm text-gray-700 dark:text-gray-300">
+                            No video linked for this song. Add a YouTube video in Media &amp; Sync.
+                        </p>
+                        <input
+                            type="text"
+                            disabled
+                            readOnly
+                            placeholder="Paste YouTube link"
+                            className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 cursor-not-allowed"
+                        />
+                        <button
+                            type="button"
+                            disabled
+                            className="w-full px-3 py-2 text-sm font-bold rounded bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                        >
+                            Sync
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
