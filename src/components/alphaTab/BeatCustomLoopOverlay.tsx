@@ -1,8 +1,17 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.10 — Landscape Bar-Snap Loop Creation
+ * BeatCustomLoopOverlay v1.8.11 — Landscape Visible-Only Boundary Handles
  * Date: July 7th, 2026
+ *
+ * 🔥 V1.8.11 CHANGES:
+ * ✅ MAESTRO-LOOP-002C: Visible-only landscape loop start/end boundary markers,
+ *    rendered in the same landscape display branch as the highlight, derived from the
+ *    SAME deduped/viewport-clipped representative rect (never a fresh/unrelated
+ *    rects[0]/rects[last]). Purely decorative — pointerEvents:'none', no onMouseDown/
+ *    onTouchStart/touchAction. No drag, no click-to-seek, no gesture changes; strip
+ *    scrolling and LandscapeLoopClickGuard/LandscapeOnUpGuard/LandscapeDragEndGuard are
+ *    unaffected. Draggable/interactive landscape handles remain a separate, later lane.
  *
  * 🔥 V1.8.10 CHANGES (MAESTRO-LOOP-002 series):
  * ✅ LOOP-002A / LOOP-002A.1: Debug-only landscape hit-test instrumentation
@@ -21,9 +30,11 @@
  *    just-committed range across that gap for the landscape display branch only; it
  *    self-clears once api.playbackRange settles or loopEnabled goes false, and is never
  *    used for handle drag/editing or to bypass onLoopChange.
- * ⛔ Landscape click-to-create, drag-to-edit, and handle rendering remain intentionally
- *    guarded (LandscapeLoopClickGuard, LandscapeOnUpGuard, LandscapeDragEndGuard, and the
- *    handle-JSX structural gate) — not yet authorized, reserved for a later phase.
+ * ⛔ Landscape click-to-create and drag-to-edit remain intentionally guarded
+ *    (LandscapeLoopClickGuard, LandscapeOnUpGuard, LandscapeDragEndGuard) — not yet
+ *    authorized, reserved for a later phase. (Visible-only, non-interactive boundary
+ *    handle rendering was added in V1.8.11 / LOOP-002C above — draggable handles are
+ *    still guarded and unimplemented.)
  *
  * 🔥 V1.8.9 CHANGES:
  * ✅ [LoopOverlayCursorReanchor]
@@ -38,7 +49,9 @@
  * ✅ Landscape display-only loop highlight: replaces the unconditional
  *    `if (isLandscape) return null` with a dedicated Landscape render path.
  *    Shows the committed loop range as a translucent highlight behind the tab.
- *    No handles, no drag, no api.playbackRange writes. Uses rects already
+ *    No drag, no api.playbackRange writes (still true as of V1.8.11 — V1.8.11 added
+ *    visible-only, non-interactive boundary markers; draggable handles remain
+ *    unimplemented). Uses rects already
  *    computed by rebuildFromPlaybackRange (rectsCount: 13 confirmed in logs).
  *    Rects are scrollLeft-adjusted to viewport space (score coords 0–35000+,
  *    container is the scroll element, overlay wrapper is a sibling outside it).
@@ -128,11 +141,12 @@
  *    - AlphaTabRenderer wrapper div must remove pointer-events-none (see note below)
  *    - Highlight rects stay pointer-events: none; handle tabs are auto
  *
- * ✅ STAGE 4 — Landscape suppress (superseded — see V1.8.8 and V1.8.10 above):
+ * ✅ STAGE 4 — Landscape suppress (superseded — see V1.8.8, V1.8.10, V1.8.11 above):
  *    - isLandscape prop added; returns null in landscape mode
  *    - Prevents coordinate-space mismatch until landscape loop system is designed
- *    - No longer a blanket "return null": V1.8.8 added the display-only highlight, and
- *      V1.8.10 added real bar-snapped creation. Click/drag/handles remain guarded.
+ *    - No longer a blanket "return null": V1.8.8 added the display-only highlight,
+ *      V1.8.10 added real bar-snapped creation, and V1.8.11 added visible-only boundary
+ *      markers. Click-to-create/drag-to-edit and draggable handles remain guarded.
  *
  * 🔒 ALL V1.7.6 INTERNALS PRESERVED — nothing removed:
  *    tickOf, durOf, loHi, resolveBeatWithX, commitBarSnap, getBarEdgesFromBeat,
@@ -2089,9 +2103,12 @@ export default function BeatCustomLoopOverlay({
 
     // ── Landscape display-only loop highlight ────────────────────────────────
     // Stage 4 extended: shows the committed loop range in Landscape as a
-    // translucent highlight behind the tab. No handles, no drag, no writes to
-    // api.playbackRange. Rects are in score coordinate space (0–surfaceScrollWidth);
-    // left: r.x - scrollLeft converts them to viewport-relative position.
+    // translucent highlight behind the tab, plus (V1.8.11 / MAESTRO-LOOP-002C)
+    // visible-only start/end boundary markers. No drag, no writes to api.playbackRange
+    // — the boundary markers are pointerEvents:'none' with no onMouseDown/onTouchStart/
+    // touchAction, so this remains display-only, not interactive. Rects are in score
+    // coordinate space (0–surfaceScrollWidth); left: r.x - scrollLeft converts them to
+    // viewport-relative position.
     //
     // Deduplication: groups rects by y-band and picks the first (topmost) staff
     // row. Multiple rects arise because each instrument/staff in the score
@@ -2174,25 +2191,68 @@ export default function BeatCustomLoopOverlay({
         if (!renderRects.length) return null;
         return (
             <>
-                {renderRects.map((r, i) => (
-                    <div
-                        key={i}
-                        className="beat-loop-highlight-landscape"
-                        style={{
-                            position: 'absolute',
-                            left: r.x + LOOP_X_OFFSET - scrollLeft,
-                            top: r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET,
-                            width: r.w,
-                            height: r.h,
-                            background: overlayColor,
-                            borderTop: `1px solid ${borderColor}`,
-                            borderBottom: `1px solid ${borderColor}`,
-                            pointerEvents: 'none',
-                            zIndex: 900,
-                            boxSizing: 'border-box' as const,
-                        }}
-                    />
-                ))}
+                {/* [MAESTRO-LOOP-002C] Visible-only start/end boundary markers. Derived from
+                    the SAME renderRects entry the highlight above uses (already the deduped,
+                    viewport-clipped representative rect) — never a fresh/unrelated
+                    rects[0]/rects[last] that could point at a different track lane. Since a
+                    landscape-created loop is always a single bar (commitBarSnap snaps to one
+                    barIdx), renderRects has exactly one entry, so its left edge is the start
+                    boundary and its right edge is the end boundary — no separate first/last
+                    rect lookup needed the way the portrait branch requires for multi-bar
+                    selections. Purely decorative: pointerEvents:'none', no onMouseDown/
+                    onTouchStart/touchAction, so strip scroll and tap-to-seek are unaffected. */}
+                {renderRects.map((r, i) => {
+                    const left = r.x + LOOP_X_OFFSET - scrollLeft;
+                    const top = r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET;
+                    return (
+                        <React.Fragment key={i}>
+                            <div
+                                className="beat-loop-highlight-landscape"
+                                style={{
+                                    position: 'absolute',
+                                    left,
+                                    top,
+                                    width: r.w,
+                                    height: r.h,
+                                    background: overlayColor,
+                                    borderTop: `1px solid ${borderColor}`,
+                                    borderBottom: `1px solid ${borderColor}`,
+                                    pointerEvents: 'none',
+                                    zIndex: 900,
+                                    boxSizing: 'border-box' as const,
+                                }}
+                            />
+                            <div
+                                className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
+                                style={{
+                                    position: 'absolute',
+                                    left: left - 1.5,
+                                    top,
+                                    width: '3px',
+                                    height: r.h,
+                                    backgroundColor: handleColor,
+                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    pointerEvents: 'none',
+                                    zIndex: 901,
+                                }}
+                            />
+                            <div
+                                className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
+                                style={{
+                                    position: 'absolute',
+                                    left: left + r.w - 1.5,
+                                    top,
+                                    width: '3px',
+                                    height: r.h,
+                                    backgroundColor: handleColor,
+                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    pointerEvents: 'none',
+                                    zIndex: 901,
+                                }}
+                            />
+                        </React.Fragment>
+                    );
+                })}
             </>
         );
     }
