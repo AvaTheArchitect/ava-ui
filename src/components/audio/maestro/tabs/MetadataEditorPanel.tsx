@@ -3,10 +3,26 @@
 /**
  * MetadataEditorPanel.tsx
  * src/components/audio/maestro/tabs/MetadataEditorPanel.tsx
- * V3.11 — MAESTRO-VIDEO-004 Media & Sync deep-link + Main / Full Mix focus
+ * V3.12 — MAESTRO-SYNC-001A/B Simple Sync clarity + Advanced Sync Coming Soon
  * Date: July 7th, 2026
  *
- * 🔥 V3.11 CHANGES:
+ * 🔥 V3.12 CHANGES:
+ * ✅ Simple Sync help clarified: Bar 1 start is the YouTube timestamp where bar 1
+ *    begins, decimals supported (0.25/1.5s), plus the direction rule — Maestro-early
+ *    → increase Bar 1 start, video-early → decrease — added to both the Help modal
+ *    and the inline VideoRow Simple Sync panel.
+ * ✅ Advanced Sync marked Coming Soon (badge + warning copy) in the Help modal, the
+ *    Media & Sync intro banner, and the inline VideoRow Advanced Sync panel: "Saved
+ *    points are not yet applied during playback." Points remain fully editable and
+ *    still save to tab_youtube.sync_points — copy-only change, no data/runtime impact.
+ * ✅ [001B] VideoRow sync summary button: minWidth: 160 stabilizes the SyncModeToggle's
+ *    on-screen position — the summary label's length ("Simple Sync" vs "Advanced Sync"
+ *    vs "Simple Sync · 1.75s") no longer shifts the segmented toggle beside it.
+ * ✅ [001B] Sync drawer chevron: swapped the single rotated path for two fixed paths
+ *    (right caret collapsed, down caret expanded) — avoids SVG CSS-transform-origin
+ *    ambiguity so the open/closed indicator is always crisp and correctly oriented.
+ *
+ * 🔒 V3.11 PRESERVED:
  * ✅ MetadataEditorPanelProps: initialSection + focusMainVideoRow added — lets the
  *    no-video panel gateway (page.tsx) open this editor directly to Media & Sync and
  *    highlight the Main / Full Mix row. One-shot scroll/highlight effect + rowRef
@@ -373,15 +389,16 @@ const HelpModal: React.FC<{ section: SectionKey; dark: boolean; onClose: () => v
                         <>
                             <HS icon={playIcon} title="Simple Sync">
                                 <P>Best for studio recordings where the song starts at a predictable offset.</P>
-                                <Row label="Bar 1 start" desc="Seconds into the video where bar 1 begins." />
+                                <Row label="Bar 1 start" desc="The timestamp in the YouTube video where bar 1 begins. Decimals are supported, e.g. 0.25 or 1.5 seconds." />
                                 <Tip>💡 Use Simple Sync when the video has a fixed intro but stays aligned from bar 1 onward.</Tip>
+                                <Tip>🎯 If Maestro reaches the notes before the video does, increase Bar 1 start. If the video reaches the notes before Maestro does, decrease Bar 1 start.</Tip>
                             </HS>
                             <HS icon={waveIcon} title="Advanced Sync">
                                 <P>Best for live recordings or lessons where the video drifts over time.</P>
                                 <Row label="Bar" desc="Measure number in the tab." />
                                 <Row label="Occurrence" desc="Which pass through that bar (1 = first, 2 = after repeat)." />
                                 <Row label="Video time" desc="Seconds into the video when that bar begins." />
-                                <Tip>💡 Two anchor points are usually enough for a live recording.</Tip>
+                                <Tip>🚧 Coming Soon — saved points are not yet applied during playback. Use Simple Sync for now.</Tip>
                             </HS>
                             <HS icon={gridIcon} title="Video slots">
                                 <P>Each slot (Main, Backing, Solo, Playthrough, Live, Lesson) is stored as an independent row in tab_youtube with its own sync settings.</P>
@@ -522,12 +539,21 @@ const VideoRow: React.FC<{
                         <div style={{ flex: 1 }} />
                         {hasContent && <SyncModeToggle mode={data.syncMode} onChange={onSyncModeChange} dark={dark} />}
                         {hasContent && (
+                            // [MAESTRO-SYNC-001B] minWidth (not flexShrink:0 alone) keeps this
+                            // button's box a stable size regardless of label length ("Simple
+                            // Sync" vs "Advanced Sync" vs "Simple Sync · 1.75s"), so the
+                            // SyncModeToggle segmented control to its left stays anchored instead
+                            // of shifting horizontally when the mode or offset text changes.
                             <button onClick={onToggleSync}
-                                style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: syncActive ? PURPLE : 'var(--text-muted)', fontSize: 11, fontWeight: syncActive ? 500 : 400, fontFamily: 'inherit', padding: 0, transition: 'color 0.15s ease', flexShrink: 0 }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 160, background: 'none', border: 'none', cursor: 'pointer', color: syncActive ? PURPLE : 'var(--text-muted)', fontSize: 11, fontWeight: syncActive ? 500 : 400, fontFamily: 'inherit', padding: 0, transition: 'color 0.15s ease', flexShrink: 0 }}
                                 onMouseEnter={e => { e.currentTarget.style.color = PURPLE; }}
                                 onMouseLeave={e => { e.currentTarget.style.color = syncActive ? PURPLE : 'var(--text-muted)'; }}>
-                                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ transform: syncOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease' }}>
-                                    <path d="M4 2l4 4-4 4" />
+                                {/* [MAESTRO-SYNC-001B] Two fixed chevron paths instead of one
+                                    rotated path — guarantees a crisp right caret when collapsed
+                                    and a crisp down caret when expanded, with no CSS-transform
+                                    origin ambiguity on the SVG. */}
+                                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                                    {syncOpen ? <path d="M2 4l4 4 4-4" /> : <path d="M4 2l4 4-4 4" />}
                                 </svg>
                                 {data.syncMode === 'simple' ? 'Simple Sync' : 'Advanced Sync'}
                                 {syncActive && !syncOpen && (
@@ -550,13 +576,30 @@ const VideoRow: React.FC<{
                             <Field label="Bar 1 start time (seconds)" style={{ maxWidth: 180, marginBottom: 6 }}>
                                 <TextInput value={data.startOffset} onChange={onOffsetChange} placeholder="0" dark={dark} type="number" />
                             </Field>
+                            {/* [MAESTRO-SYNC-001A] Bar 1 start is the YouTube timestamp where bar 1 begins —
+                                scoreTime = youtubeTime - offset at runtime, so the direction rule below is
+                                the correct correction for either drift direction. */}
+                            <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: '1.5' }}>
+                                Bar 1 start is the timestamp in the YouTube video where bar 1 begins. Decimals are supported, e.g. 0.25 or 1.5 seconds.
+                                If Maestro reaches the notes before the video does, increase Bar 1 start.
+                                If the video reaches the notes before Maestro does, decrease Bar 1 start.
+                            </p>
                             {hasOffset && <button onClick={() => onOffsetChange('0')} style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit' }}>Reset sync</button>}
                         </div>
                     )}
                     {data.syncMode === 'advanced' && (
                         <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: PURPLE, marginBottom: 8 }}>Advanced Sync</div>
-                            <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 12px' }}>Add sync points for videos that drift over time.</p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: PURPLE }}>Advanced Sync</div>
+                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4, background: 'rgba(161,98,7,0.15)', color: AMBER }}>Coming Soon</span>
+                            </div>
+                            <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 6px' }}>Add sync points for videos that drift over time.</p>
+                            {/* [MAESTRO-SYNC-001A] Advanced Sync points save to tab_youtube.sync_points but
+                                page.tsx/YouTubePlayer do not read them at runtime yet — Simple Sync's
+                                start_offset is the only value that currently affects playback. */}
+                            <p style={{ fontSize: 11, color: AMBER, margin: '0 0 12px', lineHeight: '1.5' }}>
+                                ⚠️ Saved points are not yet applied during playback. Use Simple Sync above for now.
+                            </p>
                             {data.advancedPoints.length > 0 && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '80px 90px 1fr 28px', gap: '0 8px', marginBottom: 6 }}>
                                     {['Bar', 'Occurrence', 'Video time (s)', ''].map(h => (
@@ -1121,7 +1164,7 @@ export const MetadataEditorPanel: React.FC<MetadataEditorPanelProps> = ({ tabId,
                                             </div>
                                         )}
                                         <div style={{ padding: '7px 12px', background: 'rgba(6,182,212,0.04)', color: 'rgb(8,145,178)', lineHeight: '1.6' }}>
-                                            Test sync in the player after saving. Start with <strong>Simple Sync</strong> and only use <strong>Advanced Sync</strong> if the video drifts.{' '}
+                                            Test sync in the player after saving. Use <strong>Simple Sync</strong> to align playback — <strong>Advanced Sync</strong> (Coming Soon) does not affect playback yet.{' '}
                                             <button onClick={() => setShowHelp(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'rgb(8,145,178)', fontSize: 13, fontWeight: 600, textDecoration: 'underline', fontFamily: 'inherit' }}>
                                                 See Help for details.
                                             </button>
