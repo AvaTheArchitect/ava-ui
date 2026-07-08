@@ -1,8 +1,14 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.11 — Landscape Visible-Only Boundary Handles
+ * BeatCustomLoopOverlay v1.8.12 — Loop Diagnostic Flags Disabled
  * Date: July 7th, 2026
+ *
+ * 🔥 V1.8.12 CHANGES:
+ * ✅ MAESTRO-LOOP-DEBUG-001: MOBILE_LOOP_TAP_DEBUG, PAGE_ROW_DEBUG, and
+ *    LANDSCAPE_LOOP_DEBUG set back to false — stale loop diagnostic flags disabled;
+ *    no runtime loop behavior changes. Debug blocks themselves are preserved (not
+ *    removed) for future investigation; flip the relevant flag back to true to re-enable.
  *
  * 🔥 V1.8.11 CHANGES:
  * ✅ MAESTRO-LOOP-002C: Visible-only landscape loop start/end boundary markers,
@@ -289,14 +295,17 @@ export default function BeatCustomLoopOverlay({
     // [loop-overlay-rebuild] is always on — it confirms self-heal in production.
     const LOOP_OVERLAY_DEBUG = false;
 
-    // Mobile loop tap diagnostic. Set false to silence after root cause confirmed.
-    const MOBILE_LOOP_TAP_DEBUG = true;
+    // Mobile loop tap diagnostic. [MAESTRO-LOOP-DEBUG-001] Silenced — root cause
+    // confirmed. Set true to re-enable for future investigation.
+    const MOBILE_LOOP_TAP_DEBUG = false;
 
     // Sprint A: Page-mode loop/cursor row mismatch diagnostic.
-    const PAGE_ROW_DEBUG = true;
+    // [MAESTRO-LOOP-DEBUG-001] Silenced ahead of LOOP-002D. Set true to re-enable.
+    const PAGE_ROW_DEBUG = false;
 
     // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
-    const LANDSCAPE_LOOP_DEBUG = true;
+    // [MAESTRO-LOOP-DEBUG-001] Silenced ahead of LOOP-002D. Set true to re-enable.
+    const LANDSCAPE_LOOP_DEBUG = false;
 
     // [MAESTRO-LOOP-002A] Read-only landscape hit-test probe. Logs what resolveBeatWithX/
     // buildRects would resolve for a landscape tap, WITHOUT creating/moving a loop, setting
