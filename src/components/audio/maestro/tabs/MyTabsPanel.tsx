@@ -3,7 +3,15 @@
 /**
  * MyTabsPanel.tsx
  * src/components/audio/maestro/tabs/MyTabsPanel.tsx
- * v3.6.1 — 2026-06-20
+ * v3.7.0 — 2026-07-07
+ *
+ * 🔥 MAESTRO-MYTABS-001 CHANGES:
+ * ✅ Search input placeholder is now dynamic — "Search Favorites" / "Search All Songs" /
+ *    "Search {playlist name}" — tracking `category`/`selectedPlaylist` instead of a fixed
+ *    "Search favorites" string. Search/filter behavior itself is unchanged.
+ * ✅ Search header gets paddingRight: 25 (matching the Content frame's own right gutter
+ *    below), so the search input's right edge aligns with the Playlists tab/content
+ *    boundary instead of running to the panel's bare right edge.
  *
  * 🔒 v3 FEATURES (PRESERVED):
  * Panel spec: desktop max 846×750, mobile responsive width/max-height, top:102, centered, z-index:110
@@ -587,6 +595,14 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
 
     const plFiltersDisabled = !selectedPlaylist || selectedPlaylist.songIds.length === 0;
 
+    // [MAESTRO-MYTABS-001] Search placeholder tracks the active category/playlist instead
+    // of always reading "Search favorites" — filtering behavior itself is unchanged.
+    const searchPlaceholder =
+        category === 'favorites' ? 'Search Favorites'
+            : category === 'all' ? 'Search All Songs'
+                : selectedPlaylist ? `Search ${selectedPlaylist.name}`
+                    : 'Search Playlists';
+
     const handleFavClick = useCallback((e: React.MouseEvent, songId: string) => {
         e.stopPropagation();
         onToggleFavorite?.(songId);
@@ -685,17 +701,21 @@ export const MyTabsPanel: React.FC<MyTabsPanelProps> = ({
             }}>
 
                 {/* ── Search header ── */}
+                {/* [MAESTRO-MYTABS-001] paddingRight: 25 matches the "Content frame" div's own
+                    paddingRight below, so the search input's right edge lines up with the
+                    Playlists tab / content right boundary instead of running to the panel edge
+                    (the panel itself has paddingRight: 0). */}
                 <div style={{
                     position: 'sticky', top: 0, zIndex: 200,
                     width: '100%', minHeight: 72, background: t.panelBg,
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    gap: 12,
+                    gap: 12, paddingRight: 25,
                     flexShrink: 0,
                 }}>
                     <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: t.text, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                         My tabs
                     </h2>
-                    <input type="search" placeholder="Search favorites"
+                    <input type="search" placeholder={searchPlaceholder}
                         value={search} onChange={e => setSearch(e.target.value)}
                         style={{
                             flex: 1, minWidth: 0, maxWidth: 609, height: 44, padding: '0 18px', borderRadius: 22,
