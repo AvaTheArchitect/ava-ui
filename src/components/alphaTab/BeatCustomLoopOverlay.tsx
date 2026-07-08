@@ -1,11 +1,26 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.15 — Landscape Handle Drag Safety Fixes
- * Date: July 7th, 2026
+ * BeatCustomLoopOverlay v1.8.16 — Landscape Handle Drag Hardening
+ * Date: July 8th, 2026
  *
- * 🔥 V1.8.15 CHANGES (MAESTRO-LOOP-002D.1B — not yet committed, held pending live
- * verification of the coordinate fix below):
+ * 🔥 V1.8.16 CHANGES (MAESTRO-LOOP-002D.2):
+ * ✅ Window-blur safety net: a mouse released outside the browser window never fires
+ *    window mouseup, which could leave a landscape handle drag stuck. onWindowBlur
+ *    reuses landscapeHandleDragEnd unchanged (landscapeDragFinalPosRef already holds
+ *    the last tracked position) — same commit-or-cancel logic as a normal release, no
+ *    new branch. touchcancel was already handled (V1.8.14).
+ * ✅ Pressed/active visual state (activeLandscapeDragHandle): the marker being dragged
+ *    glows brighter/thicker (3px→5px, stronger boxShadow) while held. This is NOT a live
+ *    range preview — it never reads/writes rects or api.playbackRange; the highlight
+ *    stays exactly as last committed until release.
+ * ✅ Clarified in comments that MAX_DELTA_BARS_PER_GESTURE=1 (V1.8.15) is deliberate BETA
+ *    behavior compensating for the absence of live preview, not a permanent constraint.
+ * ⛔ No live range preview, no multi-bar drag, no beat-level drag, no background
+ *    click/drag changes, no hit-zone size change (40px already exceeds portrait's own
+ *    27px precedent; no evidence from testing that it's too small) — all unchanged.
+ *
+ * 🔥 V1.8.15 CHANGES (MAESTRO-LOOP-002D.1B — closed and pushed):
  * ✅ Fixed resolveLandscapeBarIndexAtX's coordinate origin: it measured from
  *    .at-surface's own getBoundingClientRect() (the scrolled CONTENT — moves with
  *    scroll) and then also added landscapeScrollLeft, double-counting the scroll
@@ -315,6 +330,11 @@ export default function BeatCustomLoopOverlay({
     const landscapeDragStartedInLandscapeRef = useRef(false);
     const landscapeDragOriginalRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
     const landscapeDragFinalPosRef = useRef<{ clientX: number; clientY: number } | null>(null);
+    // [MAESTRO-LOOP-002D.2] Pressed/active visual state ONLY — which handle (if any) is
+    // currently being dragged, purely for a "you're holding this" glow on the existing
+    // marker line. This is NOT a live range preview: it never reads/writes rects or
+    // api.playbackRange, and the highlight/rects stay exactly as committed until release.
+    const [activeLandscapeDragHandle, setActiveLandscapeDragHandle] = useState<'start' | 'end' | null>(null);
     const isDragging = useRef(false);
     const startBeat = useRef<any>(null);
     const endBeat = useRef<any>(null);
@@ -2181,6 +2201,7 @@ export default function BeatCustomLoopOverlay({
         landscapeDragOriginalRangeRef.current = { ...api.playbackRange };
         const { clientX, clientY } = resolveEventPosition(e as any);
         landscapeDragFinalPosRef.current = { clientX, clientY };
+        setActiveLandscapeDragHandle(target);
         if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
             const range = api.playbackRange;
             console.log('[LOOP-002D.1B][landscape-drag-start]', {
@@ -2220,6 +2241,7 @@ export default function BeatCustomLoopOverlay({
         landscapeDragStartedInLandscapeRef.current = false;
         landscapeDragOriginalRangeRef.current = null;
         landscapeDragFinalPosRef.current = null;
+        setActiveLandscapeDragHandle(null);
         document.body.style.userSelect = '';
         (document.body.style as any).webkitUserSelect = '';
         setLandscapeHandleDragging(false);
@@ -2265,6 +2287,13 @@ export default function BeatCustomLoopOverlay({
         // of the coordinate-origin fix above — a fast/imprecise release (there is no live
         // preview in this prototype) must never produce a multi-bar jump. Symmetrical for
         // both handles: each is clamped relative to its OWN original boundary.
+        // [MAESTRO-LOOP-002D.2] This one-bar-per-gesture limit is current BETA behavior,
+        // not a permanent design constraint — it exists specifically to compensate for the
+        // lack of live preview (with no live preview, the user has no way to see how far a
+        // drag will land before releasing, so limiting the blast radius per gesture is the
+        // safety trade-off). Revisit this value once a live-preview lane exists; at that
+        // point a multi-bar-per-gesture drag becomes safe because the user can see the
+        // destination before committing.
         const MAX_DELTA_BARS_PER_GESTURE = 1;
         const originalBoundaryBarIdx = target === 'start' ? currentStartBarIdx : currentEndBarIdx;
         let deltaClampedBarIndex = resolvedBarIndex;
@@ -2353,12 +2382,26 @@ export default function BeatCustomLoopOverlay({
 
         const onMove = (e: MouseEvent | TouchEvent) => landscapeHandleDragMoveRef.current(e);
         const onEnd = (e: MouseEvent | TouchEvent) => landscapeHandleDragEndRef.current(e);
+        // [MAESTRO-LOOP-002D.2] Safety net for a mouse released outside the window (no
+        // mouseup ever reaches window in that case — this is the Chrome Emulator/desktop-
+        // mouse equivalent of touchcancel, which is already handled above). Reuses
+        // landscapeHandleDragEnd unchanged: landscapeDragFinalPosRef already holds the last
+        // tracked move position, so this commits/cancels exactly like a normal release at
+        // that last known position — no new cancel/commit branch, no stuck drag state.
+        const onWindowBlur = () => {
+            if (!landscapeDragTargetRef.current) return;
+            if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+                console.log('[LOOP-002D.1B][landscape-drag-end]', { reason: 'window-blur-safety-net' });
+            }
+            landscapeHandleDragEndRef.current(new MouseEvent('mouseup'));
+        };
 
         window.addEventListener('mousemove', onMove, { passive: false });
         window.addEventListener('touchmove', onMove, { passive: false });
         window.addEventListener('mouseup', onEnd);
         window.addEventListener('touchend', onEnd, { passive: false });
         window.addEventListener('touchcancel', onEnd, { passive: false });
+        window.addEventListener('blur', onWindowBlur);
 
         return () => {
             window.removeEventListener('mousemove', onMove);
@@ -2366,8 +2409,12 @@ export default function BeatCustomLoopOverlay({
             window.removeEventListener('mouseup', onEnd);
             window.removeEventListener('touchend', onEnd);
             window.removeEventListener('touchcancel', onEnd);
+            window.removeEventListener('blur', onWindowBlur);
         };
-    }, [landscapeHandleDragging]);
+        // LANDSCAPE_HANDLE_DRAG_DEBUG is a hardcoded boolean literal (never changes at
+        // runtime) — listing it satisfies exhaustive-deps with zero effect on when this
+        // effect actually re-runs (primitives compare by value; false===false always).
+    }, [landscapeHandleDragging, LANDSCAPE_HANDLE_DRAG_DEBUG]);
 
     // ─────────────────────────────────────────
     // Clear
@@ -2596,16 +2643,20 @@ export default function BeatCustomLoopOverlay({
                                     boxSizing: 'border-box' as const,
                                 }}
                             />
+                            {/* [MAESTRO-LOOP-002D.2] Pressed-state glow ONLY (width/boxShadow) when
+                                activeLandscapeDragHandle matches this handle — no range/rects
+                                change, purely "you're holding this" feedback during the gesture. */}
                             <div
                                 className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
                                 style={{
                                     position: 'absolute',
-                                    left: left - 1.5,
+                                    left: activeLandscapeDragHandle === 'start' ? left - 2.5 : left - 1.5,
                                     top,
-                                    width: '3px',
+                                    width: activeLandscapeDragHandle === 'start' ? '5px' : '3px',
                                     height: r.h,
                                     backgroundColor: handleColor,
-                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    boxShadow: activeLandscapeDragHandle === 'start'
+                                        ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
                                     pointerEvents: 'none',
                                     zIndex: 901,
                                 }}
@@ -2614,12 +2665,13 @@ export default function BeatCustomLoopOverlay({
                                 className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
                                 style={{
                                     position: 'absolute',
-                                    left: left + r.w - 1.5,
+                                    left: activeLandscapeDragHandle === 'end' ? left + r.w - 2.5 : left + r.w - 1.5,
                                     top,
-                                    width: '3px',
+                                    width: activeLandscapeDragHandle === 'end' ? '5px' : '3px',
                                     height: r.h,
                                     backgroundColor: handleColor,
-                                    boxShadow: `0 0 8px ${handleColor}`,
+                                    boxShadow: activeLandscapeDragHandle === 'end'
+                                        ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
                                     pointerEvents: 'none',
                                     zIndex: 901,
                                 }}
