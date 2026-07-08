@@ -1,8 +1,41 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.13 — Handle Drag Diagnostic Disabled
+ * BeatCustomLoopOverlay v1.8.15 — Landscape Handle Drag Safety Fixes
  * Date: July 7th, 2026
+ *
+ * 🔥 V1.8.15 CHANGES (MAESTRO-LOOP-002D.1B — not yet committed, held pending live
+ * verification of the coordinate fix below):
+ * ✅ Fixed resolveLandscapeBarIndexAtX's coordinate origin: it measured from
+ *    .at-surface's own getBoundingClientRect() (the scrolled CONTENT — moves with
+ *    scroll) and then also added landscapeScrollLeft, double-counting the scroll
+ *    offset. Now measures from container's getBoundingClientRect() (the stable outer
+ *    scroll-viewport box the render path's own r.x - scrollLeft math is anchored to),
+ *    matching test findings exactly: correct near M1 (scrollLeft≈0), multi-bar jumps
+ *    further into the song, failures near the end (error grows with scroll distance).
+ * ✅ Nearest-bar fallback threshold lowered 200px → 80px.
+ * ✅ New safety clamp: a single drag gesture can move a boundary at most
+ *    MAX_DELTA_BARS_PER_GESTURE (1) bar from its ORIGINAL position, regardless of
+ *    resolver output — defense-in-depth against any remaining coordinate imprecision,
+ *    independent of whether the fix above is itself fully correct.
+ * ✅ New debug flag LANDSCAPE_HANDLE_DRAG_DEBUG (default false) logs drag-start/end
+ *    coordinates, score-space conversion, candidate-bar count, resolved/clamped bar
+ *    indices, and commit/cancel reason — no behavior change when false.
+ * ⛔ No live preview, no beat-level drag, no background click/drag changes — all
+ *    unchanged from V1.8.14.
+ *
+ * 🔥 V1.8.14 CHANGES:
+ * ✅ MAESTRO-LOOP-002D.1: Landscape handle-originated bar-by-bar drag prototype;
+ *    commit-on-release only (no live preview). New, separate landscape drag state
+ *    (landscapeDragTargetRef/landscapeHandleDragging/etc.) and a new bar-index-from-X
+ *    resolver (resolveLandscapeBarIndexAtX, reusing boundsLookup.staffSystems[].bars[]
+ *    .visualBounds — the same data source buildBarRects already uses, never beat-level
+ *    buildRects/resolveBeatWithX). Interactivity added only via ~40px invisible hit
+ *    zones centered on each V1.8.11 marker (pointerEvents:'auto', touchAction:'none');
+ *    the highlight body and 3px markers remain non-interactive. Background click-to-
+ *    create/move and beat-level editing remain guarded (LandscapeLoopClickGuard,
+ *    LandscapeOnUpGuard, LandscapeDragEndGuard all untouched) — only this dedicated
+ *    handle-drag path can commit, via its own started-and-ended-in-landscape check.
  *
  * 🔥 V1.8.13 CHANGES:
  * ✅ MAESTRO-LOOP-DEBUG-002: LOOP_HANDLE_DRAG_DIAG disabled before landscape drag
@@ -20,8 +53,9 @@
  *    SAME deduped/viewport-clipped representative rect (never a fresh/unrelated
  *    rects[0]/rects[last]). Purely decorative — pointerEvents:'none', no onMouseDown/
  *    onTouchStart/touchAction. No drag, no click-to-seek, no gesture changes; strip
- *    scrolling and LandscapeLoopClickGuard/LandscapeOnUpGuard/LandscapeDragEndGuard are
- *    unaffected. Draggable/interactive landscape handles remain a separate, later lane.
+ *    scrolling and LandscapeLoopClickGuard/LandscapeOnUpGuard/LandscapeDragEndGuard were
+ *    unaffected at the time. (Handle-originated bar-by-bar dragging was since added in
+ *    V1.8.14 / LOOP-002D.1, via dedicated hit zones — see above.)
  *
  * 🔥 V1.8.10 CHANGES (MAESTRO-LOOP-002 series):
  * ✅ LOOP-002A / LOOP-002A.1: Debug-only landscape hit-test instrumentation
@@ -40,11 +74,11 @@
  *    just-committed range across that gap for the landscape display branch only; it
  *    self-clears once api.playbackRange settles or loopEnabled goes false, and is never
  *    used for handle drag/editing or to bypass onLoopChange.
- * ⛔ Landscape click-to-create and drag-to-edit remain intentionally guarded
- *    (LandscapeLoopClickGuard, LandscapeOnUpGuard, LandscapeDragEndGuard) — not yet
- *    authorized, reserved for a later phase. (Visible-only, non-interactive boundary
- *    handle rendering was added in V1.8.11 / LOOP-002C above — draggable handles are
- *    still guarded and unimplemented.)
+ * ⛔ Landscape background click-to-create/move and beat-level editing remain
+ *    intentionally guarded (LandscapeLoopClickGuard, LandscapeOnUpGuard,
+ *    LandscapeDragEndGuard, all untouched) — not yet authorized. (Visible-only boundary
+ *    handle rendering was added in V1.8.11 / LOOP-002C; handle-originated bar-by-bar
+ *    dragging — a separate, dedicated code path — was added in V1.8.14 / LOOP-002D.1.)
  *
  * 🔥 V1.8.9 CHANGES:
  * ✅ [LoopOverlayCursorReanchor]
@@ -151,12 +185,13 @@
  *    - AlphaTabRenderer wrapper div must remove pointer-events-none (see note below)
  *    - Highlight rects stay pointer-events: none; handle tabs are auto
  *
- * ✅ STAGE 4 — Landscape suppress (superseded — see V1.8.8, V1.8.10, V1.8.11 above):
+ * ✅ STAGE 4 — Landscape suppress (superseded — see V1.8.8, V1.8.10, V1.8.11, V1.8.14 above):
  *    - isLandscape prop added; returns null in landscape mode
  *    - Prevents coordinate-space mismatch until landscape loop system is designed
  *    - No longer a blanket "return null": V1.8.8 added the display-only highlight,
- *      V1.8.10 added real bar-snapped creation, and V1.8.11 added visible-only boundary
- *      markers. Click-to-create/drag-to-edit and draggable handles remain guarded.
+ *      V1.8.10 added real bar-snapped creation, V1.8.11 added visible-only boundary
+ *      markers, and V1.8.14 added handle-originated bar-by-bar dragging. Background
+ *      click-to-create/move and beat-level editing remain guarded.
  *
  * 🔒 ALL V1.7.6 INTERNALS PRESERVED — nothing removed:
  *    tickOf, durOf, loHi, resolveBeatWithX, commitBarSnap, getBarEdgesFromBeat,
@@ -261,16 +296,25 @@ export default function BeatCustomLoopOverlay({
 
     const loopRef = useRef(loopEnabled);
     const isLandscapeRef = useRef(isLandscape);
-    // [MAESTRO-LOOP-002D] Short-lived render bridge for landscape toggle-ON only.
-    // AlphaTabRenderer owns a separate effect that resyncs api.playbackRange from
-    // page.tsx's own playbackRange prop; that prop is still null on the same commit
-    // commitBarSnap runs in, so it clobbers commitBarSnap's direct write back to null
-    // before page.tsx's state round-trips back down. This ref carries the just-committed
-    // tick range across that gap for the landscape display branch ONLY — it is not a new
-    // long-term source of truth: onLoopChange still owns page/parent state, this is never
-    // read for handle drag/editing, and it self-clears the moment api.playbackRange
-    // settles or loopEnabled goes false.
+    // [MAESTRO-LOOP-002D] Short-lived render bridge for landscape toggle-ON and (as of
+    // LOOP-002D.1) landscape handle-drag commits. AlphaTabRenderer owns a separate effect
+    // that resyncs api.playbackRange from page.tsx's own playbackRange prop; that prop is
+    // still null on the same commit that writes a new range directly, so it clobbers that
+    // direct write back to null before page.tsx's state round-trips back down. This ref
+    // carries the just-committed tick range across that gap for the landscape display
+    // branch ONLY — it is not a new long-term source of truth: onLoopChange still owns
+    // page/parent state, this is never read to DECIDE drag/editing behavior, and it
+    // self-clears the moment api.playbackRange settles or loopEnabled goes false.
     const pendingCommittedRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+    // [MAESTRO-LOOP-002D.1] Separate landscape handle-drag state — deliberately NOT shared
+    // with portrait's dragTargetRef/handleDragging/previewRangeRef below, so this prototype
+    // never pulls in handleDragMove's beat-level forecast-smoothing pipeline. Commit-on-
+    // release only: no live preview, so no rects/api writes happen until drag end.
+    const [landscapeHandleDragging, setLandscapeHandleDragging] = useState(false);
+    const landscapeDragTargetRef = useRef<'start' | 'end' | null>(null);
+    const landscapeDragStartedInLandscapeRef = useRef(false);
+    const landscapeDragOriginalRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+    const landscapeDragFinalPosRef = useRef<{ clientX: number; clientY: number } | null>(null);
     const isDragging = useRef(false);
     const startBeat = useRef<any>(null);
     const endBeat = useRef<any>(null);
@@ -288,6 +332,12 @@ export default function BeatCustomLoopOverlay({
     // [MAESTRO-LOOP-DEBUG-002] Silenced ahead of the landscape drag prototype. Set true
     // to re-enable for future portrait/landscape handle-drag investigation.
     const LOOP_HANDLE_DRAG_DIAG = false;
+
+    // [MAESTRO-LOOP-002D.1B] Landscape handle-drag bar-resolution diagnostic. Set true
+    // temporarily for live testing only — logs drag start/end coordinates, the
+    // score-space conversion, candidate/resolved/clamped bar indices, and the
+    // commit-or-cancel reason. No behavior change when false.
+    const LANDSCAPE_HANDLE_DRAG_DEBUG = false;
 
     // Barline magnet for loop handle drags.
     // If the resolver returns the last beat of the previous bar while the pointer
@@ -652,6 +702,101 @@ export default function BeatCustomLoopOverlay({
             }
         }
         return results;
+    };
+
+    // [MAESTRO-LOOP-002D.1] Bar-index/tick helpers for the landscape handle-drag
+    // prototype. All three read only api.tickCache.masterBars / api.renderer.boundsLookup
+    // — the same proven data sources buildBarRects/getExpandedBarRange already use — never
+    // beat-level tickCache.findBeat or boundsLookup-based beat hit-testing.
+
+    // Same traversal/predicate as getExpandedBarRange, returning the bar INDEX instead of
+    // the tick range, so callers can compare/clamp against other boundaries by index.
+    const resolveBarIndexForTick = (tick: number): number | null => {
+        const tickCache = (api as any)?.tickCache;
+        const masterBarsArr = (tickCache as any)?.masterBars as any[] | undefined;
+        if (!masterBarsArr?.length) return null;
+        for (const mb of masterBarsArr) {
+            const dur = mb?.masterBar?.calculateDuration?.() ?? 0;
+            if (dur <= 0) continue;
+            if (tick >= mb.start && tick < mb.start + dur) {
+                return mb?.masterBar?.index ?? mb?.index ?? null;
+            }
+        }
+        return null;
+    };
+
+    // Reverse of the index→tick lookup above: given a resolved bar index, find that same
+    // masterBars entry's start tick, so getExpandedBarRange can be reused unchanged.
+    const getBarStartTickByIndex = (barIndex: number): number | null => {
+        const tickCache = (api as any)?.tickCache;
+        const masterBarsArr = (tickCache as any)?.masterBars as any[] | undefined;
+        const match = masterBarsArr?.find((mb: any) => (mb?.masterBar?.index ?? mb?.index) === barIndex);
+        return match?.start ?? null;
+    };
+
+    // Bar-index-from-X resolver for landscape handle drag release. Reuses the exact same
+    // data source as buildBarRects (api.renderer.boundsLookup.staffSystems[].bars[].
+    // visualBounds) — never beat-level buildRects/resolveBeatWithX.
+    //
+    // [MAESTRO-LOOP-002D.1B] Coordinate-origin fix: the landscape render path computes
+    // viewport position as `r.x + LOOP_X_OFFSET - scrollLeft`, relative to the overlay
+    // wrapper — a sibling OUTSIDE the scrolling container, positioned to align with
+    // container's own (unscrolled) outer box. container's own getBoundingClientRect()
+    // stays fixed as content scrolls INSIDE it (only its children move) — that's the
+    // correct, stable origin. The previous implementation used .at-surface's own
+    // getBoundingClientRect() instead: .at-surface is the scrolled CONTENT, so its rect
+    // already moves with scroll, and adding landscapeScrollLeft on top of that double-
+    // counted the scroll offset — an error that grows with scroll distance, matching the
+    // observed "works near M1, jumps multiple bars further into the song, fails near the
+    // end" pattern exactly.
+    //
+    // Falls back to the nearest bar only within a bounded pixel distance — beyond that,
+    // returns null so the caller cancels the commit rather than guessing.
+    const LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX = 80;
+    const resolveLandscapeBarIndexAtX = (clientX: number): number | null => {
+        if (!api?.renderer?.boundsLookup) return null;
+        const containerEl = container as HTMLElement | null;
+        if (!containerEl) return null;
+        const containerRect = containerEl.getBoundingClientRect();
+        const scoreX = (clientX - containerRect.left) - LOOP_X_OFFSET + landscapeScrollLeft;
+
+        const systems = api.renderer.boundsLookup.staffSystems ?? [];
+        let bestIdx: number | null = null;
+        let bestDist = Infinity;
+        let candidateCount = 0;
+        for (const sys of systems) {
+            for (const mbb of (sys?.bars ?? [])) {
+                const idx = mbb?.masterBar?.index ?? mbb?.index;
+                if (idx == null) continue;
+                for (const bar of (mbb?.bars ?? [])) {
+                    const b = bar?.visualBounds;
+                    if (!b) continue;
+                    candidateCount++;
+                    if (scoreX >= b.x && scoreX <= b.x + b.w) {
+                        if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+                            console.log('[LOOP-002D.1B][landscape-bar-resolve]', {
+                                clientX, containerLeft: containerRect.left, landscapeScrollLeft,
+                                scoreX, candidateCount, resolvedIdx: idx, exactHit: true,
+                                nearestFallbackDist: null,
+                            });
+                        }
+                        return idx;
+                    }
+                    const dist = scoreX < b.x ? b.x - scoreX : scoreX - (b.x + b.w);
+                    if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+                }
+            }
+        }
+        const withinFallback = bestIdx != null && bestDist <= LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX;
+        if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+            console.log('[LOOP-002D.1B][landscape-bar-resolve]', {
+                clientX, containerLeft: containerRect.left, landscapeScrollLeft,
+                scoreX, candidateCount, resolvedIdx: withinFallback ? bestIdx : null,
+                exactHit: false, nearestFallbackDist: bestIdx != null ? bestDist : null,
+                nearestFallbackMaxPx: LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX,
+            });
+        }
+        return withinFallback ? bestIdx : null;
     };
 
     // ── Fresh-attack resolver for end handle reseat ───────────────────────────────
@@ -2017,6 +2162,214 @@ export default function BeatCustomLoopOverlay({
     }, [handleDragging]);
 
     // ─────────────────────────────────────────
+    // [MAESTRO-LOOP-002D.1] Landscape handle drag — commit-on-release only
+    //
+    // Deliberately separate from handleDragStart/Move/End above: no live preview, no
+    // beat-level resolveBeatWithX/buildRects, no shared state with portrait's
+    // dragTargetRef/handleDragging/previewRangeRef. Only reachable from the landscape
+    // hit-zone JSX below (onMouseDown/onTouchStart) — background onDown/onUp
+    // (LandscapeLoopClickGuard/LandscapeOnUpGuard) and portrait's own handleDragStart/
+    // handleDragEnd (LandscapeDragEndGuard) are untouched and remain fully guarded.
+    // ─────────────────────────────────────────
+
+    const landscapeHandleDragStart = (e: React.MouseEvent | React.TouchEvent, target: 'start' | 'end') => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!isLandscapeRef.current || !api?.playbackRange) return;
+        landscapeDragTargetRef.current = target;
+        landscapeDragStartedInLandscapeRef.current = true;
+        landscapeDragOriginalRangeRef.current = { ...api.playbackRange };
+        const { clientX, clientY } = resolveEventPosition(e as any);
+        landscapeDragFinalPosRef.current = { clientX, clientY };
+        if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+            const range = api.playbackRange;
+            console.log('[LOOP-002D.1B][landscape-drag-start]', {
+                target,
+                clientX, clientY,
+                originalStartBarIdx: resolveBarIndexForTick(range.startTick),
+                originalEndBarIdx: resolveBarIndexForTick(Math.max(range.startTick, range.endTick - 1)),
+                originalRange: range,
+            });
+        }
+        document.body.style.userSelect = 'none';
+        (document.body.style as any).webkitUserSelect = 'none';
+        setLandscapeHandleDragging(true);
+    };
+
+    const landscapeHandleDragMove = (e: MouseEvent | TouchEvent) => {
+        if (!landscapeDragTargetRef.current) return;
+        // Prevent the strip from also scrolling while a handle drag that started on the
+        // hit zone is in progress — this only ever runs after landscapeHandleDragStart,
+        // which only fires from the hit zone itself, so background strip scroll elsewhere
+        // is never affected.
+        e.preventDefault();
+        const { clientX, clientY } = resolveEventPosition(e);
+        landscapeDragFinalPosRef.current = { clientX, clientY };
+        // No live preview by design (LOOP-002D.1 prototype scope) — no rects/api writes here.
+    };
+
+    const landscapeHandleDragEnd = (e: MouseEvent | TouchEvent) => {
+        const target = landscapeDragTargetRef.current;
+        if (!target) return;
+
+        const startedInLandscape = landscapeDragStartedInLandscapeRef.current;
+        const originalRange = landscapeDragOriginalRangeRef.current;
+        const finalPos = landscapeDragFinalPosRef.current ?? resolveEventPosition(e);
+
+        landscapeDragTargetRef.current = null;
+        landscapeDragStartedInLandscapeRef.current = false;
+        landscapeDragOriginalRangeRef.current = null;
+        landscapeDragFinalPosRef.current = null;
+        document.body.style.userSelect = '';
+        (document.body.style as any).webkitUserSelect = '';
+        setLandscapeHandleDragging(false);
+
+        // [LandscapeHandleDragEndGuard] Only commit when the gesture both started AND is
+        // ending in landscape — mirrors the cross-mode-rotation protection
+        // LandscapeDragEndGuard already provides for portrait drags, adapted for this
+        // dedicated handle-originated path. Rotation mid-gesture cancels, keeping the
+        // original range untouched.
+        if (!startedInLandscape || !isLandscapeRef.current || !originalRange || !api) {
+            if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+                console.log('[LOOP-002D.1B][landscape-drag-end]', {
+                    target, reason: 'cancel-rotation-or-missing-state',
+                    startedInLandscape, isLandscapeNow: isLandscapeRef.current, hasOriginalRange: !!originalRange,
+                });
+            }
+            return;
+        }
+
+        const resolvedBarIndex = resolveLandscapeBarIndexAtX(finalPos.clientX);
+        if (resolvedBarIndex == null) {
+            console.warn('[landscape-handle-drag] bar resolution failed at release — edit cancelled, range unchanged');
+            if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+                console.log('[LOOP-002D.1B][landscape-drag-end]', {
+                    target, finalClientX: finalPos.clientX, finalClientY: finalPos.clientY,
+                    reason: 'cancel-bar-resolution-failed',
+                });
+            }
+            return;
+        }
+
+        const currentRange = api.playbackRange ?? originalRange;
+        const currentStartBarIdx = resolveBarIndexForTick(currentRange.startTick);
+        const currentEndBarIdx = resolveBarIndexForTick(Math.max(currentRange.startTick, currentRange.endTick - 1));
+        if (currentStartBarIdx == null || currentEndBarIdx == null) {
+            console.warn('[landscape-handle-drag] could not resolve current range to bar indices — edit cancelled');
+            return;
+        }
+
+        // [MAESTRO-LOOP-002D.1B] Safety clamp: limit a single gesture to at most one bar
+        // of movement from the boundary's ORIGINAL position, regardless of where the
+        // resolver placed the release point. This is a deliberate defense-in-depth on top
+        // of the coordinate-origin fix above — a fast/imprecise release (there is no live
+        // preview in this prototype) must never produce a multi-bar jump. Symmetrical for
+        // both handles: each is clamped relative to its OWN original boundary.
+        const MAX_DELTA_BARS_PER_GESTURE = 1;
+        const originalBoundaryBarIdx = target === 'start' ? currentStartBarIdx : currentEndBarIdx;
+        let deltaClampedBarIndex = resolvedBarIndex;
+        if (resolvedBarIndex > originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE) {
+            deltaClampedBarIndex = originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE;
+        } else if (resolvedBarIndex < originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE) {
+            deltaClampedBarIndex = originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE;
+        }
+
+        // Clamp by bar INDEX (never by tick arithmetic — bar durations vary with time
+        // signature) so start can never pass end and vice versa. Equal indices are a
+        // valid one-bar loop (the same minimum a fresh bar-snap creation produces).
+        let finalStartBarIdx = currentStartBarIdx;
+        let finalEndBarIdx = currentEndBarIdx;
+        if (target === 'start') {
+            finalStartBarIdx = Math.max(0, Math.min(deltaClampedBarIndex, currentEndBarIdx));
+        } else {
+            finalEndBarIdx = Math.max(deltaClampedBarIndex, currentStartBarIdx);
+        }
+
+        const startTickForRange = getBarStartTickByIndex(finalStartBarIdx);
+        const endBarStartTick = getBarStartTickByIndex(finalEndBarIdx);
+        if (startTickForRange == null || endBarStartTick == null) {
+            console.warn('[landscape-handle-drag] tick lookup failed for clamped bar index — edit cancelled');
+            return;
+        }
+        const endBarFullRange = getExpandedBarRange(endBarStartTick);
+        if (!endBarFullRange) {
+            console.warn('[landscape-handle-drag] getExpandedBarRange failed for end bar — edit cancelled');
+            return;
+        }
+
+        const finalRange = { startTick: startTickForRange, endTick: endBarFullRange.endTick };
+
+        if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
+            console.log('[LOOP-002D.1B][landscape-drag-end]', {
+                target,
+                finalClientX: finalPos.clientX, finalClientY: finalPos.clientY,
+                currentStartBarIdx, currentEndBarIdx,
+                resolvedBarIndex, deltaClampedBarIndex,
+                maxDeltaBarsPerGesture: MAX_DELTA_BARS_PER_GESTURE,
+                finalStartBarIdx, finalEndBarIdx,
+                finalRange,
+                reason: 'commit',
+            });
+        }
+
+        api.playbackRange = finalRange;
+        api.isLooping = true;
+        // Same bridge LOOP-002D uses for toggle-on creation — this commit is subject to
+        // the identical AlphaTabRenderer clobber race (see pendingCommittedRangeRef above).
+        pendingCommittedRangeRef.current = finalRange;
+        onLoopChange?.(finalRange.startTick, finalRange.endTick);
+
+        let newRects: HighlightRect[] = [];
+        for (let bIdx = finalStartBarIdx; bIdx <= finalEndBarIdx; bIdx++) {
+            newRects = newRects.concat(buildBarRects(bIdx));
+        }
+        setRectsWithReason(newRects, 'landscapeHandleDragEnd');
+
+        // Same double-RAF resync safety net LOOP-002D added for toggle-on, in case the
+        // clobber effect hasn't settled by the time this render commits.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (api.playbackRange) rebuildFromPlaybackRange('landscape-handle-drag-resync');
+            });
+        });
+    };
+
+    // [MAESTRO-LOOP-002D.1A] landscapeHandleDragMove/End are plain consts recreated every
+    // render (not useCallback — their own dependency list would cascade into the shared
+    // buildBarRects/getExpandedBarRange/etc. helpers, which are out of scope to touch here).
+    // These refs always hold the latest closure; the listener-attach effect below reads
+    // .current at call time instead of closing over the functions directly, so eslint's
+    // exhaustive-deps has nothing to flag (ref reads are exempt) with no behavior change —
+    // the effect still only (re)attaches once per landscapeHandleDragging transition.
+    const landscapeHandleDragMoveRef = useRef(landscapeHandleDragMove);
+    const landscapeHandleDragEndRef = useRef(landscapeHandleDragEnd);
+    useEffect(() => {
+        landscapeHandleDragMoveRef.current = landscapeHandleDragMove;
+        landscapeHandleDragEndRef.current = landscapeHandleDragEnd;
+    });
+
+    useEffect(() => {
+        if (!landscapeHandleDragging) return;
+
+        const onMove = (e: MouseEvent | TouchEvent) => landscapeHandleDragMoveRef.current(e);
+        const onEnd = (e: MouseEvent | TouchEvent) => landscapeHandleDragEndRef.current(e);
+
+        window.addEventListener('mousemove', onMove, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd, { passive: false });
+        window.addEventListener('touchcancel', onEnd, { passive: false });
+
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('mouseup', onEnd);
+            window.removeEventListener('touchend', onEnd);
+            window.removeEventListener('touchcancel', onEnd);
+        };
+    }, [landscapeHandleDragging]);
+
+    // ─────────────────────────────────────────
     // Clear
     // ─────────────────────────────────────────
 
@@ -2115,13 +2468,16 @@ export default function BeatCustomLoopOverlay({
         };
     };
 
-    // ── Landscape display-only loop highlight ────────────────────────────────
-    // Stage 4 extended: shows the committed loop range in Landscape as a
-    // translucent highlight behind the tab, plus (V1.8.11 / MAESTRO-LOOP-002C)
-    // visible-only start/end boundary markers. No drag, no writes to api.playbackRange
-    // — the boundary markers are pointerEvents:'none' with no onMouseDown/onTouchStart/
-    // touchAction, so this remains display-only, not interactive. Rects are in score
-    // coordinate space (0–surfaceScrollWidth); left: r.x - scrollLeft converts them to
+    // ── Landscape loop highlight + handle drag ────────────────────────────────
+    // Stage 4 extended: shows the committed loop range in Landscape as a translucent
+    // highlight behind the tab, plus (V1.8.11 / MAESTRO-LOOP-002C) visible-only start/end
+    // boundary markers, plus (V1.8.14 / MAESTRO-LOOP-002D.1) ~40px invisible hit zones
+    // centered on each marker that allow handle-originated bar-by-bar drag, commit-on-
+    // release only. The highlight body and the 3px markers themselves remain
+    // pointerEvents:'none' — only the two hit-zone divs are interactive, so tap-to-seek
+    // and background click/drag remain unaffected everywhere except those hit zones.
+    // Rects are in score coordinate space (0–surfaceScrollWidth); left: r.x - scrollLeft
+    // converts them to
     // viewport-relative position.
     //
     // Deduplication: groups rects by y-band and picks the first (topmost) staff
@@ -2213,11 +2569,15 @@ export default function BeatCustomLoopOverlay({
                     barIdx), renderRects has exactly one entry, so its left edge is the start
                     boundary and its right edge is the end boundary — no separate first/last
                     rect lookup needed the way the portrait branch requires for multi-bar
-                    selections. Purely decorative: pointerEvents:'none', no onMouseDown/
-                    onTouchStart/touchAction, so strip scroll and tap-to-seek are unaffected. */}
+                    selections. The 3px markers themselves stay pointerEvents:'none'.
+                    [MAESTRO-LOOP-002D.1] Interactivity lives ONLY in the two hit-zone divs
+                    below (~40px, pointerEvents:'auto', touchAction:'none') centered on each
+                    marker — the highlight body above remains fully non-interactive, so strip
+                    scroll and tap-to-seek are unaffected everywhere except those hit zones. */}
                 {renderRects.map((r, i) => {
                     const left = r.x + LOOP_X_OFFSET - scrollLeft;
                     const top = r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET;
+                    const HANDLE_HIT_ZONE_WIDTH = 40;
                     return (
                         <React.Fragment key={i}>
                             <div
@@ -2262,6 +2622,42 @@ export default function BeatCustomLoopOverlay({
                                     boxShadow: `0 0 8px ${handleColor}`,
                                     pointerEvents: 'none',
                                     zIndex: 901,
+                                }}
+                            />
+                            {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
+                            <div
+                                className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
+                                onMouseDown={ev => landscapeHandleDragStart(ev, 'start')}
+                                onTouchStart={ev => landscapeHandleDragStart(ev, 'start')}
+                                style={{
+                                    position: 'absolute',
+                                    left: left - HANDLE_HIT_ZONE_WIDTH / 2,
+                                    top,
+                                    width: HANDLE_HIT_ZONE_WIDTH,
+                                    height: r.h,
+                                    background: 'transparent',
+                                    pointerEvents: 'auto',
+                                    touchAction: 'none',
+                                    cursor: 'ew-resize',
+                                    zIndex: 902,
+                                }}
+                            />
+                            {/* [MAESTRO-LOOP-002D.1] End handle hit zone — interactive only here. */}
+                            <div
+                                className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-end"
+                                onMouseDown={ev => landscapeHandleDragStart(ev, 'end')}
+                                onTouchStart={ev => landscapeHandleDragStart(ev, 'end')}
+                                style={{
+                                    position: 'absolute',
+                                    left: left + r.w - HANDLE_HIT_ZONE_WIDTH / 2,
+                                    top,
+                                    width: HANDLE_HIT_ZONE_WIDTH,
+                                    height: r.h,
+                                    background: 'transparent',
+                                    pointerEvents: 'auto',
+                                    touchAction: 'none',
+                                    cursor: 'ew-resize',
+                                    zIndex: 902,
                                 }}
                             />
                         </React.Fragment>
