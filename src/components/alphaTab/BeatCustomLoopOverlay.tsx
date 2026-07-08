@@ -1,8 +1,12 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.12 — Loop Diagnostic Flags Disabled
+ * BeatCustomLoopOverlay v1.8.13 — Handle Drag Diagnostic Disabled
  * Date: July 7th, 2026
+ *
+ * 🔥 V1.8.13 CHANGES:
+ * ✅ MAESTRO-LOOP-DEBUG-002: LOOP_HANDLE_DRAG_DIAG disabled before landscape drag
+ *    prototype; no runtime behavior changes. Debug block preserved (not removed).
  *
  * 🔥 V1.8.12 CHANGES:
  * ✅ MAESTRO-LOOP-DEBUG-001: MOBILE_LOOP_TAP_DEBUG, PAGE_ROW_DEBUG, and
@@ -281,8 +285,9 @@ export default function BeatCustomLoopOverlay({
     const LOOP_CLICK_INTENT_DIST = 24;
 
     // TEMP diagnostic for handle drag snap sensitivity near barlines.
-    // Set false after tuning handle forecast behavior.
-    const LOOP_HANDLE_DRAG_DIAG = true;
+    // [MAESTRO-LOOP-DEBUG-002] Silenced ahead of the landscape drag prototype. Set true
+    // to re-enable for future portrait/landscape handle-drag investigation.
+    const LOOP_HANDLE_DRAG_DIAG = false;
 
     // Barline magnet for loop handle drags.
     // If the resolver returns the last beat of the previous bar while the pointer
