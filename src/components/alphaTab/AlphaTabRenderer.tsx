@@ -832,6 +832,21 @@ if (CURSOR_LIFECYCLE_PROBE) {
         file: 'AlphaTabRenderer.tsx',
     });
 }
+// [MAESTRO-SEEK-001] Diagnostic-only, false-by-default probe for the landscape manual
+// scroll/seek path (touch-drag via handleTouchStart/Move/End, and wheel/trackpad/
+// scrollbar via onWheelIntent/onContainerScroll/onManualScrollSettle). Identifies why a
+// long fling/rail-terminated landscape scroll sometimes leaves api.tickPosition stale
+// (observed: viewport at M1, apiTick stuck at 15361 after a long scroll back to the left
+// rail; a subsequent tiny wiggle re-synced it to the correct tick). Independent of
+// CURSOR_LIFECYCLE_PROBE — both default false and neither reads/writes the other's state.
+// No behavior change when false. Do not leave true.
+const TOUCH_SEEK_PROBE = false;
+if (TOUCH_SEEK_PROBE) {
+    console.log('[TouchSeekProbe:loaded]', {
+        isoTimestamp: new Date().toISOString(),
+        file: 'AlphaTabRenderer.tsx',
+    });
+}
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -8175,6 +8190,25 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const touchState = { startX: 0, startScrollLeft: 0, isDragging: false, minScroll: 0 };
             const TAP_THRESHOLD = 8;
 
+            // [MAESTRO-SEEK-001] Diagnostic-only gesture-probe state — fully separate from
+            // touchState/userScrollIntentUntil below so nothing here can influence real
+            // drag/seek behavior. Zero cost when TOUCH_SEEK_PROBE is false (every read/
+            // write below is gated on the flag).
+            let touchSeekProbeGestureCounter = 0;
+            let touchSeekProbeTouch: {
+                gestureId: number;
+                startTs: number;
+                startScrollLeft: number;
+                apiTickBefore: number | null;
+                intentArmedAtStart: boolean;
+                intentSourceAtStart: string | null;
+            } | null = null;
+
+            const emitTouchSeekProbe = (fields: Record<string, unknown>) => {
+                if (!TOUCH_SEEK_PROBE) return;
+                console.log('[TouchSeekProbe:gesture]', fields);
+            };
+
             const handleTouchStart = (ev: TouchEvent) => {
                 const api = apiRef.current;
                 const isStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
@@ -8183,6 +8217,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 touchState.startScrollLeft = container.scrollLeft;
                 touchState.isDragging = false;
                 isDraggingRef.current = false;
+                if (TOUCH_SEEK_PROBE) {
+                    touchSeekProbeTouch = {
+                        gestureId: ++touchSeekProbeGestureCounter,
+                        startTs: performance.now(),
+                        startScrollLeft: container.scrollLeft,
+                        apiTickBefore: (api as any)?.tickPosition ?? null,
+                        intentArmedAtStart: performance.now() <= userScrollIntentUntil,
+                        intentSourceAtStart: userScrollIntentLastSource,
+                    };
+                }
                 stopLandscapeScrollLoop();
                 const tickCache = (api as any)?.tickCache;
                 const bounds = api?.renderer?.boundsLookup;
@@ -8228,6 +8272,79 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     container.scrollLeft = Math.max(touchState.minScroll, Math.min(touchState.startScrollLeft + dx, maxScroll));
                     targetScrollLeftRef.current = container.scrollLeft;
                 }
+            };
+
+            // [MAESTRO-SEEK-001] Diagnostic-only — builds and (after a short probe-only
+            // delay, to observe whether scroll continues moving after touchend due to
+            // momentum) emits the one mandatory [TouchSeekProbe:gesture] summary line for
+            // a landscape touch-drag gesture. Called from every bail/success point inside
+            // handleTouchEnd's drag branch below, and from the probe-only touchcancel
+            // listener. Reads only existing refs/state — writes nothing real code reads.
+            const finishTouchSeekProbeGesture = (
+                bailReason: string | null,
+                extra: Record<string, unknown> = {},
+            ) => {
+                if (!TOUCH_SEEK_PROBE) return;
+                const gesture = touchSeekProbeTouch;
+                touchSeekProbeTouch = null;
+                if (!gesture) return;
+                const api = apiRef.current;
+                const endTs = performance.now();
+                const endScrollLeft = container.scrollLeft;
+                const scrollWidth = container.scrollWidth;
+                const clientWidth = container.clientWidth;
+                const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+                const landscape = isDeviceLandscape();
+                const fields = {
+                    gestureId: gesture.gestureId,
+                    inputType: 'touch',
+                    startTs: gesture.startTs,
+                    endTs,
+                    durationMs: endTs - gesture.startTs,
+                    startScrollLeft: gesture.startScrollLeft,
+                    endScrollLeft,
+                    deltaScrollLeft: endScrollLeft - gesture.startScrollLeft,
+                    atLeftRailStart: gesture.startScrollLeft <= 1,
+                    atLeftRailEnd: endScrollLeft <= 1,
+                    atRightRailStart: gesture.startScrollLeft >= maxScrollLeft - 1,
+                    atRightRailEnd: endScrollLeft >= maxScrollLeft - 1,
+                    scrollWidth,
+                    clientWidth,
+                    maxScrollLeft,
+                    forceHorizontal: forceHorizontalRef.current,
+                    isDeviceLandscape: landscape,
+                    isPortrait: !landscape,
+                    isPlaying: (api?.playerState ?? 0) === 1,
+                    playerReady: !!api?.isReadyForPlayback,
+                    apiTickBefore: gesture.apiTickBefore,
+                    apiTickAfter: (api as any)?.tickPosition ?? null,
+                    apiTickChanged: ((api as any)?.tickPosition ?? null) !== gesture.apiTickBefore,
+                    // [MAESTRO-SEEK-001 amendment] Renamed from landscapeScrollStateActive:
+                    // audited handleTouchStart/handleTouchMove and confirmed this ref is never
+                    // read as a gesture-claiming guard there. It is a persistent visual-position
+                    // cache (set by primeLandscapeState and by every playback tick, cleared only
+                    // on structural events — unmount/orientation-flip/wrap/hardReset), not a true
+                    // "auto-scroll is actively driving right now" flag, so "Present" is the
+                    // honest name.
+                    landscapeScrollStatePresent: landscapeScrollStateRef.current != null,
+                    userScrollIntentSource: userScrollIntentLastSource,
+                    userScrollIntentArmedAtStart: gesture.intentArmedAtStart,
+                    userScrollIntentSourceAtStart: gesture.intentSourceAtStart,
+                    userScrollIntentArmedAtEnd: performance.now() <= userScrollIntentUntil,
+                    seekAttempted: bailReason == null || bailReason === 'seek-attempted-see-fields',
+                    seekSucceeded: bailReason == null,
+                    bailReason: bailReason ?? 'seeked',
+                    note: bailReason ?? 'seeked',
+                    ...extra,
+                };
+                setTimeout(() => {
+                    const momentumScrollLeft = container.scrollLeft;
+                    emitTouchSeekProbe({
+                        ...fields,
+                        postTouchendScrollLeft: momentumScrollLeft,
+                        momentumDetected: Math.abs(momentumScrollLeft - endScrollLeft) > 1,
+                    });
+                }, 120);
             };
 
             const handleTouchEnd = (ev: TouchEvent) => {
@@ -8325,6 +8442,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     resetBeatAcceptance();
                                     setLastStableRotationAnchorTick(bestTick, 'touch-seek');
                                     landscapeScrollStateRef.current = null;
+                                    finishTouchSeekProbeGesture(null, {
+                                        visibleCursorX: beatXUnderCursor,
+                                        resolvedTick: bestTick,
+                                        resolvedBarIdx: bestBeat === true ? null : (bestBeat?.voice?.bar?.masterBar?.index ?? bestBeat?.voice?.bar?.index ?? null),
+                                        resolvedBeatIdx: bestBeat === true ? null : (bestBeat?.index ?? null),
+                                    });
+                                } else {
+                                    // [MAESTRO-SEEK-001] No existing else here — bestBeat's scan found
+                                    // nothing within the left-rail fallback either. This is the
+                                    // primary suspect for the long-fling-to-rail symptom: bounds data
+                                    // for the bar(s) under the cursor may not be ready yet right after
+                                    // a fast re-layout/re-scroll.
+                                    finishTouchSeekProbeGesture('no-visible-bar-under-cursor', {
+                                        visibleCursorX: beatXUnderCursor,
+                                        resolvedTick: null, resolvedBarIdx: null, resolvedBeatIdx: null,
+                                    });
                                 }
                                 cursorRef.current?.requestSnap('touch-seek');
                                 resetBeatAcceptance();
@@ -8332,8 +8465,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 if ((api.playerState ?? 0) === 1) startLandscapeScrollLoop(container, api);
                             } else {
                                 startLandscapeScrollLoop(container, api);
+                                finishTouchSeekProbeGesture('no-bounds-lookup');
                             }
+                        } else {
+                            // [MAESTRO-SEEK-001] No existing else here previously — api not ready
+                            // for playback, no seek attempted at all.
+                            finishTouchSeekProbeGesture('not-ready-for-playback');
                         }
+                    } else {
+                        // [MAESTRO-SEEK-001] No existing else here previously — ended outside
+                        // strip/landscape mode.
+                        finishTouchSeekProbeGesture('not-landscape');
                     }
                 }
                 isDraggingRef.current = false;
@@ -8341,9 +8483,23 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 touchState.isDragging = false;
             };
 
+            // [MAESTRO-SEEK-001] Diagnostic-only. handleTouchEnd (above) has no touchcancel
+            // counterpart in the real listeners below — if the browser fires touchcancel
+            // instead of touchend (observed as a real possibility for a fast fling, e.g. if
+            // the OS/browser interprets it as a navigation gesture), handleTouchEnd never
+            // runs and the gesture would otherwise vanish with zero diagnostic trace. This
+            // listener only reads touchSeekProbeTouch and logs — it does not reset
+            // touchState/isDraggingRef/__isUserDragging, so it cannot change real behavior.
+            const handleTouchCancelProbe = () => {
+                if (!TOUCH_SEEK_PROBE) return;
+                if (touchSeekProbeTouch) finishTouchSeekProbeGesture('touch-cancelled');
+            };
+
             surface.addEventListener('touchstart', handleTouchStart, { passive: true });
             surface.addEventListener('touchmove', handleTouchMove, { passive: false });
             surface.addEventListener('touchend', handleTouchEnd, { passive: true });
+            // [MAESTRO-SEEK-001] Diagnostic-only — see handleTouchCancelProbe above.
+            surface.addEventListener('touchcancel', handleTouchCancelProbe, { passive: true });
 
             const findClosestBeatAtPos = (x: number, y: number, anchorBeat?: any): any | null => {
                 const api = apiRef.current;
@@ -8537,22 +8693,164 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // wrap-snap, rotation-anchor prime, resize/profile reapply) by name — any of those
             // also fire native 'scroll' events and must never trigger a seek.
             let userScrollIntentUntil = 0;
-            const onWheelIntent = () => {
+            // [MAESTRO-SEEK-001 amendment] Last source that armed the intent window —
+            // diagnostic-only tracking, read by the probe finish functions below. Does not
+            // gate any real behavior by itself.
+            let userScrollIntentLastSource: 'wheel' | 'touchstart' | 'pointerdown' | 'touchmove' | 'momentum-renew' | null = null;
+            // [MAESTRO-SEEK-001 amendment] Layer 1 fix. Root cause confirmed by audit: the
+            // dedicated touch-seek path (handleTouchStart/Move/End) is attached to
+            // `.at-surface`, an AlphaTab-managed node this effect captures ONCE (this whole
+            // effect only re-runs on [fileUrl] change — see the bottom of this effect). If
+            // AlphaTab tears down/recreates `.at-surface` internally (layout/profile
+            // changes, hardReset, GP8 patches) without this effect re-running, those
+            // listeners silently stop receiving real touch events — a "latched" dead state —
+            // while userScrollIntentUntil could still only ever be armed by a wheel event, so
+            // the resulting manual scroll fell through to onContainerScroll/
+            // onManualScrollSettle and bailed wheel-intent-not-armed, leaving api.tickPosition
+            // stale. Arming from touchstart/pointerdown on `container` (the stable,
+            // React-owned node — ref={containerRef} in JSX, never replaced by AlphaTab)
+            // instead of `.at-surface` sidesteps that staleness class entirely: a touchstart
+            // on ANY current `.at-surface` (stale-listener or fresh) still bubbles up to
+            // container. Confirmed: no code in handleTouchStart/handleTouchMove reads
+            // landscapeScrollStateRef to decide whether to claim a gesture — that ref plays
+            // no role here (see the renamed landscapeScrollStatePresent probe field below).
+            // Only arms the intent window — no seek math, no scroll writes, no immediate
+            // seek on touch/pointer contact.
+            const armLandscapeUserScrollIntent = (
+                source: 'wheel' | 'touchstart' | 'pointerdown' | 'touchmove' | 'momentum-renew',
+            ) => {
                 const isStrip = forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1);
                 if (!isStrip) return;
                 userScrollIntentUntil = performance.now() + 500;
+                userScrollIntentLastSource = source;
             };
+            // [MAESTRO-SEEK-001] Diagnostic-only wheel/scroll gesture-probe state — mirrors
+            // the touch-path probe state above but tracks the wheel/trackpad/scrollbar path
+            // instead. Shares touchSeekProbeGestureCounter for a single gestureId sequence
+            // across both paths. Zero cost when TOUCH_SEEK_PROBE is false.
+            let touchSeekProbeWheel: {
+                gestureId: number;
+                startTs: number;
+                startScrollLeft: number;
+                apiTickBefore: number | null;
+                intentArmedAtStart: boolean;
+                intentSourceAtStart: string | null;
+            } | null = null;
+            let touchSeekProbeWheelBailTimer: ReturnType<typeof setTimeout> | null = null;
+
+            const finishTouchSeekProbeWheelGesture = (
+                bailReason: string | null,
+                extra: Record<string, unknown> = {},
+            ) => {
+                if (!TOUCH_SEEK_PROBE) return;
+                if (touchSeekProbeWheelBailTimer != null) {
+                    clearTimeout(touchSeekProbeWheelBailTimer);
+                    touchSeekProbeWheelBailTimer = null;
+                }
+                const gesture = touchSeekProbeWheel;
+                touchSeekProbeWheel = null;
+                if (!gesture) return;
+                const api = apiRef.current;
+                const endTs = performance.now();
+                const endScrollLeft = container.scrollLeft;
+                const scrollWidth = container.scrollWidth;
+                const clientWidth = container.clientWidth;
+                const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+                const landscape = isDeviceLandscape();
+                const fields = {
+                    gestureId: gesture.gestureId,
+                    inputType: userScrollIntentLastSource ?? 'unknown',
+                    startTs: gesture.startTs,
+                    endTs,
+                    durationMs: endTs - gesture.startTs,
+                    startScrollLeft: gesture.startScrollLeft,
+                    endScrollLeft,
+                    deltaScrollLeft: endScrollLeft - gesture.startScrollLeft,
+                    atLeftRailStart: gesture.startScrollLeft <= 1,
+                    atLeftRailEnd: endScrollLeft <= 1,
+                    atRightRailStart: gesture.startScrollLeft >= maxScrollLeft - 1,
+                    atRightRailEnd: endScrollLeft >= maxScrollLeft - 1,
+                    scrollWidth, clientWidth, maxScrollLeft,
+                    forceHorizontal: forceHorizontalRef.current,
+                    isDeviceLandscape: landscape,
+                    isPortrait: !landscape,
+                    isPlaying: (api?.playerState ?? 0) === 1,
+                    playerReady: !!api?.isReadyForPlayback,
+                    apiTickBefore: gesture.apiTickBefore,
+                    apiTickAfter: (api as any)?.tickPosition ?? null,
+                    apiTickChanged: ((api as any)?.tickPosition ?? null) !== gesture.apiTickBefore,
+                    // [MAESTRO-SEEK-001 amendment] See the touch-path finish function above for
+                    // why this was renamed from landscapeScrollStateActive.
+                    landscapeScrollStatePresent: landscapeScrollStateRef.current != null,
+                    userScrollIntentSource: userScrollIntentLastSource,
+                    userScrollIntentArmedAtStart: gesture.intentArmedAtStart,
+                    userScrollIntentSourceAtStart: gesture.intentSourceAtStart,
+                    userScrollIntentArmedAtEnd: performance.now() <= userScrollIntentUntil,
+                    seekAttempted: bailReason == null,
+                    seekSucceeded: bailReason == null,
+                    bailReason: bailReason ?? 'seeked',
+                    note: bailReason ?? 'seeked',
+                    ...extra,
+                };
+                setTimeout(() => {
+                    const momentumScrollLeft = container.scrollLeft;
+                    emitTouchSeekProbe({
+                        ...fields,
+                        postGestureScrollLeft: momentumScrollLeft,
+                        momentumDetected: Math.abs(momentumScrollLeft - endScrollLeft) > 1,
+                    });
+                }, 120);
+            };
+
+            const onWheelIntent = () => armLandscapeUserScrollIntent('wheel');
+            const onTouchStartIntent = () => armLandscapeUserScrollIntent('touchstart');
+            const onPointerDownIntent = () => armLandscapeUserScrollIntent('pointerdown');
+            // [MAESTRO-SEEK-001 amendment 2] Momentum bridge, part 1 — refreshes the intent
+            // window while the finger is still down. A fixed 500ms touchstart-only window
+            // isn't enough for a fling: the settle timer (150ms of no scroll events) can
+            // still be pending well past 500ms into a long/fast drag. touchmove can only
+            // ever fire for a touch point that already had a real touchstart (DOM Touch
+            // Events lifecycle: touchstart → touchmove* → touchend/touchcancel) — there is
+            // no way for this to fire without genuine ongoing physical contact, so no extra
+            // "already armed" gate is needed here (unlike part 2 in onContainerScroll,
+            // which must guard against renewing a scroll that was never armed at all).
+            const onTouchMoveIntent = () => armLandscapeUserScrollIntent('touchmove');
             let scrollSettleTimer: ReturnType<typeof setTimeout> | null = null;
             const onManualScrollSettle = () => {
                 scrollSettleTimer = null;
+                // [MAESTRO-SEEK-001] Lazily ensure a gesture tracker exists — normally
+                // onContainerScroll below already started one, but this covers the case
+                // where this is the very first scroll tick of a gesture (no prior bail).
+                if (TOUCH_SEEK_PROBE && !touchSeekProbeWheel) {
+                    touchSeekProbeWheel = {
+                        gestureId: ++touchSeekProbeGestureCounter,
+                        startTs: performance.now(),
+                        startScrollLeft: container.scrollLeft,
+                        apiTickBefore: (apiRef.current as any)?.tickPosition ?? null,
+                        intentArmedAtStart: performance.now() <= userScrollIntentUntil,
+                        intentSourceAtStart: userScrollIntentLastSource,
+                    };
+                }
                 const api = apiRef.current;
-                if (!api?.isReadyForPlayback) return;
+                if (!api?.isReadyForPlayback) {
+                    finishTouchSeekProbeWheelGesture('not-ready-for-playback');
+                    return;
+                }
                 const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
-                if (!isStrip) return;
-                if ((api.playerState ?? 0) === 1) return; // never seek during active playback
+                if (!isStrip) {
+                    finishTouchSeekProbeWheelGesture('not-landscape');
+                    return;
+                }
+                if ((api.playerState ?? 0) === 1) {
+                    finishTouchSeekProbeWheelGesture('playing-auto-scroll-active');
+                    return; // never seek during active playback
+                }
                 const tickCache = (api as any)?.tickCache;
                 const bounds = api?.renderer?.boundsLookup;
-                if (!tickCache?.findBeat || !bounds?.findBeat) return;
+                if (!tickCache?.findBeat || !bounds?.findBeat) {
+                    finishTouchSeekProbeWheelGesture('no-bounds-lookup');
+                    return;
+                }
                 // Mirrors handleTouchEnd's beat-under-cursor resolution — kept as a separate,
                 // self-contained scan (rather than extracted/shared) so this new path cannot
                 // alter the already-working touch-drag-seek behavior above.
@@ -8576,7 +8874,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                 }
                 if (!bestBeat && container.scrollLeft <= 2) { bestTick = 0; bestBeat = true; }
-                if (!bestBeat) return;
+                if (!bestBeat) {
+                    finishTouchSeekProbeWheelGesture('no-visible-bar-under-cursor', {
+                        visibleCursorX: beatXUnderCursor, resolvedTick: null, resolvedBarIdx: null, resolvedBeatIdx: null,
+                    });
+                    return;
+                }
                 seekTargetTickRef.current = bestTick;
                 seekFreezeUntilRef.current = Date.now() + 300;
                 (window as any).__maestroLastIntentionalTick = bestTick;
@@ -8600,27 +8903,85 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 landscapeScrollStateRef.current = null;
                 cursorRef.current?.requestSnap('manual-scroll-seek');
                 targetScrollLeftRef.current = container.scrollLeft;
+                finishTouchSeekProbeWheelGesture(null, {
+                    visibleCursorX: beatXUnderCursor,
+                    resolvedTick: bestTick,
+                    resolvedBarIdx: bestBeat === true ? null : (bestBeat?.voice?.bar?.masterBar?.index ?? bestBeat?.voice?.bar?.index ?? null),
+                    resolvedBeatIdx: bestBeat === true ? null : (bestBeat?.index ?? null),
+                });
             };
             const onContainerScroll = () => {
                 if (isDraggingRef.current) return; // touch-drag path owns its own seek-on-release
                 const api = apiRef.current;
-                if ((api?.playerState ?? 0) === 1) return; // programmatic RAF-driven scroll during playback
-                if (performance.now() > userScrollIntentUntil) return; // not a recent genuine user gesture
+                if (TOUCH_SEEK_PROBE && !touchSeekProbeWheel) {
+                    touchSeekProbeWheel = {
+                        gestureId: ++touchSeekProbeGestureCounter,
+                        startTs: performance.now(),
+                        startScrollLeft: container.scrollLeft,
+                        apiTickBefore: (api as any)?.tickPosition ?? null,
+                        intentArmedAtStart: performance.now() <= userScrollIntentUntil,
+                        intentSourceAtStart: userScrollIntentLastSource,
+                    };
+                }
+                if ((api?.playerState ?? 0) === 1) {
+                    if (TOUCH_SEEK_PROBE) {
+                        if (touchSeekProbeWheelBailTimer != null) clearTimeout(touchSeekProbeWheelBailTimer);
+                        touchSeekProbeWheelBailTimer = setTimeout(() => finishTouchSeekProbeWheelGesture('playing-auto-scroll-active'), 150);
+                    }
+                    return; // programmatic RAF-driven scroll during playback
+                }
+                // [MAESTRO-SEEK-001 amendment 2] Momentum bridge, part 2 — critical rule:
+                // only renew an ALREADY-armed intent chain. wasArmed is read from
+                // userScrollIntentUntil BEFORE any renewal below, so a scroll that arrives
+                // after the window has already lapsed gets no free re-arm here — it falls
+                // through to the same wheel-intent-not-armed bail as before. This is what
+                // lets a genuine user-origin fling/momentum chain keep itself alive past
+                // the original 500ms touchstart/wheel window (a fixed window isn't long
+                // enough for a fast fling, since the 150ms settle timer below can still be
+                // pending well after 500ms into a long scroll) without ever creating intent
+                // out of nothing — playback auto-scroll already returned above and never
+                // reaches this line, so it can never start or extend a chain.
+                const wasArmed = performance.now() <= userScrollIntentUntil;
+                if (wasArmed) {
+                    armLandscapeUserScrollIntent('momentum-renew');
+                } else {
+                    if (TOUCH_SEEK_PROBE) {
+                        if (touchSeekProbeWheelBailTimer != null) clearTimeout(touchSeekProbeWheelBailTimer);
+                        touchSeekProbeWheelBailTimer = setTimeout(() => finishTouchSeekProbeWheelGesture('wheel-intent-not-armed'), 150);
+                    }
+                    return; // not a recent genuine user gesture
+                }
+                if (TOUCH_SEEK_PROBE && touchSeekProbeWheelBailTimer != null) {
+                    clearTimeout(touchSeekProbeWheelBailTimer);
+                    touchSeekProbeWheelBailTimer = null;
+                }
                 if (scrollSettleTimer != null) clearTimeout(scrollSettleTimer);
                 scrollSettleTimer = setTimeout(onManualScrollSettle, 150);
             };
             container.addEventListener('wheel', onWheelIntent, { passive: true });
+            // [MAESTRO-SEEK-001 amendment] Layer 1 fix — see armLandscapeUserScrollIntent
+            // above for why these are on `container` (stable) rather than `.at-surface`
+            // (can go stale). Arm-only: no preventDefault/stopPropagation, no scrollLeft
+            // writes, no immediate seek — existing scroll-settle seek does the actual work.
+            container.addEventListener('touchstart', onTouchStartIntent, { passive: true });
+            container.addEventListener('pointerdown', onPointerDownIntent, { passive: true });
+            container.addEventListener('touchmove', onTouchMoveIntent, { passive: true });
             container.addEventListener('scroll', onContainerScroll, { passive: true });
 
             detach = () => {
                 surface.removeEventListener('touchstart', handleTouchStart);
                 surface.removeEventListener('touchmove', handleTouchMove);
                 surface.removeEventListener('touchend', handleTouchEnd);
+                surface.removeEventListener('touchcancel', handleTouchCancelProbe);
                 surface.removeEventListener('click', handleClick);
                 surface.removeEventListener('dblclick', handleDblClick);
                 container.removeEventListener('wheel', onWheelIntent);
+                container.removeEventListener('touchstart', onTouchStartIntent);
+                container.removeEventListener('pointerdown', onPointerDownIntent);
+                container.removeEventListener('touchmove', onTouchMoveIntent);
                 container.removeEventListener('scroll', onContainerScroll);
                 if (scrollSettleTimer != null) clearTimeout(scrollSettleTimer);
+                if (touchSeekProbeWheelBailTimer != null) clearTimeout(touchSeekProbeWheelBailTimer);
             };
         };
 
