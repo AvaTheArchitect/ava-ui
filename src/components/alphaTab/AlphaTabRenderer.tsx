@@ -793,6 +793,22 @@ const MOBILE_LANDSCAPE_MAX_W = 900;
 const HARD_RESET_COOLDOWN_MS = 4000;
 // [orientation-anchor-probe] V123 diagnostic flag — probes confirmed, silenced for V124
 const ORIENTATION_ANCHOR_DEBUG = false;
+// MAESTRO-LOOP-002F: false-by-default landscape wrap scroll-driver conflict probe.
+// Distinguishes S1 (native AlphaTab Continuous scroll-follow fighting Maestro's RAF
+// write), S2 (Maestro's ease target computed from mismatched tick/beat state around
+// wrap), and S3 (AlphaTab lazy paint/window stays on the pre-wrap region). Manual
+// check for S3: after a blank/wipe, nudge the strip a few px and see if it repaints
+// instantly. Diagnostic logging only — do not leave true.
+const LANDSCAPE_WRAP_SCROLL_PROBE = false;
+// [LandscapeWrapProbe] MAESTRO-LOOP-002F.1 — build-freshness proof, logged once at module load.
+const LANDSCAPE_WRAP_PROBE_BUILD = Date.now();
+if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+    console.log('[LandscapeWrapProbe:loaded]', {
+        isoTimestamp: new Date().toISOString(),
+        build: LANDSCAPE_WRAP_PROBE_BUILD,
+        lane: 'MAESTRO-LOOP-002F.1',
+    });
+}
 // [loop-click-reseat-probe] Diagnostic flag — set false to silence after root cause confirmed
 const LOOP_CLICK_RESEAT_DEBUG = true;
 // Sprint C: Every Maestro-originated seek — labels call site, exposes getIntentionalTick() leak.
@@ -2561,6 +2577,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         scrollLeft: number;
     } | null>(null);
     const landscapeScrollProbeRafRef = useRef<number | null>(null);
+    // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F — false-by-default wrap probe state ──
+    const wrapProbeActiveRef = useRef<boolean>(false);
+    const wrapProbeFrameRef = useRef<number>(0);
+    const wrapProbeDeadlineRef = useRef<number>(0);
+    const wrapProbePrevTickRef = useRef<number | null>(null);
+    const wrapProbeLoopStartTargetRef = useRef<number | null>(null);
+    const wrapProbeLastMaestroWrittenScrollLeftRef = useRef<number>(0);
     const lastLoggedExpandedStartRef = useRef<number>(-1);
     const lastGoodLandscapeVisualDeltaXRef = useRef<number>(37);
     // [LandscapeNoiseGuardLogThrottle] V144.1: per-reason log throttle state.
@@ -2680,6 +2703,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const cursorSurfaceX = getCursorSurfaceX(container);
 
         const loop = () => {
+            // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F — foreign-scroll-write detector ──
+            if (LANDSCAPE_WRAP_SCROLL_PROBE && wrapProbeActiveRef.current) {
+                const probeFrame = wrapProbeFrameRef.current;
+                if (probeFrame >= 90 || performance.now() >= wrapProbeDeadlineRef.current) {
+                    wrapProbeActiveRef.current = false;
+                } else {
+                    const probeActualScrollLeft = container.scrollLeft;
+                    const probeLastWritten = wrapProbeLastMaestroWrittenScrollLeftRef.current;
+                    const probeForeignDelta = probeActualScrollLeft - probeLastWritten;
+                    if (Math.abs(probeForeignDelta) > 1.5) {
+                        console.log('[LandscapeWrapProbe:foreign-scroll-write]', {
+                            frame: probeFrame,
+                            actualScrollLeft: probeActualScrollLeft,
+                            lastMaestroWrittenScrollLeft: probeLastWritten,
+                            delta: probeForeignDelta,
+                            targetScrollLeft: targetScrollLeftRef.current,
+                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                            landscapeScrollState: landscapeScrollStateRef.current,
+                        });
+                    }
+                    wrapProbeFrameRef.current = probeFrame + 1;
+                }
+            }
             const nativeBeat = container.querySelector('.at-cursor-beat') as HTMLElement | null;
             if (nativeBeat && nativeBeat.style.display !== 'none') {
                 nativeBeat.style.display = 'none';
@@ -2724,12 +2770,37 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         currentScrollLeft: container.scrollLeft,
                     });
                 }
+                // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F — target-ahead-of-wrap check ──
+                if (LANDSCAPE_WRAP_SCROLL_PROBE && wrapProbeActiveRef.current) {
+                    const probeLoopStartTarget = wrapProbeLoopStartTargetRef.current;
+                    if (probeLoopStartTarget != null) {
+                        const probeRawTarget = interpolatedX - cursorSurfaceX;
+                        const probeExpectedStep = Math.max(1, Math.abs(state.nextBeatX - state.curBeatX));
+                        const probeAheadBy = probeRawTarget - probeLoopStartTarget;
+                        if (probeAheadBy > probeExpectedStep * 3) {
+                            console.log('[LandscapeWrapProbe:target-ahead]', {
+                                frame: wrapProbeFrameRef.current,
+                                computedTarget: probeRawTarget,
+                                loopStartTarget: probeLoopStartTarget,
+                                aheadBy: probeAheadBy,
+                                expectedStep: probeExpectedStep,
+                                tick: liveTick,
+                                beatStart: state.beatStart,
+                                beatDur: state.beatDur,
+                                fraction: progress,
+                            });
+                        }
+                    }
+                }
             }
             const target = targetScrollLeftRef.current;
             const current = container.scrollLeft;
             const delta = target - current;
             if (Math.abs(delta) > 0.5) {
                 container.scrollLeft = current + delta * SCROLL_EASE;
+                if (LANDSCAPE_WRAP_SCROLL_PROBE && wrapProbeActiveRef.current) {
+                    wrapProbeLastMaestroWrittenScrollLeftRef.current = container.scrollLeft;
+                }
             }
             landscapeScrollRafRef.current = requestAnimationFrame(loop);
         };
@@ -5356,6 +5427,121 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const tickRaw = e.currentTick ?? e.tickPosition;
                 if (tickRaw == null) return;
 
+                // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F.1 — shared heartbeat/backward-tick
+                // state, captured before any branch below mutates/nulls lastTickRef. Declared
+                // outside the flag-check so the values survive (as null/false) for reuse by the
+                // wrap-branch-guard audit further down this same callback — computed only when
+                // the flag is on, so there is zero extra work when LANDSCAPE_WRAP_SCROLL_PROBE
+                // is false.
+                let _lwpPrevTick: number | null = null;
+                let _lwpReactRange: { startTick: number; endTick: number } | null = null;
+                let _lwpApiRange: { startTick: number; endTick: number } | null = null;
+                let _lwpRangeSource: 'react' | 'api' | 'none' = 'none';
+                let _lwpRangesDisagree = false;
+                let _lwpStartTick: number | null = null;
+                let _lwpEndTick: number | null = null;
+                let _lwpBoundaryWindow = 0;
+                let _lwpNearStart = false;
+                let _lwpNearEnd = false;
+                let _lwpBackwardTick = false;
+                let _lwpIsStrip = false;
+                if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+                    _lwpPrevTick = lastTickRef.current;
+                    _lwpReactRange = playbackRangeRef.current;
+                    _lwpApiRange = (api?.playbackRange as { startTick: number; endTick: number } | null) ?? null;
+                    _lwpRangeSource = _lwpReactRange ? 'react' : (_lwpApiRange ? 'api' : 'none');
+                    _lwpRangesDisagree = !!(_lwpReactRange && _lwpApiRange && (
+                        _lwpReactRange.startTick !== _lwpApiRange.startTick ||
+                        _lwpReactRange.endTick !== _lwpApiRange.endTick
+                    ));
+                    const _lwpEffectiveRange = _lwpReactRange ?? _lwpApiRange;
+                    _lwpStartTick = _lwpEffectiveRange?.startTick ?? null;
+                    _lwpEndTick = _lwpEffectiveRange?.endTick ?? null;
+                    const _lwpBeatDur = landscapeScrollStateRef.current?.beatDur || 1920;
+                    _lwpBoundaryWindow = 2 * _lwpBeatDur;
+                    _lwpNearStart = _lwpStartTick != null && Math.abs(tickRaw - _lwpStartTick) <= _lwpBoundaryWindow;
+                    _lwpNearEnd = _lwpEndTick != null && Math.abs(tickRaw - _lwpEndTick) <= _lwpBoundaryWindow;
+                    _lwpBackwardTick = _lwpPrevTick != null && tickRaw < _lwpPrevTick;
+                    _lwpIsStrip = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+
+                    if (_lwpIsStrip && _lwpEffectiveRange) {
+                        const _lwpProbeContainer = containerRef.current;
+                        const _lwpAt = alphaTabModuleRef.current;
+                        const _lwpScrollModeRaw = (api as any)?.settings?.player?.scrollMode ?? null;
+                        const _lwpScrollModeIsContinuous = _lwpAt?.ScrollMode
+                            ? _lwpScrollModeRaw === _lwpAt.ScrollMode.Continuous
+                            : null;
+                        if (_lwpNearStart || _lwpNearEnd || _lwpBackwardTick) {
+                            console.log('[LandscapeWrapProbe:heartbeat]', {
+                                timestamp: performance.now(),
+                                tickRaw,
+                                previousTick: _lwpPrevTick,
+                                reactRange: _lwpReactRange,
+                                apiRange: _lwpApiRange,
+                                rangeSource: _lwpRangeSource,
+                                rangesDisagree: _lwpRangesDisagree,
+                                startTick: _lwpStartTick,
+                                endTick: _lwpEndTick,
+                                nearStart: _lwpNearStart,
+                                nearEnd: _lwpNearEnd,
+                                backwardTick: _lwpBackwardTick,
+                                forceHorizontal: forceHorizontalRef.current,
+                                isStrip: _lwpIsStrip,
+                                scrollLeft: _lwpProbeContainer?.scrollLeft ?? null,
+                                targetScrollLeftRef: targetScrollLeftRef.current,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                            });
+                        }
+                        if (_lwpBackwardTick) {
+                            console.log('[LandscapeWrapProbe:backward-tick]', {
+                                previousTick: _lwpPrevTick,
+                                tickRaw,
+                                delta: _lwpPrevTick != null ? tickRaw - _lwpPrevTick : null,
+                                reactRange: _lwpReactRange,
+                                apiRange: _lwpApiRange,
+                                rangeSource: _lwpRangeSource,
+                                rangesDisagree: _lwpRangesDisagree,
+                                forceHorizontal: forceHorizontalRef.current,
+                                isStrip: _lwpIsStrip,
+                                scrollLeft: _lwpProbeContainer?.scrollLeft ?? null,
+                                targetScrollLeftRef: targetScrollLeftRef.current,
+                                landscapeScrollState: landscapeScrollStateRef.current,
+                                apiTickPosition: (api as any)?.tickPosition ?? null,
+                                scrollModeRaw: _lwpScrollModeRaw,
+                                scrollModeIsContinuous: _lwpScrollModeIsContinuous,
+                            });
+                        }
+                    }
+                }
+
+                // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F — per-event position log ──
+                if (LANDSCAPE_WRAP_SCROLL_PROBE && wrapProbeActiveRef.current) {
+                    const probeContainer = containerRef.current;
+                    const probeState = landscapeScrollStateRef.current;
+                    let probeComputedTarget: number | null = null;
+                    if (probeContainer && probeState && probeState.beatDur > 0) {
+                        const probeProgress = Math.max(0, Math.min(1,
+                            (tickRaw - probeState.beatStart) / probeState.beatDur
+                        ));
+                        const probeInterpolatedX = probeState.curBeatX +
+                            (probeState.nextBeatX - probeState.curBeatX) * probeProgress;
+                        probeComputedTarget = probeInterpolatedX - getCursorSurfaceX(probeContainer);
+                    }
+                    console.log('[LandscapeWrapProbe:position]', {
+                        timestamp: performance.now(),
+                        tick: tickRaw,
+                        priorTick: lastTickRef.current,
+                        loopRange: playbackRangeRef.current ?? api?.playbackRange ?? null,
+                        scrollLeft: probeContainer?.scrollLeft ?? null,
+                        targetScrollLeftRef: targetScrollLeftRef.current,
+                        landscapeScrollState: probeState,
+                        computedTarget: probeComputedTarget,
+                        beatStart: probeState?.beatStart ?? null,
+                        beatDur: probeState?.beatDur ?? null,
+                    });
+                }
+
                 if (isRendererDebugEnabled() && shouldLogDiagnostic('micro-tick-flood-probe', tickRaw)) {
                     const _lastT = landscapeScrollStateRef.current?.lastTick ?? lastTickRef.current ?? null;
                     const _delta = _lastT != null ? Math.abs(tickRaw - _lastT) : null;
@@ -5663,6 +5849,32 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             previousTick >= range.endTick - 240 &&
                             tickRaw <= range.startTick + 120;
 
+                        // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F.1 — wrap-branch-guard audit ──
+                        // This IS the real landscape wrap branch (isStripMode always `return`s
+                        // below, before the portrait-only LOOP_WRAP_MARGIN block further down
+                        // this callback can ever run). Fires on every backward tick regardless
+                        // of whether nativeLoopWrapped ends up true, to show exactly which
+                        // condition blocked it when it doesn't fire.
+                        if (LANDSCAPE_WRAP_SCROLL_PROBE && previousTick != null && tickRaw < previousTick) {
+                            console.log('[LandscapeWrapProbe:wrap-branch-guard]', {
+                                backwardTick: true,
+                                tickRaw,
+                                previousTick,
+                                loopEnabled: loopEnabledRef.current,
+                                rangeExists: range != null,
+                                playbackRange: range,
+                                previousTickAtOrPastEndMinus240: previousTick != null && range != null
+                                    ? previousTick >= range.endTick - 240 : null,
+                                tickAtOrBeforeStartPlus120: range != null
+                                    ? tickRaw <= range.startTick + 120 : null,
+                                nativeLoopWrapped,
+                                loopWrapInProgress: loopWrapInProgressRef.current,
+                                tickRawIsFinite: Number.isFinite(tickRaw),
+                                rangeEndTickIsFinite: range != null ? Number.isFinite(range.endTick) : null,
+                                rangeStartTickIsFinite: range != null ? Number.isFinite(range.startTick) : null,
+                            });
+                        }
+
                         if (nativeLoopWrapped) {
                             console.log('[landscape-native-loop-wrap-detected]', {
                                 tickRaw,
@@ -5684,6 +5896,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 effectiveNextBeatX,
                                 playbackRange: range,
                             });
+                            // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F.1 — confirms the branch fired ──
+                            if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+                                console.log('[LandscapeWrapProbe:legacy-wrap-log-fired]', {
+                                    branch: 'landscape-native-loop-wrap-visual-snap',
+                                    tickRaw,
+                                    previousTick,
+                                    snap,
+                                });
+                            }
                         }
                     }
 
@@ -5744,6 +5965,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     apiTickPosition: (api as any)?.tickPosition ?? null,
                                     playerState: (api as any)?.playerState ?? null,
                                     landscapeScrollState: landscapeScrollStateRef.current,
+                                });
+                            }
+                            // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F.1 — stable-anchor probe ──
+                            // Determines whether this promotion (the only log that fired during
+                            // the failed live test) is what's actually moving the strip at wrap.
+                            if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+                                console.log('[LandscapeWrapProbe:stable-anchor]', {
+                                    reason: 'playerPositionChanged-live-landscape',
+                                    tick: tickRaw,
+                                    apiTickPosition: (api as any)?.tickPosition ?? null,
+                                    reactRange: _lwpReactRange,
+                                    apiRange: _lwpApiRange,
+                                    scrollLeft: container.scrollLeft,
+                                    targetScrollLeftRef: targetScrollLeftRef.current,
+                                    landscapeScrollState: landscapeScrollStateRef.current,
+                                    forceHorizontal: forceHorizontalRef.current,
+                                    nearStart: _lwpNearStart,
+                                    nearEnd: _lwpNearEnd,
+                                    boundaryWindow: _lwpBoundaryWindow,
+                                    previousStableAnchorTick: _prevStable,
+                                    previousStableGreaterThanTick: _prevStable > tickRaw,
+                                    previousTick: _lwpPrevTick,
+                                    previousTickGreaterThanTick: _lwpPrevTick != null ? _lwpPrevTick > tickRaw : null,
                                 });
                             }
                         }
@@ -5879,6 +6123,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                     if (tickRaw >= liveRange.endTick - LOOP_WRAP_MARGIN) {
                         loopWrapInProgressRef.current = true;
+                        // [LandscapeWrapProbe] capture prior tick before lastTickRef is cleared below.
+                        if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+                            wrapProbePrevTickRef.current = lastTickRef.current;
+                        }
                         if (isRendererDebugEnabled()) {
                             console.log('[landscape-playback-state-sync]', {
                                 reason: 'loop-wrap-guard-enter',
@@ -6003,6 +6251,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                             if (wnx > wrapCurBeatX) wrapNextBeatX = wnx;
                                         }
                                     }
+                                    const probeLandscapeStateBeforeWrap = LANDSCAPE_WRAP_SCROLL_PROBE
+                                        ? landscapeScrollStateRef.current
+                                        : null;
                                     landscapeScrollStateRef.current = {
                                         curBeatX: wrapCurBeatX,
                                         nextBeatX: wrapNextBeatX,
@@ -6025,6 +6276,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                             scrollLeftAfter: wrapContainer.scrollLeft,
                                             playbackRange: api?.playbackRange ?? null,
                                         });
+                                    }
+                                    // ── [LandscapeWrapProbe] MAESTRO-LOOP-002F — start grouped event ──
+                                    if (LANDSCAPE_WRAP_SCROLL_PROBE) {
+                                        wrapProbeActiveRef.current = true;
+                                        wrapProbeFrameRef.current = 0;
+                                        wrapProbeDeadlineRef.current = performance.now() + 2000;
+                                        wrapProbeLoopStartTargetRef.current = wrapSnap;
+                                        wrapProbeLastMaestroWrittenScrollLeftRef.current = wrapContainer.scrollLeft;
+                                        const probeMaxScrollLeft = wrapContainer.scrollWidth - wrapContainer.clientWidth;
+                                        const probeIsStripNow = forceHorizontalRef.current ||
+                                            (api?.settings?.display?.layoutMode === 1);
+                                        const probeAt = alphaTabModuleRef.current;
+                                        const probeScrollModeRaw = (api as any)?.settings?.player?.scrollMode ?? null;
+                                        const probeScrollModeIsContinuous = probeAt?.ScrollMode
+                                            ? probeScrollModeRaw === probeAt.ScrollMode.Continuous
+                                            : null;
+                                        console.groupCollapsed('[LandscapeWrapProbe:start]');
+                                        console.log({
+                                            timestamp: performance.now(),
+                                            loopStartTick: liveRange.startTick,
+                                            loopEndTick: liveRange.endTick,
+                                            apiTickPosition: (api as any)?.tickPosition ?? null,
+                                            priorTick: wrapProbePrevTickRef.current,
+                                            scrollLeftBeforeSnap: scrollLeftBefore,
+                                            wrapSnap,
+                                            targetScrollLeftRef: targetScrollLeftRef.current,
+                                            landscapeScrollStateBeforeWrap: probeLandscapeStateBeforeWrap,
+                                            landscapeScrollStateAfterWrap: landscapeScrollStateRef.current,
+                                            scrollWidth: wrapContainer.scrollWidth,
+                                            clientWidth: wrapContainer.clientWidth,
+                                            maxScrollLeft: probeMaxScrollLeft,
+                                            isStripNow: probeIsStripNow,
+                                            forceHorizontal: forceHorizontalRef.current,
+                                            scrollModeRaw: probeScrollModeRaw,
+                                            scrollModeIsContinuous: probeScrollModeIsContinuous,
+                                        });
+                                        console.groupEnd();
                                     }
                                 }
                             }
@@ -8073,12 +8361,104 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             surface.addEventListener('click', handleClick);
             surface.addEventListener('dblclick', handleDblClick);
 
+            // [MAESTRO-LOOP-002G.4] Landscape manual-scroll (wheel/trackpad/scrollbar) seek
+            // sync. handleTouchEnd above already syncs tick/stable-anchor on release, but only
+            // for a genuine TouchEvent drag. `.alphatab-container` is natively scrollable in
+            // landscape (applyAxisLock sets overflowX:'auto'), so wheel/trackpad/scrollbar
+            // input also moves it while paused, with previously zero sync back to
+            // api.tickPosition — confirmed live: strip visually moved to M3 while
+            // api.tickPosition stayed at the pre-scroll M13 tick.
+            //
+            // userScrollIntentUntil mirrors page.tsx's existing wheel-intent-tracking pattern
+            // (TG1/TG2/TG3) to positively identify a genuine user gesture, rather than trying
+            // to exclude every known programmatic scrollLeft writer (RAF playback ease,
+            // wrap-snap, rotation-anchor prime, resize/profile reapply) by name — any of those
+            // also fire native 'scroll' events and must never trigger a seek.
+            let userScrollIntentUntil = 0;
+            const onWheelIntent = () => {
+                const isStrip = forceHorizontalRef.current || (apiRef.current?.settings?.display?.layoutMode === 1);
+                if (!isStrip) return;
+                userScrollIntentUntil = performance.now() + 500;
+            };
+            let scrollSettleTimer: ReturnType<typeof setTimeout> | null = null;
+            const onManualScrollSettle = () => {
+                scrollSettleTimer = null;
+                const api = apiRef.current;
+                if (!api?.isReadyForPlayback) return;
+                const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
+                if (!isStrip) return;
+                if ((api.playerState ?? 0) === 1) return; // never seek during active playback
+                const tickCache = (api as any)?.tickCache;
+                const bounds = api?.renderer?.boundsLookup;
+                if (!tickCache?.findBeat || !bounds?.findBeat) return;
+                // Mirrors handleTouchEnd's beat-under-cursor resolution — kept as a separate,
+                // self-contained scan (rather than extracted/shared) so this new path cannot
+                // alter the already-working touch-drag-seek behavior above.
+                const cursorSurfaceX = getCursorSurfaceX(container);
+                const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
+                const trackSet = getTrackSet(api);
+                const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
+                let bestBeat: any = null, bestX = -Infinity, bestTick = 0;
+                const BEAT_EPSILON = 2;
+                for (const mb of masterBarsArr) {
+                    const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
+                    const stepSize = Math.max(1, Math.floor(mbDur / 32));
+                    for (let t = mb.start; t < mb.start + mbDur; t += stepSize) {
+                        const r = tickCache.findBeat(trackSet, t);
+                        const b = r?.beat;
+                        if (!b) continue;
+                        const bb = bounds.findBeat(b);
+                        if (!bb?.visualBounds) continue;
+                        const bx = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
+                        if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) { bestX = bx; bestBeat = b; bestTick = mb.start + (b.playbackStart ?? 0); }
+                    }
+                }
+                if (!bestBeat && container.scrollLeft <= 2) { bestTick = 0; bestBeat = true; }
+                if (!bestBeat) return;
+                seekTargetTickRef.current = bestTick;
+                seekFreezeUntilRef.current = Date.now() + 300;
+                (window as any).__maestroLastIntentionalTick = bestTick;
+                (window as any).__maestroLastIntentionalTickAt = Date.now();
+                preRotationAnchorTickRef.current = bestTick;
+                const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
+                if (isRendererDebugEnabled()) {
+                    console.log('[maestro-seek-diagnostic]', {
+                        reason: 'manual-scroll-seek',
+                        callSite: 'onManualScrollSettle',
+                        targetTick: bestTick,
+                        scrollLeft: container.scrollLeft,
+                        beatXUnderCursor,
+                        bestX,
+                    });
+                }
+                if (seekTicks) seekTicks(bestTick);
+                api.tickPosition = bestTick;
+                resetBeatAcceptance();
+                setLastStableRotationAnchorTick(bestTick, 'manual-scroll-seek');
+                landscapeScrollStateRef.current = null;
+                cursorRef.current?.requestSnap('manual-scroll-seek');
+                targetScrollLeftRef.current = container.scrollLeft;
+            };
+            const onContainerScroll = () => {
+                if (isDraggingRef.current) return; // touch-drag path owns its own seek-on-release
+                const api = apiRef.current;
+                if ((api?.playerState ?? 0) === 1) return; // programmatic RAF-driven scroll during playback
+                if (performance.now() > userScrollIntentUntil) return; // not a recent genuine user gesture
+                if (scrollSettleTimer != null) clearTimeout(scrollSettleTimer);
+                scrollSettleTimer = setTimeout(onManualScrollSettle, 150);
+            };
+            container.addEventListener('wheel', onWheelIntent, { passive: true });
+            container.addEventListener('scroll', onContainerScroll, { passive: true });
+
             detach = () => {
                 surface.removeEventListener('touchstart', handleTouchStart);
                 surface.removeEventListener('touchmove', handleTouchMove);
                 surface.removeEventListener('touchend', handleTouchEnd);
                 surface.removeEventListener('click', handleClick);
                 surface.removeEventListener('dblclick', handleDblClick);
+                container.removeEventListener('wheel', onWheelIntent);
+                container.removeEventListener('scroll', onContainerScroll);
+                if (scrollSettleTimer != null) clearTimeout(scrollSettleTimer);
             };
         };
 

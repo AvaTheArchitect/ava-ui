@@ -1,8 +1,21 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.16 — Landscape Handle Drag Hardening
+ * BeatCustomLoopOverlay v1.8.17 — Landscape Highlight Band Overflow Clamp
  * Date: July 8th, 2026
+ *
+ * 🔥 V1.8.17 CHANGES (MAESTRO-LOOP-002G):
+ * ✅ Landscape .beat-loop-highlight-landscape band's rendered left/width are now
+ *    clamped to the visible container width (bandVisibleLeft/bandVisibleRight/
+ *    bandVisibleWidth) before rendering. On wide loops (4+ bars) the band's true,
+ *    unclamped rect could extend far past the viewport, inflating the outer landscape
+ *    shell's scrollWidth — which then got pinned to max scrollLeft (right-side white
+ *    wipe, cursor/score misregistration). Companion fix in page.tsx's <main> landscape
+ *    branch (overflow-x-hidden → overflow-x-clip) is the primary guard; this clamp
+ *    reduces the oversized DOM footprint at the source.
+ * ⛔ Visual-only: start/end handle markers, the two hit-zone divs, and all drag math
+ *    still use the original unclamped `left`/`r.w` — no change to loop-tick-derived
+ *    geometry, hit zones, or drag behavior.
  *
  * 🔥 V1.8.16 CHANGES (MAESTRO-LOOP-002D.2):
  * ✅ Window-blur safety net: a mouse released outside the browser window never fires
@@ -2625,15 +2638,26 @@ export default function BeatCustomLoopOverlay({
                     const left = r.x + LOOP_X_OFFSET - scrollLeft;
                     const top = r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET;
                     const HANDLE_HIT_ZONE_WIDTH = 40;
+                    // [MAESTRO-LOOP-002G] Visual-only clamp — the highlight band's true
+                    // left/width (used below by markers/hit-zones/drag, untouched) can extend
+                    // far outside the viewport on wide loops, which was inflating the outer
+                    // landscape shell's scrollWidth (see page.tsx overflow-x-clip change).
+                    // Clamping only this band's rendered rect to the visible container width
+                    // keeps its DOM footprint bounded without moving any loop-tick-derived
+                    // geometry — start/end handles, hit zones, and drag math all still use
+                    // the unclamped `left`/`r.w` below.
+                    const bandVisibleLeft = Math.max(0, left);
+                    const bandVisibleRight = Math.min(containerWidth, left + r.w);
+                    const bandVisibleWidth = Math.max(0, bandVisibleRight - bandVisibleLeft);
                     return (
                         <React.Fragment key={i}>
                             <div
                                 className="beat-loop-highlight-landscape"
                                 style={{
                                     position: 'absolute',
-                                    left,
+                                    left: bandVisibleLeft,
                                     top,
-                                    width: r.w,
+                                    width: bandVisibleWidth,
                                     height: r.h,
                                     background: overlayColor,
                                     borderTop: `1px solid ${borderColor}`,

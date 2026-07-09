@@ -1481,7 +1481,16 @@ export default function SynthPlayerPage() {
     const isHeaderShown = isMobileLandscape || isHeaderVisible;
 
     return (
-        <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+        // [MAESTRO-LOOP-002G.3] grid-cols-[minmax(0,1fr)]: the mobile-landscape <main> below
+        // now uses overflow-x-clip/overflow-y-clip (002G/002G.1) instead of overflow-hidden.
+        // overflow:clip prevents the shell from scrolling but — unlike overflow:hidden —
+        // does not establish the same scroll-container/min-width:auto suppression, so this
+        // grid track's implicit column (previously sized `auto`) could stretch to AlphaTab's
+        // full intrinsic strip width (confirmed live: ~35898px) instead of the viewport.
+        // minmax(0, 1fr) explicitly allows the track to shrink below that content width,
+        // keeping the page viewport-sized while the inner .alphatab-container remains the
+        // real horizontal scroller.
+        <div className="h-screen grid grid-rows-[0px,1fr,0px] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
@@ -1551,6 +1560,20 @@ export default function SynthPlayerPage() {
              * max-height: 600px to match isMobileLandscape's own innerHeight < 600 threshold)
              * rendering its compact mobile shell instead of the tall desktop one, so zero
              * reserved padding is correct once those two thresholds agree.
+             *
+             * [MAESTRO-LOOP-002G] Landscape branch: overflow-x-hidden → overflow-x-clip.
+             * A wide landscape loop-highlight band (BeatCustomLoopOverlay) could inflate
+             * this shell's scrollWidth; overflow-x-hidden still creates a scroll container
+             * whose scrollLeft can be pinned to max (right-side white wipe, cursor/score
+             * misregistration). overflow-x-clip clips overflow without creating a
+             * horizontal scroll container, so scrollLeft stays pinned to 0.
+             *
+             * [MAESTRO-LOOP-002G.1] Both axes must be `clip` — overflow-x:clip paired with
+             * overflow-y:hidden computes back to overflow-x:hidden per CSS overflow
+             * behavior (a mixed clip/hidden pair resolves to hidden), silently re-enabling
+             * programmatic scrollLeft and reintroducing the wipe. Confirmed live: with
+             * overflow-y forced to clip, getComputedStyle(outer).overflowX reports 'clip'
+             * and scrollLeft stays 0.
              */}
             <main
                 ref={mainScrollContainerRef}
@@ -1558,7 +1581,7 @@ export default function SynthPlayerPage() {
         w-full
         ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}
         ${isMobileLandscape
-                        ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
+                        ? 'overflow-x-clip overflow-y-clip overscroll-none [touch-action:pan-x]'
                         : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain [scrollbar-gutter:stable]'}
         ${!isMobileLandscape ? 'pt-[calc(80px+env(safe-area-inset-top))]' : 'pt-0'}
     `}
