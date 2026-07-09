@@ -29,6 +29,20 @@
  *   ResizeObserver + visualViewport already call updateLayout() via updateX() alias.
  */
 
+// [MAESTRO-CURSOR-004] Diagnostic-only, false-by-default lifecycle probe. Identifies who
+// destroys this class's DOM element and why it may not be recreated (observed: the
+// element disappears from the DOM entirely in Chrome Emulator after the tab/window loses
+// and regains focus while idle in landscape; playback does not recreate it). No behavior
+// change when false. Do not leave true.
+const CURSOR_LIFECYCLE_PROBE = false;
+if (CURSOR_LIFECYCLE_PROBE) {
+    console.log('[CursorLifecycleProbe:loaded]', {
+        isoTimestamp: new Date().toISOString(),
+        file: 'FixedLandscapeCursor.tsx',
+        version: 'v1.9',
+    });
+}
+
 const CURSOR_WIDTH = 12;
 const SPINE_WIDTH = 2;
 const CAP_HEIGHT = 90;   // landscape — do not tune until GP8 lanes are normalized
@@ -90,6 +104,26 @@ export class FixedLandscapeCursor {
             top: parseFloat(this.el.style.top),
             height: parseFloat(this.el.style.height),
         });
+        // [MAESTRO-CURSOR-004] Area B — create/body-mount probe.
+        if (CURSOR_LIFECYCLE_PROBE) {
+            console.log('[CursorLifecycleProbe:mount]', {
+                performanceNow: performance.now(),
+                isoTimestamp: new Date().toISOString(),
+                viewportX: parseFloat(this.el.style.left),
+                top: parseFloat(this.el.style.top),
+                height: parseFloat(this.el.style.height),
+                visibilityState: document.visibilityState,
+                hasFocus: document.hasFocus(),
+                bodyContainsCursor: document.body.contains(this.el),
+                containerExists: !!this.container,
+                containerConnected: this.container?.isConnected ?? null,
+                // Orientation/strip-mode flags (forceHorizontal, isStripMode, etc.) are not
+                // cheaply available at this layer — this class receives only
+                // wrapper/container/getCursorBoxX, not orientation state. See the
+                // AlphaTabRenderer.tsx create-skip probe for those.
+            });
+            console.trace('[CursorLifecycleProbe:mount] stack');
+        }
     }
 
     /** Atomic re-pin: left + top + height. Call from ResizeObserver + visualViewport. */
@@ -129,7 +163,35 @@ export class FixedLandscapeCursor {
     updateX(): void { this.updateLayout(); }
 
     destroy(): void {
+        // [MAESTRO-CURSOR-004] Area A — destroy-path probe. Captured BEFORE removal so
+        // "before" reflects true pre-destroy state; a second log after removal confirms
+        // the element actually left the DOM (vs. e.g. being merely hidden).
+        if (CURSOR_LIFECYCLE_PROBE) {
+            console.log('[CursorLifecycleProbe:destroy]', {
+                performanceNow: performance.now(),
+                isoTimestamp: new Date().toISOString(),
+                visibilityState: document.visibilityState,
+                hasFocus: document.hasFocus(),
+                bodyContainsCursorBefore: document.body.contains(this.el),
+                elExists: !!this.el,
+                containerExists: !!this.container,
+                containerConnected: this.container?.isConnected ?? null,
+                capSvgExists: !!this.capSvg,
+                left: this.el?.style.left ?? null,
+                top: this.el?.style.top ?? null,
+                height: this.el?.style.height ?? null,
+                display: this.el?.style.display ?? null,
+                visibility: this.el?.style.visibility ?? null,
+                opacity: this.el?.style.opacity ?? null,
+            });
+            console.trace('[CursorLifecycleProbe:destroy] stack');
+        }
         if (this.el.parentElement) this.el.parentElement.removeChild(this.el);
+        if (CURSOR_LIFECYCLE_PROBE) {
+            console.log('[CursorLifecycleProbe:destroy] after-removal', {
+                bodyContainsCursorAfter: document.body.contains(this.el),
+            });
+        }
         console.log('🧹 FixedLandscapeCursor v1.9: destroyed');
     }
 

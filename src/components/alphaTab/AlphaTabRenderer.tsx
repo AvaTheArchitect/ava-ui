@@ -817,6 +817,21 @@ const SEEK_DIAGNOSTIC_DEBUG = true;
 const PAGE_ROW_DEBUG = true;
 // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
 const LANDSCAPE_LOOP_DEBUG = true;
+// [MAESTRO-CURSOR-004] Diagnostic-only, false-by-default probe for FixedLandscapeCursor's
+// create/destroy lifecycle. Identifies which guard condition causes the landscape cursor
+// to be destroyed and never recreated (observed: element gone from the DOM entirely,
+// Chrome Emulator only so far, after the tab/window loses and regains focus while idle in
+// landscape). Same flag name/independent const also exists in FixedLandscapeCursor.tsx
+// (not shared/imported — matches this file's existing per-file diagnostic-flag
+// convention); flip both to true together when reproducing. No behavior change when
+// false. Do not leave true.
+const CURSOR_LIFECYCLE_PROBE = false;
+if (CURSOR_LIFECYCLE_PROBE) {
+    console.log('[CursorLifecycleProbe:loaded]', {
+        isoTimestamp: new Date().toISOString(),
+        file: 'AlphaTabRenderer.tsx',
+    });
+}
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -2351,6 +2366,44 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             }
         }
         return candidateTick;
+    }, []);
+
+    // [MAESTRO-CURSOR-004.1] Layer 2 — self-healing sentinel. Recreates the landscape
+    // cursor via the SAME creation call used by the normal renderFinished path (`new
+    // FixedLandscapeCursor(wrapper, h, () => getFixedCursorX(h))`) whenever mobile
+    // landscape strip mode is wanted but the cursor is missing — either
+    // landscapeCursorRef.current is null, or (defense-in-depth) its DOM element was
+    // removed by something other than this component's own destroy() calls. Self-
+    // limiting by construction: once this recreates the cursor, both checks are
+    // satisfied on the very next call, so it never fires twice in a row for the same
+    // gap — no cooldown/timer needed to avoid recreation loops. Does not run in
+    // portrait or desktop (isStripModeWanted false), and does nothing if the container/
+    // wrapper refs aren't available yet.
+    const ensureLandscapeCursorSentinel = useCallback((reason: string) => {
+        const api = apiRef.current;
+        const h = containerRef.current;
+        if (!api || !h) return;
+        const isStripModeWanted = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
+        if (!isStripModeWanted) return;
+        const hadRef = !!landscapeCursorRef.current;
+        const cursorInDomBefore = !!document.querySelector('.maestro-landscape-cursor');
+        if (hadRef && cursorInDomBefore) return; // already healthy — nothing to do
+        const wrapper = h.parentElement;
+        if (!wrapper) return; // required ref missing — do not attempt
+        landscapeCursorRef.current = new FixedLandscapeCursor(wrapper, h, () => getFixedCursorX(h));
+        if (CURSOR_LIFECYCLE_PROBE) {
+            console.log('[CursorLifecycleProbe:sentinel-recreate]', {
+                reason,
+                forceHorizontal: forceHorizontalRef.current,
+                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                isStripModeWanted,
+                hadRef,
+                cursorInDomBefore,
+                cursorInDomAfter: !!document.querySelector('.maestro-landscape-cursor'),
+                visibilityState: document.visibilityState,
+                hasFocus: document.hasFocus(),
+            });
+        }
     }, []);
 
     // [RotationStableAnchorRef] Records a trusted anchor tick from stable sources only.
@@ -4901,7 +4954,50 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     } else {
                         if (cursorRef.current) { cursorRef.current.destroy(); cursorRef.current = null; }
                         if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+                        // [MAESTRO-CURSOR-004] Area C1 — create-skip probe. The landscape
+                        // cursor was just unconditionally destroyed above; these two guards
+                        // are what decide whether it gets recreated below. If either fires,
+                        // the cursor stays gone from the DOM until some LATER
+                        // renderFinished pass reaches this same block without tripping them.
+                        if (CURSOR_LIFECYCLE_PROBE && renderTokenRef.current !== tokenAtFinish) {
+                            console.log('[CursorLifecycleProbe:create-skip]', {
+                                performanceNow: performance.now(),
+                                isoTimestamp: new Date().toISOString(),
+                                visibilityState: document.visibilityState,
+                                hasFocus: document.hasFocus(),
+                                reason: 'renderTokenRef-mismatch',
+                                renderTokenRefCurrent: renderTokenRef.current,
+                                tokenAtFinish,
+                                activeRendersRefCurrent: activeRendersRef.current,
+                                forceHorizontal: forceHorizontalRef.current,
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                isDeviceLandscape: isDeviceLandscape(),
+                                wrapperExists: !!h.parentElement,
+                                hostExists: !!h,
+                                cursorInDom: !!document.querySelector('.maestro-landscape-cursor'),
+                            });
+                            console.trace('[CursorLifecycleProbe:create-skip] stack');
+                        }
                         if (renderTokenRef.current !== tokenAtFinish) return;
+                        if (CURSOR_LIFECYCLE_PROBE && activeRendersRef.current !== 0) {
+                            console.log('[CursorLifecycleProbe:create-skip]', {
+                                performanceNow: performance.now(),
+                                isoTimestamp: new Date().toISOString(),
+                                visibilityState: document.visibilityState,
+                                hasFocus: document.hasFocus(),
+                                reason: 'activeRendersRef-nonzero',
+                                renderTokenRefCurrent: renderTokenRef.current,
+                                tokenAtFinish,
+                                activeRendersRefCurrent: activeRendersRef.current,
+                                forceHorizontal: forceHorizontalRef.current,
+                                layoutMode: api?.settings?.display?.layoutMode ?? null,
+                                isDeviceLandscape: isDeviceLandscape(),
+                                wrapperExists: !!h.parentElement,
+                                hostExists: !!h,
+                                cursorInDom: !!document.querySelector('.maestro-landscape-cursor'),
+                            });
+                            console.trace('[CursorLifecycleProbe:create-skip] stack');
+                        }
                         if (activeRendersRef.current !== 0) return;
                         const wrapper = h.parentElement;
                         if (wrapper) {
@@ -4909,6 +5005,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 wrapper, h, () => getFixedCursorX(h)
                             );
                         }
+                        // [MAESTRO-CURSOR-004.1] Layer 2 sentinel — redundant safety net for
+                        // this render pass. No-ops in the common case (cursor created above);
+                        // catches the rare case where `wrapper` was momentarily unavailable or
+                        // creation otherwise didn't leave a DOM-attached cursor.
+                        ensureLandscapeCursorSentinel('renderFinished-post-create');
                         if (isRendererDebugEnabled()) {
                             const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
                             console.log('[landscape-cursor-prime-probe]', {
@@ -5587,6 +5688,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (isStripMode) {
                     const container = containerRef.current;
                     if (!container) return;
+
+                    // [MAESTRO-CURSOR-004.1] Layer 2 sentinel — runs on every landscape
+                    // playback tick (not just renderFinished), so a cursor stranded by a
+                    // destroy-without-recreate path self-heals during active playback
+                    // instead of requiring a hard refresh. No-op when the cursor is already
+                    // present; does not touch Loop state.
+                    ensureLandscapeCursorSentinel('playerPositionChanged-live-landscape');
 
                     // ── [LandscapePlaybackNoiseGuard] V144 ────────────────────
                     const _existingState = landscapeScrollStateRef.current;
@@ -7876,9 +7984,63 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 stabilizeRafRef.current = null;
 
-                if (isDesktop && !isPortrait) {
+                // [MAESTRO-CURSOR-004] Area C2 — create-skip probe. This branch destroys
+                // the landscape cursor with NO direct recreation anywhere in this
+                // function — it relies entirely on the later reassertLayout()/api.render()
+                // call eventually reaching renderFinished's own (separately guarded, see
+                // Area C1 above) create path. A transient isDesktop/isPortrait misreading
+                // during a resize/visualViewport blip (e.g. tab-switch, DevTools focus
+                // change) would destroy the cursor here and then depend entirely on that
+                // later path succeeding for it to come back.
+                if (CURSOR_LIFECYCLE_PROBE && isDesktop && !isPortrait) {
+                    console.log('[CursorLifecycleProbe:create-skip]', {
+                        performanceNow: performance.now(),
+                        isoTimestamp: new Date().toISOString(),
+                        visibilityState: document.visibilityState,
+                        hasFocus: document.hasFocus(),
+                        reason: 'resize-tick-isDesktop-destroy-no-direct-recreate',
+                        containerW,
+                        mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                        isDesktop,
+                        isPortrait,
+                        isDeviceLandscape: isDeviceLandscape(),
+                        forceHorizontal: forceHorizontalRef.current,
+                        windowInnerWidth: window.innerWidth,
+                        windowInnerHeight: window.innerHeight,
+                        visualViewportWidth: window.visualViewport?.width ?? null,
+                        visualViewportHeight: window.visualViewport?.height ?? null,
+                        cursorInDom: !!document.querySelector('.maestro-landscape-cursor'),
+                    });
+                    console.trace('[CursorLifecycleProbe:create-skip] stack');
+                }
+
+                // [MAESTRO-CURSOR-004.1] Confirmed live: a raw width threshold alone
+                // (isDesktop = containerW >= MOBILE_LANDSCAPE_MAX_W) misclassifies mobile
+                // landscape emulators/devices wider than MOBILE_LANDSCAPE_MAX_W (e.g. iPhone
+                // 14 Pro Max @ 932px vs. the 900px threshold) as desktop, even though
+                // forceHorizontalRef.current (the parent-owned, authoritative "mobile
+                // landscape strip mode wanted" signal) is true. That false-desktop reading
+                // destroyed the cursor here with no direct recreate in this function,
+                // stranding it until a later renderFinished pass happened to succeed (or
+                // never did). Do not destroy while strip mode is actually wanted — MOBILE_
+                // LANDSCAPE_MAX_W itself is unchanged; this only adds an exception for the
+                // case that threshold can't distinguish on its own.
+                const stripModeWanted = forceHorizontalRef.current;
+                if (isDesktop && !isPortrait && !stripModeWanted) {
                     stopLandscapeScrollLoop();
                     if (landscapeCursorRef.current) { landscapeCursorRef.current.destroy(); landscapeCursorRef.current = null; }
+                } else if (CURSOR_LIFECYCLE_PROBE && isDesktop && !isPortrait && stripModeWanted) {
+                    console.log('[CursorLifecycleProbe:resize-preserve-strip-cursor]', {
+                        containerW,
+                        mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                        isDesktop,
+                        forceHorizontal: forceHorizontalRef.current,
+                        isDeviceLandscape: isDeviceLandscape(),
+                        isPortrait,
+                        cursorInDom: !!document.querySelector('.maestro-landscape-cursor'),
+                        visibilityState: document.visibilityState,
+                        hasFocus: document.hasFocus(),
+                    });
                 }
 
                 landscapeCursorRef.current?.updateLayout();
