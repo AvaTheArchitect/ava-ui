@@ -1,8 +1,28 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.17 — Landscape Highlight Band Overflow Clamp
+ * BeatCustomLoopOverlay v1.8.18 — Landscape Handle Drag Live Preview
  * Date: July 8th, 2026
+ *
+ * 🔥 V1.8.18 CHANGES (MAESTRO-LOOP-002I.1):
+ * ✅ Live preview while dragging a landscape start/end handle: landscapePreviewBarIdx
+ *    (state) + resolveLandscapePreview (RAF-throttled, consumes landscapeDragFinalPosRef
+ *    at most once per frame — never scans boundsLookup per raw move event) drive a
+ *    moving marker line via resolvePreviewEdgeX. The highlight band and the OTHER
+ *    marker stay exactly as committed; only the actively-dragged marker moves.
+ * ✅ resolveClampedLandscapeBoundary: the one-bar clamp + crossing-prevention math
+ *    (previously inline in landscapeHandleDragEnd only) is now a shared function called
+ *    by BOTH the preview resolver and landscapeHandleDragEnd, so preview and commit are
+ *    provably WYSIWYG (identical inputs → identical output, not a mirrored copy).
+ *    MAX_DELTA_BARS_PER_GESTURE is unchanged — still 1, still BETA scope.
+ * ⛔ Commit is still release-only: landscapeHandleDragMove still only records pointer
+ *    position (plus scheduling the preview RAF) — no rects/api.playbackRange/
+ *    onLoopChange/rebuildFromPlaybackRange writes happen until landscapeHandleDragEnd.
+ *    Preview clears (clearLandscapePreview) on every landscapeHandleDragEnd exit path:
+ *    successful commit, rotation/missing-state cancel, failed bar resolution, and the
+ *    existing window-blur safety net (which replays landscapeHandleDragEnd unchanged).
+ *    No change to hit-zone size/position/pointer-events, portrait behavior, or the
+ *    002G band clamp/shell fixes.
  *
  * 🔥 V1.8.17 CHANGES (MAESTRO-LOOP-002G):
  * ✅ Landscape .beat-loop-highlight-landscape band's rendered left/width are now
@@ -2197,13 +2217,97 @@ export default function BeatCustomLoopOverlay({
     // ─────────────────────────────────────────
     // [MAESTRO-LOOP-002D.1] Landscape handle drag — commit-on-release only
     //
-    // Deliberately separate from handleDragStart/Move/End above: no live preview, no
-    // beat-level resolveBeatWithX/buildRects, no shared state with portrait's
-    // dragTargetRef/handleDragging/previewRangeRef. Only reachable from the landscape
-    // hit-zone JSX below (onMouseDown/onTouchStart) — background onDown/onUp
-    // (LandscapeLoopClickGuard/LandscapeOnUpGuard) and portrait's own handleDragStart/
-    // handleDragEnd (LandscapeDragEndGuard) are untouched and remain fully guarded.
+    // Deliberately separate from handleDragStart/Move/End above: no beat-level
+    // resolveBeatWithX/buildRects, no shared state with portrait's dragTargetRef/
+    // handleDragging/previewRangeRef. Only reachable from the landscape hit-zone JSX
+    // below (onMouseDown/onTouchStart) — background onDown/onUp (LandscapeLoopClickGuard/
+    // LandscapeOnUpGuard) and portrait's own handleDragStart/handleDragEnd
+    // (LandscapeDragEndGuard) are untouched and remain fully guarded.
+    //
+    // [MAESTRO-LOOP-002I.1] Live preview added below (landscapePreviewBarIdx +
+    // resolveClampedLandscapeBoundary). Commit itself is still release-only and
+    // unchanged: landscapeHandleDragMove still only records pointer position (plus
+    // scheduling a RAF-throttled preview resolve); rects/api.playbackRange are still
+    // written ONLY in landscapeHandleDragEnd.
     // ─────────────────────────────────────────
+
+    // [MAESTRO-LOOP-002I.1] Live preview state — a resolved+clamped bar index only, never
+    // rects/api.playbackRange. Rendering (below) uses it purely to reposition the ACTIVE
+    // marker; the highlight band and the other marker stay exactly as committed.
+    const [landscapePreviewBarIdx, setLandscapePreviewBarIdx] = useState<number | null>(null);
+    const landscapePreviewRafRef = useRef<number | null>(null);
+
+    const clearLandscapePreview = () => {
+        if (landscapePreviewRafRef.current != null) {
+            cancelAnimationFrame(landscapePreviewRafRef.current);
+            landscapePreviewRafRef.current = null;
+        }
+        setLandscapePreviewBarIdx(null);
+    };
+
+    // [MAESTRO-LOOP-002I.1] Shared clamp + crossing-prevention math — lifted verbatim out
+    // of landscapeHandleDragEnd's inline calculation so the live preview and the commit
+    // are PROVABLY WYSIWYG: identical (target, resolvedBarIndex, currentRange) inputs
+    // always produce identical output because it's the same function, not a mirrored
+    // copy that could drift. MAX_DELTA_BARS_PER_GESTURE is unchanged (still 1, still the
+    // deliberate BETA safety trade-off documented at its original call site below).
+    const resolveClampedLandscapeBoundary = (
+        target: 'start' | 'end',
+        resolvedBarIndex: number,
+        currentRange: { startTick: number; endTick: number },
+    ): {
+        currentStartBarIdx: number; currentEndBarIdx: number;
+        deltaClampedBarIndex: number; maxDeltaBarsPerGesture: number;
+        finalStartBarIdx: number; finalEndBarIdx: number;
+    } | null => {
+        const currentStartBarIdx = resolveBarIndexForTick(currentRange.startTick);
+        const currentEndBarIdx = resolveBarIndexForTick(Math.max(currentRange.startTick, currentRange.endTick - 1));
+        if (currentStartBarIdx == null || currentEndBarIdx == null) return null;
+
+        const MAX_DELTA_BARS_PER_GESTURE = 1;
+        const originalBoundaryBarIdx = target === 'start' ? currentStartBarIdx : currentEndBarIdx;
+        let deltaClampedBarIndex = resolvedBarIndex;
+        if (resolvedBarIndex > originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE) {
+            deltaClampedBarIndex = originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE;
+        } else if (resolvedBarIndex < originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE) {
+            deltaClampedBarIndex = originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE;
+        }
+
+        // Clamp by bar INDEX (never by tick arithmetic — bar durations vary with time
+        // signature) so start can never pass end and vice versa. Equal indices are a
+        // valid one-bar loop (the same minimum a fresh bar-snap creation produces).
+        let finalStartBarIdx = currentStartBarIdx;
+        let finalEndBarIdx = currentEndBarIdx;
+        if (target === 'start') {
+            finalStartBarIdx = Math.max(0, Math.min(deltaClampedBarIndex, currentEndBarIdx));
+        } else {
+            finalEndBarIdx = Math.max(deltaClampedBarIndex, currentStartBarIdx);
+        }
+        return {
+            currentStartBarIdx, currentEndBarIdx,
+            deltaClampedBarIndex, maxDeltaBarsPerGesture: MAX_DELTA_BARS_PER_GESTURE,
+            finalStartBarIdx, finalEndBarIdx,
+        };
+    };
+
+    // [MAESTRO-LOOP-002I.1] RAF-throttled preview resolver — consumes the latest recorded
+    // pointer position (landscapeDragFinalPosRef, updated on every raw move event) at most
+    // once per animation frame. Never scans boundsLookup per raw move event: the RAF gate
+    // in landscapeHandleDragMove below ensures this runs at most 60x/sec regardless of
+    // move-event frequency.
+    const resolveLandscapePreview = () => {
+        landscapePreviewRafRef.current = null;
+        const target = landscapeDragTargetRef.current;
+        const originalRange = landscapeDragOriginalRangeRef.current;
+        const finalPos = landscapeDragFinalPosRef.current;
+        if (!target || !originalRange || !finalPos || !api) return;
+        const resolvedBarIndex = resolveLandscapeBarIndexAtX(finalPos.clientX);
+        if (resolvedBarIndex == null) return; // out of fallback range — keep last valid preview
+        const currentRange = api.playbackRange ?? originalRange;
+        const clamped = resolveClampedLandscapeBoundary(target, resolvedBarIndex, currentRange);
+        if (!clamped) return;
+        setLandscapePreviewBarIdx(target === 'start' ? clamped.finalStartBarIdx : clamped.finalEndBarIdx);
+    };
 
     const landscapeHandleDragStart = (e: React.MouseEvent | React.TouchEvent, target: 'start' | 'end') => {
         e.stopPropagation();
@@ -2239,7 +2343,12 @@ export default function BeatCustomLoopOverlay({
         e.preventDefault();
         const { clientX, clientY } = resolveEventPosition(e);
         landscapeDragFinalPosRef.current = { clientX, clientY };
-        // No live preview by design (LOOP-002D.1 prototype scope) — no rects/api writes here.
+        // [MAESTRO-LOOP-002I.1] Still no rects/api writes here — commit stays release-only.
+        // Only schedules a RAF-throttled preview resolve (skipped if one is already
+        // pending this frame) from the position just recorded above.
+        if (landscapePreviewRafRef.current == null) {
+            landscapePreviewRafRef.current = requestAnimationFrame(resolveLandscapePreview);
+        }
     };
 
     const landscapeHandleDragEnd = (e: MouseEvent | TouchEvent) => {
@@ -2258,6 +2367,10 @@ export default function BeatCustomLoopOverlay({
         document.body.style.userSelect = '';
         (document.body.style as any).webkitUserSelect = '';
         setLandscapeHandleDragging(false);
+        // [MAESTRO-LOOP-002I.1] Unconditional — covers every exit below (rotation/missing-
+        // state cancel, failed bar resolution, and successful commit) plus the window-blur
+        // safety net, which replays this same function.
+        clearLandscapePreview();
 
         // [LandscapeHandleDragEndGuard] Only commit when the gesture both started AND is
         // ending in landscape — mirrors the cross-mode-rotation protection
@@ -2287,45 +2400,25 @@ export default function BeatCustomLoopOverlay({
         }
 
         const currentRange = api.playbackRange ?? originalRange;
-        const currentStartBarIdx = resolveBarIndexForTick(currentRange.startTick);
-        const currentEndBarIdx = resolveBarIndexForTick(Math.max(currentRange.startTick, currentRange.endTick - 1));
-        if (currentStartBarIdx == null || currentEndBarIdx == null) {
+        // [MAESTRO-LOOP-002D.1B] Safety clamp: limit a single gesture to at most one bar of
+        // movement from the boundary's ORIGINAL position, regardless of where the resolver
+        // placed the release point — a fast/imprecise release must never produce a multi-
+        // bar jump. Symmetrical for both handles: each is clamped relative to its OWN
+        // original boundary. [MAESTRO-LOOP-002D.2] This one-bar-per-gesture limit is
+        // current BETA behavior, not a permanent design constraint.
+        // [MAESTRO-LOOP-002I.1] Now shared with the live preview via
+        // resolveClampedLandscapeBoundary (above) — MAX_DELTA_BARS_PER_GESTURE is
+        // unchanged (still 1) and lives inside that shared function.
+        const clamped = resolveClampedLandscapeBoundary(target, resolvedBarIndex, currentRange);
+        if (!clamped) {
             console.warn('[landscape-handle-drag] could not resolve current range to bar indices — edit cancelled');
             return;
         }
-
-        // [MAESTRO-LOOP-002D.1B] Safety clamp: limit a single gesture to at most one bar
-        // of movement from the boundary's ORIGINAL position, regardless of where the
-        // resolver placed the release point. This is a deliberate defense-in-depth on top
-        // of the coordinate-origin fix above — a fast/imprecise release (there is no live
-        // preview in this prototype) must never produce a multi-bar jump. Symmetrical for
-        // both handles: each is clamped relative to its OWN original boundary.
-        // [MAESTRO-LOOP-002D.2] This one-bar-per-gesture limit is current BETA behavior,
-        // not a permanent design constraint — it exists specifically to compensate for the
-        // lack of live preview (with no live preview, the user has no way to see how far a
-        // drag will land before releasing, so limiting the blast radius per gesture is the
-        // safety trade-off). Revisit this value once a live-preview lane exists; at that
-        // point a multi-bar-per-gesture drag becomes safe because the user can see the
-        // destination before committing.
-        const MAX_DELTA_BARS_PER_GESTURE = 1;
-        const originalBoundaryBarIdx = target === 'start' ? currentStartBarIdx : currentEndBarIdx;
-        let deltaClampedBarIndex = resolvedBarIndex;
-        if (resolvedBarIndex > originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE) {
-            deltaClampedBarIndex = originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE;
-        } else if (resolvedBarIndex < originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE) {
-            deltaClampedBarIndex = originalBoundaryBarIdx - MAX_DELTA_BARS_PER_GESTURE;
-        }
-
-        // Clamp by bar INDEX (never by tick arithmetic — bar durations vary with time
-        // signature) so start can never pass end and vice versa. Equal indices are a
-        // valid one-bar loop (the same minimum a fresh bar-snap creation produces).
-        let finalStartBarIdx = currentStartBarIdx;
-        let finalEndBarIdx = currentEndBarIdx;
-        if (target === 'start') {
-            finalStartBarIdx = Math.max(0, Math.min(deltaClampedBarIndex, currentEndBarIdx));
-        } else {
-            finalEndBarIdx = Math.max(deltaClampedBarIndex, currentStartBarIdx);
-        }
+        const {
+            currentStartBarIdx, currentEndBarIdx,
+            deltaClampedBarIndex, maxDeltaBarsPerGesture,
+            finalStartBarIdx, finalEndBarIdx,
+        } = clamped;
 
         const startTickForRange = getBarStartTickByIndex(finalStartBarIdx);
         const endBarStartTick = getBarStartTickByIndex(finalEndBarIdx);
@@ -2347,7 +2440,7 @@ export default function BeatCustomLoopOverlay({
                 finalClientX: finalPos.clientX, finalClientY: finalPos.clientY,
                 currentStartBarIdx, currentEndBarIdx,
                 resolvedBarIndex, deltaClampedBarIndex,
-                maxDeltaBarsPerGesture: MAX_DELTA_BARS_PER_GESTURE,
+                maxDeltaBarsPerGesture,
                 finalStartBarIdx, finalEndBarIdx,
                 finalRange,
                 reason: 'commit',
@@ -2619,6 +2712,20 @@ export default function BeatCustomLoopOverlay({
         });
 
         if (!renderRects.length) return null;
+
+        // [MAESTRO-LOOP-002I.1] Resolves a preview bar index to its left/right viewport-
+        // space edge X, reusing the same band filter (firstBandY/bandTolerance) and the
+        // same coordinate contract (r.x + LOOP_X_OFFSET - scrollLeft) the committed
+        // highlight/handles below use. Positions the live preview marker only — never
+        // touches rects/api state.
+        const resolvePreviewEdgeX = (barIndex: number, edge: 'start' | 'end'): number | null => {
+            const barRects = buildBarRects(barIndex);
+            const rect = barRects.find(r => Math.abs(r.y - firstBandY) <= bandTolerance) ?? barRects[0];
+            if (!rect) return null;
+            const rectLeft = rect.x + LOOP_X_OFFSET - scrollLeft;
+            return edge === 'start' ? rectLeft : rectLeft + rect.w;
+        };
+
         return (
             <>
                 {/* [MAESTRO-LOOP-002C] Visible-only start/end boundary markers. Derived from
@@ -2649,6 +2756,17 @@ export default function BeatCustomLoopOverlay({
                     const bandVisibleLeft = Math.max(0, left);
                     const bandVisibleRight = Math.min(containerWidth, left + r.w);
                     const bandVisibleWidth = Math.max(0, bandVisibleRight - bandVisibleLeft);
+                    // [MAESTRO-LOOP-002I.1] Preview edge X — only resolved while THIS handle
+                    // is the one actively being dragged and a preview bar index exists yet.
+                    // Falls back to the committed edge (`left`/`left + r.w`) otherwise, so
+                    // there's never a flash of undefined position on the very first frame
+                    // before the RAF preview resolver has run.
+                    const previewStartLeft = (activeLandscapeDragHandle === 'start' && landscapePreviewBarIdx != null)
+                        ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'start')
+                        : null;
+                    const previewEndLeft = (activeLandscapeDragHandle === 'end' && landscapePreviewBarIdx != null)
+                        ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'end')
+                        : null;
                     return (
                         <React.Fragment key={i}>
                             <div
@@ -2669,12 +2787,17 @@ export default function BeatCustomLoopOverlay({
                             />
                             {/* [MAESTRO-LOOP-002D.2] Pressed-state glow ONLY (width/boxShadow) when
                                 activeLandscapeDragHandle matches this handle — no range/rects
-                                change, purely "you're holding this" feedback during the gesture. */}
+                                change, purely "you're holding this" feedback during the gesture.
+                                [MAESTRO-LOOP-002I.1] Position now follows the live preview edge
+                                while dragging (falls back to the committed `left` if no preview
+                                is resolved yet) — still no range/rects/api.playbackRange change. */}
                             <div
                                 className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
                                 style={{
                                     position: 'absolute',
-                                    left: activeLandscapeDragHandle === 'start' ? left - 2.5 : left - 1.5,
+                                    left: activeLandscapeDragHandle === 'start'
+                                        ? (previewStartLeft ?? left) - 2.5
+                                        : left - 1.5,
                                     top,
                                     width: activeLandscapeDragHandle === 'start' ? '5px' : '3px',
                                     height: r.h,
@@ -2689,7 +2812,9 @@ export default function BeatCustomLoopOverlay({
                                 className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
                                 style={{
                                     position: 'absolute',
-                                    left: activeLandscapeDragHandle === 'end' ? left + r.w - 2.5 : left + r.w - 1.5,
+                                    left: activeLandscapeDragHandle === 'end'
+                                        ? (previewEndLeft ?? (left + r.w)) - 2.5
+                                        : left + r.w - 1.5,
                                     top,
                                     width: activeLandscapeDragHandle === 'end' ? '5px' : '3px',
                                     height: r.h,
