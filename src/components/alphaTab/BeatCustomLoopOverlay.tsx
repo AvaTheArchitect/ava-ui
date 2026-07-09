@@ -1,8 +1,43 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.18 — Landscape Handle Drag Live Preview
- * Date: July 8th, 2026
+ * BeatCustomLoopOverlay v1.8.20 — Landscape Handle Drag Scroll Seal
+ * Date: July 9th, 2026
+ *
+ * 🔥 V1.8.20 CHANGES (MAESTRO-LOOP-002I.1c, folds in 002I.1b — never committed
+ * standalone):
+ * ✅ [002I.1b] Landscape start/end hit-zones: touch-action:none was already present
+ *    (V1.8.14/002D.1); added WebkitUserSelect/userSelect:none, WebkitTouchCallout:none,
+ *    and WebkitTapHighlightColor:transparent directly to their static inline style —
+ *    suppresses iOS's long-press text-select/callout menu and tap-highlight flash from
+ *    first render, earlier than the runtime document.body.style.userSelect toggle in
+ *    landscapeHandleDragStart.
+ * ✅ [002I.1c Layer A] Native, explicitly non-passive touchstart listeners
+ *    (makeLandscapeHitZoneTouchRef, attached via stable callback refs
+ *    landscapeStartHitZoneRef/landscapeEndHitZoneRef) replace the hit-zones' React
+ *    onTouchStart. React's synthetic onTouchStart can end up passive-marked (observed
+ *    live as "Unable to preventDefault inside passive event listener invocation"),
+ *    silently making landscapeHandleDragStart's preventDefault a no-op for touch; the
+ *    native listener's { passive: false } guarantees it actually runs. Mouse is
+ *    unaffected — onMouseDown unchanged.
+ * ✅ [002I.1c Layer B] freezeLandscapeContainerScroll/restoreLandscapeContainerScroll:
+ *    a live scroll-leak probe found the real scroller (.alphatab-container) still
+ *    received scroll events during a handle drag (37 in one run) even with Layer A/the
+ *    hit-zone's own touch-action. landscapeHandleDragStart now captures the container's
+ *    PRIOR inline overflowX/touchAction and sets overflowX:'hidden'/touchAction:'none'
+ *    for the gesture's duration; landscapeHandleDragEnd's existing unconditional cleanup
+ *    block restores them exactly — covering successful commit, rotation/missing-state
+ *    cancel, failed bar resolution, and the window-blur safety net (which replays
+ *    landscapeHandleDragEnd unchanged). Both freeze and restore are idempotent no-ops if
+ *    called when already in that state. Never writes container.scrollLeft.
+ * ⛔ No drag/commit/clamp behavior change. Hit-zone geometry, pointerEvents,
+ *    MAX_DELTA_BARS_PER_GESTURE, and the 002I.1 live preview are all unchanged.
+ *
+ * [MAESTRO-LOOP-002I.1a note] A display-only preview "ghost" guide-line patch was
+ * drafted and live-tested, then reverted uncommitted before this version: it was found
+ * to be visually occluded by the marker under the current one-bar clamp. Deferred to a
+ * future 002I.2 once multi-bar drag gives the ghost a real visual role — not included
+ * in this or the prior committed version.
  *
  * 🔥 V1.8.18 CHANGES (MAESTRO-LOOP-002I.1):
  * ✅ Live preview while dragging a landscape start/end handle: landscapePreviewBarIdx
@@ -2309,6 +2344,40 @@ export default function BeatCustomLoopOverlay({
         setLandscapePreviewBarIdx(target === 'start' ? clamped.finalStartBarIdx : clamped.finalEndBarIdx);
     };
 
+    // [MAESTRO-LOOP-002I.1c] Layer B — freezes the REAL scroller (.alphatab-container,
+    // passed in as `container`) for the duration of a handle drag. A live probe found
+    // scrollEventsDuringHandleDrag > 0 (37) even with the hit-zone's own touch-action:none
+    // (Layer A below) — the gesture, or some other scroll source, was still reaching the
+    // container. Captures the container's PRIOR inline overflowX/touchAction so they can
+    // be restored EXACTLY, not reset to a guessed default — container.style.overflowX is
+    // toggled elsewhere (applyAxisLock in AlphaTabRenderer sets 'auto' in landscape) and
+    // must come back to whatever it actually was. Idempotent: freeze is a no-op if
+    // already frozen; restore is a no-op if nothing is currently frozen (nulls the ref
+    // the first time it restores, so a second call — e.g. dragEnd firing twice — does
+    // nothing).
+    const landscapeDragFrozenContainerStyleRef = useRef<{ overflowX: string; touchAction: string } | null>(null);
+
+    const freezeLandscapeContainerScroll = () => {
+        const el = container as HTMLElement | null;
+        if (!el || landscapeDragFrozenContainerStyleRef.current) return;
+        landscapeDragFrozenContainerStyleRef.current = {
+            overflowX: el.style.overflowX,
+            touchAction: el.style.touchAction,
+        };
+        el.style.overflowX = 'hidden';
+        el.style.touchAction = 'none';
+    };
+
+    const restoreLandscapeContainerScroll = () => {
+        const prior = landscapeDragFrozenContainerStyleRef.current;
+        if (!prior) return;
+        landscapeDragFrozenContainerStyleRef.current = null;
+        const el = container as HTMLElement | null;
+        if (!el) return;
+        el.style.overflowX = prior.overflowX;
+        el.style.touchAction = prior.touchAction;
+    };
+
     const landscapeHandleDragStart = (e: React.MouseEvent | React.TouchEvent, target: 'start' | 'end') => {
         e.stopPropagation();
         e.preventDefault();
@@ -2331,6 +2400,8 @@ export default function BeatCustomLoopOverlay({
         }
         document.body.style.userSelect = 'none';
         (document.body.style as any).webkitUserSelect = 'none';
+        // [MAESTRO-LOOP-002I.1c] Layer B — freeze the real scroller for this gesture.
+        freezeLandscapeContainerScroll();
         setLandscapeHandleDragging(true);
     };
 
@@ -2367,10 +2438,13 @@ export default function BeatCustomLoopOverlay({
         document.body.style.userSelect = '';
         (document.body.style as any).webkitUserSelect = '';
         setLandscapeHandleDragging(false);
-        // [MAESTRO-LOOP-002I.1] Unconditional — covers every exit below (rotation/missing-
-        // state cancel, failed bar resolution, and successful commit) plus the window-blur
-        // safety net, which replays this same function.
+        // [MAESTRO-LOOP-002I.1 / 002I.1c] Unconditional — covers every exit below
+        // (rotation/missing-state cancel, failed bar resolution, and successful commit)
+        // plus the window-blur safety net, which replays this same function. Restoring
+        // the container's scroll here (not deeper, branch-specific) guarantees normal
+        // landscape strip scrolling comes back regardless of which path this call takes.
         clearLandscapePreview();
+        restoreLandscapeContainerScroll();
 
         // [LandscapeHandleDragEndGuard] Only commit when the gesture both started AND is
         // ending in landscape — mirrors the cross-mode-rotation protection
@@ -2478,10 +2552,46 @@ export default function BeatCustomLoopOverlay({
     // the effect still only (re)attaches once per landscapeHandleDragging transition.
     const landscapeHandleDragMoveRef = useRef(landscapeHandleDragMove);
     const landscapeHandleDragEndRef = useRef(landscapeHandleDragEnd);
+    // [MAESTRO-LOOP-002I.1c] Same always-latest pattern, for landscapeHandleDragStart —
+    // needed by the native touchstart listeners (Layer A) below.
+    const landscapeHandleDragStartRef = useRef(landscapeHandleDragStart);
     useEffect(() => {
         landscapeHandleDragMoveRef.current = landscapeHandleDragMove;
         landscapeHandleDragEndRef.current = landscapeHandleDragEnd;
+        landscapeHandleDragStartRef.current = landscapeHandleDragStart;
     });
+
+    // [MAESTRO-LOOP-002I.1c] Layer A — native, explicitly non-passive touchstart listeners
+    // on the hit-zone DOM nodes themselves. React's synthetic onTouchStart can end up
+    // passive-marked (observed live as "Unable to preventDefault inside passive event
+    // listener invocation"), silently making landscapeHandleDragStart's preventDefault a
+    // no-op for touch. Attaching our OWN listener with { passive: false } guarantees it
+    // actually runs. Mouse is untouched — onMouseDown stays on the JSX below.
+    //
+    // Implemented as stable (constructed once via useState's lazy initializer, never
+    // recreated) callback refs rather than a useEffect: the hit-zone divs mount/unmount
+    // whenever renderRects toggles empty/non-empty (loop off, scrolled out of view, etc.),
+    // and a callback ref's own identity determines whether React tears down + re-invokes
+    // it — an inline arrow function would churn attach/detach every render. Each closure
+    // tracks its own currently-attached element/handler so it can detach cleanly before
+    // attaching to a new element, or on unmount (called with null).
+    const makeLandscapeHitZoneTouchRef = (target: 'start' | 'end') => {
+        let attachedEl: HTMLDivElement | null = null;
+        let attachedHandler: ((ev: TouchEvent) => void) | null = null;
+        return (el: HTMLDivElement | null) => {
+            if (attachedEl && attachedHandler) {
+                attachedEl.removeEventListener('touchstart', attachedHandler);
+            }
+            attachedEl = el;
+            attachedHandler = null;
+            if (el) {
+                attachedHandler = (ev: TouchEvent) => landscapeHandleDragStartRef.current(ev as any, target);
+                el.addEventListener('touchstart', attachedHandler, { passive: false });
+            }
+        };
+    };
+    const [landscapeStartHitZoneRef] = useState(() => makeLandscapeHitZoneTouchRef('start'));
+    const [landscapeEndHitZoneRef] = useState(() => makeLandscapeHitZoneTouchRef('end'));
 
     useEffect(() => {
         if (!landscapeHandleDragging) return;
@@ -2828,8 +2938,8 @@ export default function BeatCustomLoopOverlay({
                             {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
                             <div
                                 className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
+                                ref={landscapeStartHitZoneRef}
                                 onMouseDown={ev => landscapeHandleDragStart(ev, 'start')}
-                                onTouchStart={ev => landscapeHandleDragStart(ev, 'start')}
                                 style={{
                                     position: 'absolute',
                                     left: left - HANDLE_HIT_ZONE_WIDTH / 2,
@@ -2839,6 +2949,17 @@ export default function BeatCustomLoopOverlay({
                                     background: 'transparent',
                                     pointerEvents: 'auto',
                                     touchAction: 'none',
+                                    // [MAESTRO-LOOP-002I.1b] touch-action:none (already present, above)
+                                    // suppresses native panning/zooming; these three additionally
+                                    // suppress iOS's long-press text-select/callout menu and the tap
+                                    // highlight flash, statically from first render — independent of
+                                    // (and earlier than) the runtime document.body.style.userSelect
+                                    // toggle in landscapeHandleDragStart, which only takes effect once
+                                    // that handler has already started running.
+                                    WebkitUserSelect: 'none',
+                                    userSelect: 'none',
+                                    WebkitTouchCallout: 'none',
+                                    WebkitTapHighlightColor: 'transparent',
                                     cursor: 'ew-resize',
                                     zIndex: 902,
                                 }}
@@ -2846,8 +2967,8 @@ export default function BeatCustomLoopOverlay({
                             {/* [MAESTRO-LOOP-002D.1] End handle hit zone — interactive only here. */}
                             <div
                                 className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-end"
+                                ref={landscapeEndHitZoneRef}
                                 onMouseDown={ev => landscapeHandleDragStart(ev, 'end')}
-                                onTouchStart={ev => landscapeHandleDragStart(ev, 'end')}
                                 style={{
                                     position: 'absolute',
                                     left: left + r.w - HANDLE_HIT_ZONE_WIDTH / 2,
@@ -2857,6 +2978,11 @@ export default function BeatCustomLoopOverlay({
                                     background: 'transparent',
                                     pointerEvents: 'auto',
                                     touchAction: 'none',
+                                    // [MAESTRO-LOOP-002I.1b] Same rationale as the start hit-zone above.
+                                    WebkitUserSelect: 'none',
+                                    userSelect: 'none',
+                                    WebkitTouchCallout: 'none',
+                                    WebkitTapHighlightColor: 'transparent',
                                     cursor: 'ew-resize',
                                     zIndex: 902,
                                 }}
