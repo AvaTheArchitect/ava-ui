@@ -1,8 +1,29 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.20 — Landscape Handle Drag Scroll Seal
+ * BeatCustomLoopOverlay v1.8.21 — Multi-Bar Landscape Handle Drag
  * Date: July 9th, 2026
+ *
+ * 🔥 V1.8.21 CHANGES (MAESTRO-LOOP-002I.2a-1, audited in 002I.2):
+ * ✅ MAX_DELTA_BARS_PER_GESTURE raised 1 → 4 (resolveClampedLandscapeBoundary). Not
+ *    unlimited — a conservative numeric cap, since edge auto-scroll doesn't exist yet.
+ *    Crossing-prevention and equal-index/one-bar-minimum semantics unchanged.
+ * ✅ landscapeHandleDragEnd now commits from landscapePreviewBarIdx (captured before
+ *    clearLandscapePreview() nulls it) instead of re-resolving release coordinates via
+ *    resolveLandscapeBarIndexAtX. landscapePreviewBarIdx is already the resolved+
+ *    clamped, already-displayed value for the dragged boundary — committing it directly
+ *    makes release provably match what the user last saw, eliminating a real race where
+ *    the last preview RAF tick and the release event read time-separated pointer
+ *    samples (could show e.g. M2 in preview, settle back to M1 on release). The non-
+ *    dragged boundary is still read from the current range, as before.
+ * ✅ Null-preview rule: if no preview was ever displayed this gesture (release before
+ *    the first RAF preview tick), release is now a no-op — range unchanged, no
+ *    fallback re-resolve of release coordinates. Prevents a sub-frame flick from
+ *    committing a target the user never saw previewed.
+ * ⛔ resolveLandscapeBarIndexAtX itself, resolveClampedLandscapeBoundary's crossing/
+ *    clamp math, the RAF preview throttle, marker rendering, and the 002I.1c scroll
+ *    seal (freeze/restore, native touchstart listeners) are all unchanged. No forecast/
+ *    ghost span, no nearest-boundary resolver, no hysteresis in this commit.
  *
  * 🔥 V1.8.20 CHANGES (MAESTRO-LOOP-002I.1c, folds in 002I.1b — never committed
  * standalone):
@@ -2284,8 +2305,13 @@ export default function BeatCustomLoopOverlay({
     // of landscapeHandleDragEnd's inline calculation so the live preview and the commit
     // are PROVABLY WYSIWYG: identical (target, resolvedBarIndex, currentRange) inputs
     // always produce identical output because it's the same function, not a mirrored
-    // copy that could drift. MAX_DELTA_BARS_PER_GESTURE is unchanged (still 1, still the
-    // deliberate BETA safety trade-off documented at its original call site below).
+    // copy that could drift.
+    // [MAESTRO-LOOP-002I.2a-1] MAX_DELTA_BARS_PER_GESTURE raised 1 → 4 (audited in
+    // 002I.2). Crossing-prevention and equal-index/one-bar-minimum semantics below are
+    // untouched — only the per-gesture distance bound changed. Not unlimited: kept as a
+    // conservative numeric cap per the audit (edge auto-scroll doesn't exist yet, and a
+    // hard cap bounds a stray far-off mouse drag in desktop/emulator testing regardless
+    // of input device).
     const resolveClampedLandscapeBoundary = (
         target: 'start' | 'end',
         resolvedBarIndex: number,
@@ -2299,7 +2325,7 @@ export default function BeatCustomLoopOverlay({
         const currentEndBarIdx = resolveBarIndexForTick(Math.max(currentRange.startTick, currentRange.endTick - 1));
         if (currentStartBarIdx == null || currentEndBarIdx == null) return null;
 
-        const MAX_DELTA_BARS_PER_GESTURE = 1;
+        const MAX_DELTA_BARS_PER_GESTURE = 4;
         const originalBoundaryBarIdx = target === 'start' ? currentStartBarIdx : currentEndBarIdx;
         let deltaClampedBarIndex = resolvedBarIndex;
         if (resolvedBarIndex > originalBoundaryBarIdx + MAX_DELTA_BARS_PER_GESTURE) {
@@ -2429,6 +2455,12 @@ export default function BeatCustomLoopOverlay({
         const startedInLandscape = landscapeDragStartedInLandscapeRef.current;
         const originalRange = landscapeDragOriginalRangeRef.current;
         const finalPos = landscapeDragFinalPosRef.current ?? resolveEventPosition(e);
+        // [MAESTRO-LOOP-002I.2a-1] Capture the last DISPLAYED preview value before
+        // clearLandscapePreview() below nulls it. This — not a fresh re-resolve of
+        // release coordinates — is what release commits from. Guarantees release
+        // provably matches what the user last saw, eliminating the time-separated-
+        // pointer-sample race between the last preview RAF tick and the release event.
+        const previewBarIdxAtRelease = landscapePreviewBarIdx;
 
         landscapeDragTargetRef.current = null;
         landscapeDragStartedInLandscapeRef.current = false;
@@ -2439,7 +2471,7 @@ export default function BeatCustomLoopOverlay({
         (document.body.style as any).webkitUserSelect = '';
         setLandscapeHandleDragging(false);
         // [MAESTRO-LOOP-002I.1 / 002I.1c] Unconditional — covers every exit below
-        // (rotation/missing-state cancel, failed bar resolution, and successful commit)
+        // (rotation/missing-state cancel, no-preview cancel, and successful commit)
         // plus the window-blur safety net, which replays this same function. Restoring
         // the container's scroll here (not deeper, branch-specific) guarantees normal
         // landscape strip scrolling comes back regardless of which path this call takes.
@@ -2461,43 +2493,47 @@ export default function BeatCustomLoopOverlay({
             return;
         }
 
-        const resolvedBarIndex = resolveLandscapeBarIndexAtX(finalPos.clientX);
-        if (resolvedBarIndex == null) {
-            console.warn('[landscape-handle-drag] bar resolution failed at release — edit cancelled, range unchanged');
+        // [MAESTRO-LOOP-002I.2a-1] Null-preview rule: if no preview was ever displayed
+        // during this gesture (e.g. release before the first RAF preview tick), this is
+        // a no-op — do not re-resolve release coordinates, do not move the boundary.
+        // The user can only ever commit a target they actually saw.
+        if (previewBarIdxAtRelease == null) {
+            console.warn('[landscape-handle-drag] no preview was displayed before release — no-op, range unchanged');
             if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
                 console.log('[LOOP-002D.1B][landscape-drag-end]', {
                     target, finalClientX: finalPos.clientX, finalClientY: finalPos.clientY,
-                    reason: 'cancel-bar-resolution-failed',
+                    reason: 'cancel-no-preview-displayed',
                 });
             }
             return;
         }
 
         const currentRange = api.playbackRange ?? originalRange;
-        // [MAESTRO-LOOP-002D.1B] Safety clamp: limit a single gesture to at most one bar of
-        // movement from the boundary's ORIGINAL position, regardless of where the resolver
-        // placed the release point — a fast/imprecise release must never produce a multi-
-        // bar jump. Symmetrical for both handles: each is clamped relative to its OWN
-        // original boundary. [MAESTRO-LOOP-002D.2] This one-bar-per-gesture limit is
-        // current BETA behavior, not a permanent design constraint.
-        // [MAESTRO-LOOP-002I.1] Now shared with the live preview via
-        // resolveClampedLandscapeBoundary (above) — MAX_DELTA_BARS_PER_GESTURE is
-        // unchanged (still 1) and lives inside that shared function.
-        const clamped = resolveClampedLandscapeBoundary(target, resolvedBarIndex, currentRange);
-        if (!clamped) {
+        const currentStartBarIdx = resolveBarIndexForTick(currentRange.startTick);
+        const currentEndBarIdx = resolveBarIndexForTick(Math.max(currentRange.startTick, currentRange.endTick - 1));
+        if (currentStartBarIdx == null || currentEndBarIdx == null) {
             console.warn('[landscape-handle-drag] could not resolve current range to bar indices — edit cancelled');
             return;
         }
-        const {
-            currentStartBarIdx, currentEndBarIdx,
-            deltaClampedBarIndex, maxDeltaBarsPerGesture,
-            finalStartBarIdx, finalEndBarIdx,
-        } = clamped;
+
+        // [MAESTRO-LOOP-002I.2a-1] Commit directly from the already-resolved+clamped,
+        // already-displayed preview value — landscapePreviewBarIdx (set via
+        // resolveClampedLandscapeBoundary inside resolveLandscapePreview) is already the
+        // final bar index for the dragged boundary, so no re-resolution of release
+        // coordinates happens here. The non-dragged boundary is untouched by this
+        // gesture, so it's read straight from the current range, same as before.
+        let finalStartBarIdx = currentStartBarIdx;
+        let finalEndBarIdx = currentEndBarIdx;
+        if (target === 'start') {
+            finalStartBarIdx = previewBarIdxAtRelease;
+        } else {
+            finalEndBarIdx = previewBarIdxAtRelease;
+        }
 
         const startTickForRange = getBarStartTickByIndex(finalStartBarIdx);
         const endBarStartTick = getBarStartTickByIndex(finalEndBarIdx);
         if (startTickForRange == null || endBarStartTick == null) {
-            console.warn('[landscape-handle-drag] tick lookup failed for clamped bar index — edit cancelled');
+            console.warn('[landscape-handle-drag] tick lookup failed for previewed bar index — edit cancelled');
             return;
         }
         const endBarFullRange = getExpandedBarRange(endBarStartTick);
@@ -2513,11 +2549,10 @@ export default function BeatCustomLoopOverlay({
                 target,
                 finalClientX: finalPos.clientX, finalClientY: finalPos.clientY,
                 currentStartBarIdx, currentEndBarIdx,
-                resolvedBarIndex, deltaClampedBarIndex,
-                maxDeltaBarsPerGesture,
+                previewBarIdxAtRelease,
                 finalStartBarIdx, finalEndBarIdx,
                 finalRange,
-                reason: 'commit',
+                reason: 'commit-from-preview',
             });
         }
 
