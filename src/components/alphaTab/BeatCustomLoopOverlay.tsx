@@ -2972,6 +2972,23 @@ export default function BeatCustomLoopOverlay({
                     const previewEndLeft = (activeLandscapeDragHandle === 'end' && landscapePreviewBarIdx != null)
                         ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'end')
                         : null;
+                    // [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span geometry — display-only,
+                    // derived entirely from values already computed above (committed `left`/
+                    // `r.w` and the live `previewStartLeft`/`previewEndLeft`). No new state:
+                    // this vanishes automatically the instant landscapeHandleDragEnd nulls
+                    // activeLandscapeDragHandle/landscapePreviewBarIdx — unconditional, before
+                    // any commit/cancel/no-preview branch, and every exit path (mouseup,
+                    // touchend, touchcancel, window-blur replay) calls that same function.
+                    // Order-independent min/max so growing and shrinking/reverse drags need no
+                    // direction-specific branch. committedEdgeX is always a real number (never
+                    // the one that moves), so only previewEdgeX needs a null check.
+                    const committedEdgeX = activeLandscapeDragHandle === 'start' ? left : left + r.w;
+                    const previewEdgeX = activeLandscapeDragHandle === 'start' ? previewStartLeft : previewEndLeft;
+                    const ghostRawLeft = previewEdgeX != null ? Math.min(committedEdgeX, previewEdgeX) : 0;
+                    const ghostRawRight = previewEdgeX != null ? Math.max(committedEdgeX, previewEdgeX) : 0;
+                    const ghostVisibleLeft = Math.max(0, ghostRawLeft);
+                    const ghostVisibleRight = Math.min(containerWidth, ghostRawRight);
+                    const ghostVisibleWidth = previewEdgeX != null ? Math.max(0, ghostVisibleRight - ghostVisibleLeft) : 0;
                     return (
                         <React.Fragment key={i}>
                             <div
@@ -2990,6 +3007,30 @@ export default function BeatCustomLoopOverlay({
                                     boxSizing: 'border-box' as const,
                                 }}
                             />
+                            {/* [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span — translucent fill
+                                from the committed edge to the live preview edge for the actively-
+                                dragged handle. zIndex 899, one below the committed band's 900, so
+                                it sits BEHIND the band: the band's own fill stays authoritative
+                                where they overlap, and the ghost only reads as new information in
+                                the non-overlapping delta — avoiding 002I.1a's original "duplicate
+                                line occluded by the marker" failure. Display-only: pointerEvents
+                                none, touches no playbackRange/rects/hit-zone state. */}
+                            {activeLandscapeDragHandle != null && previewEdgeX != null && ghostVisibleWidth > 0 && (
+                                <div
+                                    className="beat-loop-ghost-span-landscape"
+                                    style={{
+                                        position: 'absolute',
+                                        left: ghostVisibleLeft,
+                                        top,
+                                        width: ghostVisibleWidth,
+                                        height: r.h,
+                                        background: overlayColor,
+                                        pointerEvents: 'none',
+                                        zIndex: 899,
+                                        boxSizing: 'border-box' as const,
+                                    }}
+                                />
+                            )}
                             {/* [MAESTRO-LOOP-002D.2] Pressed-state glow ONLY (width/boxShadow) when
                                 activeLandscapeDragHandle matches this handle — no range/rects
                                 change, purely "you're holding this" feedback during the gesture.
