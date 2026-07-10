@@ -1189,10 +1189,24 @@ function applyAxisLock(container: HTMLElement, api: any): void {
     container.style.overflowY = isH ? 'hidden' : 'auto';
     (container.style as any).webkitOverflowScrolling = 'touch';
     container.style.minHeight = isH ? 'auto' : '600px';
+    // [MAESTRO-UI-006A] Mobile landscape hardening — real iPhone PWA testing (not
+    // reproducible in Chrome emulator) showed computed touchAction still 'auto' despite
+    // overflowY already being 'hidden' here, letting a vertical drag on the strip pan/
+    // rubber-band the whole surface vertically and leave it visibly, persistently
+    // shifted. touchAction:'pan-x' tells the browser only horizontal panning is a
+    // native gesture on this element — vertical strip scrolling was never a real
+    // feature, only ever the horizontal loop/seek strip (overflowX above is
+    // unchanged). overscrollBehavior:'none' stops any vertical rubber-band/bounce from
+    // escaping to page scroll. Portrait resets both to 'auto' so a landscape→portrait
+    // flip doesn't leave portrait's normal scroll gestures constrained.
+    container.style.touchAction = isH ? 'pan-x' : 'auto';
+    (container.style as any).overscrollBehavior = isH ? 'none' : 'auto';
     const scrollEl = (api?.renderer?.framer?.scrollElement as HTMLElement | null | undefined);
     if (scrollEl && scrollEl !== container) {
         scrollEl.style.overflowX = isH ? 'auto' : 'hidden';
         scrollEl.style.overflowY = isH ? 'hidden' : 'auto';
+        scrollEl.style.touchAction = isH ? 'pan-x' : 'auto';
+        (scrollEl.style as any).overscrollBehavior = isH ? 'none' : 'auto';
     }
 }
 

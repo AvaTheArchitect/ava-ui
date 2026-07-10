@@ -1489,8 +1489,25 @@ export default function SynthPlayerPage() {
         // full intrinsic strip width (confirmed live: ~35898px) instead of the viewport.
         // minmax(0, 1fr) explicitly allows the track to shrink below that content width,
         // keeping the page viewport-sized while the inner .alphatab-container remains the
-        // real horizontal scroller.
-        <div className="h-screen grid grid-rows-[0px,1fr,0px] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+        // real horizontal scroller. Columns prevent AlphaTab's intrinsic WIDTH from blowing
+        // out the shell.
+        //
+        // [MAESTRO-UI-006C] Row model, corrected. The old grid-rows-[0px,1fr,0px] used
+        // commas between top-level tracks, which is invalid grid-template-rows syntax
+        // (compiles to `0px,1fr,0px`) — browsers drop the whole declaration, so this has
+        // always run as an implicit, content-sized single row, never a real three-row
+        // grid (confirmed live: 006B's attempt to make the row template valid exposed
+        // that the fixed header/footer/overlays are position:fixed and out of flow, and
+        // <main> — the only real in-flow child — auto-placed into the first 0px track
+        // and collapsed to zero height). The honest model is one explicit row, not
+        // three: grid-rows-[minmax(0,1fr)]. minmax(0,1fr) on both axes keeps the row
+        // viewport-sized the same way it already keeps the column viewport-sized above,
+        // clamping the historical content-sized overflow (~482px content in a ~430px
+        // viewport, per live capture) without touching the fixed-position siblings.
+        // h-screen → h-dvh: 100vh includes iOS Safari's collapsed dynamic toolbar chrome;
+        // 100dvh tracks the real visible viewport (same fix as <main>'s [P1] below and
+        // MyTabsPanel.tsx).
+        <div className="h-dvh grid grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
