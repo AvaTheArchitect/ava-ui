@@ -810,13 +810,13 @@ if (LANDSCAPE_WRAP_SCROLL_PROBE) {
     });
 }
 // [loop-click-reseat-probe] Diagnostic flag — set false to silence after root cause confirmed
-const LOOP_CLICK_RESEAT_DEBUG = true;
+const LOOP_CLICK_RESEAT_DEBUG = false;
 // Sprint C: Every Maestro-originated seek — labels call site, exposes getIntentionalTick() leak.
-const SEEK_DIAGNOSTIC_DEBUG = true;
+const SEEK_DIAGNOSTIC_DEBUG = false;
 // Sprint A: Page-mode loop/cursor row mismatch diagnostic.
-const PAGE_ROW_DEBUG = true;
+const PAGE_ROW_DEBUG = false;
 // Sprint B: Landscape loop overlay + cursor-prime diagnostic.
-const LANDSCAPE_LOOP_DEBUG = true;
+const LANDSCAPE_LOOP_DEBUG = false;
 // [MAESTRO-CURSOR-004] Diagnostic-only, false-by-default probe for FixedLandscapeCursor's
 // create/destroy lifecycle. Identifies which guard condition causes the landscape cursor
 // to be destroyed and never recreated (observed: element gone from the DOM entirely,
@@ -847,6 +847,21 @@ if (TOUCH_SEEK_PROBE) {
         file: 'AlphaTabRenderer.tsx',
     });
 }
+// [MAESTRO-SEEK-001c/d/e] Landscape strip momentum + touch-seek architecture, settled
+// after live Safari LAN validation (isolation flags B/C/D/E ruled out; F+G confirmed
+// and made permanent below; see handleTouchMove/handleTouchEnd/applyAxisLock):
+//   - Native WebKit touch-action:pan-x now owns landscape strip scrolling — no
+//     preventDefault, no manual scrollLeft write during touchmove.
+//   - No immediate bestBeat-scan-and-seek on touchend for the strip case — the
+//     pre-existing SEEK-001 stable-container scroll-settle path (onContainerScroll →
+//     onManualScrollSettle, untouched by this cleanup) is the sole seek authority
+//     after a landscape drag/flick.
+//   - BeatCustomLoopOverlay.tsx resolves a fresh Loop ON toggle from the live
+//     viewport position instead of api.tickPosition, closing the post-momentum
+//     stale-anchor race this stable-container path alone could still lose to.
+// The LANDSCAPE_MOMENTUM_PROBE / LANDSCAPE_SURFACE_LIFECYCLE_PROBE diagnostics and the
+// B/C/D/E/F/G isolation flags that drove this investigation have all been retired —
+// their questions are answered and their code paths are now the only paths.
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
 
@@ -8281,10 +8296,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     touchState.isDragging = true;
                     isDraggingRef.current = true;
                     if (typeof window !== 'undefined') (window as any).__isUserDragging = true;
-                    ev.preventDefault();
-                    const maxScroll = container.scrollWidth - container.clientWidth;
-                    container.scrollLeft = Math.max(touchState.minScroll, Math.min(touchState.startScrollLeft + dx, maxScroll));
-                    targetScrollLeftRef.current = container.scrollLeft;
+                    // [MAESTRO-SEEK-001c/e] Native touch-action:pan-x (applyAxisLock) now
+                    // owns landscape strip scrolling — no preventDefault, no manual
+                    // scrollLeft write. touchState.isDragging/isDraggingRef/
+                    // __isUserDragging above still update: onContainerScroll's bail and
+                    // handleTouchEnd's wasTap both depend on that observational tracking.
                 }
             };
 
@@ -8400,80 +8416,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             const tickCache = (api as any)?.tickCache;
                             const bounds = api?.renderer?.boundsLookup;
                             if (tickCache?.findBeat && bounds?.findBeat) {
-                                const cursorSurfaceX = getCursorSurfaceX(container);
-                                const beatXUnderCursor = container.scrollLeft + cursorSurfaceX;
-                                const trackSet = getTrackSet(api);
-                                const masterBarsArr = ((tickCache as any).masterBars as any[]) ?? [];
-                                let bestBeat: any = null, bestX = -Infinity, bestTick = 0;
-                                const BEAT_EPSILON = 2;
-                                for (const mb of masterBarsArr) {
-                                    const mbDur = mb.masterBar?.calculateDuration?.() ?? 3840;
-                                    const stepSize = Math.max(1, Math.floor(mbDur / 32));
-                                    for (let t = mb.start; t < mb.start + mbDur; t += stepSize) {
-                                        const r = tickCache.findBeat(trackSet, t);
-                                        const b = r?.beat;
-                                        if (!b) continue;
-                                        const bb = bounds.findBeat(b);
-                                        if (!bb?.visualBounds) continue;
-                                        const bx = typeof bb.onNotesX === 'number' ? bb.onNotesX : bb.visualBounds.x + bb.visualBounds.w / 2;
-                                        if (bx <= beatXUnderCursor + BEAT_EPSILON && bx > bestX) { bestX = bx; bestBeat = b; bestTick = mb.start + (b.playbackStart ?? 0); }
-                                    }
-                                }
-                                if (!bestBeat && container.scrollLeft <= touchState.minScroll + 2) { bestTick = 0; bestBeat = true; }
-                                if (bestBeat) {
-                                    seekTargetTickRef.current = bestTick;
-                                    seekFreezeUntilRef.current = Date.now() + 300;
-                                    // [StaleStartAnchorOverride] V145: publish authoritative intent so
-                                    // rotation/prime paths trust this seek over stale cached anchors.
-                                    (window as any).__maestroLastIntentionalTick = bestTick;
-                                    (window as any).__maestroLastIntentionalTickAt = Date.now();
-                                    preRotationAnchorTickRef.current = bestTick;
-                                    const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
-                                    if (isRendererDebugEnabled()) {
-                                        const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
-                                        console.log('[maestro-seek-diagnostic]', {
-                                            reason: 'touch-drag-seek',
-                                            callSite: 'handleTouchEnd',
-                                            targetTick: bestTick,
-                                            isLandscape: isLandscapeNow,
-                                            isPlaying: (api?.playerState ?? 0) === 1,
-                                            loopEnabled: loopEnabledRef.current,
-                                            playbackRangeRef: playbackRangeRef.current,
-                                            apiPlaybackRange: api?.playbackRange ?? null,
-                                            liveLoopRangeRef: loopEnabledRef.current
-                                                ? (api?.playbackRange ?? null) : null,
-                                            loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
-                                            lastIntentionalTick: getIntentionalTick(),
-                                            manualSeekAge: (window as any).__maestroManualSeek
-                                                ? Date.now() - (window as any).__maestroManualSeek : null,
-                                            scrollLeft: container.scrollLeft,
-                                            beatXUnderCursor,
-                                            bestX,
-                                        });
-                                    }
-                                    if (seekTicks) seekTicks(bestTick);
-                                    api.tickPosition = bestTick;
-                                    resetBeatAcceptance();
-                                    setLastStableRotationAnchorTick(bestTick, 'touch-seek');
-                                    landscapeScrollStateRef.current = null;
-                                    finishTouchSeekProbeGesture(null, {
-                                        visibleCursorX: beatXUnderCursor,
-                                        resolvedTick: bestTick,
-                                        resolvedBarIdx: bestBeat === true ? null : (bestBeat?.voice?.bar?.masterBar?.index ?? bestBeat?.voice?.bar?.index ?? null),
-                                        resolvedBeatIdx: bestBeat === true ? null : (bestBeat?.index ?? null),
-                                    });
-                                } else {
-                                    // [MAESTRO-SEEK-001] No existing else here — bestBeat's scan found
-                                    // nothing within the left-rail fallback either. This is the
-                                    // primary suspect for the long-fling-to-rail symptom: bounds data
-                                    // for the bar(s) under the cursor may not be ready yet right after
-                                    // a fast re-layout/re-scroll.
-                                    finishTouchSeekProbeGesture('no-visible-bar-under-cursor', {
-                                        visibleCursorX: beatXUnderCursor,
-                                        resolvedTick: null, resolvedBarIdx: null, resolvedBeatIdx: null,
-                                    });
-                                }
-                                cursorRef.current?.requestSnap('touch-seek');
+                                // [MAESTRO-SEEK-001c/e] Native momentum owns the strip after
+                                // touchend now (see handleTouchMove above) — no immediate
+                                // bestBeat-scan-and-seek here. The pre-existing stable-
+                                // container scroll-settle path (onWheelIntent/
+                                // onTouchStartIntent/onPointerDownIntent/onTouchMoveIntent/
+                                // onContainerScroll/onManualScrollSettle below, unchanged) is
+                                // the sole seek authority after a landscape drag/flick.
+                                finishTouchSeekProbeGesture('native-momentum-settle-owns-seek');
                                 resetBeatAcceptance();
                                 targetScrollLeftRef.current = container.scrollLeft;
                                 if ((api.playerState ?? 0) === 1) startLandscapeScrollLoop(container, api);
@@ -8510,7 +8460,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             };
 
             surface.addEventListener('touchstart', handleTouchStart, { passive: true });
-            surface.addEventListener('touchmove', handleTouchMove, { passive: false });
+            // [MAESTRO-SEEK-001c/e] Native momentum owns landscape strip touchmove now —
+            // this listener never calls preventDefault, so it must be passive:true. A
+            // non-passive registration alone (even one that never calls preventDefault)
+            // can make WebKit defer its native fast-path scrolling.
+            surface.addEventListener('touchmove', handleTouchMove, { passive: true });
             surface.addEventListener('touchend', handleTouchEnd, { passive: true });
             // [MAESTRO-SEEK-001] Diagnostic-only — see handleTouchCancelProbe above.
             surface.addEventListener('touchcancel', handleTouchCancelProbe, { passive: true });

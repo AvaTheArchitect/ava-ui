@@ -862,13 +862,16 @@ export default function BeatCustomLoopOverlay({
     // Falls back to the nearest bar only within a bounded pixel distance — beyond that,
     // returns null so the caller cancels the commit rather than guessing.
     const LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX = 80;
-    const resolveLandscapeBarIndexAtX = (clientX: number): number | null => {
+    // [MAESTRO-SEEK-001e] Extracted from resolveLandscapeBarIndexAtX below so the same
+    // proven staffSystems/bars visualBounds scan (exact-hit, else nearest-within-80px)
+    // can be reused from a content-space X a caller already has — e.g. a live
+    // scrollLeft-derived viewport anchor — without round-tripping through a synthetic
+    // clientX. Pure extraction: resolveLandscapeBarIndexAtX's own behavior is unchanged,
+    // it is now a thin wrapper around this. debugLabel lets callers keep their own
+    // recognizable log tag; logging itself is still gated on the same existing
+    // LANDSCAPE_HANDLE_DRAG_DEBUG flag as before.
+    const resolveLandscapeBarIndexAtScoreX = (scoreX: number, debugLabel = '[LOOP-002D.1B][landscape-bar-resolve]'): number | null => {
         if (!api?.renderer?.boundsLookup) return null;
-        const containerEl = container as HTMLElement | null;
-        if (!containerEl) return null;
-        const containerRect = containerEl.getBoundingClientRect();
-        const scoreX = (clientX - containerRect.left) - LOOP_X_OFFSET + landscapeScrollLeft;
-
         const systems = api.renderer.boundsLookup.staffSystems ?? [];
         let bestIdx: number | null = null;
         let bestDist = Infinity;
@@ -883,8 +886,7 @@ export default function BeatCustomLoopOverlay({
                     candidateCount++;
                     if (scoreX >= b.x && scoreX <= b.x + b.w) {
                         if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
-                            console.log('[LOOP-002D.1B][landscape-bar-resolve]', {
-                                clientX, containerLeft: containerRect.left, landscapeScrollLeft,
+                            console.log(debugLabel, {
                                 scoreX, candidateCount, resolvedIdx: idx, exactHit: true,
                                 nearestFallbackDist: null,
                             });
@@ -898,14 +900,67 @@ export default function BeatCustomLoopOverlay({
         }
         const withinFallback = bestIdx != null && bestDist <= LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX;
         if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
-            console.log('[LOOP-002D.1B][landscape-bar-resolve]', {
-                clientX, containerLeft: containerRect.left, landscapeScrollLeft,
+            console.log(debugLabel, {
                 scoreX, candidateCount, resolvedIdx: withinFallback ? bestIdx : null,
                 exactHit: false, nearestFallbackDist: bestIdx != null ? bestDist : null,
                 nearestFallbackMaxPx: LANDSCAPE_BAR_RESOLVE_MAX_NEAREST_PX,
             });
         }
         return withinFallback ? bestIdx : null;
+    };
+    const resolveLandscapeBarIndexAtX = (clientX: number): number | null => {
+        const containerEl = container as HTMLElement | null;
+        if (!containerEl) return null;
+        const containerRect = containerEl.getBoundingClientRect();
+        const scoreX = (clientX - containerRect.left) - LOOP_X_OFFSET + landscapeScrollLeft;
+        return resolveLandscapeBarIndexAtScoreX(scoreX);
+    };
+    // [MAESTRO-SEEK-001e] Fresh Loop ON toggle in landscape/strip mode: resolves the
+    // start beat from the LIVE viewport position instead of api.tickPosition. Root
+    // cause this fixes — after native WebKit momentum (the F+G isolation flags in
+    // AlphaTabRenderer.tsx), api.tickPosition is only updated by that file's debounced
+    // scroll-settle seek, which can lag the visible strip by ~150-950ms depending on
+    // flick distance; toggling Loop ON inside that window previously read whatever
+    // tick was current BEFORE the flick (device-confirmed: MAESTRO-SEEK-001e D2).
+    // Resolves the beat under the SAME fixed cursor position AlphaTabRenderer's own
+    // landscape touch-seek anchors to (getFixedCursorX/getCursorSurfaceX in
+    // AlphaTabRenderer.tsx) via a synchronous, just-now read of container.scrollLeft —
+    // never api.tickPosition — so it cannot inherit that staleness. The ratio/bias
+    // constants are duplicated here rather than imported: AlphaTabRenderer.tsx is out
+    // of scope for this patch and does not export them. Keep in sync if either changes.
+    // Returns null (falls back to the existing api.tickPosition read, unchanged) for
+    // portrait/desktop, a missing container/boundsLookup/tickCache, or no bar resolved
+    // within the existing 80px nearest-bar tolerance — never throws, never partially
+    // mutates loop/playback state.
+    const LANDSCAPE_VIEWPORT_CURSOR_RATIO = 0.144; // mirrors AlphaTabRenderer.tsx CURSOR_POSITION_RATIO
+    const LANDSCAPE_VIEWPORT_CURSOR_BIAS_PX = 0;   // mirrors AlphaTabRenderer.tsx CURSOR_BIAS_PX
+    const resolveLandscapeViewportTick = (): number | null => {
+        if (!isLandscapeRef.current || !api?.renderer?.boundsLookup) return null;
+        const containerEl = container as HTMLElement | null;
+        if (!containerEl) return null;
+        const masterBarsArr = ((api as any)?.tickCache?.masterBars as any[]) ?? null;
+        if (!masterBarsArr) return null;
+
+        const cs = getComputedStyle(containerEl);
+        const padL = parseFloat(cs.paddingLeft || '0');
+        const padR = parseFloat(cs.paddingRight || '0');
+        const contentW = containerEl.clientWidth - padL - padR;
+        const cursorX = Math.round(padL + contentW * LANDSCAPE_VIEWPORT_CURSOR_RATIO + LANDSCAPE_VIEWPORT_CURSOR_BIAS_PX) - padL;
+        const scoreX = containerEl.scrollLeft + cursorX;
+
+        const barIdx = resolveLandscapeBarIndexAtScoreX(scoreX, '[SEEK-001e][landscape-viewport-tick]');
+        if (barIdx == null) return null;
+
+        const entry = masterBarsArr.find((mb: any) => (mb?.masterBar?.index ?? mb?.index) === barIdx);
+        const tick = entry?.start;
+        if (typeof tick !== 'number') return null;
+
+        if (LANDSCAPE_LOOP_DEBUG) {
+            console.log('[SEEK-001e][landscape-viewport-tick]', {
+                scrollLeft: containerEl.scrollLeft, cursorX, scoreX, barIdx, tick,
+            });
+        }
+        return tick;
     };
 
     // ── Fresh-attack resolver for end handle reseat ───────────────────────────────
@@ -1660,7 +1715,12 @@ export default function BeatCustomLoopOverlay({
         // rendering remain fully guarded — this effect never renders/drags handles.
         if (api.playbackRange) return;
 
-        const tick = (api as any).tickPosition ?? 0;
+        // [MAESTRO-SEEK-001e] Prefer a live viewport-derived tick over api.tickPosition
+        // — see resolveLandscapeViewportTick above for why. Falls back to the pre-
+        // existing api.tickPosition read, unchanged, for portrait/desktop or whenever
+        // live resolution can't resolve a bar.
+        const viewportTick = resolveLandscapeViewportTick();
+        const tick = viewportTick ?? ((api as any).tickPosition ?? 0);
 
         const tickCache = (api as any)?.tickCache;
         if (tickCache) {
