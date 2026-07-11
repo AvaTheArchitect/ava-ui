@@ -1,10 +1,31 @@
 'use client';
 
 /**
- * Last Updated June 28th, 2026
- * Version V1.7.1 
+ * Last Updated July 10th, 2026
+ * Version V1.7.2
  * File: components/alphaTab/MaestroCursor2.tsx
- *  
+ *
+ * V1.7.2 (MAESTRO-CURSOR-005 — Terminal Sustained/Vibrato Loop-Boundary Glide):
+ * ✅ setBeat's next-anchor resolution classifies a narrow additional case ahead of the
+ *    existing nextNoteX/stayPutMode branches: an active loop, a current beat with real
+ *    sounding duration, and the CURRENT beat's own span reaching/crossing the loop's
+ *    endTick (scanStart + expandedBeatDuration >= playbackRange.endTick) — regardless
+ *    of what (if anything) resolveNextBeatExpanded resolved as "next". An earlier
+ *    version of this check required a resolved next-candidate whose own tick was
+ *    at/beyond the loop's endTick, but live diagnostics showed the founding repro
+ *    always resolves nextCandidate to null, so that condition never fired; the
+ *    current-beat-span check replaced it and needs no nextCandidate at all. This case
+ *    leaves stayPutMode false and nextNoteX null (and, critically, guards the separate
+ *    `if (!nextCandidate)` stayPut branch so it can't re-enter stayPutMode afterward),
+ *    which routes setTick's existing fallback branch (bar-right, clamped by loopEndX
+ *    when set) — the same fallback barEndGapMode/terminalSameRowNoAdvanceMode already
+ *    use. That fallback also shifts its target to loopEndX + BAR_WIDTH / 2 specifically
+ *    for this mode, so the cursor body's rendered LEFT EDGE (not just its center spine)
+ *    clears the note by the time the loop wraps, matching Songsterr-like visual
+ *    acceptance. No changes to the barEndGapMode/terminalSameRowNoAdvanceMode modes
+ *    themselves, or to the no-next-candidate/cross-row stayPut branches for their
+ *    original (non-terminal) cases.
+ *
  * V1.7 LOCKS:
  * ✅ [TerminalSameRowNoAdvanceMode] Site B cross-row handoff now scans the current
  *    voice's remaining beats. If the scan is clean and no later same-row forward
@@ -102,6 +123,14 @@ export class MaestroCursorV2 {
     private stayPutMode = false;
     private barEndGapMode = false;
     private terminalSameRowNoAdvanceMode = false;
+    // [MAESTRO-CURSOR-005] Terminal sustained/vibrato note whose OWN duration span
+    // (scanStart + expandedBeatDuration) reaches/crosses an active loop's endTick —
+    // no nextCandidate required. Drives two things: (1) setTick's branch selection,
+    // via stayPutMode staying false for this case (see the `if (!nextCandidate)` guard
+    // in setBeat), and (2) setTick's terminal visual target, which shifts to
+    // loopEndX + BAR_WIDTH / 2 for this mode so the cursor body's left edge — not just
+    // its center spine — clears the note by loop wrap.
+    private terminalSustainedLoopGlideMode = false;
     // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
     // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
     // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
@@ -263,6 +292,7 @@ export class MaestroCursorV2 {
             this.stayPutMode = false;
             this.barEndGapMode = false;
             this.terminalSameRowNoAdvanceMode = false;
+            this.terminalSustainedLoopGlideMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor2-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -397,9 +427,57 @@ export class MaestroCursorV2 {
         this.stayPutMode = false;
         this.barEndGapMode = false;
         this.terminalSameRowNoAdvanceMode = false;
+        this.terminalSustainedLoopGlideMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
 
-        if (nextCandidate) {
+        // ── [MAESTRO-CURSOR-005.3] Candidate-independent terminal sustained/vibrato
+        // loop-boundary glide. CURSOR-005.2's live diagnostics disproved the original
+        // nextCandidate-tick premise: in the founding repro nextCandidate is null
+        // (branchTaken: 'null-candidate-stayput-driftonly'), so a condition requiring
+        // nextCandidate != null could never fire there. The correct signal is the
+        // CURRENT beat's own span: when this beat's own scanStart..scanStart+
+        // expandedBeatDuration already reaches/crosses the loop's endTick, the note is
+        // musically the terminal sustained/vibrato note for this loop pass regardless
+        // of what (if anything) resolveNextBeatExpanded handed back as "next". This
+        // block only decides whether stayPutMode is entered for this one narrow case:
+        // it deliberately leaves stayPutMode false and nextNoteX null so setTick's
+        // existing, unmodified fallback branch (bar-right, clamped by loopEndX) runs
+        // exactly as it does for the barEndGapMode/terminalSameRowNoAdvanceMode cases
+        // below — no setTick changes. See the guard added to the `if (!nextCandidate)`
+        // block below: without it, that separate (non-chained) branch would still
+        // unconditionally re-set stayPutMode = true right after this one runs.
+        const loopRangeForGlide = this.api?.playbackRange ?? null;
+        const loopEndTickForGlide = typeof loopRangeForGlide?.endTick === 'number'
+            ? loopRangeForGlide.endTick
+            : null;
+        const nextCandidateTickForGlide = nextExpandedBeatStart
+            ?? nextCandidate?.absolutePlaybackStart
+            ?? nextCandidate?.playbackStart
+            ?? null;
+        const terminalSustainedLoopGlide =
+            loopEndTickForGlide !== null &&
+            this.loopEndX !== null &&
+            !beat?.isRest &&
+            this.expandedBeatDuration > 0 &&
+            scanStart < loopEndTickForGlide &&
+            (scanStart + this.expandedBeatDuration) >= loopEndTickForGlide;
+
+        if (terminalSustainedLoopGlide) {
+            this.terminalSustainedLoopGlideMode = true;
+            if (cursor2DiagEnabled()) {
+                console.warn('[maestro-cursor2-boundary]', {
+                    reason: 'terminal-sustained-loop-glide',
+                    currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                    scanStart,
+                    nextCandidateTick: nextCandidateTickForGlide,
+                    loopEndTick: loopEndTickForGlide,
+                    expandedBeatDuration: this.expandedBeatDuration,
+                    currentNoteX: this.currentNoteX,
+                    loopEndX: this.loopEndX,
+                    stayPutMode: this.stayPutMode,
+                });
+            }
+        } else if (nextCandidate) {
             const nextDur = nextCandidate.playbackDuration ?? nextCandidate.duration ?? 0;
             if (nextDur >= MIN_PRIMARY_BEAT_TICKS) {
                 const nb = this.api?.renderer?.boundsLookup?.findBeat(nextCandidate);
@@ -500,7 +578,14 @@ export class MaestroCursorV2 {
                 }
             }
         }
-        if (!nextCandidate) {
+        // [MAESTRO-CURSOR-005.3] This is a separate `if`, not `else if` chained to the
+        // terminalSustainedLoopGlide check above — without this guard it would
+        // unconditionally re-enter stayPutMode = true immediately after that check ran,
+        // for every null-candidate case including the one just classified above. All
+        // other null-candidate Boundary Monster protection (barEndGapMode scan,
+        // terminalSameRowNoAdvanceMode scan) is unchanged and still runs normally
+        // whenever terminalSustainedLoopGlide is false.
+        if (!nextCandidate && !terminalSustainedLoopGlide) {
             this.stayPutMode = true;
 
             const _mb = beat?.voice?.bar?.masterBar;
@@ -699,8 +784,23 @@ export class MaestroCursorV2 {
             const barRight = mbBounds?.visualBounds
                 ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
                 : this.currentNoteX + 24;
-            const effectiveRight = this.loopEndX !== null
-                ? Math.min(barRight, this.loopEndX)
+            // [MAESTRO-CURSOR-005.5] Terminal sustained/vibrato loop glide only: the
+            // universal spine-centered convention (every other case below/above) targets
+            // loopEndX with the SPINE, which leaves the cursor body's left 7px (BAR_WIDTH/2)
+            // still overlapping the note at wrap (CURSOR-005.4 confirmed this via
+            // cursorLeftX/cursorCenterX deltas). Songsterr-like acceptance for this one
+            // mode requires the full visible body to clear the note, so the target is
+            // shifted right by BAR_WIDTH/2 here — the finalX = interpolatedX - BAR_WIDTH/2
+            // convention is untouched, so this alone makes cursorLeftX (not the spine)
+            // land on loopEndX at full progress. Every other path (mid-bar sustained
+            // notes, barEndGapMode, terminalSameRowNoAdvanceMode, ordinary loops) keeps
+            // targeting loopEndX directly — unchanged.
+            const loopEndXValue = this.loopEndX;
+            const terminalCap = this.terminalSustainedLoopGlideMode && loopEndXValue !== null
+                ? loopEndXValue + BAR_WIDTH / 2
+                : loopEndXValue;
+            const effectiveRight = terminalCap !== null
+                ? Math.min(barRight, terminalCap)
                 : barRight;
             interpolatedX = this.currentNoteX + (effectiveRight - this.currentNoteX) * progress;
         }
@@ -871,6 +971,7 @@ export class MaestroCursorV2 {
             this.stayPutMode = false;
             this.barEndGapMode = false;
             this.terminalSameRowNoAdvanceMode = false;
+            this.terminalSustainedLoopGlideMode = false;
         }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
