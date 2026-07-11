@@ -2220,7 +2220,14 @@ export default function BeatCustomLoopOverlay({
      * handleDragEnd — Fix E: commits previewRange to api.playbackRange on release.
      * Nothing is written to api during drag — only on mouseup/touchend.
      */
-    const handleDragEnd = (e: MouseEvent | TouchEvent) => {
+    // [MAESTRO-LOOP-004B.2] Event type widened to include PointerEvent — probe evidence
+    // (trace 7/10 gesture 27) showed the touch stream can die mid-gesture while the
+    // pointer stream continues and delivers pointerup, so pointerup/pointercancel now
+    // also route here (see the Stage-1 listener effect below). Nothing in this
+    // function's body reads a touch- or mouse-specific property of `e` — only
+    // `.preventDefault()` and `.type`, both on the base Event interface — so widening
+    // is safe and requires no internal branching.
+    const handleDragEnd = (e: MouseEvent | TouchEvent | PointerEvent) => {
         if (!dragTargetRef.current) return;
         if (isLandscapeRef.current) {
             dragTargetRef.current = null;
@@ -2304,6 +2311,52 @@ export default function BeatCustomLoopOverlay({
         smartCursorSnap();
     };
 
+    // [MAESTRO-LOOP-004B] Always-latest ref for handleDragStart, same pattern as
+    // landscapeHandleDragStartRef below. Needed by the native touchstart callback ref
+    // (Layer A, ported from 002I.1c) immediately below: that ref attaches once per
+    // mounted handle element and must always invoke the CURRENT handleDragStart, not
+    // whichever closure was in scope when the element first mounted — handleDragStart
+    // is a plain const recreated every render, not stable.
+    const handleDragStartRef = useRef(handleDragStart);
+    useEffect(() => {
+        handleDragStartRef.current = handleDragStart;
+    });
+
+    // [MAESTRO-LOOP-004B] Layer A — native, explicitly non-passive touchstart listeners
+    // on the portrait handle DOM nodes themselves, ported from landscape's
+    // makeLandscapeHitZoneTouchRef (002I.1c). React's synthetic onTouchStart can end up
+    // passive-marked, silently making handleDragStart's preventDefault a no-op for
+    // touch — the same class of issue landscape was hardened against. Attaching our own
+    // listener with { passive: false } guarantees it actually runs. This REPLACES
+    // portrait's onTouchStart JSX prop (removed below) rather than supplementing it —
+    // two listeners firing on the same touchstart would double-invoke handleDragStart.
+    // Mouse is untouched — onMouseDown stays on the JSX below, unchanged.
+    //
+    // Stable (constructed once via useState's lazy initializer) callback refs rather
+    // than a useEffect, matching landscape: the handle divs mount/unmount whenever
+    // rects toggles empty/non-empty, and a callback ref's own identity determines
+    // whether React tears down + re-invokes it — an inline arrow function would churn
+    // attach/detach every render. Each closure tracks its own currently-attached
+    // element/handler so it can detach cleanly before attaching to a new element, or
+    // on unmount (called with null).
+    const makePortraitHandleTouchRef = (target: 'start' | 'end') => {
+        let attachedEl: HTMLDivElement | null = null;
+        let attachedHandler: ((ev: TouchEvent) => void) | null = null;
+        return (el: HTMLDivElement | null) => {
+            if (attachedEl && attachedHandler) {
+                attachedEl.removeEventListener('touchstart', attachedHandler);
+            }
+            attachedEl = el;
+            attachedHandler = null;
+            if (el) {
+                attachedHandler = (ev: TouchEvent) => handleDragStartRef.current(ev as any, target);
+                el.addEventListener('touchstart', attachedHandler, { passive: false });
+            }
+        };
+    };
+    const [portraitStartHandleTouchRef] = useState(() => makePortraitHandleTouchRef('start'));
+    const [portraitEndHandleTouchRef] = useState(() => makePortraitHandleTouchRef('end'));
+
     // ─────────────────────────────────────────
     // Stage 1 — Handle drag global event listeners
     // Attaches/detaches when handleDragging changes.
@@ -2314,12 +2367,40 @@ export default function BeatCustomLoopOverlay({
 
         const onMove = (e: MouseEvent | TouchEvent) => handleDragMove(e);
         const onUp = (e: MouseEvent | TouchEvent) => handleDragEnd(e);
+        // [MAESTRO-LOOP-004B] Safety net for a release event that never reaches window
+        // (backgrounding the app/tab mid-drag, or an OS/browser gesture reinterpretation
+        // swallowing the terminating touch) — ported from landscape's onWindowBlur
+        // (002D.2/002I.1c). Reuses handleDragEnd unchanged: it commits/cancels exactly
+        // like a normal release, using whatever previewRangeRef/dragTargetRef already
+        // hold — no new cancel/commit branch, no second cleanup path. Guarded on
+        // dragTargetRef.current so a blur with no active drag is a no-op.
+        const onWindowBlur = () => {
+            if (!dragTargetRef.current) return;
+            handleDragEnd(new MouseEvent('mouseup'));
+        };
+
+        // [MAESTRO-LOOP-004B.2] The pointer stream can close a portrait handle drag
+        // after the touch stream is abandoned. Probe trace 7/10 gesture 27 showed
+        // touchmove went silent, no touchend/touchcancel arrived, but pointerup did
+        // arrive. These listeners are the release path for that case. Converges through
+        // the same handleDragEnd as every other exit path — no second cleanup path.
+        // Bubble phase, non-passive (matching touchend/touchcancel above), since
+        // handleDragEnd calls preventDefault(). Scoped to active portrait dragging only,
+        // same as the rest of this effect (attached/detached with handleDragging). A
+        // normal gesture that fires both pointerup and touchend is safe: handleDragEnd's
+        // existing `if (!dragTargetRef.current) return;` guard is a synchronous ref
+        // check, so whichever of the two arrives first runs the real cleanup and the
+        // second is a harmless no-op — no double commit, no new guard needed.
+        const onPointerRelease = (ev: PointerEvent) => handleDragEnd(ev);
 
         window.addEventListener('mousemove', onMove, { passive: false });
         window.addEventListener('mouseup', onUp);
         window.addEventListener('touchmove', onMove, { passive: false });
         window.addEventListener('touchend', onUp, { passive: false });
         window.addEventListener('touchcancel', onUp, { passive: false });
+        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('pointerup', onPointerRelease, { passive: false });
+        window.addEventListener('pointercancel', onPointerRelease, { passive: false });
 
         return () => {
             window.removeEventListener('mousemove', onMove);
@@ -2327,6 +2408,9 @@ export default function BeatCustomLoopOverlay({
             window.removeEventListener('touchmove', onMove);
             window.removeEventListener('touchend', onUp);
             window.removeEventListener('touchcancel', onUp);
+            window.removeEventListener('blur', onWindowBlur);
+            window.removeEventListener('pointerup', onPointerRelease);
+            window.removeEventListener('pointercancel', onPointerRelease);
         };
     }, [handleDragging]);
 
@@ -3166,7 +3250,7 @@ export default function BeatCustomLoopOverlay({
                         {isFirst && (
                             <div
                                 onMouseDown={e => handleDragStart(e, 'start')}
-                                onTouchStart={e => handleDragStart(e, 'start')}
+                                ref={portraitStartHandleTouchRef}
                                 style={{
                                     position: 'absolute',
                                     ...(startIsDragging && activeOverlayX !== null
@@ -3233,7 +3317,7 @@ export default function BeatCustomLoopOverlay({
                         {isLast && (
                             <div
                                 onMouseDown={e => handleDragStart(e, 'end')}
-                                onTouchStart={e => handleDragStart(e, 'end')}
+                                ref={portraitEndHandleTouchRef}
                                 style={{
                                     position: 'absolute',
                                     ...(endIsDragging && activeOverlayX !== null
