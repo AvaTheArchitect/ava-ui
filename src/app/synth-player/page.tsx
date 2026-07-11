@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.20
- * Date: July 9th, 2026
- * Cloned from V102.19 — No-video panel Add Video gateway + recent lane closures.
+ * Synth Player Page — Phase 4 V102.21-isolation
+ * Date: July 11, 2026
+ * Cloned from V102.20 — MAESTRO-UI-009A isolation: portrait shell temporarily restores
+ * known-good h-screen / legacy row behavior while preserving h-dvh valid-grid landscape
+ * path; debug-gated probe added to distinguish h-dvh masking vs provoking.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
  * ✅ MAESTRO-VIDEO-004 closed: No-video empty-state panel is a gateway, not an inline
@@ -358,6 +360,9 @@ export default function SynthPlayerPage() {
 
     // ==================== SCROLL / LAYOUT ====================
     const mainScrollContainerRef = useRef<HTMLElement>(null);
+    // [MAESTRO-UI-009A] Isolation probe target — outer shell div ref, read only by the
+    // debug-gated viewport probe below. Not consumed by any layout logic.
+    const shellRef = useRef<HTMLDivElement>(null);
     const [isHeaderVisible, setIsHeaderVisible] = useState<boolean>(true);
     // MAESTRO-SCROLL-001: synchronous header intent. S1 reads this, never the
     // transform-animated DOM rect. Mirrors the isPlayingRef pattern (line 79/487).
@@ -428,6 +433,60 @@ export default function SynthPlayerPage() {
             if (timer) clearTimeout(timer);
             window.removeEventListener('resize', check);
             window.removeEventListener('orientationchange', check);
+        };
+    }, []);
+
+    // [MAESTRO-UI-009A] Ref mirror so the probe's listeners below (registered once, on
+    // mount) can read the latest isMobileLandscape without a stale closure.
+    const isMobileLandscapeRef = useRef(false);
+    useEffect(() => { isMobileLandscapeRef.current = isMobileLandscape; }, [isMobileLandscape]);
+
+    // [MAESTRO-UI-009A] Debug-gated cold-launch viewport probe. Silent unless
+    // localStorage.maestro_ui009a_probe === '1'. Logs primitives only — never DOM/api
+    // references — per the standing rule that logged live objects can themselves mask or
+    // alter the race they're meant to catch. Compares reported window/visualViewport
+    // height against this shell div's actual rendered height across mount, rAF, short
+    // delays, and real resize/orientation/visualViewport events, to distinguish whether
+    // h-dvh was masking or provoking the iOS PWA portrait cold-start short-viewport bug.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (localStorage.getItem('maestro_ui009a_probe') !== '1') return;
+
+        const logProbe = (trigger: string) => {
+            console.log('[MAESTRO-UI-009A-PROBE]', {
+                trigger,
+                innerHeight: window.innerHeight,
+                outerHeight: window.outerHeight,
+                screenHeight: window.screen?.height ?? null,
+                visualViewportHeight: window.visualViewport?.height ?? null,
+                docClientHeight: document.documentElement.clientHeight,
+                bodyHeight: document.body.getBoundingClientRect().height,
+                shellHeight: shellRef.current?.getBoundingClientRect().height ?? null,
+                isMobileLandscape: isMobileLandscapeRef.current,
+                isStandalone: window.matchMedia('(display-mode: standalone)').matches,
+                orientationType: window.screen?.orientation?.type ?? null,
+            });
+        };
+
+        logProbe('mount');
+        const raf = requestAnimationFrame(() => logProbe('raf'));
+        const t250 = setTimeout(() => logProbe('timeout-250'), 250);
+        const t1000 = setTimeout(() => logProbe('timeout-1000'), 1000);
+        const onResize = () => logProbe('window-resize');
+        const onOrientation = () => logProbe('orientationchange');
+        const onVvResize = () => logProbe('visualViewport-resize');
+
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onOrientation);
+        window.visualViewport?.addEventListener('resize', onVvResize);
+
+        return () => {
+            cancelAnimationFrame(raf);
+            clearTimeout(t250);
+            clearTimeout(t1000);
+            window.removeEventListener('resize', onResize);
+            window.removeEventListener('orientationchange', onOrientation);
+            window.visualViewport?.removeEventListener('resize', onVvResize);
         };
     }, []);
 
@@ -1490,24 +1549,46 @@ export default function SynthPlayerPage() {
         // minmax(0, 1fr) explicitly allows the track to shrink below that content width,
         // keeping the page viewport-sized while the inner .alphatab-container remains the
         // real horizontal scroller. Columns prevent AlphaTab's intrinsic WIDTH from blowing
-        // out the shell.
+        // out the shell. Applied unconditionally (both orientations) — only row/height
+        // are split below; this fix is orthogonal (width, not height) and isn't implicated
+        // in the UI-009A gutter.
         //
-        // [MAESTRO-UI-006C] Row model, corrected. The old grid-rows-[0px,1fr,0px] used
-        // commas between top-level tracks, which is invalid grid-template-rows syntax
-        // (compiles to `0px,1fr,0px`) — browsers drop the whole declaration, so this has
-        // always run as an implicit, content-sized single row, never a real three-row
-        // grid (confirmed live: 006B's attempt to make the row template valid exposed
-        // that the fixed header/footer/overlays are position:fixed and out of flow, and
-        // <main> — the only real in-flow child — auto-placed into the first 0px track
-        // and collapsed to zero height). The honest model is one explicit row, not
-        // three: grid-rows-[minmax(0,1fr)]. minmax(0,1fr) on both axes keeps the row
-        // viewport-sized the same way it already keeps the column viewport-sized above,
-        // clamping the historical content-sized overflow (~482px content in a ~430px
-        // viewport, per live capture) without touching the fixed-position siblings.
-        // h-screen → h-dvh: 100vh includes iOS Safari's collapsed dynamic toolbar chrome;
-        // 100dvh tracks the real visible viewport (same fix as <main>'s [P1] below and
-        // MyTabsPanel.tsx).
-        <div className="h-dvh grid grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+        // [MAESTRO-UI-006C] Row model, corrected — LANDSCAPE ONLY as of the UI-009A
+        // isolation below. The old grid-rows-[0px,1fr,0px] used commas between top-level
+        // tracks, which is invalid grid-template-rows syntax (compiles to `0px,1fr,0px`) —
+        // browsers drop the whole declaration, so this ran as an implicit, content-sized
+        // single row, never a real three-row grid (confirmed live: 006B's attempt to make
+        // the row template valid exposed that the fixed header/footer/overlays are
+        // position:fixed and out of flow, and <main> — the only real in-flow child —
+        // auto-placed into the first 0px track and collapsed to zero height).
+        // grid-rows-[minmax(0,1fr)] + h-dvh fixed the landscape strip-drift this
+        // addressed; both are preserved for landscape below.
+        //
+        // [MAESTRO-UI-009A] PORTRAIT ISOLATION (temporary, not a final fix). Bisection
+        // (known-good d8110cb vs known-bad 89e31f3) convicted this div's h-screen→h-dvh
+        // change as the likely cause of the iPhone PWA portrait cold-start bottom gutter:
+        // h-dvh/100dvh consults the same WebKit dynamic-viewport tracker that
+        // window.innerHeight/visualViewport.height read from, and that tracker has been
+        // probed reporting a transient short value (894px vs the true 956px) on cold
+        // portrait launch that only self-corrects on a real rotation — a 6-second
+        // no-rotation timer probe found no self-correction. h-screen/100vh (the "large
+        // viewport") does not consult that tracker, so it rendered at the stable
+        // full-screen value and masked the gap instead of exposing it. Portrait
+        // temporarily reverts to the known-good h-screen + grid-rows-[0px,1fr,0px] to
+        // test that theory live; landscape keeps the 006C h-dvh + grid-rows-[minmax(0,1fr)]
+        // fix untouched. See the debug-gated probe above isMobileLandscapeRef
+        // (localStorage.maestro_ui009a_probe). Revert this comment block and the ternary
+        // below to unconditional h-dvh once the probe data confirms or falsifies the
+        // theory.
+        <div
+            ref={shellRef}
+            className={`
+        grid grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden
+        ${isMobileLandscape
+                    ? 'h-dvh grid-rows-[minmax(0,1fr)]'
+                    : 'h-screen grid-rows-[0px,1fr,0px]'}
+    `}
+        >
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
