@@ -194,7 +194,7 @@ export default function SynthPlayerPage() {
     const originalTrackVolsRef = useRef<Map<number, number>>(new Map());
 
     // ==================== THEME ====================
-    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
     // ==================== SONG STATE ====================
     const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
