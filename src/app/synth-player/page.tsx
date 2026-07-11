@@ -1,60 +1,15 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.20
- * Date: July 7, 2026
- * Cloned from V102.19 — No-video panel Add Video gateway + recent lane closures.
+ * Synth Player Page — Phase 4 V102.17
+ * Date: June 27, 2026
+ * Cloned from V102.16 — TopMenuTray scroll reveal + native scrollbar gutter stabilization.
  *
- * RECENT CLOSED LANES (see individual patch history for detail):
- * ✅ MAESTRO-VIDEO-004 closed: No-video empty-state panel is a gateway, not an inline
- *        editor — removed the disabled paste/sync controls; "Add Main / Full Mix Video"
- *        opens MetadataEditorPanel on Media & Sync with the Main / Full Mix row scrolled
- *        into view and highlighted. Other slot rows (Lesson, Playthrough, Live, Solo, etc.)
- *        remain manually selectable for Practice Generator/lesson-style tabs.
- *        tabs.youtube_video_id/video_start_offset stay untouched — tab_youtube remains
- *        the sole write path.
- *        [004C] handleMetadataSave now also calls refetchSongs() after every Metadata
- *        Editor save, so a newly-saved tab_youtube main row (youtubeVideoId/videoVariants/
- *        videoStartOffset, re-derived via fetchSongs()'s queries.ts bridge) reaches Original
- *        Mode immediately — no hard refresh needed. Safe under PLAYER-003: the signed URL
- *        resolver keys off file-identity primitives, not the currentSong reference, so this
- *        does not reload the score or reset the selected track.
- * ✅ MAESTRO-PLAYER-003 closed: Signed URL resolver is keyed by playable file identity
- *        primitives instead of currentSong object reference, preventing metadata-only
- *        saves from clearing/reloading the active score, tracks, and selected track.
- * ✅ MAESTRO-PLAYER-002 closed: A1 playerReady latch + D/B destroyed-generation guards
- *        retained in AlphaTabRenderer.tsx; diagnostic probe removed.
- * ✅ MAESTRO-UI-002 closed: TopMenuTray landscape CSS threshold aligned to JS
- *        isMobileLandscape's innerHeight < 600 via globals.css max-height: 599px (was 500px).
- * ✅ MAESTRO-UI-004 closed: page-level YouTube wrapper simplified to a visibility-only gate;
- *        YouTubePlayer.tsx is now the single positioning authority for the media panel.
- *
- * MAESTRO-UI-002 (LOCKED — desktop + Safari LAN manual scroll pass):
- * ✅ Wheel: wheel-down hides immediately; wheel-up marks reveal intent, applied on the next
- *        onScroll delta < 0 tick. Both cooldown-protected (160ms, headerToggleLockUntilRef).
- * ✅ Scrollbar drag: explicit, direction-based hide/reveal off isPointerOnScrollbarRef — real
- *        scrollbar drags are intercepted before onScroll's ambient delta thresholds.
- * ✅ Mobile touch: touchstart/touchmove/touchend/touchcancel run on window capture, filtered
- *        by isTouchOnMainScrollSurface (target- and point-based containment; excludes the
- *        TopMenu tray and interactive controls). touchmove toggles hide/reveal directly off
- *        finger direction past a 2px deadzone. recentTouchActivityUntilRef and
- *        touchMomentumRevealIntentUntilRef bridge native momentum/inertial scroll after
- *        finger-lift — with continuation renewal for long sustained flicks and a deferred
- *        recheck if a valid reveal is ever blocked only by the cooldown lock.
- * ✅ Paused canvas-up reveal: any delta < 0 while !isPlayingRef.current reveals — S1 only
- *        scrolls during active playback, so isPlaying === false already proves a given
- *        upward scroll can't be a programmatic correction.
- * ✅ Playback/S1 protection preserved: the [TG3-PlaybackGuard] recent-intent gate still
- *        requires real manual/touch intent to reveal while isPlayingRef.current is true, so
- *        AlphaTab/S1 programmatic scroll corrections cannot self-reveal the tray.
- * ✅ requestHeaderHide unchanged — a playback-requested hide still arbitrates against a live
- *        manual-reveal window (defers instead of stomping it) exactly as before.
- * ✅ AlphaTabRenderer.tsx / the V145.26 S1 playback resolver are untouched throughout — this
- *        lane only changes whether/when page.tsx applies a hide/reveal AlphaTab already
- *        requested, never the resolver's own scroll target math.
- *        Open/parked, not addressed by this lane: MAESTRO-MOBILE-CHORDS-001 (mobile
- *        chord-chart row handling) and a GP8 row-bound layout sliver remain open, tracked
- *        separately.
+ * MAESTRO-UI-001 candidate (checkpoint, not yet OFFICIAL or LOCKED):
+ * ✅ Synchronous headerIntentRef, S1 sysIdx-driven TopMenu hide after Row 1,
+ *        playback-safe near-top reveal gate.
+ *        MAESTRO-UI-002 remains open: manual scroll-down TopMenu hide
+ *        responsiveness is a separate lane, not addressed here.
  *
  * V102.17 CHANGES:
  * ✅ TopMenuTray reveals immediately on manual upward scroll/pull.
@@ -137,10 +92,6 @@ export default function SynthPlayerPage() {
     const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
     const [isYouTubeReady, setIsYouTubeReady] = useState(false);
     const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
-    // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable — this
-    // drives the no-video empty-state panel WITHOUT ever setting audioSource to
-    // 'original' when there's no video, so Synth stays selected/active underneath it.
-    const [showNoVideoPanel, setShowNoVideoPanel] = useState(false);
     const youtubePlayerRef = useRef<any>(null);
     const pauseTransitionRef = useRef<boolean>(false);
 
@@ -200,10 +151,7 @@ export default function SynthPlayerPage() {
     const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
-    // [MAESTRO-VIDEO-004/004A] 'novideo' source: opened via the no-video panel's
-    // Add Main / Full Mix Video action — routes MetadataEditorPanel straight to
-    // Media & Sync / Main / Full Mix.
-    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | 'novideo' | null }>
+    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | null }>
         ({ tabId: null, source: null });
 
     // ==================== SIGNED URL CACHE ====================
@@ -258,24 +206,12 @@ export default function SynthPlayerPage() {
     }, [defaultYouTubeId]);
 
     // ==================== SIGNED URL RESOLVER ====================
-    // [MAESTRO-PLAYER-003] Keyed by playable file identity (id + file path/name/extension),
-    // not the currentSong object. MetadataEditorPanel saves (title/tempo/tuning/time_signature/
-    // etc.) always allocate a new currentSong reference even when the underlying file is
-    // unchanged — depending on the object itself would re-fire this resolver on every
-    // metadata-only save, wiping tracks/selectedTrack/songInfo and forcing an unnecessary
-    // score reparse (which can land the track heuristic on a different/rest-only track).
-    // These primitives only change on an actual song switch or a tab-file replacement.
-    const currentSongId = currentSong?.id ?? null;
-    const currentSongFilePath = currentSong?.file_path ?? null;
-    const currentSongFileName = currentSong?.file_name ?? null;
-    const currentSongFileExtension = currentSong?.file_extension ?? null;
-    const currentSongTitle = currentSong?.title ?? null;
     useEffect(() => {
         // [C4] Support file_path-only rows (new uploads) alongside legacy file_name+extension rows.
         const path =
-            currentSongFilePath ||
-            (currentSongFileName && currentSongFileExtension
-                ? `${currentSongFileName}.${currentSongFileExtension}`
+            currentSong?.file_path ||
+            (currentSong?.file_name && currentSong?.file_extension
+                ? `${currentSong.file_name}.${currentSong.file_extension}`
                 : null);
         if (!path) return;
         setSignedUrl(null);
@@ -290,7 +226,7 @@ export default function SynthPlayerPage() {
         } else {
             supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
                 if (error || !data?.signedUrl) {
-                    setError(`Failed to load tab for "${currentSongTitle ?? 'this tab'}"`);
+                    setError(`Failed to load tab for "${currentSong?.title ?? 'this tab'}"`);
                     return;
                 }
                 const expiresAt = Date.now() + 55 * 60 * 1000;
@@ -298,7 +234,7 @@ export default function SynthPlayerPage() {
                 setSignedUrl(data.signedUrl);
             });
         }
-    }, [currentSongId, currentSongFilePath, currentSongFileName, currentSongFileExtension, currentSongTitle]);
+    }, [currentSong]);
 
     // ==================== EXTERNAL CLOCK DRIVER ====================
     // RAF-based monotonic clock driver for Original mode cursor.
@@ -366,45 +302,10 @@ export default function SynthPlayerPage() {
         headerIntentRef.current = v;   // synchronous — before React commit or CSS transition
         setIsHeaderVisible(v);
     }, []);
-
     // MAESTRO-SCROLL-001: passed to AlphaTabRenderer so the live S1 scroll path can
     // request the hide itself (Row-1 hide trigger) instead of reading tray DOM geometry.
-    // [MAESTRO-UI-002] Arbitrates against a recent manual reveal: if the user just revealed
-    // the tray (scroll-up, upward touch drag), the hide is deferred instead of immediately
-    // stomping it, then re-validated once the reveal window expires. This does not change
-    // when/why AlphaTabRenderer *requests* a hide (V145.26 S1 resolver untouched) — only
-    // whether/when page.tsx applies it.
     const requestHeaderHide = useCallback(() => {
-        if (!headerIntentRef.current) return;
-
-        const now = Date.now();
-        if (now >= manualHeaderRevealIntentUntilRef.current) {
-            if (deferredHeaderHideTimerRef.current != null) {
-                clearTimeout(deferredHeaderHideTimerRef.current);
-                deferredHeaderHideTimerRef.current = null;
-            }
-            setHeaderVisible(false);
-            return;
-        }
-
-        // Manual reveal intent still active — defer rather than override it immediately.
-        if (deferredHeaderHideTimerRef.current != null) return; // already scheduled
-
-        const delay = Math.max(0, manualHeaderRevealIntentUntilRef.current - now);
-        deferredHeaderHideTimerRef.current = setTimeout(() => {
-            deferredHeaderHideTimerRef.current = null;
-            const curr = mainScrollContainerRef.current?.scrollTop ?? 0;
-            const canApply = Boolean(
-                headerIntentRef.current &&
-                isPlayingRef.current &&
-                mainScrollContainerRef.current &&
-                curr > 80 &&
-                Date.now() >= manualHeaderRevealIntentUntilRef.current
-            );
-            if (canApply) {
-                setHeaderVisible(false);
-            }
-        }, delay);
+        if (headerIntentRef.current) setHeaderVisible(false);
     }, [setHeaderVisible]);
     const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(false);
 
@@ -455,105 +356,6 @@ export default function SynthPlayerPage() {
     const lastPointerYRef = useRef<number>(0);
     const pointerDeltaYRef = useRef<number>(0);
 
-    // [MAESTRO-UI-002] Manual reveal-intent arbitration — separate from the generic
-    // userScrollIntentUntilRef (TG3) above, which only gates whether a scroll-up delta is
-    // allowed to reveal at all. This ref means "the user recently made an upward/manual
-    // reveal gesture; do not let playback's S1 row-advance hide request immediately
-    // override it." The V145.26 S1 playback resolver/scroll math itself is untouched by
-    // this — only whether/when page.tsx applies the hide that AlphaTabRenderer requests.
-    const manualHeaderRevealIntentUntilRef = useRef<number>(0);
-    // [MAESTRO-UI-002B] Mirrors manualHeaderRevealIntentUntilRef for the opposite direction:
-    // protects a deliberate wheel/scrollbar-drag-down hide from being immediately undone by
-    // the curr < 10 "always reveal near top" guard in the scroll handler below, while
-    // scrollTop is still within the near-top band right at the start of the gesture. This is
-    // a separate concern from playback S1 hide intent (requestHeaderHide above) — manual
-    // hide/reveal intent is arbitrated here in page.tsx only; the V145.26 S1 playback
-    // resolver in AlphaTabRenderer.tsx is untouched.
-    const manualHeaderHideIntentUntilRef = useRef<number>(0);
-    // [MAESTRO-UI-002] True while a touch is active on the scroll root; lets touchmove
-    // extend intent without preventDefault or otherwise interfering with native scroll.
-    const isTouchActiveRef = useRef<boolean>(false);
-    const lastTouchYRef = useRef<number>(0);
-    // [MAESTRO-UI-002F] Direction of the most recent past-deadzone touchmove in the current
-    // gesture — reset at touchstart, set by touchmove, read at touchend/touchcancel to decide
-    // whether to bridge into momentum scroll. Only ever written from real touch events.
-    const lastTouchIntentDirectionRef = useRef<'hide' | 'reveal' | null>(null);
-    // [MAESTRO-UI-002F] Bridges mobile inertial/momentum scroll after touch-up: native
-    // momentum keeps firing onScroll delta < 0 events with no active touch and an expired
-    // userScrollIntentUntilRef, so the existing hasRecentUserIntent gate alone rejects a
-    // fast upward flick's momentum tail. Set only from onTouchMove/onTouchEnd (never from
-    // playback/programmatic scroll) — see the onScroll delta < 0 branch below for where it's
-    // read.
-    const touchMomentumRevealIntentUntilRef = useRef<number>(0);
-    // [MAESTRO-UI-002G] Proves recent real touch ownership of the scroll, independent of
-    // direction — unlike touchMomentumRevealIntentUntilRef (armed only by a reveal-direction
-    // touchmove), this is set by touchstart/touchmove/touchend regardless of direction. Fast
-    // mobile "thumb spin" scrolling can produce delta < 0 scroll events without ever crossing
-    // the dy > 2 touchmove deadzone (Safari sometimes coalesces/reports scroll deltas that
-    // don't line up 1:1 with raw touchmove Y deltas), so hasMomentumRevealIntent alone can
-    // still miss it. Only ever written from real touchstart/touchmove/touchend — never from
-    // playback/programmatic scroll. Date.now()-based, matching touchMomentumRevealIntentUntilRef.
-    const recentTouchActivityUntilRef = useRef<number>(0);
-    // [MAESTRO-UI-002I] Direction of the most recent delta in onScroll — 'up' only ever set
-    // when the tick was touch-owned (see hasTouchOwnedUpwardMomentum below), 'down' set on
-    // any downward delta regardless of source. Currently write-only scaffolding/diagnostic
-    // state (not yet read by any gating logic) — kept simple per spec ("add if useful").
-    const lastManualScrollDirectionRef = useRef<'up' | 'down' | null>(null);
-    // [MAESTRO-UI-002] Single in-flight deferred-hide timer so a playback hide request
-    // received during an active manual-reveal window never stacks more than one timer.
-    const deferredHeaderHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // [MAESTRO-UI-002C] Single in-flight deferred top-reveal recheck timer — see the
-    // curr < 10 branch below. Distinct from deferredHeaderHideTimerRef (that one defers a
-    // playback hide; this one rechecks a reveal that curr < 10 could not apply immediately
-    // because manualHeaderHideIntentUntilRef was still live).
-    const deferredTopRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // [MAESTRO-UI-002G] Single in-flight deferred timer for the onScroll delta < 0 branch's
-    // "reveal was valid but blocked only by headerToggleLockUntilRef cooldown" case. Kept
-    // separate from deferredTopRevealTimerRef (that one is specifically the curr < 10
-    // position-based recheck) for semantic clarity — different trigger, different re-checks.
-    const deferredTouchRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // [MAESTRO-UI-002] Marks a manual reveal-type gesture (scroll-up, upward touch drag).
-    // requestHeaderHide (above) checks this before applying a playback-requested hide.
-    const markManualHeaderRevealIntent = useCallback((durationMs = 700) => {
-        manualHeaderRevealIntentUntilRef.current = Date.now() + durationMs;
-    }, []);
-
-    // [MAESTRO-UI-002B] Marks a manual hide-type gesture (deliberate wheel-down,
-    // scrollbar-drag-down). The curr < 10 guard below checks this before auto-revealing.
-    const markManualHeaderHideIntent = useCallback((durationMs = 700) => {
-        manualHeaderHideIntentUntilRef.current = Date.now() + durationMs;
-    }, []);
-
-    // [MAESTRO-UI-002G] Marks real, direction-agnostic touch ownership of the scroll. Called
-    // from touchstart/touchmove/touchend only — proves "a real touch gesture recently owned
-    // this scroll," which onScroll's delta < 0 branch can use as a reveal reason even when
-    // neither the generic user-intent window nor the reveal-direction momentum bridge caught it.
-    const markRecentTouchActivity = useCallback((durationMs = 2200) => {
-        recentTouchActivityUntilRef.current = Date.now() + durationMs;
-    }, []);
-
-    // [MAESTRO-UI-002] Clear any pending deferred hide on unmount only — this timer's
-    // lifetime is independent of the listener-registration effect below.
-    useEffect(() => {
-        return () => {
-            if (deferredHeaderHideTimerRef.current != null) {
-                clearTimeout(deferredHeaderHideTimerRef.current);
-                deferredHeaderHideTimerRef.current = null;
-            }
-            // [MAESTRO-UI-002C] Same lifetime concern for the deferred top-reveal recheck timer.
-            if (deferredTopRevealTimerRef.current != null) {
-                clearTimeout(deferredTopRevealTimerRef.current);
-                deferredTopRevealTimerRef.current = null;
-            }
-            // [MAESTRO-UI-002G] Same lifetime concern for the deferred touch-reveal recheck timer.
-            if (deferredTouchRevealTimerRef.current != null) {
-                clearTimeout(deferredTouchRevealTimerRef.current);
-                deferredTouchRevealTimerRef.current = null;
-            }
-        };
-    }, []);
-
     // [PS1b] Hide tray when playback starts, but only if already scrolled past top.
     useEffect(() => {
         if (isPlaying) {
@@ -571,30 +373,7 @@ export default function SynthPlayerPage() {
         // Filter: only act when target is inside <main>.
         const onWheel = (e: WheelEvent) => {
             if (!el.contains(e.target as Node)) return;
-            if (e.deltaY < 0) {
-                userScrollIntentUntilRef.current = performance.now() + 700;
-                markManualHeaderRevealIntent(); // [MAESTRO-UI-002] wheel-up is a reveal gesture
-            } else if (e.deltaY > 0) {
-                // [MAESTRO-UI-002B] Deliberate wheel-down is a manual HIDE gesture — hide
-                // immediately instead of waiting for an accumulated onScroll delta > 4. Near
-                // the top/start of a gesture a single wheel tick is often smaller than that
-                // threshold (fine-grained trackpad deltas especially), so the tray felt like
-                // it "waited" for Row 2 to approach instead of responding to the gesture.
-                // Tied strictly to the wheel event — never fires from S1/programmatic scroll.
-                userScrollIntentUntilRef.current = performance.now() + 700;
-                markManualHeaderHideIntent(); // protects against the curr < 10 guard below
-                // [MAESTRO-UI-002G] Pure additive clear of the direction-agnostic touch-
-                // ownership ref — a deliberate wheel-down gesture is definitionally not touch,
-                // so any stale recent-touch-activity window from an earlier gesture shouldn't
-                // linger. Does not read/write anything else in this branch; the existing
-                // hide decision/timing above and below is unchanged.
-                recentTouchActivityUntilRef.current = 0;
-                const nowP = performance.now();
-                if (headerIntentRef.current && nowP >= headerToggleLockUntilRef.current) {
-                    setHeaderVisible(false);
-                    headerToggleLockUntilRef.current = nowP + 160;
-                }
-            }
+            if (e.deltaY < 0) userScrollIntentUntilRef.current = performance.now() + 700;
         };
         window.addEventListener('wheel', onWheel, { passive: true, capture: true });
 
@@ -637,204 +416,6 @@ export default function SynthPlayerPage() {
         window.addEventListener('pointercancel', onPointerCancel, { capture: true });
         window.addEventListener('mouseup', onMouseUp, { capture: true });
 
-        // [MAESTRO-UI-002] Touch-specific intent — mobile Safari/touch inertia can outlast
-        // the 500ms pointerdown window above (userScrollIntentUntilRef). These listeners only
-        // extend intent/mark reveal; they never preventDefault and never touch scrollTop, so
-        // native touch scrolling on <main> is left completely alone. Registered on window
-        // capture (not the scroll container) so nothing else attaches a second, competing
-        // touch path — this is the single source of truth for touch-driven header intent.
-        const TOUCH_DIRECTION_DEADZONE = 2;
-        const isInteractiveOrTrayTouchTarget = (target: EventTarget | null): boolean => {
-            if (!(target instanceof Element)) return false;
-            return !!target.closest('button, a, input, select, textarea, [role="button"], [data-top-menu-tray]');
-        };
-
-        // [MAESTRO-UI-002H] Validates that a touch belongs to the score/scroll surface, not
-        // just window-capture "somewhere on the page." e.target on touch events is reliable
-        // per spec (fixed to the touchstart target for the life of the series), but plain
-        // target-based containment was observed missing legitimate score-surface gestures
-        // (svg score rows / .at-surface / the score wrapper div) in mobile Safari — likely
-        // AlphaTab re-parenting/re-creating SVG nodes around the moment a gesture starts, so
-        // e.target can reference a node that's momentarily not (yet) a descendant of <main>.
-        // document.elementFromPoint gives an independent, geometry-based cross-check that
-        // isn't affected by that: if either resolves inside <main> and neither resolves to an
-        // interactive control or the TopMenu tray, the touch is treated as scroll-surface.
-        const isTouchOnMainScrollSurface = (e: TouchEvent): boolean => {
-            const container = mainScrollContainerRef.current;
-            if (!container) return false;
-            const touch = e.touches[0] ?? e.changedTouches[0];
-            const target = e.target;
-            const targetInMain = target instanceof Node && container.contains(target);
-            const pointEl = touch ? document.elementFromPoint(touch.clientX, touch.clientY) : null;
-            const pointInMain = pointEl instanceof Node && container.contains(pointEl);
-            if (!targetInMain && !pointInMain) return false;
-            if (isInteractiveOrTrayTouchTarget(target) || isInteractiveOrTrayTouchTarget(pointEl)) return false;
-            return true;
-        };
-
-        const onTouchStart = (e: TouchEvent) => {
-            if (!isTouchOnMainScrollSurface(e)) return; // [MAESTRO-UI-002H] do not arm header behavior
-            isTouchActiveRef.current = true;
-            lastTouchYRef.current = e.touches[0]?.clientY ?? 0;
-            // [MAESTRO-UI-002F] Fresh gesture — no direction established yet. Prevents a
-            // later plain tap (no qualifying touchmove) from inheriting a stale 'reveal'/
-            // 'hide' direction left over from an earlier, unrelated gesture.
-            lastTouchIntentDirectionRef.current = null;
-            // [MAESTRO-UI-002G] Direction-agnostic — only proves recent real touch ownership.
-            // Does not toggle header visibility.
-            markRecentTouchActivity();
-        };
-        window.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
-
-        const onTouchMove = (e: TouchEvent) => {
-            // [MAESTRO-UI-002H] If this touch was never armed by a valid touchstart, only
-            // proceed when this move itself lands on the scroll surface (self-heals a
-            // touchmove arriving without a matching touchstart, e.g. multi-touch edge cases).
-            if (!isTouchActiveRef.current && !isTouchOnMainScrollSurface(e)) return;
-            const y = e.touches[0]?.clientY ?? lastTouchYRef.current;
-            const dy = y - lastTouchYRef.current;
-            lastTouchYRef.current = y;
-            // [MAESTRO-UI-002] Extend generic user-scroll intent on every touchmove,
-            // regardless of the direction deadzone below.
-            userScrollIntentUntilRef.current = performance.now() + 700;
-            // [MAESTRO-UI-002G] Direction-agnostic — every touchmove (even within the
-            // deadzone) proves continued real touch ownership.
-            markRecentTouchActivity();
-
-            // [MAESTRO-UI-002D/H] A drag starting on a button/link/input/the TopMenu tray must
-            // not itself flip header visibility. Structurally redundant now that
-            // isTouchOnMainScrollSurface (above) already excludes these before isTouchActiveRef
-            // is ever set — kept as a defensive re-check.
-            if (isInteractiveOrTrayTouchTarget(e.target)) return;
-
-            // [MAESTRO-UI-002D] Explicit directional touch intent — mirrors the explicit
-            // scrollbar-drag branch in onScroll below: bypasses the accumulated-delta
-            // inference entirely and toggles immediately (cooldown-checked) instead of
-            // waiting for a native `scroll` event, closing the gap where mobile Safari/touch
-            // inertia can outlast the older intent-only-marking approach.
-            const nowP = performance.now();
-            if (dy < -TOUCH_DIRECTION_DEADZONE) {
-                // Finger moved up-screen → content scrolls down → user wants header hidden.
-                lastTouchIntentDirectionRef.current = 'hide'; // [MAESTRO-UI-002F]
-                manualHeaderRevealIntentUntilRef.current = 0;
-                // [MAESTRO-UI-002F] A fresh hide gesture invalidates any still-live momentum
-                // reveal bridge from an earlier reveal gesture in this same touch series.
-                touchMomentumRevealIntentUntilRef.current = 0;
-                markManualHeaderHideIntent();
-                const canHide = headerIntentRef.current && nowP >= headerToggleLockUntilRef.current;
-                if (canHide) {
-                    setHeaderVisible(false);
-                    headerToggleLockUntilRef.current = nowP + 160;
-                }
-            } else if (dy > TOUCH_DIRECTION_DEADZONE) {
-                // Finger moved down-screen → content scrolls up — the same reveal direction
-                // as onWheel's deltaY < 0.
-                lastTouchIntentDirectionRef.current = 'reveal'; // [MAESTRO-UI-002F]
-                // [MAESTRO-UI-002F] Pre-arms the momentum-reveal bridge as soon as an active
-                // reveal-direction drag is seen — onTouchEnd (below) re-extends it once the
-                // gesture actually ends, so momentum scroll immediately after touch-up can
-                // still pass the onScroll delta < 0 gate.
-                touchMomentumRevealIntentUntilRef.current = Date.now() + 1800;
-                manualHeaderHideIntentUntilRef.current = 0;
-                markManualHeaderRevealIntent();
-                const canReveal = !headerIntentRef.current && nowP >= headerToggleLockUntilRef.current;
-                if (canReveal) {
-                    setHeaderVisible(true);
-                    headerToggleLockUntilRef.current = nowP + 160;
-                    clearDeferredTopReveal();
-                }
-            }
-        };
-        window.addEventListener('touchmove', onTouchMove, { passive: true, capture: true });
-
-        const onTouchEnd = () => {
-            // [MAESTRO-UI-002H] Capture before clearing — only a touch that was actually
-            // armed (passed isTouchOnMainScrollSurface at touchstart, or self-healed in
-            // onTouchMove) gets to mark activity / extend the momentum bridge. Otherwise a
-            // touchend for an untracked touch (e.g. one that started on a button) could
-            // re-arm the bridge off a stale lastTouchIntentDirectionRef left by an earlier,
-            // unrelated valid gesture.
-            const wasActive = isTouchActiveRef.current;
-            isTouchActiveRef.current = false;
-            if (wasActive) {
-                // [MAESTRO-UI-002G] Direction-agnostic — re-extends recent-touch-ownership so
-                // momentum scroll immediately after touch-up (any direction) is still
-                // attributable to a real user gesture, not just the reveal-direction bridge below.
-                markRecentTouchActivity();
-                // [MAESTRO-UI-002F] Bridge mobile inertial/momentum scroll: only when the last
-                // active touchmove direction in this gesture was reveal/upward, extend both the
-                // dedicated momentum-reveal window and the generic user-intent window so the
-                // native momentum `scroll` events that keep arriving after touch-up (with
-                // isTouchActiveRef already false) can still pass onScroll's delta < 0 reveal
-                // gate. A 'hide' last-direction sets no reveal momentum. Never changes visibility
-                // directly here — only extends the windows the onScroll gate itself reads.
-                if (lastTouchIntentDirectionRef.current === 'reveal') {
-                    touchMomentumRevealIntentUntilRef.current = Date.now() + 1800;
-                    // [MAESTRO-UI-002F] userScrollIntentUntilRef is performance.now()-based
-                    // everywhere else it's written (onWheel/onTouchMove/onPointerDown) and read
-                    // (onScroll's hasRecentUserIntent) — performance.now() used here to match,
-                    // not Date.now(), to avoid desyncing that shared ref's units.
-                    userScrollIntentUntilRef.current = performance.now() + 1800;
-                }
-            }
-        };
-        window.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
-        window.addEventListener('touchcancel', onTouchEnd, { passive: true, capture: true });
-
-        // [MAESTRO-UI-002C] Deferred top-reveal recheck helpers — see the curr < 10 branch
-        // in onScroll below. If reveal there is suppressed only by a live
-        // manualHeaderHideIntentUntilRef window (not by playback), and no further scroll
-        // event fires before that window naturally expires (e.g. scrollTop is already
-        // pinned at 0 after a scrollbar drag back to the top), the header would otherwise
-        // stay stranded hidden forever. This schedules exactly one recheck for that expiry.
-        const clearDeferredTopReveal = () => {
-            if (deferredTopRevealTimerRef.current != null) {
-                clearTimeout(deferredTopRevealTimerRef.current);
-                deferredTopRevealTimerRef.current = null;
-            }
-        };
-        const scheduleDeferredTopReveal = (hideIntentUntil: number) => {
-            if (deferredTopRevealTimerRef.current != null) return; // avoid stacking timers
-            const delay = Math.max(0, hideIntentUntil - Date.now()) + 20;
-            deferredTopRevealTimerRef.current = setTimeout(() => {
-                deferredTopRevealTimerRef.current = null;
-                const stillNearTop = (mainScrollContainerRef.current?.scrollTop ?? 0) < 10;
-                if (stillNearTop && !headerIntentRef.current) {
-                    setHeaderVisible(true);
-                }
-            }, delay);
-        };
-
-        // [MAESTRO-UI-002G/I] Deferred touch-reveal recheck — see the onScroll delta < 0
-        // branch below. Covers the case where hasReasonToReveal (touch activity/momentum) was
-        // true but the reveal was blocked only by the headerToggleLockUntilRef cooldown, so
-        // the reveal isn't simply lost — it's rechecked once the cooldown expires. iOS fast
-        // flicks are event-sparse: there may be no later scroll event to retry once the lock
-        // naturally expires, so this schedules exactly one recheck instead of waiting for one.
-        const scheduleDeferredTouchReveal = (lockRemainingMs: number) => {
-            if (deferredTouchRevealTimerRef.current != null) return; // avoid stacking timers
-            const scrollTopAtSchedule = mainScrollContainerRef.current?.scrollTop ?? 0;
-            const delay = Math.max(0, lockRemainingMs) + 20;
-            deferredTouchRevealTimerRef.current = setTimeout(() => {
-                deferredTouchRevealTimerRef.current = null;
-                if (headerIntentRef.current) return;
-                const container = mainScrollContainerRef.current;
-                if (!container) return;
-                const scrollTopNow = container.scrollTop;
-                const scrollMovedUpEnough = scrollTopNow < scrollTopAtSchedule || scrollTopNow < 10;
-                if (!scrollMovedUpEnough) return;
-                const stillWithinTouchWindow =
-                    Date.now() < recentTouchActivityUntilRef.current ||
-                    Date.now() < touchMomentumRevealIntentUntilRef.current ||
-                    scrollTopNow < 10;
-                if (!stillWithinTouchWindow) return;
-                setHeaderVisible(true);
-                headerToggleLockUntilRef.current = performance.now() + 160;
-                manualHeaderHideIntentUntilRef.current = 0;
-                touchMomentumRevealIntentUntilRef.current = 0;
-            }, delay);
-        };
-
         // [PS2] Scroll direction → show/hide tray.
         //   curr < 10    → always show (position-based, bypasses cooldown)
         //   delta > 4    → hide, cooldown-protected
@@ -849,79 +430,12 @@ export default function SynthPlayerPage() {
 
             lastScrollTopRef.current = curr;
 
-            // [MAESTRO-UI-002C] Direction reversal clears the opposing manual intent — a
-            // stale hide-intent from an earlier wheel/scrollbar-drag-down (or vice versa)
-            // must not keep suppressing the opposite gesture once the user has clearly
-            // reversed direction. `delta` above is always a fresh per-event scrollTop
-            // difference; there is no separate shared accumulator elsewhere to reset.
-            if (delta < 0) manualHeaderHideIntentUntilRef.current = 0;
-            if (delta > 0) {
-                manualHeaderRevealIntentUntilRef.current = 0;
-                // [MAESTRO-UI-002F] Any real downward scroll — whether it originated from
-                // wheel-down, scrollbar-drag-down, or touch-hide — invalidates a stale
-                // momentum-reveal bridge from an earlier upward gesture. This single choke
-                // point (every scroll event passes through here first) covers all three
-                // sources without needing to touch the wheel-down or scrollbar-drag branches
-                // below, which stay byte-identical.
-                touchMomentumRevealIntentUntilRef.current = 0;
-                // [MAESTRO-UI-002I] Does not renew any upward reveal window — only records
-                // direction.
-                lastManualScrollDirectionRef.current = 'down';
-            }
-
-            // [MAESTRO-UI-002C] Explicit scrollbar-drag direction — bypasses the accumulated
-            // delta > 4 / ambient delta < 0 thresholds below entirely. isPointerOnScrollbarRef
-            // is only ever set true by a real pointerdown on the scrollbar rail (onPointerDown
-            // above, filtered by el.contains(e.target)) and cleared on release — never true
-            // for content clicks, the Play button, or S1's programmatic scroll — so this is
-            // genuine explicit user intent, not an inference from ambient scroll deltas.
-            if (isPointerOnScrollbarRef.current && delta !== 0) {
-                if (!inCooldown) {
-                    headerToggleLockUntilRef.current = now + 160;
-                    if (delta > 0) {
-                        setHeaderVisible(false);
-                        markManualHeaderHideIntent();
-                        // [MAESTRO-UI-002G] Pure additive clear — see the matching comment in
-                        // onWheel's deltaY > 0 branch. Does not change this branch's existing
-                        // hide decision/timing.
-                        recentTouchActivityUntilRef.current = 0;
-                    } else {
-                        setHeaderVisible(true);
-                        markManualHeaderRevealIntent();
-                        clearDeferredTopReveal();
-                    }
-                }
-                return;
-            }
-
             if (curr < 10) {
                 // Position-based: always reveal at top, no cooldown gate.
                 // MAESTRO-SCROLL-001: gated on !isPlayingRef so Row-1 hide-on-sysIdx>=1
                 // isn't fought by a near-top scroll event during active playback.
-                // [MAESTRO-UI-002B] Also gated on manualHeaderHideIntentUntilRef so a
-                // just-requested deliberate wheel/scrollbar-drag-down hide isn't immediately
-                // reverted while scrollTop is still within the near-top band.
-                // [MAESTRO-UI-002H] Already-visible short-circuit, checked first: iOS
-                // rubber-band bounce at the top fires many curr < 10 scroll events in rapid
-                // succession while the header is already shown. Without this, every single
-                // one refreshed headerToggleLockUntilRef, which could keep the 160ms cooldown
-                // lock perpetually extended for as long as the bounce lasted.
-                if (headerIntentRef.current) return;
-                const hideIntentUntil = manualHeaderHideIntentUntilRef.current;
-                if (!isPlayingRef.current) {
-                    if (Date.now() >= hideIntentUntil) {
-                        setHeaderVisible(true);
-                        clearDeferredTopReveal();
-                        headerToggleLockUntilRef.current = now + 160;
-                    } else {
-                        // [MAESTRO-UI-002C] Suppressed only by a live hide-intent window —
-                        // schedule a recheck for when it expires (see helper above).
-                        scheduleDeferredTopReveal(hideIntentUntil);
-                        headerToggleLockUntilRef.current = now + 160;
-                    }
-                } else {
-                    headerToggleLockUntilRef.current = now + 160;
-                }
+                if (!isPlayingRef.current) setHeaderVisible(true);
+                headerToggleLockUntilRef.current = now + 160;
                 return;
             }
 
@@ -939,64 +453,14 @@ export default function SynthPlayerPage() {
                 // programmatic scroll corrections cannot reveal TopMenuTray during playback.
                 // wheel/trackpad set this ref in onWheel; scrollbar/touch set it in onPointerDown.
                 const hasRecentUserIntent = userScrollIntentUntilRef.current > now;
-                // [MAESTRO-UI-002F] Mobile inertial/momentum scroll keeps firing delta < 0
-                // scroll events after touch-up, with isTouchActiveRef already false and
-                // userScrollIntentUntilRef possibly already expired — hasRecentUserIntent
-                // alone then rejects a fast upward flick's momentum tail. Only set by real
-                // touchmove/touchend (never playback/programmatic scroll) — see
-                // touchMomentumRevealIntentUntilRef above.
-                const hasMomentumRevealIntent = Date.now() < touchMomentumRevealIntentUntilRef.current;
-                // [MAESTRO-UI-002G] Fast mobile "thumb spin" upward scrolling can produce
-                // delta < 0 scroll events without ever crossing the dy > 2 touchmove deadzone
-                // (Safari doesn't always report scroll deltas 1:1 with raw touchmove Y), so
-                // hasMomentumRevealIntent alone can still miss it. recentTouchActivityUntilRef
-                // is direction-agnostic — it only proves a real touch gesture recently owned
-                // this scroll, set from touchstart/touchmove/touchend only, never playback.
-                const hasRecentTouchActivity = Date.now() < recentTouchActivityUntilRef.current;
-                // [MAESTRO-UI-002J] While paused, the [TG3-PlaybackGuard] recent-intent gate
-                // exists specifically to stop AlphaTab/S1 programmatic scroll corrections from
-                // revealing the tray during playback — it was never meant to also gate manual
-                // paused navigation. isPlayingRef.current false means this delta < 0 cannot be
-                // a programmatic S1 correction (S1 only scrolls during active playback), so the
-                // canvas visibly moving upward is reason enough on its own, independent of
-                // whether any touch/wheel intent window happens to still be live.
-                const isPausedCanvasUpReveal = !isPlayingRef.current;
-                const hasReasonToReveal =
-                    hasRecentUserIntent || hasMomentumRevealIntent || hasRecentTouchActivity || isPausedCanvasUpReveal;
-
-                // [MAESTRO-UI-002I] Momentum continuation renewal — a long, sustained upward
-                // flick can outlast the original momentum/touch-activity window if scroll
-                // events keep arriving slower than that window's duration. Renewing on every
-                // touch-owned delta < 0 tick keeps it alive for as long as momentum keeps
-                // producing scroll events. Guarded inherently: hasTouchOwnedUpwardMomentum can
-                // only be true if recentTouchActivityUntilRef/touchMomentumRevealIntentUntilRef
-                // was already live, and both are only ever set by real
-                // touchstart/touchmove/touchend — never by playback/programmatic S1 scroll —
-                // so this can never manufacture a touch-owned window out of nothing.
-                const hasTouchOwnedUpwardMomentum = hasRecentTouchActivity || hasMomentumRevealIntent;
-                if (hasTouchOwnedUpwardMomentum) {
-                    recentTouchActivityUntilRef.current = Date.now() + 700;
-                    touchMomentumRevealIntentUntilRef.current = Date.now() + 700;
-                    lastManualScrollDirectionRef.current = 'up';
-                }
-
-                if (headerIntentRef.current && hasTouchOwnedUpwardMomentum) {
-                    // [MAESTRO-UI-002I] Already visible and this tick is touch-owned — the
-                    // renewal above already extended the windows; nothing more to apply.
-                    // Avoids the same redundant re-lock/re-reveal churn UI-002H fixed for
-                    // curr < 10, scoped narrowly to the touch-owned case so wheel/pointer-
-                    // driven reveal behavior below is completely untouched.
-                    return;
-                }
-
                 const isScrollbarDrag = isPointerOnScrollbarRef.current;
                 const isScrollbarDragUp = pointerDeltaYRef.current < 0;
                 // Allow reveal when:
-                //   - human/momentum/touch intent confirmed AND not a scrollbar drag (wheel/trackpad/touch)
-                //   - human/momentum/touch intent confirmed AND scrollbar drag with confirmed upward pointer
-                //   - human/momentum/touch intent confirmed AND scrollbar drag direction unknown: allow after cooldown
+                //   - human intent confirmed AND not a scrollbar drag (wheel/trackpad/touch)
+                //   - human intent confirmed AND scrollbar drag with confirmed upward pointer
+                //   - human intent confirmed AND scrollbar drag direction unknown: allow after cooldown
                 const allowReveal =
-                    hasReasonToReveal &&
+                    hasRecentUserIntent &&
                     (
                         !isScrollbarDrag ||
                         isScrollbarDragUp ||
@@ -1005,30 +469,6 @@ export default function SynthPlayerPage() {
                 if (allowReveal) {
                     setHeaderVisible(true);
                     headerToggleLockUntilRef.current = now + 160;
-                    markManualHeaderRevealIntent(); // [MAESTRO-UI-002] confirmed manual reveal
-                    manualHeaderHideIntentUntilRef.current = 0; // [MAESTRO-UI-002F] see requirement 4
-                    clearDeferredTopReveal(); // [MAESTRO-UI-002C] a real reveal just happened
-                    // [MAESTRO-UI-002F/G] Clear after a successful reveal (preferred over
-                    // letting them expire naturally) so neither bridge can cause a second,
-                    // unrelated reveal-toggle later in the same momentum tail.
-                    touchMomentumRevealIntentUntilRef.current = 0;
-                    recentTouchActivityUntilRef.current = 0;
-                } else {
-                    // [MAESTRO-UI-002I] allowReveal is false here. Under the (unchanged)
-                    // formula above that only happens via the scrollbar-drag-direction-
-                    // unknown-in-cooldown case (real scrollbar drags never reach this branch —
-                    // intercepted earlier) or when hasReasonToReveal itself is false. Compute
-                    // lockRemaining/headerHidden explicitly (rather than only inCooldown) so
-                    // a header that's already visible doesn't get a pointless deferred timer
-                    // scheduled.
-                    const lockRemaining = headerToggleLockUntilRef.current - now;
-                    const headerHidden = !headerIntentRef.current;
-                    if (headerHidden && hasReasonToReveal && lockRemaining > 0) {
-                        // [MAESTRO-UI-002I] Blocked only by the cooldown lock — iOS fast
-                        // flicks are event-sparse, so there may be no later scroll event once
-                        // the lock naturally expires. Defer instead of losing the reveal.
-                        scheduleDeferredTouchReveal(lockRemaining);
-                    }
                 }
             }
         };
@@ -1041,13 +481,9 @@ export default function SynthPlayerPage() {
             window.removeEventListener('pointerup', onPointerUp, { capture: true });
             window.removeEventListener('pointercancel', onPointerCancel, { capture: true });
             window.removeEventListener('mouseup', onMouseUp, { capture: true });
-            window.removeEventListener('touchstart', onTouchStart, { capture: true });
-            window.removeEventListener('touchmove', onTouchMove, { capture: true });
-            window.removeEventListener('touchend', onTouchEnd, { capture: true });
-            window.removeEventListener('touchcancel', onTouchEnd, { capture: true });
             el.removeEventListener('scroll', onScroll);
         };
-    }, [setHeaderVisible, markManualHeaderRevealIntent, markManualHeaderHideIntent, markRecentTouchActivity]);
+    }, [setHeaderVisible]);
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data, error }) => {
@@ -1179,15 +615,8 @@ export default function SynthPlayerPage() {
 
     // ==================== PLAY / PAUSE ====================
     const handlePlayPause = useCallback(() => {
-        // [MAESTRO-VIDEO-003C] After the source-selector fix, handleAudioSourceChange never
-        // sets audioSource to 'original' when there's no video, so this condition should be
-        // unreachable via normal UI flow. Kept as dead-man insurance for the transient
-        // window right after a video-song's Original mode switches to a no-video song
-        // (before the 003B fallback effect flips audioSource back to synth) and any other
-        // stale/unexpected state — never remove.
-        if (audioSource === 'original' && !activeVideoId) return;
         setIsPlaying(p => !p);
-    }, [audioSource, activeVideoId]);
+    }, []);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -1293,15 +722,6 @@ export default function SynthPlayerPage() {
     // ==================== AUDIO SOURCE CHANGE ====================
     // [C5] Restored from V98.67 — mutes synth when switching to YouTube, restores on return.
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
-        // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable —
-        // intercept BEFORE setAudioSource so 'original' is never entered when there's
-        // nothing to play. Synth stays selected/active; the empty-state panel communicates
-        // why Original isn't available.
-        if (source === 'original' && !activeVideoId) {
-            setShowNoVideoPanel(true);
-            return;
-        }
-        setShowNoVideoPanel(false);
         setAudioSource(source);
         if (source === 'original') {
             // Don't mute yet — wait for handleYouTubePlayerReady to confirm iframe is live
@@ -1312,28 +732,7 @@ export default function SynthPlayerPage() {
             // Restore synth volume immediately on switch back
             if (api) api.masterVolume = masterVolumeRef.current;
         }
-    }, [api, activeVideoId]);
-
-    // [MAESTRO-VIDEO-003B] Songsterr-style safety fallback: if the current song has no
-    // video while Original is active, fall back to Synth (reusing handleAudioSourceChange
-    // so isYouTubePlayerVisible/isYouTubeReady/masterVolume all settle consistently, same
-    // as any manual switch-to-Synth). Keyed ONLY on activeVideoId, not audioSource — this
-    // effect must re-evaluate when video availability changes (i.e. on a song switch), but
-    // NOT on every audioSource toggle, otherwise explicitly selecting Original on a
-    // no-video song would be immediately stomped back to Synth on the same render.
-    useEffect(() => {
-        if (!activeVideoId && audioSource === 'original') {
-            handleAudioSourceChange('synth');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeVideoId]);
-
-    // [MAESTRO-VIDEO-003C] Dismiss the no-video panel on any song/video-context change —
-    // a stale panel from a previous no-video song must not carry into the next one
-    // (whether the next song has a video or is itself another no-video song).
-    useEffect(() => {
-        setShowNoVideoPanel(false);
-    }, [activeVideoId]);
+    }, [api]);
 
     // ==================== SPEED / VOLUME ====================
     const handleSpeedChange = useCallback((speed: number) => {
@@ -1417,17 +816,7 @@ export default function SynthPlayerPage() {
                 s.id === savedTabId ? { ...s, ...patch } : s
             ),
         }));
-        // [MAESTRO-VIDEO-004C] Re-derive youtubeVideoId/videoVariants/videoStartOffset from
-        // tab_youtube via the same fetchSongs() bridge queries.ts already uses, so Original
-        // Mode sees a Media & Sync video save immediately instead of requiring a hard
-        // refresh. Reuses the same refetchSongs() NewTabPanel already calls after uploads.
-        // Safe for PLAYER-003: the signed URL resolver is keyed on file-identity primitives
-        // (id/file_path/file_name/file_extension/title) derived from currentSong, not the
-        // object reference itself — none of those change from a tab_youtube-only save, so
-        // the new songs array/currentSong reference from this refetch does not re-trigger
-        // the resolver, reload the score, or reset the selected track.
-        refetchSongs();
-    }, [refetchSongs]);
+    }, []);
 
     const handleToggleFavorite = useCallback((songId: string) => {
         setSongState(prev => ({
@@ -1481,33 +870,7 @@ export default function SynthPlayerPage() {
     const isHeaderShown = isMobileLandscape || isHeaderVisible;
 
     return (
-        // [MAESTRO-LOOP-002G.3] grid-cols-[minmax(0,1fr)]: the mobile-landscape <main> below
-        // now uses overflow-x-clip/overflow-y-clip (002G/002G.1) instead of overflow-hidden.
-        // overflow:clip prevents the shell from scrolling but — unlike overflow:hidden —
-        // does not establish the same scroll-container/min-width:auto suppression, so this
-        // grid track's implicit column (previously sized `auto`) could stretch to AlphaTab's
-        // full intrinsic strip width (confirmed live: ~35898px) instead of the viewport.
-        // minmax(0, 1fr) explicitly allows the track to shrink below that content width,
-        // keeping the page viewport-sized while the inner .alphatab-container remains the
-        // real horizontal scroller. Columns prevent AlphaTab's intrinsic WIDTH from blowing
-        // out the shell.
-        //
-        // [MAESTRO-UI-006C] Row model, corrected. The old grid-rows-[0px,1fr,0px] used
-        // commas between top-level tracks, which is invalid grid-template-rows syntax
-        // (compiles to `0px,1fr,0px`) — browsers drop the whole declaration, so this has
-        // always run as an implicit, content-sized single row, never a real three-row
-        // grid (confirmed live: 006B's attempt to make the row template valid exposed
-        // that the fixed header/footer/overlays are position:fixed and out of flow, and
-        // <main> — the only real in-flow child — auto-placed into the first 0px track
-        // and collapsed to zero height). The honest model is one explicit row, not
-        // three: grid-rows-[minmax(0,1fr)]. minmax(0,1fr) on both axes keeps the row
-        // viewport-sized the same way it already keeps the column viewport-sized above,
-        // clamping the historical content-sized overflow (~482px content in a ~430px
-        // viewport, per live capture) without touching the fixed-position siblings.
-        // h-screen → h-dvh: 100vh includes iOS Safari's collapsed dynamic toolbar chrome;
-        // 100dvh tracks the real visible viewport (same fix as <main>'s [P1] below and
-        // MyTabsPanel.tsx).
-        <div className="h-dvh grid grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+        <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
@@ -1552,10 +915,6 @@ export default function SynthPlayerPage() {
                 <MetadataEditorPanel
                     tabId={metaEditorState.tabId}
                     onSave={handleMetadataSave}
-                    // [MAESTRO-VIDEO-004] 'novideo' opens straight to Media & Sync with the
-                    // Main / Full Mix row scrolled into view and briefly highlighted.
-                    initialSection={metaEditorState.source === 'novideo' ? 'media' : undefined}
-                    focusMainVideoRow={metaEditorState.source === 'novideo'}
                     onClose={() => {
                         const src = metaEditorState.source;
                         setMetaEditorState({ tabId: null, source: null });
@@ -1569,28 +928,8 @@ export default function SynthPlayerPage() {
              *   - ternary now wrapped in ${} so it actually executes
              *   - 100vh → 100dvh (fixes iOS dynamic toolbar clipping)
              *   - overflow-y-hidden → overflow-y-auto (allows Page-mode vertical scroll)
+             *   - header padding applies in BOTH portrait and landscape (removed !isMobileLandscape guard)
              *   - style prop removed (maxWidth/100vw was strip-mode pairing)
-             *
-             * [MAESTRO-UI-002] Header top padding is intentionally still gated on
-             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(80px+...)] otherwise) —
-             * landscape mode relies on TopMenuTray's CSS shell query (globals.css, now
-             * max-height: 600px to match isMobileLandscape's own innerHeight < 600 threshold)
-             * rendering its compact mobile shell instead of the tall desktop one, so zero
-             * reserved padding is correct once those two thresholds agree.
-             *
-             * [MAESTRO-LOOP-002G] Landscape branch: overflow-x-hidden → overflow-x-clip.
-             * A wide landscape loop-highlight band (BeatCustomLoopOverlay) could inflate
-             * this shell's scrollWidth; overflow-x-hidden still creates a scroll container
-             * whose scrollLeft can be pinned to max (right-side white wipe, cursor/score
-             * misregistration). overflow-x-clip clips overflow without creating a
-             * horizontal scroll container, so scrollLeft stays pinned to 0.
-             *
-             * [MAESTRO-LOOP-002G.1] Both axes must be `clip` — overflow-x:clip paired with
-             * overflow-y:hidden computes back to overflow-x:hidden per CSS overflow
-             * behavior (a mixed clip/hidden pair resolves to hidden), silently re-enabling
-             * programmatic scrollLeft and reintroducing the wipe. Confirmed live: with
-             * overflow-y forced to clip, getComputedStyle(outer).overflowX reports 'clip'
-             * and scrollLeft stays 0.
              */}
             <main
                 ref={mainScrollContainerRef}
@@ -1598,9 +937,9 @@ export default function SynthPlayerPage() {
         w-full
         ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}
         ${isMobileLandscape
-                        ? 'overflow-x-clip overflow-y-clip overscroll-none [touch-action:pan-x]'
+                        ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
                         : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain [scrollbar-gutter:stable]'}
-        ${!isMobileLandscape ? 'pt-[calc(80px+env(safe-area-inset-top))]' : 'pt-0'}
+        ${!isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
     `}
             >
                 {error && (
@@ -1618,9 +957,6 @@ export default function SynthPlayerPage() {
                  *   - className simplified to w-full (works portrait + landscape)
                  */}
                 {/* [TH3-restored] Dark wrapper matches AlphaTab dark canvas — eliminates white gutter bleed. */}
-                {/* [MAESTRO-LAYOUT-001B] The 74px below is the desktop TransportBar height
-                    (TransportBar.tsx, h-[74px]) — also mirrored in YouTubePlayer.tsx's desktop
-                    bottom offset (md:bottom-[74px]). Keep all three in sync if it changes. */}
                 <div
                     id="maestro-player"
                     className={`relative w-full ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}`}
@@ -1734,10 +1070,6 @@ export default function SynthPlayerPage() {
                 onComplete={() => { }}
             />
 
-            {/* [MAESTRO-LAYOUT-001B] min-width:650px marks the desktop threshold, paired with the
-                max-width:649px complement in globals.css's TopMenuTray shell query and
-                MobileToolsSlideout.tsx's MOBILE_SWIPE_MEDIA_QUERY — same intentional
-                inclusive-CSS-max split as the documented 599/600 landscape-height pairing. */}
             {!isMobileLandscape && (
                 <div className="block [@media(min-width:650px)]:hidden" style={{ zIndex: 50 }}>
                     <MobileToolsSlideout
@@ -1766,77 +1098,29 @@ export default function SynthPlayerPage() {
                     />
                 </div>
             )}
-            {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display.
-                [MAESTRO-VIDEO-001] YouTubePlayer visibility is gated by activeVideoId so it
-                does not mount/init with an empty videoId. */}
-            <YouTubePlayer
-                ref={youtubePlayerRef}
-                videoId={activeVideoId || ''}
-                isVisible={audioSource === 'original' && isYouTubePlayerVisible && !!activeVideoId}
-                onClose={handleYouTubeClose}
-                currentTime={displayTime}
-                isPlaying={isPlaying}
-                onTimeUpdate={handleYouTubeTimeUpdate}
-                onStateChange={handleYouTubeStateChange}
-                onPlayerReady={handleYouTubePlayerReady}
-                isMobileLandscape={isMobileLandscape}
-                videoVariants={(currentSong as any)?.youtubeVariants}
-                onVariantChange={handleVideoVariantChange}
-                videoStartOffset={(currentSong as any)?.videoStartOffset}
-            />
-
-            {/* [MAESTRO-VIDEO-003C/004A] Songsterr-style empty state — rendered in the same
-                bottom-docked slot YouTubePlayer normally occupies. Driven by showNoVideoPanel,
-                NOT audioSource === 'original' — audioSource stays 'synth' the whole time this
-                is open, since the source selector must only reflect what's actually playable.
-                [004A] This is a gateway, not an inline editor: no inline paste/sync controls —
-                the only action routes into MetadataEditorPanel → Media & Sync, where the real
-                tab_youtube save path (and the other slot rows, for Practice Generator/lesson
-                tabs) already lives. */}
-            {showNoVideoPanel && !activeVideoId && (
-                <div
-                    className={`fixed z-40 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-2xl overflow-hidden flex flex-col ${isMobileLandscape
-                        ? 'w-[230px] bottom-[80px] right-0'
-                        : 'w-[52vw] bottom-[80px] right-0 md:w-[355px] md:bottom-[74px] md:right-4'
-                        }`}
-                >
-                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                        <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-red-600 text-white text-[10px] font-bold shrink-0">▶</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate flex-1">Sync tab with YouTube video</span>
-                        <button
-                            type="button"
-                            onClick={() => setShowNoVideoPanel(false)}
-                            aria-label="Dismiss"
-                            className="shrink-0 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 text-lg leading-none px-1"
-                        >
-                            &times;
-                        </button>
-                    </div>
-                    <div className="flex-1 flex flex-col gap-3 p-4">
-                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                            No Main / Full Mix video is linked for this song. Add a YouTube video in Media &amp; Sync.
-                        </p>
-                        {/* [MAESTRO-VIDEO-004A] Opens the existing Metadata Editor straight to
-                            Media & Sync → Main / Full Mix, the row that actually feeds Original
-                            Mode (tab_youtube main row → queries.ts bridge → activeVideoId). Main
-                            is only pre-focused guidance — Media & Sync still exposes every other
-                            slot row (Lesson, Tutorial, Playthrough, Live, Solo, etc.) for
-                            Practice Generator/lesson-style tabs that need a different slot. */}
-                        {currentSong && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setShowNoVideoPanel(false);
-                                    setMetaEditorState({ tabId: currentSong.id, source: 'novideo' });
-                                }}
-                                className="w-full px-3 py-2 text-sm font-bold rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
-                            >
-                                Add Main / Full Mix Video
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display */}
+            <div style={{
+                position: 'fixed', bottom: isMobileLandscape ? 0 : 80,
+                right: isMobileLandscape ? 0 : 16, zIndex: 40,
+                width: 240, height: 427, borderRadius: 8, overflow: 'hidden',
+                display: audioSource === 'original' && isYouTubePlayerVisible && activeVideoId ? 'block' : 'none',
+            }}>
+                <YouTubePlayer
+                    ref={youtubePlayerRef}
+                    videoId={activeVideoId ?? ''}
+                    isVisible={audioSource === 'original' && isYouTubePlayerVisible}
+                    onClose={handleYouTubeClose}
+                    currentTime={displayTime}
+                    isPlaying={isPlaying}
+                    onTimeUpdate={handleYouTubeTimeUpdate}
+                    onStateChange={handleYouTubeStateChange}
+                    onPlayerReady={handleYouTubePlayerReady}
+                    isMobileLandscape={isMobileLandscape}
+                    videoVariants={(currentSong as any)?.youtubeVariants}
+                    onVariantChange={handleVideoVariantChange}
+                    videoStartOffset={(currentSong as any)?.videoStartOffset}
+                />
+            </div>
         </div>
     );
 }
