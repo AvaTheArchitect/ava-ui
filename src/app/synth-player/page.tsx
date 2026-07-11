@@ -1,11 +1,27 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.18
- * Date: July 5, 2026
- * Cloned from V102.17 — YouTube landscape panel docking + recent lane closures.
+ * Synth Player Page — Phase 4 V102.20
+ * Date: July 9th, 2026
+ * Cloned from V102.19 — No-video panel Add Video gateway + recent lane closures.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-VIDEO-004 closed: No-video empty-state panel is a gateway, not an inline
+ *        editor — removed the disabled paste/sync controls; "Add Main / Full Mix Video"
+ *        opens MetadataEditorPanel on Media & Sync with the Main / Full Mix row scrolled
+ *        into view and highlighted. Other slot rows (Lesson, Playthrough, Live, Solo, etc.)
+ *        remain manually selectable for Practice Generator/lesson-style tabs.
+ *        tabs.youtube_video_id/video_start_offset stay untouched — tab_youtube remains
+ *        the sole write path.
+ *        [004C] handleMetadataSave now also calls refetchSongs() after every Metadata
+ *        Editor save, so a newly-saved tab_youtube main row (youtubeVideoId/videoVariants/
+ *        videoStartOffset, re-derived via fetchSongs()'s queries.ts bridge) reaches Original
+ *        Mode immediately — no hard refresh needed. Safe under PLAYER-003: the signed URL
+ *        resolver keys off file-identity primitives, not the currentSong reference, so this
+ *        does not reload the score or reset the selected track.
+ * ✅ MAESTRO-PLAYER-003 closed: Signed URL resolver is keyed by playable file identity
+ *        primitives instead of currentSong object reference, preventing metadata-only
+ *        saves from clearing/reloading the active score, tracks, and selected track.
  * ✅ MAESTRO-PLAYER-002 closed: A1 playerReady latch + D/B destroyed-generation guards
  *        retained in AlphaTabRenderer.tsx; diagnostic probe removed.
  * ✅ MAESTRO-UI-002 closed: TopMenuTray landscape CSS threshold aligned to JS
@@ -121,6 +137,10 @@ export default function SynthPlayerPage() {
     const [isYouTubePlayerVisible, setIsYouTubePlayerVisible] = useState(false);
     const [isYouTubeReady, setIsYouTubeReady] = useState(false);
     const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+    // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable — this
+    // drives the no-video empty-state panel WITHOUT ever setting audioSource to
+    // 'original' when there's no video, so Synth stays selected/active underneath it.
+    const [showNoVideoPanel, setShowNoVideoPanel] = useState(false);
     const youtubePlayerRef = useRef<any>(null);
     const pauseTransitionRef = useRef<boolean>(false);
 
@@ -180,7 +200,10 @@ export default function SynthPlayerPage() {
     const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
-    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | null }>
+    // [MAESTRO-VIDEO-004/004A] 'novideo' source: opened via the no-video panel's
+    // Add Main / Full Mix Video action — routes MetadataEditorPanel straight to
+    // Media & Sync / Main / Full Mix.
+    const [metaEditorState, setMetaEditorState] = useState<{ tabId: string | null; source: 'mytabs' | 'newtab' | 'novideo' | null }>
         ({ tabId: null, source: null });
 
     // ==================== SIGNED URL CACHE ====================
@@ -235,12 +258,24 @@ export default function SynthPlayerPage() {
     }, [defaultYouTubeId]);
 
     // ==================== SIGNED URL RESOLVER ====================
+    // [MAESTRO-PLAYER-003] Keyed by playable file identity (id + file path/name/extension),
+    // not the currentSong object. MetadataEditorPanel saves (title/tempo/tuning/time_signature/
+    // etc.) always allocate a new currentSong reference even when the underlying file is
+    // unchanged — depending on the object itself would re-fire this resolver on every
+    // metadata-only save, wiping tracks/selectedTrack/songInfo and forcing an unnecessary
+    // score reparse (which can land the track heuristic on a different/rest-only track).
+    // These primitives only change on an actual song switch or a tab-file replacement.
+    const currentSongId = currentSong?.id ?? null;
+    const currentSongFilePath = currentSong?.file_path ?? null;
+    const currentSongFileName = currentSong?.file_name ?? null;
+    const currentSongFileExtension = currentSong?.file_extension ?? null;
+    const currentSongTitle = currentSong?.title ?? null;
     useEffect(() => {
         // [C4] Support file_path-only rows (new uploads) alongside legacy file_name+extension rows.
         const path =
-            currentSong?.file_path ||
-            (currentSong?.file_name && currentSong?.file_extension
-                ? `${currentSong.file_name}.${currentSong.file_extension}`
+            currentSongFilePath ||
+            (currentSongFileName && currentSongFileExtension
+                ? `${currentSongFileName}.${currentSongFileExtension}`
                 : null);
         if (!path) return;
         setSignedUrl(null);
@@ -255,7 +290,7 @@ export default function SynthPlayerPage() {
         } else {
             supabase.storage.from('tabs').createSignedUrl(path, 3600).then(({ data, error }) => {
                 if (error || !data?.signedUrl) {
-                    setError(`Failed to load tab for "${currentSong?.title ?? 'this tab'}"`);
+                    setError(`Failed to load tab for "${currentSongTitle ?? 'this tab'}"`);
                     return;
                 }
                 const expiresAt = Date.now() + 55 * 60 * 1000;
@@ -263,7 +298,7 @@ export default function SynthPlayerPage() {
                 setSignedUrl(data.signedUrl);
             });
         }
-    }, [currentSong]);
+    }, [currentSongId, currentSongFilePath, currentSongFileName, currentSongFileExtension, currentSongTitle]);
 
     // ==================== EXTERNAL CLOCK DRIVER ====================
     // RAF-based monotonic clock driver for Original mode cursor.
@@ -1144,8 +1179,15 @@ export default function SynthPlayerPage() {
 
     // ==================== PLAY / PAUSE ====================
     const handlePlayPause = useCallback(() => {
+        // [MAESTRO-VIDEO-003C] After the source-selector fix, handleAudioSourceChange never
+        // sets audioSource to 'original' when there's no video, so this condition should be
+        // unreachable via normal UI flow. Kept as dead-man insurance for the transient
+        // window right after a video-song's Original mode switches to a no-video song
+        // (before the 003B fallback effect flips audioSource back to synth) and any other
+        // stale/unexpected state — never remove.
+        if (audioSource === 'original' && !activeVideoId) return;
         setIsPlaying(p => !p);
-    }, []);
+    }, [audioSource, activeVideoId]);
 
     const handleStop = useCallback(() => {
         if (!api) return;
@@ -1251,6 +1293,15 @@ export default function SynthPlayerPage() {
     // ==================== AUDIO SOURCE CHANGE ====================
     // [C5] Restored from V98.67 — mutes synth when switching to YouTube, restores on return.
     const handleAudioSourceChange = useCallback((source: 'synth' | 'original') => {
+        // [MAESTRO-VIDEO-003C] Source selector reflects only what's actually playable —
+        // intercept BEFORE setAudioSource so 'original' is never entered when there's
+        // nothing to play. Synth stays selected/active; the empty-state panel communicates
+        // why Original isn't available.
+        if (source === 'original' && !activeVideoId) {
+            setShowNoVideoPanel(true);
+            return;
+        }
+        setShowNoVideoPanel(false);
         setAudioSource(source);
         if (source === 'original') {
             // Don't mute yet — wait for handleYouTubePlayerReady to confirm iframe is live
@@ -1261,7 +1312,28 @@ export default function SynthPlayerPage() {
             // Restore synth volume immediately on switch back
             if (api) api.masterVolume = masterVolumeRef.current;
         }
-    }, [api]);
+    }, [api, activeVideoId]);
+
+    // [MAESTRO-VIDEO-003B] Songsterr-style safety fallback: if the current song has no
+    // video while Original is active, fall back to Synth (reusing handleAudioSourceChange
+    // so isYouTubePlayerVisible/isYouTubeReady/masterVolume all settle consistently, same
+    // as any manual switch-to-Synth). Keyed ONLY on activeVideoId, not audioSource — this
+    // effect must re-evaluate when video availability changes (i.e. on a song switch), but
+    // NOT on every audioSource toggle, otherwise explicitly selecting Original on a
+    // no-video song would be immediately stomped back to Synth on the same render.
+    useEffect(() => {
+        if (!activeVideoId && audioSource === 'original') {
+            handleAudioSourceChange('synth');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeVideoId]);
+
+    // [MAESTRO-VIDEO-003C] Dismiss the no-video panel on any song/video-context change —
+    // a stale panel from a previous no-video song must not carry into the next one
+    // (whether the next song has a video or is itself another no-video song).
+    useEffect(() => {
+        setShowNoVideoPanel(false);
+    }, [activeVideoId]);
 
     // ==================== SPEED / VOLUME ====================
     const handleSpeedChange = useCallback((speed: number) => {
@@ -1345,7 +1417,17 @@ export default function SynthPlayerPage() {
                 s.id === savedTabId ? { ...s, ...patch } : s
             ),
         }));
-    }, []);
+        // [MAESTRO-VIDEO-004C] Re-derive youtubeVideoId/videoVariants/videoStartOffset from
+        // tab_youtube via the same fetchSongs() bridge queries.ts already uses, so Original
+        // Mode sees a Media & Sync video save immediately instead of requiring a hard
+        // refresh. Reuses the same refetchSongs() NewTabPanel already calls after uploads.
+        // Safe for PLAYER-003: the signed URL resolver is keyed on file-identity primitives
+        // (id/file_path/file_name/file_extension/title) derived from currentSong, not the
+        // object reference itself — none of those change from a tab_youtube-only save, so
+        // the new songs array/currentSong reference from this refetch does not re-trigger
+        // the resolver, reload the score, or reset the selected track.
+        refetchSongs();
+    }, [refetchSongs]);
 
     const handleToggleFavorite = useCallback((songId: string) => {
         setSongState(prev => ({
@@ -1399,7 +1481,33 @@ export default function SynthPlayerPage() {
     const isHeaderShown = isMobileLandscape || isHeaderVisible;
 
     return (
-        <div className="h-screen grid grid-rows-[0px,1fr,0px] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
+        // [MAESTRO-LOOP-002G.3] grid-cols-[minmax(0,1fr)]: the mobile-landscape <main> below
+        // now uses overflow-x-clip/overflow-y-clip (002G/002G.1) instead of overflow-hidden.
+        // overflow:clip prevents the shell from scrolling but — unlike overflow:hidden —
+        // does not establish the same scroll-container/min-width:auto suppression, so this
+        // grid track's implicit column (previously sized `auto`) could stretch to AlphaTab's
+        // full intrinsic strip width (confirmed live: ~35898px) instead of the viewport.
+        // minmax(0, 1fr) explicitly allows the track to shrink below that content width,
+        // keeping the page viewport-sized while the inner .alphatab-container remains the
+        // real horizontal scroller. Columns prevent AlphaTab's intrinsic WIDTH from blowing
+        // out the shell.
+        //
+        // [MAESTRO-UI-006C] Row model, corrected. The old grid-rows-[0px,1fr,0px] used
+        // commas between top-level tracks, which is invalid grid-template-rows syntax
+        // (compiles to `0px,1fr,0px`) — browsers drop the whole declaration, so this has
+        // always run as an implicit, content-sized single row, never a real three-row
+        // grid (confirmed live: 006B's attempt to make the row template valid exposed
+        // that the fixed header/footer/overlays are position:fixed and out of flow, and
+        // <main> — the only real in-flow child — auto-placed into the first 0px track
+        // and collapsed to zero height). The honest model is one explicit row, not
+        // three: grid-rows-[minmax(0,1fr)]. minmax(0,1fr) on both axes keeps the row
+        // viewport-sized the same way it already keeps the column viewport-sized above,
+        // clamping the historical content-sized overflow (~482px content in a ~430px
+        // viewport, per live capture) without touching the fixed-position siblings.
+        // h-screen → h-dvh: 100vh includes iOS Safari's collapsed dynamic toolbar chrome;
+        // 100dvh tracks the real visible viewport (same fix as <main>'s [P1] below and
+        // MyTabsPanel.tsx).
+        <div className="h-dvh grid grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,1fr)] bg-gradient-to-br from-purple-900 via-gray-900 to-black overflow-x-hidden">
 
             {/* ── TopMenuTray wrapper owns slide animation; tray itself is dumb ── */}
             {/* [VA1] GPU-composited slide: will-change-transform + 200ms ease-out (was duration-300 ease). */}
@@ -1444,6 +1552,10 @@ export default function SynthPlayerPage() {
                 <MetadataEditorPanel
                     tabId={metaEditorState.tabId}
                     onSave={handleMetadataSave}
+                    // [MAESTRO-VIDEO-004] 'novideo' opens straight to Media & Sync with the
+                    // Main / Full Mix row scrolled into view and briefly highlighted.
+                    initialSection={metaEditorState.source === 'novideo' ? 'media' : undefined}
+                    focusMainVideoRow={metaEditorState.source === 'novideo'}
                     onClose={() => {
                         const src = metaEditorState.source;
                         setMetaEditorState({ tabId: null, source: null });
@@ -1460,11 +1572,25 @@ export default function SynthPlayerPage() {
              *   - style prop removed (maxWidth/100vw was strip-mode pairing)
              *
              * [MAESTRO-UI-002] Header top padding is intentionally still gated on
-             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(79px+...)] otherwise) —
+             * !isMobileLandscape below (pt-0 in landscape, pt-[calc(80px+...)] otherwise) —
              * landscape mode relies on TopMenuTray's CSS shell query (globals.css, now
              * max-height: 600px to match isMobileLandscape's own innerHeight < 600 threshold)
              * rendering its compact mobile shell instead of the tall desktop one, so zero
              * reserved padding is correct once those two thresholds agree.
+             *
+             * [MAESTRO-LOOP-002G] Landscape branch: overflow-x-hidden → overflow-x-clip.
+             * A wide landscape loop-highlight band (BeatCustomLoopOverlay) could inflate
+             * this shell's scrollWidth; overflow-x-hidden still creates a scroll container
+             * whose scrollLeft can be pinned to max (right-side white wipe, cursor/score
+             * misregistration). overflow-x-clip clips overflow without creating a
+             * horizontal scroll container, so scrollLeft stays pinned to 0.
+             *
+             * [MAESTRO-LOOP-002G.1] Both axes must be `clip` — overflow-x:clip paired with
+             * overflow-y:hidden computes back to overflow-x:hidden per CSS overflow
+             * behavior (a mixed clip/hidden pair resolves to hidden), silently re-enabling
+             * programmatic scrollLeft and reintroducing the wipe. Confirmed live: with
+             * overflow-y forced to clip, getComputedStyle(outer).overflowX reports 'clip'
+             * and scrollLeft stays 0.
              */}
             <main
                 ref={mainScrollContainerRef}
@@ -1472,9 +1598,9 @@ export default function SynthPlayerPage() {
         w-full
         ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}
         ${isMobileLandscape
-                        ? 'overflow-x-hidden overflow-y-hidden overscroll-none [touch-action:pan-x]'
+                        ? 'overflow-x-clip overflow-y-clip overscroll-none [touch-action:pan-x]'
                         : 'pb-32 overflow-y-auto overflow-x-hidden overscroll-y-contain [scrollbar-gutter:stable]'}
-        ${!isMobileLandscape ? 'pt-[calc(79px+env(safe-area-inset-top))]' : 'pt-0'}
+        ${!isMobileLandscape ? 'pt-[calc(80px+env(safe-area-inset-top))]' : 'pt-0'}
     `}
             >
                 {error && (
@@ -1492,6 +1618,9 @@ export default function SynthPlayerPage() {
                  *   - className simplified to w-full (works portrait + landscape)
                  */}
                 {/* [TH3-restored] Dark wrapper matches AlphaTab dark canvas — eliminates white gutter bleed. */}
+                {/* [MAESTRO-LAYOUT-001B] The 74px below is the desktop TransportBar height
+                    (TransportBar.tsx, h-[74px]) — also mirrored in YouTubePlayer.tsx's desktop
+                    bottom offset (md:bottom-[74px]). Keep all three in sync if it changes. */}
                 <div
                     id="maestro-player"
                     className={`relative w-full ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-white'}`}
@@ -1605,6 +1734,10 @@ export default function SynthPlayerPage() {
                 onComplete={() => { }}
             />
 
+            {/* [MAESTRO-LAYOUT-001B] min-width:650px marks the desktop threshold, paired with the
+                max-width:649px complement in globals.css's TopMenuTray shell query and
+                MobileToolsSlideout.tsx's MOBILE_SWIPE_MEDIA_QUERY — same intentional
+                inclusive-CSS-max split as the documented 599/600 landscape-height pairing. */}
             {!isMobileLandscape && (
                 <div className="block [@media(min-width:650px)]:hidden" style={{ zIndex: 50 }}>
                     <MobileToolsSlideout
@@ -1634,31 +1767,76 @@ export default function SynthPlayerPage() {
                 </div>
             )}
             {/* [C5] YouTube player — always mounted to prevent flash, isVisible controls display.
-                [MAESTRO-UI-004] This wrapper is visibility-only: YouTubePlayer.tsx's own root
-                owns all fixed positioning/sizing (including the locked landscape/portrait
-                footprints). Kept only because its display gate also checks activeVideoId,
-                which the isVisible prop below does not — without it, a truthy
-                isYouTubePlayerVisible with an empty activeVideoId would render visible instead
-                of staying hidden. No position/size styles belong here. */}
-            <div style={{
-                display: audioSource === 'original' && isYouTubePlayerVisible && activeVideoId ? 'block' : 'none',
-            }}>
-                <YouTubePlayer
-                    ref={youtubePlayerRef}
-                    videoId={activeVideoId ?? ''}
-                    isVisible={audioSource === 'original' && isYouTubePlayerVisible}
-                    onClose={handleYouTubeClose}
-                    currentTime={displayTime}
-                    isPlaying={isPlaying}
-                    onTimeUpdate={handleYouTubeTimeUpdate}
-                    onStateChange={handleYouTubeStateChange}
-                    onPlayerReady={handleYouTubePlayerReady}
-                    isMobileLandscape={isMobileLandscape}
-                    videoVariants={(currentSong as any)?.youtubeVariants}
-                    onVariantChange={handleVideoVariantChange}
-                    videoStartOffset={(currentSong as any)?.videoStartOffset}
-                />
-            </div>
+                [MAESTRO-VIDEO-001] YouTubePlayer visibility is gated by activeVideoId so it
+                does not mount/init with an empty videoId. */}
+            <YouTubePlayer
+                ref={youtubePlayerRef}
+                videoId={activeVideoId || ''}
+                isVisible={audioSource === 'original' && isYouTubePlayerVisible && !!activeVideoId}
+                onClose={handleYouTubeClose}
+                currentTime={displayTime}
+                isPlaying={isPlaying}
+                onTimeUpdate={handleYouTubeTimeUpdate}
+                onStateChange={handleYouTubeStateChange}
+                onPlayerReady={handleYouTubePlayerReady}
+                isMobileLandscape={isMobileLandscape}
+                videoVariants={(currentSong as any)?.youtubeVariants}
+                onVariantChange={handleVideoVariantChange}
+                videoStartOffset={(currentSong as any)?.videoStartOffset}
+            />
+
+            {/* [MAESTRO-VIDEO-003C/004A] Songsterr-style empty state — rendered in the same
+                bottom-docked slot YouTubePlayer normally occupies. Driven by showNoVideoPanel,
+                NOT audioSource === 'original' — audioSource stays 'synth' the whole time this
+                is open, since the source selector must only reflect what's actually playable.
+                [004A] This is a gateway, not an inline editor: no inline paste/sync controls —
+                the only action routes into MetadataEditorPanel → Media & Sync, where the real
+                tab_youtube save path (and the other slot rows, for Practice Generator/lesson
+                tabs) already lives. */}
+            {showNoVideoPanel && !activeVideoId && (
+                <div
+                    className={`fixed z-40 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-2xl overflow-hidden flex flex-col ${isMobileLandscape
+                        ? 'w-[230px] bottom-[80px] right-0'
+                        : 'w-[52vw] bottom-[80px] right-0 md:w-[355px] md:bottom-[74px] md:right-4'
+                        }`}
+                >
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-red-600 text-white text-[10px] font-bold shrink-0">▶</span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate flex-1">Sync tab with YouTube video</span>
+                        <button
+                            type="button"
+                            onClick={() => setShowNoVideoPanel(false)}
+                            aria-label="Dismiss"
+                            className="shrink-0 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 text-lg leading-none px-1"
+                        >
+                            &times;
+                        </button>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-3 p-4">
+                        <p className="text-sm text-gray-700 dark:text-gray-300">
+                            No Main / Full Mix video is linked for this song. Add a YouTube video in Media &amp; Sync.
+                        </p>
+                        {/* [MAESTRO-VIDEO-004A] Opens the existing Metadata Editor straight to
+                            Media & Sync → Main / Full Mix, the row that actually feeds Original
+                            Mode (tab_youtube main row → queries.ts bridge → activeVideoId). Main
+                            is only pre-focused guidance — Media & Sync still exposes every other
+                            slot row (Lesson, Tutorial, Playthrough, Live, Solo, etc.) for
+                            Practice Generator/lesson-style tabs that need a different slot. */}
+                        {currentSong && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowNoVideoPanel(false);
+                                    setMetaEditorState({ tabId: currentSong.id, source: 'novideo' });
+                                }}
+                                className="w-full px-3 py-2 text-sm font-bold rounded bg-red-600 hover:bg-red-700 text-white transition-colors"
+                            >
+                                Add Main / Full Mix Video
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
