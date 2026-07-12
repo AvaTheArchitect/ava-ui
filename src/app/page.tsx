@@ -8,7 +8,7 @@
 
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Guitar, Mic, Music, Settings, Headphones, Home, Users, User, GraduationCap, Wrench, Brain, Timer, Printer, ChevronDown, X, Sun, Moon, Palette, Play, Pause, Speaker, Feather, Piano } from "lucide-react"
 
 // ✅ Fixed Import Path (case sensitive)
@@ -242,6 +242,71 @@ export default function MaestroApp(): React.JSX.Element {
 
   // ✅ NEW: Tool Toggle System
   const [activeTool, setActiveTool] = useState<'none' | 'metronome' | 'tuner' | 'print' | 'settings'>('none')
+
+  // [MAESTRO-FIXED-INSET-PROBE] Debug-gated cold-launch viewport probe. Silent unless
+  // localStorage.maestro_fixed_inset_probe === '1'. Logs primitives only — never DOM/api
+  // references. Checks whether this page's `fixed inset-0` wrappers resolve against the
+  // same short/buggy iOS PWA live viewport already confirmed in MAESTRO-UI-009A (Synth
+  // Player). Two refs since the auth-check gate and the main shell are separate
+  // top-level wrappers; only one is ever mounted, so exactly one ref is non-null at a
+  // time — that determines the logged `branch`.
+  const authCheckWrapperRef = useRef<HTMLDivElement>(null)
+  const mainShellWrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem('maestro_fixed_inset_probe') !== '1') return
+
+    const logProbe = (trigger: string) => {
+      const wrapper = authCheckWrapperRef.current ?? mainShellWrapperRef.current
+      const branch = authCheckWrapperRef.current ? 'auth-check' : mainShellWrapperRef.current ? 'main-shell' : null
+      const wrapperRect = wrapper?.getBoundingClientRect() ?? null
+      const wrapperStyle = wrapper ? window.getComputedStyle(wrapper) : null
+      console.log('[MAESTRO-FIXED-INSET-PROBE]', {
+        page: 'home',
+        branch,
+        trigger,
+        isStandalone: window.matchMedia('(display-mode: standalone)').matches,
+        innerHeight: window.innerHeight,
+        outerHeight: window.outerHeight,
+        screenHeight: window.screen?.height ?? null,
+        visualViewportHeight: window.visualViewport?.height ?? null,
+        docClientHeight: document.documentElement.clientHeight,
+        bodyHeight: document.body.getBoundingClientRect().height,
+        wrapperTop: wrapperRect?.top ?? null,
+        wrapperBottom: wrapperRect?.bottom ?? null,
+        wrapperHeight: wrapperRect?.height ?? null,
+        wrapperComputedPosition: wrapperStyle?.position ?? null,
+        wrapperComputedTop: wrapperStyle?.top ?? null,
+        wrapperComputedBottom: wrapperStyle?.bottom ?? null,
+        wrapperComputedHeight: wrapperStyle?.height ?? null,
+        wrapperComputedMinHeight: wrapperStyle?.minHeight ?? null,
+        orientationType: window.screen?.orientation?.type ?? null,
+        isLandscape: window.matchMedia('(orientation: landscape)').matches,
+      })
+    }
+
+    logProbe('mount')
+    const raf = requestAnimationFrame(() => logProbe('raf'))
+    const t250 = setTimeout(() => logProbe('timeout-250'), 250)
+    const t1000 = setTimeout(() => logProbe('timeout-1000'), 1000)
+    const onResize = () => logProbe('window-resize')
+    const onOrientation = () => logProbe('orientationchange')
+    const onVvResize = () => logProbe('visualViewport-resize')
+
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onOrientation)
+    window.visualViewport?.addEventListener('resize', onVvResize)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(t250)
+      clearTimeout(t1000)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onOrientation)
+      window.visualViewport?.removeEventListener('resize', onVvResize)
+    }
+  }, [])
 
   // ✅ AutoClose on Escape Key
   useEffect(() => {
@@ -513,7 +578,7 @@ export default function MaestroApp(): React.JSX.Element {
 
   if (!authChecked) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+      <div ref={authCheckWrapperRef} className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
       </div>
     )
@@ -678,7 +743,7 @@ export default function MaestroApp(): React.JSX.Element {
 
     // ✅ MAIN HOME SCREEN - NO SCROLL DESIGN
     return (
-      <div className="fixed inset-0 flex flex-col">
+      <div ref={mainShellWrapperRef} className="fixed inset-0 flex flex-col">
         {/* Header Section - FIXED HEIGHT */}
         <div
           className="flex-shrink-0 px-4 pb-2 md:pb-4 relative z-1"

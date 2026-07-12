@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/alphaTab/supabase'
 
@@ -23,6 +23,66 @@ export default function SignInPage() {
     return () => { mounted = false }
   }, [router])
 
+  // [MAESTRO-AUTH-GUTTER-PROBE] Debug-gated cold-launch viewport probe. Silent unless
+  // localStorage.maestro_auth_gutter_probe === '1'. Logs primitives only. Checks whether
+  // this page's `fixed inset-0` wrapper resolves against the same short/buggy iOS PWA
+  // live viewport already confirmed in MAESTRO-UI-009A (Synth Player). wrapperRef is
+  // attached to whichever top-level wrapper div is currently rendered (checking vs. main).
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem('maestro_auth_gutter_probe') !== '1') return
+
+    const logProbe = (trigger: string) => {
+      const wrapper = wrapperRef.current
+      const wrapperRect = wrapper?.getBoundingClientRect() ?? null
+      const wrapperStyle = wrapper ? window.getComputedStyle(wrapper) : null
+      console.log('[MAESTRO-AUTH-GUTTER-PROBE]', {
+        page: 'sign-in',
+        trigger,
+        isStandalone: window.matchMedia('(display-mode: standalone)').matches,
+        innerHeight: window.innerHeight,
+        outerHeight: window.outerHeight,
+        screenHeight: window.screen?.height ?? null,
+        visualViewportHeight: window.visualViewport?.height ?? null,
+        docClientHeight: document.documentElement.clientHeight,
+        bodyHeight: document.body.getBoundingClientRect().height,
+        wrapperTop: wrapperRect?.top ?? null,
+        wrapperBottom: wrapperRect?.bottom ?? null,
+        wrapperHeight: wrapperRect?.height ?? null,
+        wrapperComputedPosition: wrapperStyle?.position ?? null,
+        wrapperComputedTop: wrapperStyle?.top ?? null,
+        wrapperComputedBottom: wrapperStyle?.bottom ?? null,
+        wrapperComputedHeight: wrapperStyle?.height ?? null,
+        wrapperComputedMinHeight: wrapperStyle?.minHeight ?? null,
+        orientationType: window.screen?.orientation?.type ?? null,
+        isLandscape: window.matchMedia('(orientation: landscape)').matches,
+      })
+    }
+
+    logProbe('mount')
+    const raf = requestAnimationFrame(() => logProbe('raf'))
+    const t250 = setTimeout(() => logProbe('timeout-250'), 250)
+    const t1000 = setTimeout(() => logProbe('timeout-1000'), 1000)
+    const onResize = () => logProbe('window-resize')
+    const onOrientation = () => logProbe('orientationchange')
+    const onVvResize = () => logProbe('visualViewport-resize')
+
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onOrientation)
+    window.visualViewport?.addEventListener('resize', onVvResize)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(t250)
+      clearTimeout(t1000)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onOrientation)
+      window.visualViewport?.removeEventListener('resize', onVvResize)
+    }
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -39,14 +99,14 @@ export default function SignInPage() {
 
   if (checking) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+      <div ref={wrapperRef} className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center p-4 overflow-hidden">
+    <div ref={wrapperRef} className="fixed inset-0 bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center p-4 overflow-hidden">
       <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
