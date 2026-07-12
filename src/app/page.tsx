@@ -1,10 +1,11 @@
-// Date: December 1, 2025
+// Date: July 11, 2026
 // File: src/app/page.tsx - LANDING PAGE REDESIGN
 // ✅ NO SCROLL DESIGN - Everything fits in one view
 // ✅ Mobile: 3x3 Grid with icon-only buttons
 // ✅ Desktop: 3x2 Grid with full descriptions
 // ✅ Fixed password screen for mobile
 // ✅ Practice progress placeholder
+// ✅ MAESTRO-UI-011: bottom content padding pb-44→pb-28, was overshooting the fixed nav's ~104-118px height
 
 "use client"
 
@@ -705,7 +706,7 @@ export default function MaestroApp(): React.JSX.Element {
         </div>
 
         {/* Main Content Area - NO CLIPPING */}
-        <div className="flex-1 px-4 pb-44 md:pb-8">
+        <div className="flex-1 px-4 pb-28 md:pb-8">
           <div className="max-w-4xl mx-auto h-full flex flex-col">
             {/* Module Grid - 2x3 Mobile, 3x2 Desktop */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 mb-3 md:mb-4 relative z-50">
