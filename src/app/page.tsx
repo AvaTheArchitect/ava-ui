@@ -6,6 +6,7 @@
 // ✅ Fixed password screen for mobile
 // ✅ Practice progress placeholder
 // ✅ MAESTRO-UI-011: bottom content padding pb-44→pb-28, was overshooting the fixed nav's ~104-118px height
+// ✅ MAESTRO-UI-011-A: bottom nav compressed py-2→py-1, p-3→p-2 (~118px→~102px), safe-area-pb untouched
 
 "use client"
 
@@ -799,7 +800,7 @@ export default function MaestroApp(): React.JSX.Element {
 
         {/* Bottom Navigation - FIXED */}
         <div className="fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800 z-30 safe-area-pb">
-          <div className="flex justify-around items-center py-2 px-4 max-w-md mx-auto">
+          <div className="flex justify-around items-center py-1 px-4 max-w-md mx-auto">
             {[
               { id: 'songs', icon: Music, label: t.nav.songs },
               { id: 'setlist', icon: Users, label: t.nav.setlist },
@@ -823,7 +824,7 @@ export default function MaestroApp(): React.JSX.Element {
                   }
                 }}
                 className={`
-                  flex flex-col items-center p-3 rounded-xl transition-all duration-200
+                  flex flex-col items-center p-2 rounded-xl transition-all duration-200
                   focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50
                   ${activeTab === item.id
                     ? 'text-blue-400 bg-blue-400/20'
