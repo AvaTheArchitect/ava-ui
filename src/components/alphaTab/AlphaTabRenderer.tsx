@@ -2,9 +2,47 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.26-LOCKED
- * Date: July 2nd, 2026
+ * Current version: V145.27-PLAYER006
+ * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * MAESTRO-PLAYER-006 / CURSOR-005 — CLOSED (bug fix below, not part of the V145.26 scroll/cursor lock):
+ * ✅ [LoopResumeInPlace] Loop ON pause/resume resumes from the paused beat
+ *        instead of restarting from loop start. Discriminated by the
+ *        dedicated pauseResumeArmedRef / lastPausedTickRef marker, armed
+ *        only by a real transport pause — NOT by lastTickRef.current, which
+ *        is true for any prior playback this session (cold-start replay
+ *        included) and proved too broad a discriminator in an earlier
+ *        draft. Explicit loop-overlay/click override still wins; cold
+ *        start / replay / outside loop / at-or-after endTick still primes
+ *        to liveLoopRange.startTick. Loop range remains half-open:
+ *        [startTick, endTick).
+ * ✅ [LoopWrapPreserveBridge] Native loop-wrap now seeds
+ *        window.__maestroLoopReseat with reason='loop-wrap' (same shape
+ *        BeatCustomLoopOverlay already uses for 'toggle ON'). The reseat
+ *        guard consumes it into both activeLoopReseatReasonRef and
+ *        loopPlayStartPreserveAbsRef, so [loop-start-visible-beat]'s
+ *        exact-match identity guard now also protects
+ *        activeReseatReason='loop-wrap' — preventing the M24 loop-start
+ *        tie beat at tick 88320 from being replaced by the first visible
+ *        pick-slide attack at 89280 on every native wrap, not just on
+ *        pause/resume.
+ * ✅ [LoopVisibleBeatReplacement] The zero-width/tie → first-visible-attack
+ *        replacement in [loop-start-visible-beat] now requires two
+ *        invariants before accepting a scan result: the original beat must
+ *        be effectively zero-width/invisible (visualBounds.w <= 1px,
+ *        tolerating sub-pixel noise around the documented vbW=0 case), and
+ *        the replacement must move strictly forward relative to the
+ *        original (replacement.absolutePlaybackStart > originalAbs). This
+ *        blocks invalid boundary replacements such as an M23-tail loop
+ *        geometry (loopStartTick < originalAbs) replacing the visible M24
+ *        tie-in beat at 88320 with the earlier, backward M23-tail/barline
+ *        beat at 86880. The scan loop, beatIsVisible(), and
+ *        tickCache.findBeat() were otherwise not changed.
+ * ✅ Not touched by any of the above: resolveNextBeatExpanded, candidate
+ *        rejection, stable beat ownership, Cursor2 behavior, Cursor2
+ *        reason lists, BeatCustomLoopOverlay, loop handles, MaestroCursor3,
+ *        layout/globals/Home/auth/profile.
  *
  * MAESTRO-PLAYER-002 — CLOSED (bug fixes below, not part of the V145.26 scroll/cursor lock):
  * ✅ A1: notifyPlayerReady latches props.onPlayerReady to fire at most once per
@@ -2637,6 +2675,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const playStartHardSnapAlreadyArmedRef = useRef(false);
     const resumeTickGateUntilRef = useRef<number>(0);
     const resumeTickGateAnchorRef = useRef<number | null>(null);
+    // [MAESTRO-PLAYER-006/CURSOR-005] Dedicated pause-only resume-in-place marker.
+    // Unlike lastTickRef (true whenever this session has ever played, including
+    // after a cold-start/replay with no real pause), pauseResumeArmedRef is set
+    // true only by a real transport pause and consumed by exactly one resume
+    // attempt — see the isPlaying effect's pause and resume branches.
+    const lastPausedTickRef = useRef<number | null>(null);
+    const pauseResumeArmedRef = useRef<boolean>(false);
     const seekInProgressRef = useRef(false);
     const seekTokenRef = useRef(0);
     const resumeTimerRef = useRef<number | null>(null);
@@ -6303,6 +6348,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     ? Date.now() - (window as any).__maestroManualSeek : null,
                             });
                         }
+                        // [MAESTRO-PLAYER-006/CURSOR-005] Seed the same reseat bridge
+                        // BeatCustomLoopOverlay uses for 'toggle ON' (see the
+                        // [LoopReseatReasonBridge]/[LoopVisibleBeatReplacement] locks above),
+                        // completing the already-declared "valid for loop-reseat/loop-wrap
+                        // paths" intent: written BEFORE requestSnap, same shape, so the very
+                        // next playerPositionChanged sees it and [loop-start-visible-beat]
+                        // can protect the loop-start tie/zero-width beat here too instead of
+                        // replacing it with the first later visible attack.
+                        (window as any).__maestroLoopReseat = {
+                            tick: liveRange.startTick,
+                            at: Date.now(),
+                            reason: 'loop-wrap',
+                        };
                         cursorRef.current.requestSnap('loop-wrap');
                         resetBeatAcceptance();
                         stableCurBeatRef.current = null;
@@ -6564,6 +6622,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         if (reseatFlag.reason === 'loop-toggle-on' || reseatFlag.reason === 'toggle ON') {
                             loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
                         }
+                        // [MAESTRO-PLAYER-006/CURSOR-005] Same preserve-beat seeding for native
+                        // loop-wrap reseats, so the isLoopPlayStart exact-match check below has
+                        // an actual preservedLoopStartAbs to compare curBeatAbs against — without
+                        // this, extending the reason match alone would never protect anything.
+                        if (reseatFlag.reason === 'loop-wrap') {
+                            loopPlayStartPreserveAbsRef.current = reseatFlag.tick ?? null;
+                        }
                         (window as any).__maestroLoopReseat = null;
                         if (isRendererDebugEnabled()) {
                             console.log(`🔁 Loop reseat guard fired (${reseatFlag.reason}):`, {
@@ -6787,8 +6852,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             Math.abs(curBeatAbs - liveRange.startTick) <= 120) &&
                         Math.abs(tick - liveRange.startTick) <= 120;
 
+                    // [MAESTRO-PLAYER-006/CURSOR-005] 'loop-wrap' joins 'loop-play-start' in this
+                    // exact-match identity check — same bridge, same condition shape. Per the
+                    // [LoopVisibleBeatReplacement] lock above, this replacement was always meant
+                    // to apply to loop-wrap too; native wraps just never fed the bridge that
+                    // makes the exact-match protection possible until now.
                     const isLoopPlayStart =
-                        (activeReseatReason === 'loop-play-start' &&
+                        ((activeReseatReason === 'loop-play-start' || activeReseatReason === 'loop-wrap') &&
                             preservedLoopStartAbs != null &&
                             curBeatAbs === preservedLoopStartAbs) ||
                         _isToggleOnReseat;
@@ -6832,7 +6902,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 }
                             }
 
-                            if (replacement) {
+                            // [MAESTRO-PLAYER-006/CURSOR-005] Two invariant guards before accepting
+                            // a scan result, in addition to beatIsVisible() above (unchanged).
+                            // The scan below is anchored to loopStartTick, not originalAbs — in
+                            // boundary-loop geometries where loopStartTick < originalAbs (e.g. an
+                            // M23-tail loop whose start precedes the M24 tie-in), the scan can
+                            // find a "visible" candidate that is actually earlier than curBeat,
+                            // or curBeat itself can already have nonzero rendered width (failing
+                            // beatIsVisible only because all its notes are tie destinations, not
+                            // because it's truly unrendered). Neither should be replaced.
+                            // EFFECTIVELY_ZERO_WIDTH_PX: no existing epsilon for visualBounds.w in
+                            // this block: originalVbW===0 is the documented case; this tiny
+                            // threshold also tolerates sub-pixel rendering noise around zero.
+                            const EFFECTIVELY_ZERO_WIDTH_PX = 1;
+                            const _originalIsEffectivelyInvisible = originalVbW <= EFFECTIVELY_ZERO_WIDTH_PX;
+                            const _replacementIsStrictlyForward =
+                                replacement != null &&
+                                typeof originalAbs === 'number' &&
+                                typeof replacement.absolutePlaybackStart === 'number' &&
+                                replacement.absolutePlaybackStart > originalAbs;
+                            if (replacement && _originalIsEffectivelyInvisible && _replacementIsStrictlyForward) {
                                 const repBb = bounds?.findBeat?.(replacement);
                                 console.log('[loop-start-visible-beat]', {
                                     loopStartTick,
@@ -7757,7 +7846,43 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         typeof overrideTick === 'number' &&
                         overrideTick >= liveLoopRange.startTick &&
                         overrideTick < liveLoopRange.endTick;
-                    const primeT = hasValidOverride ? overrideTick : liveLoopRange.startTick;
+                    // [MAESTRO-PLAYER-006/CURSOR-005] Resume-in-place: prime to the paused tick
+                    // instead of loop start, but ONLY for a true pause→resume — identified by
+                    // the dedicated pauseResumeArmedRef/lastPausedTickRef marker (armed
+                    // exclusively by a real transport pause, see the pause branch below), not
+                    // by lastTickRef.current. lastTickRef is true whenever this session has
+                    // ever played at all — including a cold-start/replay with no real pause —
+                    // which proved too broad a discriminator (M24 cold/replay regression).
+                    // Cold start, replay, or any resume where the marker wasn't armed by an
+                    // immediately-preceding pause falls through to liveLoopRange.startTick,
+                    // exactly as before — the seek/snap side effects below still always run,
+                    // only the target tick changes. Half-open range [startTick, endTick): a
+                    // tick sitting exactly at endTick is OUTSIDE, so pausing right at the loop
+                    // end still reseats to loop start. The marker is consumed (cleared) below
+                    // after this resume attempt's decision, regardless of which source was used.
+                    const wasPauseResumeArmed = pauseResumeArmedRef.current;
+                    const pausedTick = lastPausedTickRef.current;
+                    const isPausedResumeInRange =
+                        wasPauseResumeArmed === true &&
+                        typeof pausedTick === 'number' &&
+                        Number.isFinite(pausedTick) &&
+                        pausedTick >= liveLoopRange.startTick &&
+                        pausedTick < liveLoopRange.endTick;
+                    const primeTSource: 'override' | 'paused-resume' | 'loop-start' = hasValidOverride
+                        ? 'override'
+                        : isPausedResumeInRange
+                            ? 'paused-resume'
+                            : 'loop-start';
+                    const primeT = primeTSource === 'override'
+                        ? overrideTick
+                        : primeTSource === 'paused-resume'
+                            ? (pausedTick as number)
+                            : liveLoopRange.startTick;
+                    // Consume the pause-only marker now that this resume attempt's primeT
+                    // decision has been made — must read false again on the next resume unless
+                    // a fresh real pause re-arms it, so a later resume (without an intervening
+                    // pause) never reuses a stale paused tick.
+                    pauseResumeArmedRef.current = false;
                     // [LandscapePlaybackAnchorScope] One-shot: clear override after first Play use.
                     // Also clears the timestamp companion so BeatCustomLoopOverlay TTL checks
                     // don't resurrect a stale override after it was consumed here.
@@ -7974,6 +8099,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (_livePauseTick && _livePauseTick > 1) {
                         const _prevStable = lastStableRotationAnchorTickRef.current ?? null;
                         setLastStableRotationAnchorTick(_livePauseTick, 'pre-pause-live-anchor');
+                        // [MAESTRO-PLAYER-006/CURSOR-005] Arm the dedicated pause-only resume
+                        // marker on this same validated, finite live-pause-tick condition —
+                        // consumed by exactly one resume attempt in the isPlaying effect below.
+                        lastPausedTickRef.current = _livePauseTick;
+                        pauseResumeArmedRef.current = true;
                         if (isRendererDebugEnabled() && shouldLogDiagnostic('playback-live-stable-anchor', _livePauseTick ?? null, 1000, 480)) {
                             console.log('[playback-live-stable-anchor]', {
                                 reason: 'pre-pause-capture',
