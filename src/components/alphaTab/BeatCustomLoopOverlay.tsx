@@ -1,8 +1,33 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.25 — End Handle Barline Magnet Mirror
- * Date: July 13th, 2026
+ * BeatCustomLoopOverlay v1.8.26 — Cross-Row Magnet Guard Completion
+ * Date: July 14th, 2026
+ *
+ * 🔥 V1.8.26 CHANGES (MAESTRO-LOOP-004C.2):
+ * ✅ Adds a same-row guard to start-last-to-next-bar (nextBeatLeft !== null &&
+ *    nextBeatLeft > beatRight), mirroring the 004D.4b same-row guard already
+ *    applied to end-last-to-next-bar.
+ * ✅ Adds a same-row guard to end-first-hold-back (prevBeatRight !== null &&
+ *    prevBeatRight < beatLeft), the same doctrine applied backward.
+ * ✅ Prevents magnet branches from substituting a previous/next-row beat when
+ *    the raw resolver already correctly identified the current row/bar — a
+ *    three-stage diagnostic probe (raw-resolve → resolver-source →
+ *    magnet-adjustment) confirmed the resolver itself was correct
+ *    (getBeatAtPos's barIdx matched the geometric bar under the pointer) and
+ *    the wrong state first appeared inside magnet adjustment specifically:
+ *    end-first-hold-back converting rawBarIdx 20/beatIdx 0 into
+ *    adjustedBarIdx 19/beatIdx 7 across a row wrap. Unknown/unavailable
+ *    geometry declines the branch rather than firing blind, same fail-safe
+ *    shape as the existing end-last-to-next-bar guard.
+ * ⛔ Resolver behavior, constants (18/35), branch order, min-span guards,
+ *    buildRects, buildBarRects, the landscape branch, and the 004D.4a stable
+ *    handle layer are all unchanged. The MAESTRO-LOOP-004D.4/004C diagnostic
+ *    probe remains local/uncommitted, not part of this patch. Whole-rest/
+ *    half-rest barline-only movement (expected — one rest bar is one
+ *    resolvable beat), the min-span floor, and raw-pointer/ghost-projection
+ *    behavior remain separate follow-up lanes (MAESTRO-LOOP-004C.3+ /
+ *    MAESTRO-LOOP-004D.5).
  *
  * 🔥 V1.8.25 CHANGES (MAESTRO-LOOP-004D.4b):
  * ✅ Adds a target==='end' && isLastBeatInBar(beat) && beat.nextBeat branch to
@@ -700,12 +725,24 @@ export default function BeatCustomLoopOverlay({
             const nextBeatLeft = nextVb ? nextVb.x : null;
             const START_BARLINE_RELEASE_ZONE = 35;
 
-            // Pull the start handle forward to the next barline once the pointer
-            // has clearly moved past the previous bar's last beat. Do not wait
-            // for the next bar's first beat visualBounds — that can sit well to
-            // the right of the actual barline and makes the left handle miss
-            // barline snaps when the pointer is visually centered on the barline.
+            // [MAESTRO-LOOP-004C.2] Same-row guard, mirroring the 004D.4b guard
+            // on end-last-to-next-bar below: nextBeatLeft > beatRight only holds
+            // when beat.nextBeat sits further right on the SAME row as the
+            // current beat (the ordinary interior-barline case this branch is
+            // for). If beat.nextBeat is actually the first beat of the NEXT
+            // ROW, its visualBounds.x sits back at that row's left margin —
+            // i.e. nextBeatLeft < beatRight — so without this guard the branch
+            // could pull the start handle forward across a row boundary into
+            // the next row on pure horizontal overshoot, before the raw
+            // resolver itself has actually moved there (same class of bug
+            // 004D.4b fixed for end-last-to-next-bar, and confirmed present
+            // here via the mirrored end-first-hold-back repro: rawBarIdx 20 →
+            // adjustedBarIdx 19). Declines (falls through) rather than firing
+            // blind when nextBeatLeft is unavailable. Threshold/zone width and
+            // this branch's beat→next-bar purpose are unchanged.
             if (
+                nextBeatLeft !== null &&
+                nextBeatLeft > beatRight &&
                 mouseX >= beatRight + START_BARLINE_RELEASE_ZONE
             ) {
                 const nextBarIdx = beat.nextBeat?.voice?.bar?.index
@@ -772,13 +809,26 @@ export default function BeatCustomLoopOverlay({
             const prevBeatRight = prevVb ? prevVb.x + prevVb.w : null;
             const END_BARLINE_HOLD_ZONE = 18;
 
-            // Only hold the end handle back to the previous bar while the pointer
-            // is still near the previous bar's last visible beat. Once the pointer
-            // has clearly moved into the new bar, allow the preview to forecast
-            // into the first beat instead of sticking to the barline until beatLeft.
+            // [MAESTRO-LOOP-004C.2] Same-row guard: prevBeatRight < beatLeft
+            // only holds when beat.previousBeat sits further left on the SAME
+            // row as the current beat (the ordinary interior-barline case this
+            // branch is for). If beat.previousBeat is actually the last beat of
+            // the PREVIOUS ROW, its visualBounds sits on a different row
+            // entirely — prevBeatRight is not meaningfully "left of" beatLeft
+            // in the same visual line — so without this guard the branch could
+            // pull the end handle backward into the previous row (confirmed via
+            // probe: rawBarIdx 20/beatIdx 0 → adjustedBarIdx 19/beatIdx 7).
+            // Declines (falls through) rather than firing blind when
+            // prevBeatRight is unavailable or not provably same-row — this
+            // supersedes the old null-skips-buffer fallback, since an
+            // undetermined row can no longer be assumed safe to hold back into.
+            // Threshold/zone width and this branch's hold-back purpose are
+            // unchanged.
             if (
+                prevBeatRight !== null &&
+                prevBeatRight < beatLeft &&
                 mouseX <= beatLeft &&
-                (prevBeatRight == null || mouseX <= prevBeatRight + END_BARLINE_HOLD_ZONE)
+                mouseX <= prevBeatRight + END_BARLINE_HOLD_ZONE
             ) {
                 const prevBarIdx = beat.previousBeat?.voice?.bar?.index
                     ?? beat.previousBeat?.voice?.bar?.masterBar?.index;
