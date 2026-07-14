@@ -1,8 +1,22 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.22 — Portrait Handle Render-X Alignment
+ * BeatCustomLoopOverlay v1.8.23 — Drag Render State Hygiene
  * Date: July 13th, 2026
+ *
+ * 🔥 V1.8.23 CHANGES (MAESTRO-LOOP-004D.1b):
+ * ✅ Removed the dead raw-pointer render state parked by V1.8.22/004D.1:
+ *    dragTarget/setDragTarget, activeHandleX/setActiveHandleX, and
+ *    activeHandleClientXRef, plus every write site in handleDragStart/
+ *    handleDragMove/handleDragEnd. None had a live reader after 004D.1
+ *    switched the handle glyph to render from the snapped rect boundary
+ *    (rects[0]/rects[last]) instead of raw pointer position.
+ * ⛔ dragTargetRef (the actively-read drag-target source of truth),
+ *    handleDragging, the listener lifecycle effect, native touchstart refs,
+ *    the pointerup/pointercancel safety net, resolveBeatWithX,
+ *    adjustHandleBeatNearBarline, buildRects, min-span checks, and the
+ *    landscape branch are all unchanged. Pointer-capture lifecycle itself
+ *    remains parked for MAESTRO-LOOP-004D.2.
  *
  * 🔥 V1.8.22 CHANGES (MAESTRO-LOOP-004D.1):
  * ✅ Portrait start/end handle glyphs now always render at the same static
@@ -15,11 +29,10 @@
  *    edge the highlight band renders — no separate tracking needed.
  * ✅ Removed now-dead getActiveHandleOverlayX()/activeOverlayX and the
  *    startIsDragging/endIsDragging flags (their only readers).
- * ⛔ dragTarget/activeHandleX state and their setters (setDragTarget/
- *    setActiveHandleX) deliberately still fire from handleDragStart/Move/End,
- *    unread by render now — parked for MAESTRO-LOOP-004D.1b (pointer-capture
- *    lifecycle), not removed here since that also affects render cadence
- *    during drag. handleDragStart/Move/End bodies, resolveBeatWithX,
+ * ⛔ [ACTIONED in V1.8.23/004D.1b] dragTarget/activeHandleX state and their
+ *    setters were deliberately left firing from handleDragStart/Move/End at
+ *    this version, parked rather than removed — see V1.8.23 above for the
+ *    follow-up. handleDragStart/Move/End bodies, resolveBeatWithX,
  *    adjustHandleBeatNearBarline, buildRects, min-span checks, the event
  *    listener effect, native touchstart refs, the pointerup/pointercancel
  *    safety net, and the landscape branch are all unchanged.
@@ -267,13 +280,14 @@
  * ✅ Handle dragEnd retains smartCursorSnap (containment check still useful
  *    when dragging handle to a range the cursor is already inside).
  *
- * ✅ [SUPERSEDED by V1.8.22/MAESTRO-LOOP-004D.1 — see top of file] Active
- *    handle was pointer-driven (not tied to preview rect edge):
- *    activeHandleClientXRef tracked raw pointer clientX during drag, and the
- *    handle rendered at pointer X converted to overlay-space coordinates.
- *    activeHandleClientXRef/activeHandleX are still updated the same way,
- *    but as of V1.8.22 render no longer reads them — the handle glyph
- *    renders from the snapped rect boundary instead.
+ * ✅ [SUPERSEDED by V1.8.22/MAESTRO-LOOP-004D.1, state removed in
+ *    V1.8.23/004D.1b — see top of file] Active handle was pointer-driven
+ *    (not tied to preview rect edge): activeHandleClientXRef tracked raw
+ *    pointer clientX during drag, and the handle rendered at pointer X
+ *    converted to overlay-space coordinates. As of V1.8.22 render stopped
+ *    reading them; as of V1.8.23 activeHandleClientXRef/activeHandleX (and
+ *    dragTarget) were removed entirely — the handle glyph renders from the
+ *    snapped rect boundary instead.
  * ✅ Preview highlight = snap/forecast-driven (beat-level, same as v1.8.1).
  * ✅ Inactive handle = anchored to opposite edge of preview/committed range.
  * ✅ Grab offset removed — was causing 1–2 inch separation. Handle center
@@ -298,6 +312,8 @@
  *
  * ✅ STAGE 1 — Handle state + drag event wiring:
  *    - isDragging / dragTarget state added (separate from loop-creation isDragging ref)
+ *      [dragTarget state itself removed in V1.8.23/004D.1b — dragTargetRef,
+ *      added later, is the live source of truth]
  *    - handleDragStart / handleDragMove / handleDragEnd ported from V99.8
  *    - handleDragMove calls commitBarSnap (repeat-safe) — NOT V99.8's structural snapToBar
  *    - smartCursorSnap ported as-is (uses window.__maestroCursor)
@@ -510,20 +526,12 @@ export default function BeatCustomLoopOverlay({
 
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
-    const [dragTarget, setDragTarget] = useState<'start' | 'end' | null>(null);
     const dragTargetRef = useRef<'start' | 'end' | null>(null);
 
     // Preview range: set during handle drag, committed on release (fix E)
     const [previewRange, setPreviewRange] = useState<{ startTick: number; endTick: number } | null>(null);
     const previewRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
     const previewRectsRef = useRef<HighlightRect[]>([]);
-
-    // Active handle pointer tracking — raw clientX, no offset math (fix v1.8.2).
-    // [MAESTRO-LOOP-004D.1] No longer read by render (handle glyph now renders
-    // from the snapped rect boundary) — still written by handleDragStart/Move/
-    // End, parked for MAESTRO-LOOP-004D.1b (pointer-capture render cadence).
-    const activeHandleClientXRef = useRef<number>(0);
-    const [activeHandleX, setActiveHandleX] = useState<number | null>(null);
 
     // 🔒 Warn once only
     const tickCacheWarnedRef = useRef(false);
@@ -2032,13 +2040,7 @@ export default function BeatCustomLoopOverlay({
         e.stopPropagation();
         e.preventDefault();
         dragTargetRef.current = target;
-        setDragTarget(target);
         setHandleDragging(true);
-
-        const { clientX } = resolveEventPosition(e as any);
-        // v1.8.2: seed active handle at exact pointer position — no offset
-        activeHandleClientXRef.current = clientX;
-        setActiveHandleX(clientX);
 
         const range = api?.playbackRange;
         if (range) {
@@ -2058,14 +2060,12 @@ export default function BeatCustomLoopOverlay({
     };
 
     /**
-     * handleDragMove — v1.8.2 pointer-tracking model, v1.8.22 render model.
-     * activeHandleClientXRef/activeHandleX: still updated with raw clientX
-     * directly (no offset math) every tick — kept for MAESTRO-LOOP-004D.1b,
-     * no longer read by render.
-     * Handle glyph (as of MAESTRO-LOOP-004D.1): renders from the snapped rect
-     * boundary (rects[0]/rects[last]), not from activeHandleX.
+     * handleDragMove — v1.8.22/004D.1 render model.
+     * Handle glyph renders from the snapped rect boundary (rects[0]/
+     * rects[last]), rebuilt from the resolved beat below — no raw-pointer
+     * render state (removed in MAESTRO-LOOP-004D.1b).
      * Preview rects: computed from snapped beat (forecast) — same rects the
-     * handle glyph now anchors to.
+     * handle glyph anchors to.
      * api.playbackRange: NOT written during drag, only on release.
      */
     const handleDragMove = (e: MouseEvent | TouchEvent) => {
@@ -2073,10 +2073,6 @@ export default function BeatCustomLoopOverlay({
         e.preventDefault();
 
         const { clientX, clientY } = resolveEventPosition(e);
-
-        // v1.8.2: active handle tracks raw pointer — no offset
-        activeHandleClientXRef.current = clientX;
-        setActiveHandleX(clientX);
 
         // Forecast: resolve beat at pointer for preview highlight
         const syntheticEvent = {
@@ -2321,11 +2317,8 @@ export default function BeatCustomLoopOverlay({
 
         previewRangeRef.current = null;
         setPreviewRange(null);
-        setActiveHandleX(null);
-        activeHandleClientXRef.current = 0;
 
         dragTargetRef.current = null;
-        setDragTarget(null);
         setHandleDragging(false);
 
         // Clear global flags FIRST, then unfreeze cursor
