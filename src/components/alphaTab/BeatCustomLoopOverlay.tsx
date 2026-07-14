@@ -1,8 +1,42 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.23 — Drag Render State Hygiene
+ * BeatCustomLoopOverlay v1.8.24 — Stable Portrait Handle Layer
  * Date: July 13th, 2026
+ *
+ * 🔥 V1.8.24 CHANGES (MAESTRO-LOOP-004D.4a):
+ * ✅ Portrait start/end handles lifted out of rects.map into a stable sibling
+ *    handle layer, rendered after the highlight rects and gated on
+ *    startRect/endRect (derived from rects[0]/rects[rects.length-1]) being
+ *    non-null. Root cause (004D.4 Trace A): the handles previously lived
+ *    inside rects.map with key={i}; isFirst was pinned to the always-stable
+ *    index 0, but isLast tracked the MOVING index rects.length-1 — every
+ *    time the loop's row-span changed (routine during an active end-handle
+ *    drag), React tore down and rebuilt the end handle's DOM node (and its
+ *    native touchstart listener) under the user's own finger, observed as
+ *    touchstart-ref detach/attach pairs, rectsLength churn, and an
+ *    unrequested handleDragEnd. The handle's DOM lifetime now depends only
+ *    on rects.length > 0, never on which bar/row backs the boundary or on
+ *    rect-array/key churn.
+ * ✅ Highlight rect rendering (rects.map itself) is otherwise unchanged —
+ *    same key={i}, same geometry, same style; it no longer has any children.
+ * ✅ Handle positioning preserves the MAESTRO-LOOP-004D.1 invariant (glyph
+ *    anchored to the snapped rect boundary): start left =
+ *    rects[0].x + LOOP_X_OFFSET - 13.5, end left =
+ *    rects[last].x + rects[last].w + LOOP_X_OFFSET - 13.5 — pixel-identical
+ *    to the prior nested-`left:'-13.5px'`/`right:'-13.5px'` positions. top
+ *    gets a +1 correction for the 1px borderTop the handle used to inherit
+ *    from its removed parent's containing-block padding edge.
+ * ⛔ makePortraitHandleTouchRef/portraitStartHandleTouchRef/
+ *    portraitEndHandleTouchRef, handleDragStart/Move/End, the listener
+ *    lifecycle effect, native touchstart mechanics, the pointerup/
+ *    pointercancel safety net, resolveBeatWithX, adjustHandleBeatNearBarline,
+ *    buildRects, min-span checks, and the landscape branch are all
+ *    unchanged. The MAESTRO-LOOP-004D.4 diagnostic probe (LOOP_004D4_PROBE)
+ *    is retained for post-patch verification, not removed. The confirmed
+ *    secondary cause — no end-side mirror of the start handle's
+ *    last-beat-in-bar→next-bar magnet branch in adjustHandleBeatNearBarline —
+ *    remains separate, tracked as MAESTRO-LOOP-004D.4b, not patched here.
  *
  * 🔥 V1.8.23 CHANGES (MAESTRO-LOOP-004D.1b):
  * ✅ Removed the dead raw-pointer render state parked by V1.8.22/004D.1:
@@ -3231,16 +3265,36 @@ export default function BeatCustomLoopOverlay({
     // [MAESTRO-LOOP-004D.1] During drag, handle glyphs stay attached to the
     // snapped rect boundary; rects are rebuilt from resolved beats in
     // handleDragMove. No separate drag-time position tracking needed here.
+    //
+    // [MAESTRO-LOOP-004D.4a] Handle geometry computed once here, outside
+    // rects.map, so the handle DOM nodes below can be rendered as fixed
+    // siblings rather than as children keyed to a specific rect's array index.
+    // startRect/endRect intentionally read rects[0]/rects[rects.length-1]
+    // directly — the same source 004D.1 already proved carries the snapped
+    // drag boundary — nothing about buildRects, the resolver, or rects itself
+    // changes here.
+    const startRect = rects.length > 0 ? rects[0] : null;
+    const endRect = rects.length > 0 ? rects[rects.length - 1] : null;
+    const startRowGeom = startRect ? getRowGeometryForRect(startRect) : null;
+    const endRowGeom = endRect ? getRowGeometryForRect(endRect) : null;
+    const startHandleHeight = startRowGeom
+        ? Math.max(20, startRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
+    const endHandleHeight = endRowGeom
+        ? Math.max(20, endRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
+    // +1 preserves the 1px borderTop the nested handle used to inherit from
+    // its removed parent's containing-block padding edge (.beat-loop-highlight
+    // sets borderTop: '1px solid ...') — verified via the parent's own style
+    // object before this patch. Keeps the sibling handle pixel-identical to
+    // the pre-004D.4a nested position.
+    const startHandleTop = startRowGeom ? startRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
+    const endHandleTop = endRowGeom ? endRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
+
     return (
         <>
             {rects.map((r, i) => {
-                const isFirst = i === 0;
-                const isLast = i === rects.length - 1;
-
                 const rowGeom = getRowGeometryForRect(r);
                 const hlTop = rowGeom.top;
                 const hlHeight = rowGeom.height;
-                const handleHeight = Math.max(20, hlHeight - LOOP_HANDLE_INSET_Y * 2);
 
                 return (
                     <div
@@ -3259,121 +3313,124 @@ export default function BeatCustomLoopOverlay({
                             zIndex: 900,
                             boxSizing: 'border-box',
                         }}
-                    >
-                        {/* ── Start handle ── */}
-                        {isFirst && (
-                            <div
-                                onMouseDown={e => handleDragStart(e, 'start')}
-                                ref={portraitStartHandleTouchRef}
-                                style={{
-                                    position: 'absolute',
-                                    left: '-13.5px',
-                                    top: LOOP_HANDLE_INSET_Y,
-                                    transform: 'none',
-                                    width: '27px',
-                                    height: handleHeight,
-                                    cursor: 'ew-resize',
-                                    zIndex: 1001,
-                                    pointerEvents: 'auto',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    touchAction: 'none',
-                                    userSelect: 'none',
-                                }}
-                            >
-                                {/* Vertical glowing bar — spans full handle height */}
-                                <div style={{
-                                    position: 'absolute',
-                                    left: '12px',
-                                    top: 0,
-                                    width: '3px',
-                                    height: '100%',
-                                    backgroundColor: handleColor,
-                                    boxShadow: `0 0 8px ${handleColor}`,
-                                    transition: handleColorTransition,
-                                }} />
-                                {/* Arrow tab — centered on vertical bar */}
-                                <div style={{
-                                    position: 'absolute',
-                                    left: '0',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    width: '14px',
-                                    height: '32px',
-                                    backgroundColor: tabColor,
-                                    borderRadius: '4px 0 0 4px',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    fontSize: '28px',
-                                    fontWeight: '900',
-                                    fontFamily: "'Courier New', monospace",
-                                    transition: handleColorTransition,
-                                }}>›</div>
-                            </div>
-                        )}
-
-                        {/* ── End handle ── */}
-                        {isLast && (
-                            <div
-                                onMouseDown={e => handleDragStart(e, 'end')}
-                                ref={portraitEndHandleTouchRef}
-                                style={{
-                                    position: 'absolute',
-                                    right: '-13.5px',
-                                    top: LOOP_HANDLE_INSET_Y,
-                                    transform: 'none',
-                                    width: '27px',
-                                    height: handleHeight,
-                                    cursor: 'ew-resize',
-                                    zIndex: 1001,
-                                    pointerEvents: 'auto',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    touchAction: 'none',
-                                    userSelect: 'none',
-                                }}
-                            >
-                                {/* Vertical glowing bar — spans full handle height */}
-                                <div style={{
-                                    position: 'absolute',
-                                    left: '12px',
-                                    top: 0,
-                                    width: '3px',
-                                    height: '100%',
-                                    backgroundColor: handleColor,
-                                    boxShadow: `0 0 8px ${handleColor}`,
-                                    transition: handleColorTransition,
-                                }} />
-                                {/* Arrow tab — centered on vertical bar */}
-                                <div style={{
-                                    position: 'absolute',
-                                    right: '0',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    width: '14px',
-                                    height: '32px',
-                                    backgroundColor: tabColor,
-                                    borderRadius: '0 4px 4px 0',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    fontSize: '28px',
-                                    fontWeight: '900',
-                                    fontFamily: "'Courier New', monospace",
-                                    transition: handleColorTransition,
-                                }}>‹</div>
-                            </div>
-                        )}
-                    </div>
+                    />
                 );
             })}
+
+            {/* [MAESTRO-LOOP-004D.4a] Stable sibling handle layer — start/end handle
+                DOM nodes no longer live inside rects.map, so their lifetime depends only
+                on rects.length > 0, never on rect-array length/key churn during a drag.
+                Positioned directly from rects[0]/rects[rects.length-1] geometry, which
+                MAESTRO-LOOP-004D.1 already guarantees is the snapped drag boundary. */}
+            {startRect && startRowGeom && (
+                <div
+                    onMouseDown={e => handleDragStart(e, 'start')}
+                    ref={portraitStartHandleTouchRef}
+                    style={{
+                        position: 'absolute',
+                        left: startRect.x + LOOP_X_OFFSET - 13.5,
+                        top: startHandleTop,
+                        transform: 'none',
+                        width: '27px',
+                        height: startHandleHeight,
+                        cursor: 'ew-resize',
+                        zIndex: 1001,
+                        pointerEvents: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        touchAction: 'none',
+                        userSelect: 'none',
+                    }}
+                >
+                    {/* Vertical glowing bar — spans full handle height */}
+                    <div style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: 0,
+                        width: '3px',
+                        height: '100%',
+                        backgroundColor: handleColor,
+                        boxShadow: `0 0 8px ${handleColor}`,
+                        transition: handleColorTransition,
+                    }} />
+                    {/* Arrow tab — centered on vertical bar */}
+                    <div style={{
+                        position: 'absolute',
+                        left: '0',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '14px',
+                        height: '32px',
+                        backgroundColor: tabColor,
+                        borderRadius: '4px 0 0 4px',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '28px',
+                        fontWeight: '900',
+                        fontFamily: "'Courier New', monospace",
+                        transition: handleColorTransition,
+                    }}>›</div>
+                </div>
+            )}
+
+            {endRect && endRowGeom && (
+                <div
+                    onMouseDown={e => handleDragStart(e, 'end')}
+                    ref={portraitEndHandleTouchRef}
+                    style={{
+                        position: 'absolute',
+                        left: endRect.x + endRect.w + LOOP_X_OFFSET - 13.5,
+                        top: endHandleTop,
+                        transform: 'none',
+                        width: '27px',
+                        height: endHandleHeight,
+                        cursor: 'ew-resize',
+                        zIndex: 1001,
+                        pointerEvents: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        touchAction: 'none',
+                        userSelect: 'none',
+                    }}
+                >
+                    {/* Vertical glowing bar — spans full handle height */}
+                    <div style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: 0,
+                        width: '3px',
+                        height: '100%',
+                        backgroundColor: handleColor,
+                        boxShadow: `0 0 8px ${handleColor}`,
+                        transition: handleColorTransition,
+                    }} />
+                    {/* Arrow tab — centered on vertical bar */}
+                    <div style={{
+                        position: 'absolute',
+                        right: '0',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '14px',
+                        height: '32px',
+                        backgroundColor: tabColor,
+                        borderRadius: '0 4px 4px 0',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '28px',
+                        fontWeight: '900',
+                        fontFamily: "'Courier New', monospace",
+                        transition: handleColorTransition,
+                    }}>‹</div>
+                </div>
+            )}
         </>
     );
 }
