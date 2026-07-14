@@ -1,8 +1,30 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.24 — Stable Portrait Handle Layer
+ * BeatCustomLoopOverlay v1.8.25 — End Handle Barline Magnet Mirror
  * Date: July 13th, 2026
+ *
+ * 🔥 V1.8.25 CHANGES (MAESTRO-LOOP-004D.4b):
+ * ✅ Adds a target==='end' && isLastBeatInBar(beat) && beat.nextBeat branch to
+ *    adjustHandleBeatNearBarline — the forward-release mirror of the start
+ *    handle's last-beat-to-next-bar branch. Closes the stall the 004D.4 probe
+ *    surfaced (target:'end', isLastBeatInBar:true, branch:'no-branch-taken'):
+ *    advancing the end handle past a bar's last beat previously had no
+ *    release assist at all. Same END_LAST_BEAT_RELEASE_ZONE=35 damping width
+ *    as the start-side mirror — no evidence the end side needs a different
+ *    value.
+ * ✅ Adds a primitive-only [004D4-probe] resolved-bar-changed log in
+ *    handleDragMove (reads rawBeat, the RAW resolveBeatWithX output, before
+ *    adjustHandleBeatNearBarline) — scoping evidence for the separate
+ *    MAESTRO-LOOP-004C teleportation investigation, fires only when
+ *    (target, barIdx) changes, reset per-gesture in handleDragStart.
+ * ⛔ The MAESTRO-LOOP-004D.4a stable sibling handle layer (positioning,
+ *    JSX structure, makePortraitHandleTouchRef, native touchstart refs),
+ *    handleDragStart/Move/End behavior (beyond the two probe-only additions
+ *    above), the listener lifecycle, resolveBeatWithX, buildRects, min-span
+ *    guards, and the landscape branch are all unchanged. MAESTRO-LOOP-004C
+ *    teleportation itself and the min-span floor remain separate, open lanes
+ *    — this patch only adds scoping evidence for the former, doesn't fix it.
  *
  * 🔥 V1.8.24 CHANGES (MAESTRO-LOOP-004D.4a):
  * ✅ Portrait start/end handles lifted out of rects.map into a stable sibling
@@ -734,6 +756,16 @@ export default function BeatCustomLoopOverlay({
             }
         }
 
+        // [MAESTRO-LOOP-004D.4b] Backward-hold branch: the end handle is pinned on
+        // the FIRST beat of its bar and the pointer is still trailing behind/near
+        // the previous bar — holds the preview back at the barline instead of
+        // jumping forward. This is distinct from the MAESTRO-LOOP-004D.4b mirror
+        // branch below (isLastBeatInBar, forward release) — this one only fires
+        // when isFirstBeatInBar is true, the new one only when isLastBeatInBar is
+        // true. Note: isFirstBeatInBar and isLastBeatInBar are mutually exclusive
+        // in multi-beat bars, but both can be true in one-beat bars such as
+        // whole-rest bars. Branch ordering plus each branch's geometry guards
+        // arbitrate those cases.
         if (target === 'end' && isFirstBeatInBar(beat) && beat.previousBeat) {
             const beatLeft = vb.x;
             const prevVb = getBeatVB(beat.previousBeat);
@@ -764,6 +796,55 @@ export default function BeatCustomLoopOverlay({
                         holdZone: END_BARLINE_HOLD_ZONE,
                     });
                     return beat.previousBeat;
+                }
+            }
+        }
+
+        // [MAESTRO-LOOP-004D.4b] Forward-release mirror of the start handle's
+        // last-beat-to-next-bar branch above (target==='start' && isLastBeatInBar).
+        // Closes the stall the 004D.4 probe surfaced as
+        // target:'end', isLastBeatInBar:true, branch:'no-branch-taken': without
+        // this, advancing the end handle past a bar's last beat had no release
+        // assist at all, unlike every other magnet direction. Same
+        // damping/release-zone width as the start-side mirror (35) — no evidence
+        // the end side's geometry needs a different value.
+        if (target === 'end' && isLastBeatInBar(beat) && beat.nextBeat) {
+            const beatRight = vb.x + vb.w;
+            const nextVb = getBeatVB(beat.nextBeat);
+            const nextBeatLeft = nextVb ? nextVb.x : null;
+            const END_LAST_BEAT_RELEASE_ZONE = 35;
+
+            // [MAESTRO-LOOP-004D.4b amend] Same-row guard: nextBeatLeft > beatRight
+            // only holds when beat.nextBeat sits further right on the SAME row as
+            // the current beat (the ordinary interior-barline case, where the
+            // release assist should fire). At a row-end wrap, beat.nextBeat is the
+            // first beat of the NEXT row, whose visualBounds.x sits back at the
+            // left margin — i.e. nextBeatLeft < beatRight — so this guard blocks
+            // purely-horizontal pointer overshoot at a row's right edge from
+            // promoting the resolved beat across the wrap into row 2. Cross-row
+            // advancement is left entirely to the raw resolver actually moving to
+            // the next row (evidenced by resolved-bar-changed), not this magnet.
+            if (
+                nextBeatLeft !== null &&
+                nextBeatLeft > beatRight &&
+                mouseX >= beatRight + END_LAST_BEAT_RELEASE_ZONE
+            ) {
+                const nextBarIdx = beat.nextBeat?.voice?.bar?.index
+                    ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
+                const curBarIdx = beat?.voice?.bar?.index
+                    ?? beat?.voice?.bar?.masterBar?.index;
+                if (nextBarIdx != null && nextBarIdx !== curBarIdx) {
+                    console.log('[loop-handle-barline-magnet]', {
+                        target,
+                        action: 'last-beat-to-next-bar',
+                        fromTick: tickOf(beat),
+                        toTick: tickOf(beat.nextBeat),
+                        mouseX: Number(mouseX.toFixed(1)),
+                        beatRight: Number(beatRight.toFixed(1)),
+                        nextBeatLeft: nextBeatLeft == null ? null : Number(nextBeatLeft.toFixed(1)),
+                        releaseZone: END_LAST_BEAT_RELEASE_ZONE,
+                    });
+                    return beat.nextBeat;
                 }
             }
         }
