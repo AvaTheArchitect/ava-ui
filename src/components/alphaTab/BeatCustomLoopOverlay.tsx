@@ -1,8 +1,28 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.21 — Multi-Bar Landscape Handle Drag
- * Date: July 9th, 2026
+ * BeatCustomLoopOverlay v1.8.22 — Portrait Handle Render-X Alignment
+ * Date: July 13th, 2026
+ *
+ * 🔥 V1.8.22 CHANGES (MAESTRO-LOOP-004D.1):
+ * ✅ Portrait start/end handle glyphs now always render at the same static
+ *    rect-edge offset previously used only at rest (left:'-13.5px' / right:
+ *    '-13.5px'). Removed the drag-time branch that instead followed raw
+ *    activeOverlayX (pointer clientX converted to overlay space, clamped to
+ *    the current rect). Since rects[0]/rects[last] are already rebuilt from
+ *    the resolved+magnet-adjusted beat on every handleDragMove tick (via the
+ *    existing buildRects calls), the glyph now stays glued to exactly the
+ *    edge the highlight band renders — no separate tracking needed.
+ * ✅ Removed now-dead getActiveHandleOverlayX()/activeOverlayX and the
+ *    startIsDragging/endIsDragging flags (their only readers).
+ * ⛔ dragTarget/activeHandleX state and their setters (setDragTarget/
+ *    setActiveHandleX) deliberately still fire from handleDragStart/Move/End,
+ *    unread by render now — parked for MAESTRO-LOOP-004D.1b (pointer-capture
+ *    lifecycle), not removed here since that also affects render cadence
+ *    during drag. handleDragStart/Move/End bodies, resolveBeatWithX,
+ *    adjustHandleBeatNearBarline, buildRects, min-span checks, the event
+ *    listener effect, native touchstart refs, the pointerup/pointercancel
+ *    safety net, and the landscape branch are all unchanged.
  *
  * 🔥 V1.8.21 CHANGES (MAESTRO-LOOP-002I.2a-1, audited in 002I.2):
  * ✅ MAX_DELTA_BARS_PER_GESTURE raised 1 → 4 (resolveClampedLandscapeBoundary). Not
@@ -247,13 +267,19 @@
  * ✅ Handle dragEnd retains smartCursorSnap (containment check still useful
  *    when dragging handle to a range the cursor is already inside).
  *
- * ✅ Active handle = pointer-driven (not tied to preview rect edge).
- *    activeHandleClientXRef tracks raw pointer clientX during drag.
- *    Handle renders at pointer X converted to overlay-space coordinates.
+ * ✅ [SUPERSEDED by V1.8.22/MAESTRO-LOOP-004D.1 — see top of file] Active
+ *    handle was pointer-driven (not tied to preview rect edge):
+ *    activeHandleClientXRef tracked raw pointer clientX during drag, and the
+ *    handle rendered at pointer X converted to overlay-space coordinates.
+ *    activeHandleClientXRef/activeHandleX are still updated the same way,
+ *    but as of V1.8.22 render no longer reads them — the handle glyph
+ *    renders from the snapped rect boundary instead.
  * ✅ Preview highlight = snap/forecast-driven (beat-level, same as v1.8.1).
  * ✅ Inactive handle = anchored to opposite edge of preview/committed range.
  * ✅ Grab offset removed — was causing 1–2 inch separation. Handle center
- *    now tracks pointer directly with no offset math.
+ *    tracked pointer directly with no offset math (render-side superseded by
+ *    V1.8.22 — see note above; the underlying grab-offset removal itself is
+ *    still correct/unrelated).
  * ✅ api.playbackRange committed only on dragEnd (fix E preserved).
  * ✅ Transition fix (fix A) preserved — no positional animation.
  *
@@ -492,7 +518,10 @@ export default function BeatCustomLoopOverlay({
     const previewRangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
     const previewRectsRef = useRef<HighlightRect[]>([]);
 
-    // Active handle pointer tracking — raw clientX, no offset math (fix v1.8.2)
+    // Active handle pointer tracking — raw clientX, no offset math (fix v1.8.2).
+    // [MAESTRO-LOOP-004D.1] No longer read by render (handle glyph now renders
+    // from the snapped rect boundary) — still written by handleDragStart/Move/
+    // End, parked for MAESTRO-LOOP-004D.1b (pointer-capture render cadence).
     const activeHandleClientXRef = useRef<number>(0);
     const [activeHandleX, setActiveHandleX] = useState<number | null>(null);
 
@@ -2029,9 +2058,14 @@ export default function BeatCustomLoopOverlay({
     };
 
     /**
-     * handleDragMove — v1.8.2 pointer-driven model.
-     * Active handle: tracks raw clientX directly (no offset math).
-     * Preview rects: computed from snapped beat (forecast).
+     * handleDragMove — v1.8.2 pointer-tracking model, v1.8.22 render model.
+     * activeHandleClientXRef/activeHandleX: still updated with raw clientX
+     * directly (no offset math) every tick — kept for MAESTRO-LOOP-004D.1b,
+     * no longer read by render.
+     * Handle glyph (as of MAESTRO-LOOP-004D.1): renders from the snapped rect
+     * boundary (rects[0]/rects[last]), not from activeHandleX.
+     * Preview rects: computed from snapped beat (forecast) — same rects the
+     * handle glyph now anchors to.
      * api.playbackRange: NOT written during drag, only on release.
      */
     const handleDragMove = (e: MouseEvent | TouchEvent) => {
@@ -2830,19 +2864,6 @@ export default function BeatCustomLoopOverlay({
 
     // Stage 4: suppress in landscape — coordinate-space mismatch until
     // a scrollLeft-aware landscape loop system is built as a separate sprint.
-    // ── Compute active handle overlay-space X ─────────────────────────────────
-    // Converts raw clientX to position relative to the overlay's containing rect.
-    // The overlay wrapper is position:relative inside alphatab-content-host,
-    // so we subtract the host's left edge from clientX.
-    const getActiveHandleOverlayX = (): number | null => {
-        if (activeHandleX === null) return null;
-        const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
-        if (!surface) return null;
-        const rect = surface.getBoundingClientRect();
-        const overlayX = (activeHandleX - rect.left) + LOOP_X_OFFSET;
-        return Math.min(Math.max(overlayX, 0), rect.width);
-    };
-    const activeOverlayX = getActiveHandleOverlayX();
 
     // ── V99.8-matched color palette ──────────────────────────────────────────
     const handleColor = '#9333ea';
@@ -3214,6 +3235,9 @@ export default function BeatCustomLoopOverlay({
         );
     }
 
+    // [MAESTRO-LOOP-004D.1] During drag, handle glyphs stay attached to the
+    // snapped rect boundary; rects are rebuilt from resolved beats in
+    // handleDragMove. No separate drag-time position tracking needed here.
     return (
         <>
             {rects.map((r, i) => {
@@ -3224,9 +3248,6 @@ export default function BeatCustomLoopOverlay({
                 const hlTop = rowGeom.top;
                 const hlHeight = rowGeom.height;
                 const handleHeight = Math.max(20, hlHeight - LOOP_HANDLE_INSET_Y * 2);
-
-                const startIsDragging = handleDragging && dragTarget === 'start';
-                const endIsDragging = handleDragging && dragTarget === 'end';
 
                 return (
                     <div
@@ -3253,18 +3274,7 @@ export default function BeatCustomLoopOverlay({
                                 ref={portraitStartHandleTouchRef}
                                 style={{
                                     position: 'absolute',
-                                    ...(startIsDragging && activeOverlayX !== null
-                                        ? (() => {
-                                            const HANDLE_HALF_W = 13.5;
-                                            const rawActiveLeft = activeOverlayX - r.x - HANDLE_HALF_W;
-                                            const clampedActiveLeft = Math.min(
-                                                Math.max(rawActiveLeft, -HANDLE_HALF_W),
-                                                r.w - HANDLE_HALF_W,
-                                            );
-                                            return { left: clampedActiveLeft };
-                                        })()
-                                        : { left: '-13.5px' }
-                                    ),
+                                    left: '-13.5px',
                                     top: LOOP_HANDLE_INSET_Y,
                                     transform: 'none',
                                     width: '27px',
@@ -3320,18 +3330,7 @@ export default function BeatCustomLoopOverlay({
                                 ref={portraitEndHandleTouchRef}
                                 style={{
                                     position: 'absolute',
-                                    ...(endIsDragging && activeOverlayX !== null
-                                        ? (() => {
-                                            const HANDLE_HALF_W = 13.5;
-                                            const rawActiveLeft = activeOverlayX - r.x - HANDLE_HALF_W;
-                                            const clampedActiveLeft = Math.min(
-                                                Math.max(rawActiveLeft, -HANDLE_HALF_W),
-                                                r.w - HANDLE_HALF_W,
-                                            );
-                                            return { left: clampedActiveLeft, right: 'unset' };
-                                        })()
-                                        : { right: '-13.5px' }
-                                    ),
+                                    right: '-13.5px',
                                     top: LOOP_HANDLE_INSET_Y,
                                     transform: 'none',
                                     width: '27px',
