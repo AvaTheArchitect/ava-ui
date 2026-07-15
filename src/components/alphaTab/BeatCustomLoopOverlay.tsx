@@ -1,8 +1,39 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.28 — Pointer Driver Forecast Restore
+ * BeatCustomLoopOverlay v1.8.29 — Start Clamp One-Beat Floor
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.29 CHANGES (MAESTRO-LOOP-004C.5a):
+ * ✅ Fixes the start soft clamp choosing previousBeat during deep overshoot.
+ *    clampBeat was resolved at current.endTick - 1 (the last beat before the
+ *    fixed end boundary), but in the common case where current.endTick sits
+ *    exactly on a beat boundary, current.endTick - clampDur === clampTick,
+ *    which collapsed the `previousTick < current.endTick - clampDur` guard to
+ *    `previousTick < clampTick` — true for any real previous beat. The clamp
+ *    therefore almost always stepped one extra beat back onto
+ *    clampBeat.previousBeat, producing a two-beat projection instead of one.
+ * ✅ Pins the forecast to clampBeat's own start tick: previewBeat = clampBeat;
+ *    newStart = Math.max(current.startTick, clampTick). The previousBeat
+ *    branch is removed entirely — deep overshoot now floors at the last beat
+ *    before the end boundary, matching Songsterr-style pinned behavior. If
+ *    the loop is already at the clampBeat floor, Math.max is a no-op and the
+ *    band remains pinned — expected behavior, not dead code.
+ * ✅ Keeps the 004C.4 hard fixed floor (MIN_LOOP_SPAN_TICKS) completely
+ *    unchanged as a separate, still-necessary guard: clampDur > 120 lets the
+ *    clamp output pass through and the band pins to clampBeat; clampDur <= 120
+ *    means the hard guard still rejects and the band stays at the prior legal
+ *    forecast. This is expected, layered behavior, not a regression.
+ * ✅ [loop-handle-start-clamp] probe log gains two primitive fields —
+ *    clampBeatTick and clampBeatDuration — alongside the existing
+ *    requestedTick/clampedTick/currentEndTick. No object references added.
+ * ✅ Retires the clampTick dead-code warning flagged by the 004C.4a audit —
+ *    clampTick now drives newStart directly instead of sitting unused.
+ * ⛔ End handle path is unchanged — it has no matching soft clamp, only its
+ *    own hard min-span guard, untouched here. resolveBeatWithX, magnet branch
+ *    logic (including the 004C.2 same-row guards), buildRects, the
+ *    handleDragEnd commit path, and the 004D.5 pointer-driver/activeHandleX
+ *    layer are all untouched. The duplicate findBeat lookup remains deferred.
  *
  * 🔥 V1.8.28 CHANGES (MAESTRO-LOOP-004D.5):
  * ✅ Restores the v1.8.5 pointer-driven active handle layer, removed as dead
@@ -2454,19 +2485,18 @@ export default function BeatCustomLoopOverlay({
                 if (clampBeat) {
                     const clampTick = tickOf(clampBeat);
                     const clampDur = durOf(clampBeat);
-                    const previous = clampBeat.previousBeat;
-                    const previousTick = previous ? tickOf(previous) : null;
-                    if (previous && previousTick != null && previousTick < current.endTick - clampDur) {
-                        previewBeat = previous;
-                        newStart = previousTick;
-                    } else {
-                        previewBeat = clampBeat;
-                        newStart = Math.max(current.startTick, current.endTick - clampDur);
-                    }
+
+                    // When the loop is already at the clampBeat floor, Math.max is a
+                    // no-op and the band simply remains pinned.
+                    previewBeat = clampBeat;
+                    newStart = Math.max(current.startTick, clampTick);
+
                     console.log('[loop-handle-start-clamp]', {
                         requestedTick: beatTick,
                         clampedTick: newStart,
                         currentEndTick: current.endTick,
+                        clampBeatTick: clampTick,
+                        clampBeatDuration: clampDur,
                     });
                 }
             }
