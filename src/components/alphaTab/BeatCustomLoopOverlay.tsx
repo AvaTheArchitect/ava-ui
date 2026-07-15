@@ -1,8 +1,36 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.26 — Cross-Row Magnet Guard Completion
- * Date: July 14th, 2026
+ * BeatCustomLoopOverlay v1.8.27 — Fixed Min-Span Invariant
+ * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.27 CHANGES (MAESTRO-LOOP-004C.4):
+ * ✅ Two mechanisms, one symptom: the end handle's hard min-span guard and
+ *    the start handle's soft clamp trigger were each independently scaled by
+ *    beatDur (the drag-resolved beat's own playback duration) — for a
+ *    whole/half rest (one large-duration beat), this inflated the forbidden
+ *    gap unpredictably; for dense material it stayed tiny. The two handles
+ *    only *appeared* symmetric — they were driven by two different
+ *    mechanisms (end: a hard reject; start: a preventative soft clamp that
+ *    also feeds the render path) using the same variable-scaling logic.
+ * ✅ Adds MIN_LOOP_SPAN_TICKS = 120 (a 32nd-note at AlphaTab's observed
+ *    480-PPQ-per-quarter scale) and unifies all three beatDur-scaled trigger
+ *    sites under this one fixed invariant: the end hard guard
+ *    (newEnd <= current.startTick + beatDur → + MIN_LOOP_SPAN_TICKS), the
+ *    start hard guard (newStart >= current.endTick →
+ *    current.endTick - MIN_LOOP_SPAN_TICKS), and the start soft-clamp
+ *    trigger (same substitution). The floor is now identical regardless of
+ *    which beat happens to be nearby.
+ * ⛔ The soft clamp's internal resolution (clampBeat, clampDur, previous,
+ *    previousTick, previewBeat reassignment, and the buildRects/
+ *    setRectsWithReason render sync) is unchanged — 004C.4a's audit found
+ *    this render-correction role intentional and load-bearing, distinct from
+ *    the (defective) trigger threshold. resolveBeatWithX, magnet branch
+ *    logic (including the 004C.2 row-wrap guards), buildRects itself, cursor
+ *    logic, and playback logic are all untouched. clampTick's dead-code
+ *    status and the duplicate findBeat lookup (both found during the 004C.4a
+ *    audit), diagnostic probe removal, and 004D.5's pointer-driver/
+ *    shadow-forecast recovery work remain deferred, separate follow-ups.
  *
  * 🔥 V1.8.26 CHANGES (MAESTRO-LOOP-004C.2):
  * ✅ Adds a same-row guard to start-last-to-next-bar (nextBeatLeft !== null &&
@@ -577,6 +605,17 @@ export default function BeatCustomLoopOverlay({
     // If it returns the first beat of the next bar while the pointer is still left
     // of that beat, end handles should prefer the previous bar.
     const LOOP_HANDLE_BARLINE_MAGNET = true;
+
+    // [MAESTRO-LOOP-004C.4] Fixed minimum loop span, in ticks — replaces the
+    // prior duration-scaled floor (durOf(beat), i.e. the drag-resolved beat's
+    // own playback duration) on both the start and end handle min-span guards
+    // and the start handle's soft clamp. 120 ticks = a 32nd-note at AlphaTab's
+    // observed 480-PPQ-per-quarter tick scale. The old beatDur-scaled floor
+    // meant a whole/half rest (a single, large-duration beat) inflated the
+    // forbidden gap unpredictably — dense bars got a tiny floor, sparse bars
+    // a huge one. This constant makes the floor identical everywhere,
+    // regardless of which beat happens to be nearby.
+    const MIN_LOOP_SPAN_TICKS = 120;
 
     // Gate for verbose loop overlay diagnostics. Set true to re-enable.
     // [loop-overlay-rebuild] is always on — it confirms self-heal in production.
@@ -2347,7 +2386,7 @@ export default function BeatCustomLoopOverlay({
             let previewBeat = beat;
             let newStart = beatTick;
 
-            if (tickCache && newStart >= current.endTick - beatDur) {
+            if (tickCache && newStart >= current.endTick - MIN_LOOP_SPAN_TICKS) {
                 const clampResult = tickCache.findBeat(trackIndices, Math.max(0, current.endTick - 1));
                 const clampBeat = clampResult?.beat;
                 if (clampBeat) {
@@ -2370,7 +2409,7 @@ export default function BeatCustomLoopOverlay({
                 }
             }
 
-            if (newStart >= current.endTick) return;
+            if (newStart >= current.endTick - MIN_LOOP_SPAN_TICKS) return;
             nextPreview = { startTick: newStart, endTick: current.endTick };
             if (tickCache) {
                 const endResult = tickCache.findBeat(trackIndices, current.endTick - 1);
@@ -2383,7 +2422,7 @@ export default function BeatCustomLoopOverlay({
             }
         } else {
             const newEnd = beatTick + beatDur;
-            if (newEnd <= current.startTick + beatDur) return;
+            if (newEnd <= current.startTick + MIN_LOOP_SPAN_TICKS) return;
             nextPreview = { startTick: current.startTick, endTick: newEnd };
             if (tickCache) {
                 const startResult = tickCache.findBeat(trackIndices, current.startTick);
