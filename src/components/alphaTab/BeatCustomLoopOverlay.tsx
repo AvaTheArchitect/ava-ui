@@ -1,8 +1,49 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.33 — Beat-Relative Min-Span Floor
+ * BeatCustomLoopOverlay v1.8.34 — Shadow-Bounded Drag Wall
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.34 CHANGES (MAESTRO-LOOP-004C.5f):
+ * ✅ Adds a shadow-bounded end-handle wall for metadata-contaminated
+ *    single-bar spans.
+ * ✅ Root is buildRects' x1 fallback: first-beat-in-bar uses the bar's raw
+ *    visualBounds left edge, which can include clef/time-signature metadata.
+ * ✅ Uses rect.x + rect.w as the clean shadow boundary already produced by
+ *    buildRects.
+ * ✅ shadowWallMin is gated by sameBar, not rects.length alone, because it
+ *    protects against metadata incursion — a same-bar/minimum-span issue.
+ *    rects.length === 1 was too broad because buildRects can merge same-row
+ *    multi-bar spans into one rect, which let the wall fire for wider
+ *    same-row/cross-bar spans and wrongly block the end handle from
+ *    entering metadata when the start handle was in a different bar.
+ * ✅ sameBar gate preserves M1 same-bar metadata protection while allowing
+ *    cross-bar metadata travel.
+ * ✅ Uses previewRange render state plus resolveBarIndexForTick — no new
+ *    stored state, no new tick/pixel constants.
+ * ✅ Null bar lookup (tickCache unavailable) disables the shadow wall
+ *    rather than over-restricting — fail-safe is freedom, not a stuck
+ *    handle.
+ * ✅ wallMin/wallMax mutual collision walls are gated by sameRect, because
+ *    collision between the two handle glyphs is only meaningful when both
+ *    handles share the same visual rect / row segment. sameRect disables
+ *    cross-row x-coordinate comparisons, which previously compared one
+ *    row's rect edge against a different row's handle position.
+ * ✅ sameBar and sameRect are intentionally different gates and are not
+ *    unified: sameBar answers "is this a same-bar metadata case", sameRect
+ *    answers "can these two glyphs visually collide". wallMin uses
+ *    -Infinity when disabled (it feeds Math.max); wallMax uses Infinity
+ *    when disabled (it feeds Math.min).
+ * ✅ Restores cross-row M1→M6 end-handle metadata travel — wallMin no
+ *    longer floors the end handle using an unrelated row's startRect.x.
+ * ✅ Start-handle wallMax is also sameRect-gated to avoid the mirrored
+ *    cross-row ceiling (an unrelated row's endRect capping the start
+ *    handle's travel within its own row).
+ * ⛔ Quarter-note mid-drag handle spacing is intentionally left unchanged
+ *    because forecast/release are correct and widening the gap risks a
+ *    dense-material regression.
+ * ⛔ Does not change buildRects, stored ticks, resolver, magnets, min-span,
+ *    forecast lead, release, rects.map, or probe code.
  *
  * 🔥 V1.8.33 CHANGES (MAESTRO-LOOP-004C.5e):
  * ✅ Allows the minimum loop span to become one adjacent real beat when that
@@ -3712,8 +3753,11 @@ export default function BeatCustomLoopOverlay({
                                 const HANDLE_W = 27;
                                 const min = startRect.x + LOOP_X_OFFSET - HANDLE_HALF_W;
                                 const max = startRect.x + startRect.w + LOOP_X_OFFSET - HANDLE_HALF_W;
+                                const sameRect = rects.length === 1;
                                 // non-null by construction: startRect/endRect both derive from rects.length > 0
-                                const wallMax = endRect!.x + endRect!.w + LOOP_X_OFFSET - HANDLE_HALF_W - HANDLE_W;
+                                const wallMax = sameRect
+                                    ? endRect!.x + endRect!.w + LOOP_X_OFFSET - HANDLE_HALF_W - HANDLE_W
+                                    : Infinity;
                                 const rawLeft = activeOverlayX - HANDLE_HALF_W;
                                 const rectClampedLeft = Math.min(Math.max(rawLeft, min), max);
                                 return Math.min(rectClampedLeft, wallMax);
@@ -3779,11 +3823,27 @@ export default function BeatCustomLoopOverlay({
                                 const HANDLE_W = 27;
                                 const min = endRect.x + LOOP_X_OFFSET - HANDLE_HALF_W;
                                 const max = endRect.x + endRect.w + LOOP_X_OFFSET - HANDLE_HALF_W;
+                                const sameRect = rects.length === 1;
                                 // non-null by construction: startRect/endRect both derive from rects.length > 0
-                                const wallMin = startRect!.x + LOOP_X_OFFSET - HANDLE_HALF_W + HANDLE_W;
+                                const wallMin = sameRect
+                                    ? startRect!.x + LOOP_X_OFFSET - HANDLE_HALF_W + HANDLE_W
+                                    : -Infinity;
+                                // Same-rect corrective: rect.x can include clef/time-signature metadata
+                                // while rect.x + rect.w is the clean shadow boundary produced by buildRects.
+                                const activeRange = previewRange ?? api?.playbackRange ?? null;
+                                const sameBar = sameRect && activeRange !== null && (() => {
+                                    const startBarIdx = resolveBarIndexForTick(activeRange.startTick);
+                                    const endBarIdx = resolveBarIndexForTick(
+                                        Math.max(activeRange.startTick, activeRange.endTick - 1),
+                                    );
+                                    return startBarIdx !== null && startBarIdx === endBarIdx;
+                                })();
+                                const shadowWallMin = sameBar
+                                    ? endRect.x + endRect.w + LOOP_X_OFFSET - HANDLE_HALF_W - HANDLE_W
+                                    : -Infinity;
                                 const rawLeft = activeOverlayX - HANDLE_HALF_W;
                                 const rectClampedLeft = Math.min(Math.max(rawLeft, min), max);
-                                return Math.max(rectClampedLeft, wallMin);
+                                return Math.max(rectClampedLeft, wallMin, shadowWallMin);
                             })()
                             : endRect.x + endRect.w + LOOP_X_OFFSET - 13.5,
                         top: endHandleTop,
