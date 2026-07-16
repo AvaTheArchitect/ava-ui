@@ -1,8 +1,29 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.31 — Inclusive Floor Boundary
+ * BeatCustomLoopOverlay v1.8.32 — Dense Forecast Lead Scaling
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.32 CHANGES (MAESTRO-LOOP-004C.5d):
+ * ✅ Scales HANDLE_FORECAST_LEAD by local beat pixel spacing. HANDLE_FORECAST_LEAD
+ *    remains declared at 12 and now acts as the maximum lead rather than a fixed
+ *    lead: forecastLead = Math.min(HANDLE_FORECAST_LEAD, Math.max(2, beatSpacing * 0.25)).
+ * ✅ Keeps 12px as the maximum lead at normal beat spacing (M5-class material
+ *    should feel unchanged).
+ * ✅ Prevents the 12px lead from consuming most of a floor-width M24 beat —
+ *    at dense 32nd-note / pick-slide spacing, forecastLead shrinks to roughly
+ *    4-6px instead of advancing the resolver candidate a near-full beat early.
+ * ✅ Improves accepted payload freshness before release in dense material by
+ *    reducing how often the smoothed candidate overshoots into the 004C.5c
+ *    hard-guard rejection zone.
+ * ⛔ The driver/payload staleness asymmetry this patch mitigates (activeHandleX
+ *    updates unconditionally every mousemove; previewRangeRef/rects only update
+ *    on accepted frames) is v1.8.5-inherited — surfaced by 004C.5b wall testing
+ *    and M24 dense-material testing, not introduced here. Release remains
+ *    WYSIWYG and still commits previewRangeRef.current unchanged — this patch
+ *    fixes proposal freshness by scaling the smoothing lead, not by
+ *    re-resolving on release. Does not change min-span guards, soft clamp,
+ *    wall geometry, resolver, magnets, buildRects, rects.map, or probe code.
  *
  * 🔥 V1.8.31 CHANGES (MAESTRO-LOOP-004C.5c):
  * ✅ Makes exact MIN_LOOP_SPAN_TICKS spans legal. Fixes M24 floor-width
@@ -2430,7 +2451,12 @@ export default function BeatCustomLoopOverlay({
             const nextBarIdx = beat.nextBeat?.voice?.bar?.index
                 ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
             if (curCenter != null && nextCenter != null && curBarIdx === nextBarIdx) {
-                const switchX = ((curCenter + nextCenter) / 2) - HANDLE_FORECAST_LEAD;
+                const beatSpacing = Math.abs(nextCenter - curCenter);
+                const forecastLead = Math.min(
+                    HANDLE_FORECAST_LEAD,
+                    Math.max(2, beatSpacing * 0.25),
+                );
+                const switchX = ((curCenter + nextCenter) / 2) - forecastLead;
                 if (result.mouseX > switchX) {
                     beat = beat.nextBeat;
                     if (LOOP_HANDLE_DRAG_DIAG) {
@@ -2452,7 +2478,12 @@ export default function BeatCustomLoopOverlay({
             const nextBarIdx = beat.nextBeat?.voice?.bar?.index
                 ?? beat.nextBeat?.voice?.bar?.masterBar?.index;
             if (curCenter != null && nextCenter != null && curBarIdx === nextBarIdx) {
-                const switchX = ((curCenter + nextCenter) / 2) + HANDLE_FORECAST_LEAD;
+                const beatSpacing = Math.abs(nextCenter - curCenter);
+                const forecastLead = Math.min(
+                    HANDLE_FORECAST_LEAD,
+                    Math.max(2, beatSpacing * 0.25),
+                );
+                const switchX = ((curCenter + nextCenter) / 2) + forecastLead;
                 if (result.mouseX > switchX) {
                     beat = beat.nextBeat;
                     if (LOOP_HANDLE_DRAG_DIAG) {
