@@ -1,8 +1,21 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.30 — Mutual Handle Wall
+ * BeatCustomLoopOverlay v1.8.31 — Inclusive Floor Boundary
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.31 CHANGES (MAESTRO-LOOP-004C.5c):
+ * ✅ Makes exact MIN_LOOP_SPAN_TICKS spans legal. Fixes M24 floor-width
+ *    32nd-note / pick-slide spans refusing to hold at exactly 120 ticks.
+ * ✅ Changes only the hard min-span guard comparisons, from inclusive
+ *    rejection to strict rejection.
+ * ✅ Keeps the start soft-clamp trigger inclusive intentionally, so
+ *    exact-floor start drags still pin to clampBeat / clampTick before
+ *    hard-guard evaluation.
+ * ✅ Zero-width and inverted ranges remain rejected because strict guards
+ *    still reject spans below 120.
+ * ⛔ 004C.5a soft clamp body, 004C.5b wall, resolver, magnets, buildRects,
+ *    release, rects.map, and probe code remain untouched.
  *
  * 🔥 V1.8.30 CHANGES (MAESTRO-LOOP-004C.5b):
  * ✅ Adds a driver-side geometric wall so active handle glyphs cannot
@@ -2518,7 +2531,7 @@ export default function BeatCustomLoopOverlay({
                 }
             }
 
-            if (newStart >= current.endTick - MIN_LOOP_SPAN_TICKS) return;
+            if (newStart > current.endTick - MIN_LOOP_SPAN_TICKS) return;
             nextPreview = { startTick: newStart, endTick: current.endTick };
             if (tickCache) {
                 const endResult = tickCache.findBeat(trackIndices, current.endTick - 1);
@@ -2531,7 +2544,7 @@ export default function BeatCustomLoopOverlay({
             }
         } else {
             const newEnd = beatTick + beatDur;
-            if (newEnd <= current.startTick + MIN_LOOP_SPAN_TICKS) return;
+            if (newEnd < current.startTick + MIN_LOOP_SPAN_TICKS) return;
             nextPreview = { startTick: current.startTick, endTick: newEnd };
             if (tickCache) {
                 const startResult = tickCache.findBeat(trackIndices, current.startTick);
