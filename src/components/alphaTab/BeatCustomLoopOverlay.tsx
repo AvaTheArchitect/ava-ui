@@ -1,8 +1,26 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.32 — Dense Forecast Lead Scaling
+ * BeatCustomLoopOverlay v1.8.33 — Beat-Relative Min-Span Floor
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.33 CHANGES (MAESTRO-LOOP-004C.5e):
+ * ✅ Allows the minimum loop span to become one adjacent real beat when that
+ *    beat is shorter than MIN_LOOP_SPAN_TICKS.
+ * ✅ Keeps 120 ticks as the maximum/default floor for normal material.
+ * ✅ Fixes M24 60-tick pick-slide/tremolo material, where one note is shorter
+ *    than the old fixed 120-tick floor and was therefore legally unreachable
+ *    even after 004C.5c made the exact 120-tick boundary inclusive.
+ * ✅ Start side derives effectiveMinSpanTicks from clampDur of the beat
+ *    immediately before the fixed end boundary.
+ * ✅ End side derives effectiveMinSpanTicks from beatDur of the candidate end
+ *    beat.
+ * ✅ Uses a minimum safety floor of 1 tick so zero-width and inverted spans
+ *    remain rejected.
+ * ⛔ Keeps 004C.5d forecastLead scaling, 004C.5c strict operators, 004C.5a
+ *    clamp target (previewBeat = clampBeat / newStart = Math.max(current.startTick,
+ *    clampTick)), 004C.5b wall, resolver, magnets, buildRects, release,
+ *    rects.map, and probe code untouched.
  *
  * 🔥 V1.8.32 CHANGES (MAESTRO-LOOP-004C.5d):
  * ✅ Scales HANDLE_FORECAST_LEAD by local beat pixel spacing. HANDLE_FORECAST_LEAD
@@ -2539,6 +2557,7 @@ export default function BeatCustomLoopOverlay({
         if (dragTargetRef.current === 'start') {
             let previewBeat = beat;
             let newStart = beatTick;
+            let effectiveMinSpanTicks = MIN_LOOP_SPAN_TICKS;
 
             if (tickCache && newStart >= current.endTick - MIN_LOOP_SPAN_TICKS) {
                 const clampResult = tickCache.findBeat(trackIndices, Math.max(0, current.endTick - 1));
@@ -2546,6 +2565,10 @@ export default function BeatCustomLoopOverlay({
                 if (clampBeat) {
                     const clampTick = tickOf(clampBeat);
                     const clampDur = durOf(clampBeat);
+                    effectiveMinSpanTicks = Math.max(
+                        1,
+                        Math.min(MIN_LOOP_SPAN_TICKS, clampDur),
+                    );
 
                     // When the loop is already at the clampBeat floor, Math.max is a
                     // no-op and the band simply remains pinned.
@@ -2558,11 +2581,12 @@ export default function BeatCustomLoopOverlay({
                         currentEndTick: current.endTick,
                         clampBeatTick: clampTick,
                         clampBeatDuration: clampDur,
+                        effectiveMinSpanTicks,
                     });
                 }
             }
 
-            if (newStart > current.endTick - MIN_LOOP_SPAN_TICKS) return;
+            if (newStart > current.endTick - effectiveMinSpanTicks) return;
             nextPreview = { startTick: newStart, endTick: current.endTick };
             if (tickCache) {
                 const endResult = tickCache.findBeat(trackIndices, current.endTick - 1);
@@ -2575,7 +2599,11 @@ export default function BeatCustomLoopOverlay({
             }
         } else {
             const newEnd = beatTick + beatDur;
-            if (newEnd < current.startTick + MIN_LOOP_SPAN_TICKS) return;
+            const effectiveMinSpanTicks = Math.max(
+                1,
+                Math.min(MIN_LOOP_SPAN_TICKS, beatDur),
+            );
+            if (newEnd < current.startTick + effectiveMinSpanTicks) return;
             nextPreview = { startTick: current.startTick, endTick: newEnd };
             if (tickCache) {
                 const startResult = tickCache.findBeat(trackIndices, current.startTick);
