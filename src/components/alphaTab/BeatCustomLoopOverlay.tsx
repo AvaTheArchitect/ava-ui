@@ -1,8 +1,25 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.29 — Start Clamp One-Beat Floor
+ * BeatCustomLoopOverlay v1.8.30 — Mutual Handle Wall
  * Date: July 15th, 2026
+ *
+ * 🔥 V1.8.30 CHANGES (MAESTRO-LOOP-004C.5b):
+ * ✅ Adds a driver-side geometric wall so active handle glyphs cannot
+ *    visually overlap during drag.
+ * ✅ Wall derives from the opposite forecast rect edge (startRect/endRect)
+ *    during drag, not the opposite handle's live activeHandleX pointer
+ *    state.
+ * ✅ Start wall uses endRect's right anchor minus one glyph width. End wall
+ *    uses startRect's left anchor plus one glyph width.
+ * ✅ The existing rect-span clamp runs first; the wall applies last and
+ *    wins on conflict.
+ * ✅ In dense one-beat geometry, where the wall bound can cross the
+ *    handle's own rect-span bound, glyphs kiss/stop instead of merging or
+ *    clamp-inverting — this is intentional.
+ * ⛔ No tick math, resolver logic, magnet logic, min-span logic, the 004C.5a
+ *    soft clamp, buildRects, release logic, rects.map, or probe code
+ *    changed.
  *
  * 🔥 V1.8.29 CHANGES (MAESTRO-LOOP-004C.5a):
  * ✅ Fixes the start soft clamp choosing previousBeat during deep overshoot.
@@ -3620,9 +3637,14 @@ export default function BeatCustomLoopOverlay({
                         left: (startIsDragging && activeOverlayX !== null)
                             ? (() => {
                                 const HANDLE_HALF_W = 13.5;
+                                const HANDLE_W = 27;
                                 const min = startRect.x + LOOP_X_OFFSET - HANDLE_HALF_W;
                                 const max = startRect.x + startRect.w + LOOP_X_OFFSET - HANDLE_HALF_W;
-                                return Math.min(Math.max(activeOverlayX - HANDLE_HALF_W, min), max);
+                                // non-null by construction: startRect/endRect both derive from rects.length > 0
+                                const wallMax = endRect!.x + endRect!.w + LOOP_X_OFFSET - HANDLE_HALF_W - HANDLE_W;
+                                const rawLeft = activeOverlayX - HANDLE_HALF_W;
+                                const rectClampedLeft = Math.min(Math.max(rawLeft, min), max);
+                                return Math.min(rectClampedLeft, wallMax);
                             })()
                             : startRect.x + LOOP_X_OFFSET - 13.5,
                         top: startHandleTop,
@@ -3682,9 +3704,14 @@ export default function BeatCustomLoopOverlay({
                         left: (endIsDragging && activeOverlayX !== null)
                             ? (() => {
                                 const HANDLE_HALF_W = 13.5;
+                                const HANDLE_W = 27;
                                 const min = endRect.x + LOOP_X_OFFSET - HANDLE_HALF_W;
                                 const max = endRect.x + endRect.w + LOOP_X_OFFSET - HANDLE_HALF_W;
-                                return Math.min(Math.max(activeOverlayX - HANDLE_HALF_W, min), max);
+                                // non-null by construction: startRect/endRect both derive from rects.length > 0
+                                const wallMin = startRect!.x + LOOP_X_OFFSET - HANDLE_HALF_W + HANDLE_W;
+                                const rawLeft = activeOverlayX - HANDLE_HALF_W;
+                                const rectClampedLeft = Math.min(Math.max(rawLeft, min), max);
+                                return Math.max(rectClampedLeft, wallMin);
                             })()
                             : endRect.x + endRect.w + LOOP_X_OFFSET - 13.5,
                         top: endHandleTop,
