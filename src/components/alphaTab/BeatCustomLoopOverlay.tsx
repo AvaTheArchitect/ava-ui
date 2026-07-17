@@ -3461,25 +3461,65 @@ export default function BeatCustomLoopOverlay({
             return edge === 'start' ? rectLeft : rectLeft + rect.w;
         };
 
+        // [MAESTRO-LOOP-LANDSCAPE-002] Stable handle-layer geometry — derived once from
+        // representativeRect, outside renderRects.map, so the hit-zone/handle/marker
+        // sibling block below is never keyed to a map iteration. Numerically identical to
+        // the old per-iteration `r`/`left`/`top` inside renderRects.map: representativeRect
+        // IS renderRects[0] whenever renderRects is non-empty (renderRects has at most one
+        // entry, by construction above). DOM stability only — no forecast/resolver/release
+        // behavior change; resolveLandscapeBarIndexAtX, landscapePreviewBarIdx, buildBarRects,
+        // getBarStartTickByIndex, getExpandedBarRange, and landscapeHandleDragStart/Move/End
+        // are untouched.
+        //
+        // [MAESTRO-LOOP-LANDSCAPE-001a] Landscape handles/hit-zones are extracted from
+        // renderRects.map into a stable sibling layer, following the 004D.4a portrait
+        // stability precedent. The layer remains visibility-gated by handleLayerRect
+        // derived from the clipped representative rect; validated safe because no
+        // supported input scrolls the container mid-drag. If auto-scroll-during-drag is
+        // added later, revisit this gate and consider loop-existence-based DOM lifetime.
+        const handleLayerRect = representativeRect;
+        const handleLayerLeft = handleLayerRect ? handleLayerRect.x + LOOP_X_OFFSET - scrollLeft : 0;
+        const handleLayerTop = handleLayerRect ? handleLayerRect.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET : 0;
+        const HANDLE_HIT_ZONE_WIDTH = 40;
+        // [MAESTRO-LOOP-002I.1] Preview edge X — only resolved while a handle is actively
+        // being dragged and a preview bar index exists yet. Falls back to the committed
+        // edge otherwise, so there's never a flash of undefined position on the very first
+        // frame before the RAF preview resolver has run.
+        const previewStartLeft = (activeLandscapeDragHandle === 'start' && landscapePreviewBarIdx != null)
+            ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'start')
+            : null;
+        const previewEndLeft = (activeLandscapeDragHandle === 'end' && landscapePreviewBarIdx != null)
+            ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'end')
+            : null;
+        // [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span geometry — display-only, derived
+        // entirely from values already computed above (committed handleLayerLeft/rect.w and
+        // the live previewStartLeft/previewEndLeft). No new state: this vanishes
+        // automatically the instant landscapeHandleDragEnd nulls
+        // activeLandscapeDragHandle/landscapePreviewBarIdx — unconditional, before any
+        // commit/cancel/no-preview branch, and every exit path (mouseup, touchend,
+        // touchcancel, window-blur replay) calls that same function. Order-independent
+        // min/max so growing and shrinking/reverse drags need no direction-specific branch.
+        // committedEdgeX is always a real number (never the one that moves), so only
+        // previewEdgeX needs a null check.
+        const committedEdgeX = handleLayerRect
+            ? (activeLandscapeDragHandle === 'start' ? handleLayerLeft : handleLayerLeft + handleLayerRect.w)
+            : 0;
+        const previewEdgeX = activeLandscapeDragHandle === 'start' ? previewStartLeft : previewEndLeft;
+        const ghostRawLeft = previewEdgeX != null ? Math.min(committedEdgeX, previewEdgeX) : 0;
+        const ghostRawRight = previewEdgeX != null ? Math.max(committedEdgeX, previewEdgeX) : 0;
+        const ghostVisibleLeft = Math.max(0, ghostRawLeft);
+        const ghostVisibleRight = Math.min(containerWidth, ghostRawRight);
+        const ghostVisibleWidth = previewEdgeX != null ? Math.max(0, ghostVisibleRight - ghostVisibleLeft) : 0;
+
         return (
             <>
-                {/* [MAESTRO-LOOP-002C] Visible-only start/end boundary markers. Derived from
-                    the SAME renderRects entry the highlight above uses (already the deduped,
-                    viewport-clipped representative rect) — never a fresh/unrelated
-                    rects[0]/rects[last] that could point at a different track lane. Since a
-                    landscape-created loop is always a single bar (commitBarSnap snaps to one
-                    barIdx), renderRects has exactly one entry, so its left edge is the start
-                    boundary and its right edge is the end boundary — no separate first/last
-                    rect lookup needed the way the portrait branch requires for multi-bar
-                    selections. The 3px markers themselves stay pointerEvents:'none'.
-                    [MAESTRO-LOOP-002D.1] Interactivity lives ONLY in the two hit-zone divs
-                    below (~40px, pointerEvents:'auto', touchAction:'none') centered on each
-                    marker — the highlight body above remains fully non-interactive, so strip
-                    scroll and tap-to-seek are unaffected everywhere except those hit zones. */}
+                {/* [MAESTRO-LOOP-002C] Highlight band only. renderRects has at most one entry
+                    (the deduped, viewport-clipped representative rect). Handle/hit-zone/marker
+                    DOM nodes were moved out of this map into the stable sibling block below —
+                    see MAESTRO-LOOP-LANDSCAPE-002. */}
                 {renderRects.map((r, i) => {
                     const left = r.x + LOOP_X_OFFSET - scrollLeft;
                     const top = r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET;
-                    const HANDLE_HIT_ZONE_WIDTH = 40;
                     // [MAESTRO-LOOP-002G] Visual-only clamp — the highlight band's true
                     // left/width (used below by markers/hit-zones/drag, untouched) can extend
                     // far outside the viewport on wide loops, which was inflating the outer
@@ -3491,171 +3531,152 @@ export default function BeatCustomLoopOverlay({
                     const bandVisibleLeft = Math.max(0, left);
                     const bandVisibleRight = Math.min(containerWidth, left + r.w);
                     const bandVisibleWidth = Math.max(0, bandVisibleRight - bandVisibleLeft);
-                    // [MAESTRO-LOOP-002I.1] Preview edge X — only resolved while THIS handle
-                    // is the one actively being dragged and a preview bar index exists yet.
-                    // Falls back to the committed edge (`left`/`left + r.w`) otherwise, so
-                    // there's never a flash of undefined position on the very first frame
-                    // before the RAF preview resolver has run.
-                    const previewStartLeft = (activeLandscapeDragHandle === 'start' && landscapePreviewBarIdx != null)
-                        ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'start')
-                        : null;
-                    const previewEndLeft = (activeLandscapeDragHandle === 'end' && landscapePreviewBarIdx != null)
-                        ? resolvePreviewEdgeX(landscapePreviewBarIdx, 'end')
-                        : null;
-                    // [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span geometry — display-only,
-                    // derived entirely from values already computed above (committed `left`/
-                    // `r.w` and the live `previewStartLeft`/`previewEndLeft`). No new state:
-                    // this vanishes automatically the instant landscapeHandleDragEnd nulls
-                    // activeLandscapeDragHandle/landscapePreviewBarIdx — unconditional, before
-                    // any commit/cancel/no-preview branch, and every exit path (mouseup,
-                    // touchend, touchcancel, window-blur replay) calls that same function.
-                    // Order-independent min/max so growing and shrinking/reverse drags need no
-                    // direction-specific branch. committedEdgeX is always a real number (never
-                    // the one that moves), so only previewEdgeX needs a null check.
-                    const committedEdgeX = activeLandscapeDragHandle === 'start' ? left : left + r.w;
-                    const previewEdgeX = activeLandscapeDragHandle === 'start' ? previewStartLeft : previewEndLeft;
-                    const ghostRawLeft = previewEdgeX != null ? Math.min(committedEdgeX, previewEdgeX) : 0;
-                    const ghostRawRight = previewEdgeX != null ? Math.max(committedEdgeX, previewEdgeX) : 0;
-                    const ghostVisibleLeft = Math.max(0, ghostRawLeft);
-                    const ghostVisibleRight = Math.min(containerWidth, ghostRawRight);
-                    const ghostVisibleWidth = previewEdgeX != null ? Math.max(0, ghostVisibleRight - ghostVisibleLeft) : 0;
                     return (
-                        <React.Fragment key={i}>
+                        <div
+                            key={i}
+                            className="beat-loop-highlight-landscape"
+                            style={{
+                                position: 'absolute',
+                                left: bandVisibleLeft,
+                                top,
+                                width: bandVisibleWidth,
+                                height: r.h,
+                                background: overlayColor,
+                                borderTop: `1px solid ${borderColor}`,
+                                borderBottom: `1px solid ${borderColor}`,
+                                pointerEvents: 'none',
+                                zIndex: 900,
+                                boxSizing: 'border-box' as const,
+                            }}
+                        />
+                    );
+                })}
+
+                {/* [MAESTRO-LOOP-LANDSCAPE-002] Stable sibling handle layer — ghost span,
+                    handle glyphs, and hit zones no longer live inside renderRects.map, so
+                    their DOM lifetime depends only on handleLayerRect being present, not on
+                    renderRects array/key churn during a drag. Mirrors portrait's 004D.4a
+                    stable sibling handle layer. */}
+                {handleLayerRect && (
+                    <React.Fragment>
+                        {/* [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span — translucent fill
+                            from the committed edge to the live preview edge for the actively-
+                            dragged handle. zIndex 899, one below the committed band's 900, so
+                            it sits BEHIND the band: the band's own fill stays authoritative
+                            where they overlap, and the ghost only reads as new information in
+                            the non-overlapping delta — avoiding 002I.1a's original "duplicate
+                            line occluded by the marker" failure. Display-only: pointerEvents
+                            none, touches no playbackRange/rects/hit-zone state. */}
+                        {activeLandscapeDragHandle != null && previewEdgeX != null && ghostVisibleWidth > 0 && (
                             <div
-                                className="beat-loop-highlight-landscape"
+                                className="beat-loop-ghost-span-landscape"
                                 style={{
                                     position: 'absolute',
-                                    left: bandVisibleLeft,
-                                    top,
-                                    width: bandVisibleWidth,
-                                    height: r.h,
+                                    left: ghostVisibleLeft,
+                                    top: handleLayerTop,
+                                    width: ghostVisibleWidth,
+                                    height: handleLayerRect.h,
                                     background: overlayColor,
-                                    borderTop: `1px solid ${borderColor}`,
-                                    borderBottom: `1px solid ${borderColor}`,
                                     pointerEvents: 'none',
-                                    zIndex: 900,
+                                    zIndex: 899,
                                     boxSizing: 'border-box' as const,
                                 }}
                             />
-                            {/* [MAESTRO-LOOP-002I.2a-2] Ghost/forecast span — translucent fill
-                                from the committed edge to the live preview edge for the actively-
-                                dragged handle. zIndex 899, one below the committed band's 900, so
-                                it sits BEHIND the band: the band's own fill stays authoritative
-                                where they overlap, and the ghost only reads as new information in
-                                the non-overlapping delta — avoiding 002I.1a's original "duplicate
-                                line occluded by the marker" failure. Display-only: pointerEvents
-                                none, touches no playbackRange/rects/hit-zone state. */}
-                            {activeLandscapeDragHandle != null && previewEdgeX != null && ghostVisibleWidth > 0 && (
-                                <div
-                                    className="beat-loop-ghost-span-landscape"
-                                    style={{
-                                        position: 'absolute',
-                                        left: ghostVisibleLeft,
-                                        top,
-                                        width: ghostVisibleWidth,
-                                        height: r.h,
-                                        background: overlayColor,
-                                        pointerEvents: 'none',
-                                        zIndex: 899,
-                                        boxSizing: 'border-box' as const,
-                                    }}
-                                />
-                            )}
-                            {/* [MAESTRO-LOOP-002D.2] Pressed-state glow ONLY (width/boxShadow) when
-                                activeLandscapeDragHandle matches this handle — no range/rects
-                                change, purely "you're holding this" feedback during the gesture.
-                                [MAESTRO-LOOP-002I.1] Position now follows the live preview edge
-                                while dragging (falls back to the committed `left` if no preview
-                                is resolved yet) — still no range/rects/api.playbackRange change. */}
-                            <div
-                                className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
-                                style={{
-                                    position: 'absolute',
-                                    left: activeLandscapeDragHandle === 'start'
-                                        ? (previewStartLeft ?? left) - 2.5
-                                        : left - 1.5,
-                                    top,
-                                    width: activeLandscapeDragHandle === 'start' ? '5px' : '3px',
-                                    height: r.h,
-                                    backgroundColor: handleColor,
-                                    boxShadow: activeLandscapeDragHandle === 'start'
-                                        ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
-                                    pointerEvents: 'none',
-                                    zIndex: 901,
-                                }}
-                            />
-                            <div
-                                className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
-                                style={{
-                                    position: 'absolute',
-                                    left: activeLandscapeDragHandle === 'end'
-                                        ? (previewEndLeft ?? (left + r.w)) - 2.5
-                                        : left + r.w - 1.5,
-                                    top,
-                                    width: activeLandscapeDragHandle === 'end' ? '5px' : '3px',
-                                    height: r.h,
-                                    backgroundColor: handleColor,
-                                    boxShadow: activeLandscapeDragHandle === 'end'
-                                        ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
-                                    pointerEvents: 'none',
-                                    zIndex: 901,
-                                }}
-                            />
-                            {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
-                            <div
-                                className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
-                                ref={landscapeStartHitZoneRef}
-                                onMouseDown={ev => landscapeHandleDragStart(ev, 'start')}
-                                style={{
-                                    position: 'absolute',
-                                    left: left - HANDLE_HIT_ZONE_WIDTH / 2,
-                                    top,
-                                    width: HANDLE_HIT_ZONE_WIDTH,
-                                    height: r.h,
-                                    background: 'transparent',
-                                    pointerEvents: 'auto',
-                                    touchAction: 'none',
-                                    // [MAESTRO-LOOP-002I.1b] touch-action:none (already present, above)
-                                    // suppresses native panning/zooming; these three additionally
-                                    // suppress iOS's long-press text-select/callout menu and the tap
-                                    // highlight flash, statically from first render — independent of
-                                    // (and earlier than) the runtime document.body.style.userSelect
-                                    // toggle in landscapeHandleDragStart, which only takes effect once
-                                    // that handler has already started running.
-                                    WebkitUserSelect: 'none',
-                                    userSelect: 'none',
-                                    WebkitTouchCallout: 'none',
-                                    WebkitTapHighlightColor: 'transparent',
-                                    cursor: 'ew-resize',
-                                    zIndex: 902,
-                                }}
-                            />
-                            {/* [MAESTRO-LOOP-002D.1] End handle hit zone — interactive only here. */}
-                            <div
-                                className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-end"
-                                ref={landscapeEndHitZoneRef}
-                                onMouseDown={ev => landscapeHandleDragStart(ev, 'end')}
-                                style={{
-                                    position: 'absolute',
-                                    left: left + r.w - HANDLE_HIT_ZONE_WIDTH / 2,
-                                    top,
-                                    width: HANDLE_HIT_ZONE_WIDTH,
-                                    height: r.h,
-                                    background: 'transparent',
-                                    pointerEvents: 'auto',
-                                    touchAction: 'none',
-                                    // [MAESTRO-LOOP-002I.1b] Same rationale as the start hit-zone above.
-                                    WebkitUserSelect: 'none',
-                                    userSelect: 'none',
-                                    WebkitTouchCallout: 'none',
-                                    WebkitTapHighlightColor: 'transparent',
-                                    cursor: 'ew-resize',
-                                    zIndex: 902,
-                                }}
-                            />
-                        </React.Fragment>
-                    );
-                })}
+                        )}
+                        {/* [MAESTRO-LOOP-002D.2] Pressed-state glow ONLY (width/boxShadow) when
+                            activeLandscapeDragHandle matches this handle — no range/rects
+                            change, purely "you're holding this" feedback during the gesture.
+                            [MAESTRO-LOOP-002I.1] Position now follows the live preview edge
+                            while dragging (falls back to the committed `left` if no preview
+                            is resolved yet) — still no range/rects/api.playbackRange change. */}
+                        <div
+                            className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
+                            style={{
+                                position: 'absolute',
+                                left: activeLandscapeDragHandle === 'start'
+                                    ? (previewStartLeft ?? handleLayerLeft) - 2.5
+                                    : handleLayerLeft - 1.5,
+                                top: handleLayerTop,
+                                width: activeLandscapeDragHandle === 'start' ? '5px' : '3px',
+                                height: handleLayerRect.h,
+                                backgroundColor: handleColor,
+                                boxShadow: activeLandscapeDragHandle === 'start'
+                                    ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
+                                pointerEvents: 'none',
+                                zIndex: 901,
+                            }}
+                        />
+                        <div
+                            className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
+                            style={{
+                                position: 'absolute',
+                                left: activeLandscapeDragHandle === 'end'
+                                    ? (previewEndLeft ?? (handleLayerLeft + handleLayerRect.w)) - 2.5
+                                    : handleLayerLeft + handleLayerRect.w - 1.5,
+                                top: handleLayerTop,
+                                width: activeLandscapeDragHandle === 'end' ? '5px' : '3px',
+                                height: handleLayerRect.h,
+                                backgroundColor: handleColor,
+                                boxShadow: activeLandscapeDragHandle === 'end'
+                                    ? `0 0 14px ${handleColor}` : `0 0 8px ${handleColor}`,
+                                pointerEvents: 'none',
+                                zIndex: 901,
+                            }}
+                        />
+                        {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
+                        <div
+                            className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
+                            ref={landscapeStartHitZoneRef}
+                            onMouseDown={ev => landscapeHandleDragStart(ev, 'start')}
+                            style={{
+                                position: 'absolute',
+                                left: handleLayerLeft - HANDLE_HIT_ZONE_WIDTH / 2,
+                                top: handleLayerTop,
+                                width: HANDLE_HIT_ZONE_WIDTH,
+                                height: handleLayerRect.h,
+                                background: 'transparent',
+                                pointerEvents: 'auto',
+                                touchAction: 'none',
+                                // [MAESTRO-LOOP-002I.1b] touch-action:none (already present, above)
+                                // suppresses native panning/zooming; these three additionally
+                                // suppress iOS's long-press text-select/callout menu and the tap
+                                // highlight flash, statically from first render — independent of
+                                // (and earlier than) the runtime document.body.style.userSelect
+                                // toggle in landscapeHandleDragStart, which only takes effect once
+                                // that handler has already started running.
+                                WebkitUserSelect: 'none',
+                                userSelect: 'none',
+                                WebkitTouchCallout: 'none',
+                                WebkitTapHighlightColor: 'transparent',
+                                cursor: 'ew-resize',
+                                zIndex: 902,
+                            }}
+                        />
+                        {/* [MAESTRO-LOOP-002D.1] End handle hit zone — interactive only here. */}
+                        <div
+                            className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-end"
+                            ref={landscapeEndHitZoneRef}
+                            onMouseDown={ev => landscapeHandleDragStart(ev, 'end')}
+                            style={{
+                                position: 'absolute',
+                                left: handleLayerLeft + handleLayerRect.w - HANDLE_HIT_ZONE_WIDTH / 2,
+                                top: handleLayerTop,
+                                width: HANDLE_HIT_ZONE_WIDTH,
+                                height: handleLayerRect.h,
+                                background: 'transparent',
+                                pointerEvents: 'auto',
+                                touchAction: 'none',
+                                // [MAESTRO-LOOP-002I.1b] Same rationale as the start hit-zone above.
+                                WebkitUserSelect: 'none',
+                                userSelect: 'none',
+                                WebkitTouchCallout: 'none',
+                                WebkitTapHighlightColor: 'transparent',
+                                cursor: 'ew-resize',
+                                zIndex: 902,
+                            }}
+                        />
+                    </React.Fragment>
+                )}
             </>
         );
     }
