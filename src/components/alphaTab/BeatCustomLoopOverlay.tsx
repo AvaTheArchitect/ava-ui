@@ -1,8 +1,21 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.37 — Landscape Handle Tab Visual Parity
+ * BeatCustomLoopOverlay v1.8.38 — Landscape Handle Tab Anchor Correction
  * Date: July 18th, 2026
+ *
+ * 🔥 V1.8.38 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-B2):
+ * ✅ Corrects landscape handle tab anchoring so tabs sit outside the loop boundary,
+ *    matching portrait/desktop. The 002-B tabs anchored `left:'0'`/`right:'0'` relative
+ *    to their own 3-5px bar box, which rendered them overlapping/inward of the boundary
+ *    instead of outside it. Start tab now anchors `right:'100%'` (its right edge — the
+ *    flat, non-rounded side — sits flush against the bar's left edge, extending outward
+ *    to the left); end tab now anchors `left:'100%'` (its left edge sits flush against
+ *    the bar's right edge, extending outward to the right). Rounded corners now face
+ *    outward on both, matching production.
+ * ⛔ Visual-only fix. No hit-zone, drag, resolver, tick, playbackRange, or rect changes —
+ *    HANDLE_HIT_ZONE_WIDTH, the hit-zone divs, landscapeHandleDragStart/Move/End,
+ *    buildRects, and AlphaTabRenderer.tsx are all untouched.
  *
  * 🔥 V1.8.37 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-B):
  * ✅ Landscape production handle tab visuals added — the start/end glow-bar divs
@@ -4015,7 +4028,7 @@ export default function BeatCustomLoopOverlay({
                                 remains the sole interactive target. */}
                             <div style={{
                                 position: 'absolute',
-                                left: '0',
+                                right: '100%',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
                                 width: '14px',
@@ -4062,7 +4075,7 @@ export default function BeatCustomLoopOverlay({
                                 remains the sole interactive target. */}
                             <div style={{
                                 position: 'absolute',
-                                right: '0',
+                                left: '100%',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
                                 width: '14px',
