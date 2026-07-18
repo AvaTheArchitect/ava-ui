@@ -1,8 +1,38 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.38 — Landscape Handle Tab Anchor Correction
+ * BeatCustomLoopOverlay v1.8.39 — Landscape Vertical Overlay/Handle Height Parity
  * Date: July 18th, 2026
+ *
+ * 🔥 V1.8.39 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-D-B):
+ * ✅ Landscape vertical overlay and handle-height parity. The gray highlight band and the
+ *    start/end handle anchors now derive their top/height from getRowGeometryForRect's
+ *    measured svg.at-surface-svg row geometry — the same DOM measurement portrait's
+ *    highlight/handles already used — instead of the raw bar visualBounds height
+ *    (landscapeStartRect.h/landscapeEndRect.h) and the static LANDSCAPE_HIGHLIGHT_Y_OFFSET
+ *    (-28px, retired) fudge. The highlight now covers the full rendered row (staff, tab,
+ *    chord/text/effect lanes), matching what portrait's row-based highlight already covers,
+ *    instead of only the ~65px bar-visualBounds band it covered before.
+ * ✅ Purple handle bars are now inset from the gray highlight using the same
+ *    LOOP_HANDLE_INSET_Y relationship portrait's handles use (handleTop = rowGeom.top + 1 +
+ *    LOOP_HANDLE_INSET_Y, handleHeight = max(20, rowGeom.height - LOOP_HANDLE_INSET_Y * 2)),
+ *    giving landscape the same two-tier gray-band/purple-bar visual hierarchy portrait has
+ *    always had — previously both used the identical raw bar height with no distinction.
+ * ✅ getRowGeometryForRect (shared with portrait) gained a defensive minimum-height filter
+ *    (MIN_REAL_SVG_ROW_HEIGHT = 30) on candidate svg.at-surface-svg rows, excluding a
+ *    live-measured 12px trailing artifact row (a page-break/end-of-score DOM remnant, not
+ *    real notation) from ever being matched. No real portrait or landscape row is this
+ *    short, so this is a no-op for every genuine row in both orientations.
+ * ✅ Tabs and hit-zones needed no direct changes: tabs are `top:'50%'`/`translateY(-50%)`
+ *    relative to their own handle-bar parent, so they stay centered automatically as that
+ *    parent's height changes; hit-zones already read the same startAnchorTop/Height /
+ *    endAnchorTop/Height variables the visual bars use, so they follow the new (taller)
+ *    extent for free.
+ * ⛔ Render-only. No resolver, tick, release, playbackRange, or buildRects changes —
+ *    landscapeHandleDragStart/Move/End, HANDLE_HIT_ZONE_WIDTH, and AlphaTabRenderer.tsx are
+ *    all untouched. LANDSCAPE-003 scroll/jello architecture remains parked — any jello more
+ *    visible after this patch is a consequence of the overlay now being taller, not a new
+ *    regression in static alignment or drag semantics.
  *
  * 🔥 V1.8.38 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-B2):
  * ✅ Corrects landscape handle tab anchoring so tabs sit outside the loop boundary,
@@ -992,7 +1022,10 @@ export default function BeatCustomLoopOverlay({
 
     // ── Landscape highlight geometry constants ────────────────────────
     const LOOP_X_OFFSET = 0;                    // ← change to 55 to test gutter alignment
-    const LANDSCAPE_HIGHLIGHT_Y_OFFSET = -28;   // probe-confirmed June 2026 iPhone 16 Pro Max
+    // [MAESTRO-LOOP-LANDSCAPE-002-D-B] LANDSCAPE_HIGHLIGHT_Y_OFFSET (static -28px fudge,
+    // probe-confirmed June 2026 iPhone 16 Pro Max) is RETIRED — vertical top is now derived
+    // from getRowGeometryForRect's measured row geometry (see the highlight/handle render
+    // code below), not a fixed per-device offset.
 
     // ── Stage 1: Handle drag state ───────────────────────────────────────────
     const [handleDragging, setHandleDragging] = useState(false);
@@ -3719,6 +3752,12 @@ export default function BeatCustomLoopOverlay({
     const LOOP_ROW_PAD_Y = 7;
     const LOOP_HANDLE_INSET_Y = 10;
     const FALLBACK_EXTEND = 50;
+    // [MAESTRO-LOOP-LANDSCAPE-002-D-B] Live-measured landscape strips can carry a trailing
+    // near-empty svg.at-surface-svg (observed 12px tall, a page-break/end-of-score artifact,
+    // not a real notation row) alongside the real ~339px content rows. A real rendered row
+    // (staff + tab lines at minimum) is never this short, so this threshold only ever
+    // excludes degenerate artifact rows — real portrait/landscape rows are unaffected.
+    const MIN_REAL_SVG_ROW_HEIGHT = 30;
 
     // ── [V1.8.5] Row-aware geometry helper — DOM-rect-based ──────────────────
     // r.y is the AlphaTab bar visual top in the same rendered surface space
@@ -3750,7 +3789,7 @@ export default function BeatCustomLoopOverlay({
             const top = (rect.top - surfaceRect.top) + surfaceScrollTop;
             const height = rect.height;
             return { svg, top, height, bottom: top + height };
-        }).filter(row => row.height > 0);
+        }).filter(row => row.height > MIN_REAL_SVG_ROW_HEIGHT);
         // Pick the DOM SVG row that contains r.y, or closest if slightly outside
         // (bar visual top can sit near an effect lane at the row boundary).
         let match = rows.find(row => r.y >= row.top - 4 && r.y <= row.bottom + 4);
@@ -3903,7 +3942,6 @@ export default function BeatCustomLoopOverlay({
                 scrollLeft,
                 containerW: containerWidth,
                 surfaceW,
-                landscapeHighlightYOffset: LANDSCAPE_HIGHLIGHT_Y_OFFSET,
                 geometryMode: 'landscape-direct-rect-multi-segment',
                 landscapePreviewRangeStartTick: landscapePreviewRange?.startTick ?? null,
                 landscapePreviewRangeEndTick: landscapePreviewRange?.endTick ?? null,
@@ -3927,12 +3965,21 @@ export default function BeatCustomLoopOverlay({
         // hit-zone DOM nodes live in a stable sibling block outside renderRects.map — same
         // 004D.4a DOM-stability precedent, now gated on landscapeStartRect/landscapeEndRect
         // rather than one shared handleLayerRect.
+        // [MAESTRO-LOOP-LANDSCAPE-002-D-B] Handle vertical extent now derives from the same
+        // measured-row-geometry helper portrait's handles use (getRowGeometryForRect), not
+        // the raw bar visualBounds height (landscapeStartRect.h) or the static
+        // LANDSCAPE_HIGHLIGHT_Y_OFFSET fudge — retiring both from this path. Same
+        // rowGeom.top/height → handleTop/handleHeight relation as portrait's own
+        // startHandleTop/startHandleHeight (LOOP_HANDLE_INSET_Y-inset from the row), so the
+        // purple bar is shorter than the gray highlight band the same way in both modes.
+        const startRowGeom = landscapeStartRect ? getRowGeometryForRect(landscapeStartRect) : null;
+        const endRowGeom = landscapeEndRect ? getRowGeometryForRect(landscapeEndRect) : null;
         const startAnchorLeft = landscapeStartRect ? landscapeStartRect.x + LOOP_X_OFFSET - scrollLeft : 0;
-        const startAnchorTop = landscapeStartRect ? landscapeStartRect.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET : 0;
-        const startAnchorHeight = landscapeStartRect ? landscapeStartRect.h : 0;
+        const startAnchorTop = startRowGeom ? startRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
+        const startAnchorHeight = startRowGeom ? Math.max(20, startRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
         const endAnchorLeft = landscapeEndRect ? landscapeEndRect.x + landscapeEndRect.w + LOOP_X_OFFSET - scrollLeft : 0;
-        const endAnchorTop = landscapeEndRect ? landscapeEndRect.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET : 0;
-        const endAnchorHeight = landscapeEndRect ? landscapeEndRect.h : 0;
+        const endAnchorTop = endRowGeom ? endRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
+        const endAnchorHeight = endRowGeom ? Math.max(20, endRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
         const HANDLE_HIT_ZONE_WIDTH = 40;
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] The old ghost/forecast span + resolvePreviewEdgeX
         // (bar-index-based) overlay is RETIRED. Before this lane, `rects` only updated on
@@ -3954,7 +4001,14 @@ export default function BeatCustomLoopOverlay({
                     landscapeEndRect, never off this map's iteration. */}
                 {renderRects.map((r, i) => {
                     const left = r.x + LOOP_X_OFFSET - scrollLeft;
-                    const top = r.y + LANDSCAPE_HIGHLIGHT_Y_OFFSET;
+                    // [MAESTRO-LOOP-LANDSCAPE-002-D-B] Measured row geometry (same helper
+                    // portrait's highlight/handles use) replaces the raw r.y + static
+                    // LANDSCAPE_HIGHLIGHT_Y_OFFSET fudge, so the gray band covers the full
+                    // rendered row (staff/tab/text/chord lanes), not just the bar's own
+                    // visualBounds. Computed per-rect (not once for the whole map) since a
+                    // genuine multi-segment span's rects can belong to different rows.
+                    const rowGeom = getRowGeometryForRect(r);
+                    const top = rowGeom.top;
                     // [MAESTRO-LOOP-002G] Visual-only clamp — the highlight band's true
                     // left/width (used below by markers/hit-zones/drag, untouched) can extend
                     // far outside the viewport on wide loops, which was inflating the outer
@@ -3975,7 +4029,7 @@ export default function BeatCustomLoopOverlay({
                                 left: bandVisibleLeft,
                                 top,
                                 width: bandVisibleWidth,
-                                height: r.h,
+                                height: rowGeom.height,
                                 background: overlayColor,
                                 borderTop: `1px solid ${borderColor}`,
                                 borderBottom: `1px solid ${borderColor}`,
