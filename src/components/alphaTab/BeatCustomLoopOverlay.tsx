@@ -1,8 +1,18 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.36 — Landscape Drag-End Listener Parity
+ * BeatCustomLoopOverlay v1.8.37 — Landscape Handle Tab Visual Parity
  * Date: July 18th, 2026
+ *
+ * 🔥 V1.8.37 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-B):
+ * ✅ Landscape production handle tab visuals added — the start/end glow-bar divs
+ *    (beat-loop-handle-landscape-{start,end}) now each render a child arrow-tab div
+ *    mirroring portrait/desktop's production tab exactly (color, size, radius, glyph,
+ *    shadow, font). Purely visual: the tab is pointerEvents:'none', so the existing
+ *    separate 40px hit-zone divs remain the sole interactive target, unshadowed.
+ * ⛔ Visual-only patch. No resolver, tick, release, hit-zone geometry, or playbackRange
+ *    changes — landscapeHandleDragStart/Move/End, buildRects, HANDLE_HIT_ZONE_WIDTH, and
+ *    AlphaTabRenderer.tsx are all untouched.
  *
  * 🔥 V1.8.36 CHANGES (MAESTRO-LANDSCAPE-SCROLL-002):
  * ✅ Landscape's drag-lifecycle listener effect (Stage-1-equivalent, gated on
@@ -3997,7 +4007,37 @@ export default function BeatCustomLoopOverlay({
                                 pointerEvents: 'none',
                                 zIndex: 901,
                             }}
-                        />
+                        >
+                            {/* [MAESTRO-LOOP-LANDSCAPE-002-B] Production Portrait/Desktop-style
+                                arrow tab — visual only, mirrors portrait's start tab (lines
+                                ~4707-4725). pointerEvents:'none' so it never shadows the
+                                separate 40px hit-zone (zIndex 902, own sibling below), which
+                                remains the sole interactive target. */}
+                            <div style={{
+                                position: 'absolute',
+                                left: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: '14px',
+                                height: '32px',
+                                backgroundColor: tabColor,
+                                borderRadius: '4px 0 0 4px',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'white',
+                                fontSize: '28px',
+                                fontWeight: '900',
+                                fontFamily: "'Courier New', monospace",
+                                lineHeight: 1,
+                                userSelect: 'none',
+                                WebkitUserSelect: 'none',
+                                WebkitTouchCallout: 'none',
+                                WebkitTapHighlightColor: 'transparent',
+                                pointerEvents: 'none',
+                            }}>›</div>
+                        </div>
                         <div
                             className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
                             style={{
@@ -4014,7 +4054,37 @@ export default function BeatCustomLoopOverlay({
                                 pointerEvents: 'none',
                                 zIndex: 901,
                             }}
-                        />
+                        >
+                            {/* [MAESTRO-LOOP-LANDSCAPE-002-B] Production Portrait/Desktop-style
+                                arrow tab — visual only, mirrors portrait's end tab (lines
+                                ~4790-4808). pointerEvents:'none' so it never shadows the
+                                separate 40px hit-zone (zIndex 902, own sibling below), which
+                                remains the sole interactive target. */}
+                            <div style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: '14px',
+                                height: '32px',
+                                backgroundColor: tabColor,
+                                borderRadius: '0 4px 4px 0',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'white',
+                                fontSize: '28px',
+                                fontWeight: '900',
+                                fontFamily: "'Courier New', monospace",
+                                lineHeight: 1,
+                                userSelect: 'none',
+                                WebkitUserSelect: 'none',
+                                WebkitTouchCallout: 'none',
+                                WebkitTapHighlightColor: 'transparent',
+                                pointerEvents: 'none',
+                            }}>‹</div>
+                        </div>
                         {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
                         <div
                             className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
