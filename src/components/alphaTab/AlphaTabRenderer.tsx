@@ -6,6 +6,35 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-FIT-001-D-B2 — Row[0] optical payload centering.
+ * Refines D-B (does not replace its fallback chain).
+ * ✅ Prefers the row[0] optical payload top (real printable text, rects,
+ *        lines, paths — excluding empty/non-printable music-font glyph
+ *        bbox artifacts and non-score track labels like "s.guit." sitting
+ *        outside the system) over raw staffSystem.visualBounds.y, which
+ *        includes a confirmed phantom pre-system reservation (measured:
+ *        real payload starts ~41px down, not ~28px).
+ * ✅ Candidate A from MAESTRO-LANDSCAPE-FIT-001-D-B2-A — all-visible
+ *        payload, not the core-readable/exclude-strays candidate, which
+ *        that audit found unstable (~87px shift, clamps to 0).
+ * ✅ Deliberately scoped to row[0] / first svg.at-surface-svg only, same
+ *        as D-B's own staffSystems[0] precedent — D-B2-A proved scanning
+ *        whichever row is currently scrolled into view is unstable (row
+ *        optical tops ranged from -14 to 148.2 across 14 chunk rows, one
+ *        of which carries a real mid-song tempo mark) — never recomputed
+ *        on scroll.
+ * ✅ Fixes a latent D-B bottom-pin bug: height is now derived from the
+ *        already-clamped top (height = bottomTrayTop - top) instead of
+ *        computed independently from an unclamped shift, so top + height
+ *        always equals bottomTrayTop even for larger shifts.
+ * ✅ Fallback ladder, never computed from garbage: optical scan valid →
+ *        optical payload shift; optical scan invalid/empty/ambiguous →
+ *        D-B visualBounds centering (unchanged formula); staff bounds
+ *        invalid → C-B shift=0.
+ * 🚫 No scroll-triggered recompute, no transform, no scale, no text
+ *        suppression, no BeatCustomLoopOverlay/FixedLandscapeCursor/GP8
+ *        changes.
+ *
  * MAESTRO-LANDSCAPE-FIT-001-D-B — Computed host-shift centering.
  * Extends C-B's landscapeHostInset measurement (does not replace it).
  * ✅ top = trayBottom - shift, height = traySafeBand + shift — bottom edge
@@ -2791,12 +2820,59 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 Number.isFinite(systemHeight) && (systemHeight as number) > 0 &&
                 Number.isFinite(currentTopClearance) && (currentTopClearance as number) >= 0
             ) {
-                const availableSlack = bandHeight - (systemHeight as number);
-                const targetTopClearance = Math.max(0, availableSlack / 2);
-                const rawShift = (currentTopClearance as number) - targetTopClearance;
-                const shift = Math.max(0, Math.min(currentTopClearance as number, rawShift));
+                // [MAESTRO-LANDSCAPE-FIT-001-D-B2] row[0]-only optical payload scan.
+                // Deliberately scoped to the FIRST svg.at-surface-svg only — D-B2-A
+                // proved cross-row scanning is unstable (row optical tops ranged from
+                // -14 to 148.2 across the 14 chunk rows, and one row carries a real,
+                // un-suppressed mid-song tempo mark) — must never depend on scroll
+                // position or which row/chunk is currently visible.
+                const scanOpticalTopRel = (): number | null => {
+                    const row0 = document.querySelector('.alphatab-container svg.at-surface-svg');
+                    if (!row0) return null;
+                    let minY = Infinity;
+                    for (const el of Array.from(row0.querySelectorAll('text, rect, line, path'))) {
+                        const cs = getComputedStyle(el);
+                        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) continue;
+                        if (el.tagName.toLowerCase() === 'text') {
+                            const txt = (el.textContent ?? '').trim();
+                            // Real printable text only — excludes empty/non-printable
+                            // music-font glyph icons (unreliable bbox, e.g. y:-72/h:144).
+                            if (!txt || !/^[\x20-\x7E]+$/.test(txt)) continue;
+                        }
+                        let bbox: DOMRect;
+                        try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
+                        if (!bbox || bbox.width <= 0 || bbox.height <= 0) continue;
+                        // Excludes non-score track labels (e.g. "s.guit.") sitting
+                        // outside the staff/system payload above y=0.
+                        if (bbox.y < 0) continue;
+                        if (bbox.y < minY) minY = bbox.y;
+                    }
+                    return Number.isFinite(minY) ? minY : null;
+                };
+
+                // visibleBottomRel reuses staffSystem's own bottom — D-B2-A confirmed
+                // the phantom reservation is top-heavy; real payload's bottom already
+                // sits comfortably inside this bound, so no separate bottom scan needed.
+                const visibleBottomRel = (currentTopClearance as number) + (systemHeight as number);
+                const opticalTopRel = scanOpticalTopRel();
+                // Fallback: optical scan invalid/empty/ambiguous → D-B visualBounds
+                // centering (using currentTopClearance as visibleTopRel reduces this
+                // formula to exactly D-B's original one).
+                const visibleTopRel = (opticalTopRel != null && opticalTopRel < visibleBottomRel)
+                    ? opticalTopRel
+                    : (currentTopClearance as number);
+                const visibleHeight = visibleBottomRel - visibleTopRel;
+
+                const targetTopClearance = Math.max(0, (bandHeight - visibleHeight) / 2);
+                const rawShift = visibleTopRel - targetTopClearance;
+                const shift = Math.max(0, Math.min(visibleTopRel, rawShift));
+
+                // [MAESTRO-LANDSCAPE-FIT-001-D-B2] Bottom-pin invariant fix: height is
+                // derived from the already-clamped top, not computed independently from
+                // an unclamped shift (D-B's latent bug — reachable once shift exceeds
+                // topTrayBottom) — top + height always equals bottomTrayTop.
                 top = Math.max(0, Math.round(topTrayBottom - shift));
-                height = Math.max(0, Math.round(bandHeight + shift));
+                height = Math.max(0, Math.round(bottomTrayTop - top));
             }
 
             const next = { top, height };
