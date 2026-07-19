@@ -6,6 +6,28 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-FIT-001-D-B — Computed host-shift centering.
+ * Extends C-B's landscapeHostInset measurement (does not replace it).
+ * ✅ top = trayBottom - shift, height = traySafeBand + shift — bottom edge
+ *        stays pinned to the bottom tray, same as C-B. shift is derived
+ *        from live staffSystem.visualBounds (y, h) so the staff system is
+ *        vertically centered in the tray-safe band instead of just
+ *        starting flush at the top of it.
+ * ✅ Hold-last-known-good: degenerate tray rects (zero/unmounted/NaN band
+ *        height) retain the previous host inset rather than recompute
+ *        from bad values. Missing/stale staffSystem bounds degrade to
+ *        shift=0 (the shipped C-B behavior), never an amplified or
+ *        garbage shift.
+ * ✅ Recomputes on the existing C-B triggers (resize, visualViewport
+ *        resize, forceHorizontal change) plus a new trigger after
+ *        AlphaTab's renderFinished settle points — staffSystem bounds can
+ *        change after render/track-change/settings-change without any
+ *        resize firing.
+ * 🚫 No transform, no BeatCustomLoopOverlay change, no FixedLandscapeCursor
+ *        change (its Math.max(rect.top, headerFloor) clamp is a known,
+ *        accepted residual — tracked separately, not fixed here), no
+ *        scale, no page shell change.
+ *
  * MAESTRO-LANDSCAPE-FIT-001-B1-B — Initial tempo suppression + landscape padding floor.
  * Builds on C-B's tray-safe host (does not revert it).
  * ✅ Landscape initial tempo suppression via the new, format-agnostic
@@ -2724,20 +2746,64 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // compensates for the un-inset case at the cursor layer as a defensive fallback —
     // this effect is the primary fix, for the actual score content.
     const [landscapeHostInset, setLandscapeHostInset] = useState<{ top: number; height: number } | null>(null);
+    // [MAESTRO-LANDSCAPE-FIT-001-D-B] Last-good host inset, held on degenerate reads
+    // instead of recomputing/amplifying from a bad frame.
+    const lastGoodLandscapeHostInsetRef = useRef<{ top: number; height: number } | null>(null);
+    // [MAESTRO-LANDSCAPE-FIT-001-D-B] Ref-stored measure() so the renderFinished settle
+    // points (deep in the init() pipeline below) can trigger a recompute — staffSystem
+    // bounds can change after render/track-change/settings-change with no resize firing.
+    const landscapeHostInsetMeasureRef = useRef<(() => void) | null>(null);
     useEffect(() => {
-        if (!forceHorizontal) { setLandscapeHostInset(null); return; }
+        if (!forceHorizontal) {
+            setLandscapeHostInset(null);
+            lastGoodLandscapeHostInsetRef.current = null;
+            landscapeHostInsetMeasureRef.current = null;
+            return;
+        }
         const measure = () => {
+            if (!forceHorizontalRef.current) return;
             const topTray = document.querySelector('[data-top-menu-tray]');
             const bottomTray = document.querySelector('[data-maestro-control-panel]');
             // Fallbacks (0 / viewport height) mean "no correction" — not made-up pixel
             // constants — for the rare frame where a tray hasn't mounted yet.
             const topTrayBottom = topTray ? topTray.getBoundingClientRect().bottom : 0;
             const bottomTrayTop = bottomTray ? bottomTray.getBoundingClientRect().top : window.innerHeight;
-            setLandscapeHostInset({
-                top: Math.max(0, Math.round(topTrayBottom)),
-                height: Math.max(0, Math.round(bottomTrayTop - topTrayBottom)),
-            });
+            const bandHeight = bottomTrayTop - topTrayBottom;
+
+            // [MAESTRO-LANDSCAPE-FIT-001-D-B] Guard: degenerate tray geometry — hold the
+            // last known good inset rather than recompute from a zero/unstable frame.
+            if (!Number.isFinite(bandHeight) || bandHeight <= 0) {
+                if (lastGoodLandscapeHostInsetRef.current) {
+                    setLandscapeHostInset(lastGoodLandscapeHostInsetRef.current);
+                }
+                return;
+            }
+
+            // C-B baseline — the shift=0 fallback this degrades to whenever staff bounds
+            // aren't trustworthy yet (cold mount, mid-render, stale boundsLookup).
+            let top = Math.max(0, Math.round(topTrayBottom));
+            let height = Math.max(0, Math.round(bandHeight));
+
+            const sys = apiRef.current?.renderer?.boundsLookup?.staffSystems?.[0];
+            const systemHeight = sys?.visualBounds?.h;
+            const currentTopClearance = sys?.visualBounds?.y;
+            if (
+                Number.isFinite(systemHeight) && (systemHeight as number) > 0 &&
+                Number.isFinite(currentTopClearance) && (currentTopClearance as number) >= 0
+            ) {
+                const availableSlack = bandHeight - (systemHeight as number);
+                const targetTopClearance = Math.max(0, availableSlack / 2);
+                const rawShift = (currentTopClearance as number) - targetTopClearance;
+                const shift = Math.max(0, Math.min(currentTopClearance as number, rawShift));
+                top = Math.max(0, Math.round(topTrayBottom - shift));
+                height = Math.max(0, Math.round(bandHeight + shift));
+            }
+
+            const next = { top, height };
+            lastGoodLandscapeHostInsetRef.current = next;
+            setLandscapeHostInset(next);
         };
+        landscapeHostInsetMeasureRef.current = measure;
         measure();
         window.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('resize', measure);
@@ -5038,6 +5104,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         isSettlingRef.current = false;
                         setIsLoading(false);
                         setIsSettling(false);
+                        // [MAESTRO-LANDSCAPE-FIT-001-D-B] staffSystem bounds may have just
+                        // settled — recompute the centering shift. No-op outside landscape.
+                        landscapeHostInsetMeasureRef.current?.();
                         onRendered?.();
                         onBoundsReady?.();
                         isApplyingProfileRef.current = false;
@@ -5373,6 +5442,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     isSettlingRef.current = false;
                     setIsLoading(false);
                     setIsSettling(false);
+                    // [MAESTRO-LANDSCAPE-FIT-001-D-B] staffSystem bounds may have just
+                    // settled — recompute the centering shift. No-op outside landscape.
+                    landscapeHostInsetMeasureRef.current?.();
                     onRendered?.();
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;
