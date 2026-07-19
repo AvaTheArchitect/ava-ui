@@ -6,6 +6,28 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-FIT-001-C-B — Landscape tray-safe content host inset.
+ * Renderer-local patch (this file only).
+ * ✅ .alphatab-content-host is moved/constrained, landscape-only, to the
+ *        measured band between the fixed top tray ([data-top-menu-tray])
+ *        and the fixed bottom tray ([data-maestro-control-panel]), instead
+ *        of starting at viewport y=0 behind the top tray. Top/height are
+ *        derived live via getBoundingClientRect() on each tray, re-measured
+ *        on resize/visualViewport resize — no hardcoded 64px/80px constants.
+ * ✅ .alphatab-container gets height:100% in the same landscape-only branch
+ *        so it fills the inset host exactly. FixedLandscapeCursor reads
+ *        container.getBoundingClientRect().height directly; without this,
+ *        the cursor spine stayed at the container's old ~386px natural
+ *        height and extended through the bottom tray.
+ * ✅ Portrait/page mode: no inset, no height override — both branches fall
+ *        through to the original unconditional styles.
+ * 🚫 Not touched: BeatCustomLoopOverlay (already measures live geometry via
+ *        containerEl/at-surface rects — confirmed to track the new host
+ *        position with zero changes), FixedLandscapeCursor.tsx (its
+ *        getHeaderBottomFloor() remains a defensive fallback for the case
+ *        this effect hasn't measured yet, not the primary mechanism now),
+ *        page.tsx shell, GP8 lane logic, tempo/suppression, scale.
+ *
  * MAESTRO-PLAYER-006 / CURSOR-005 — CLOSED (bug fix below, not part of the V145.26 scroll/cursor lock):
  * ✅ [LoopResumeInPlace] Loop ON pause/resume resumes from the paused beat
  *        instead of restarting from loop start. Discriminated by the
@@ -2665,6 +2687,37 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             window.visualViewport?.removeEventListener('resize', update);
         };
     }, []);
+
+    // [MAESTRO-LANDSCAPE-FIT-001-C-B] Tray-safe content host geometry — landscape only.
+    // Measures the live top/bottom tray rects via their existing hooks (no changes to
+    // either tray component) and derives the inset/height for .alphatab-content-host so
+    // it occupies the band between them, instead of starting at viewport y=0 behind the
+    // fixed top tray. FixedLandscapeCursor's getHeaderBottomFloor() already independently
+    // compensates for the un-inset case at the cursor layer as a defensive fallback —
+    // this effect is the primary fix, for the actual score content.
+    const [landscapeHostInset, setLandscapeHostInset] = useState<{ top: number; height: number } | null>(null);
+    useEffect(() => {
+        if (!forceHorizontal) { setLandscapeHostInset(null); return; }
+        const measure = () => {
+            const topTray = document.querySelector('[data-top-menu-tray]');
+            const bottomTray = document.querySelector('[data-maestro-control-panel]');
+            // Fallbacks (0 / viewport height) mean "no correction" — not made-up pixel
+            // constants — for the rare frame where a tray hasn't mounted yet.
+            const topTrayBottom = topTray ? topTray.getBoundingClientRect().bottom : 0;
+            const bottomTrayTop = bottomTray ? bottomTray.getBoundingClientRect().top : window.innerHeight;
+            setLandscapeHostInset({
+                top: Math.max(0, Math.round(topTrayBottom)),
+                height: Math.max(0, Math.round(bottomTrayTop - topTrayBottom)),
+            });
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        window.visualViewport?.addEventListener('resize', measure);
+        return () => {
+            window.removeEventListener('resize', measure);
+            window.visualViewport?.removeEventListener('resize', measure);
+        };
+    }, [forceHorizontal]);
 
     const loopEnabledRef = useRef(loopEnabled);
     const playbackRangeRef = useRef(playbackRange);
@@ -9206,7 +9259,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                       overlay both use this as their position:relative ancestor, so visualBounds
                       x/y coords from AlphaTab map 1:1 to overlay left/top with no gutter offset.
                     */}
-                    <div className="alphatab-content-host" style={{ position: 'relative' }}>
+                    <div
+                        className="alphatab-content-host"
+                        style={{
+                            position: 'relative',
+                            ...(forceHorizontal && landscapeHostInset ? {
+                                marginTop: `${landscapeHostInset.top}px`,
+                                height: `${landscapeHostInset.height}px`,
+                                overflow: 'hidden',
+                            } : {}),
+                        }}
+                    >
                         <div
                             ref={containerRef}
                             className="alphatab-container"
@@ -9216,6 +9279,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 overflow: 'hidden',
                                 WebkitOverflowScrolling: 'touch' as any,
                                 background: bgColor,
+                                ...(forceHorizontal && landscapeHostInset ? { height: '100%' } : {}),
                             }}
                         />
                         {apiRef.current && !isSettling && (
