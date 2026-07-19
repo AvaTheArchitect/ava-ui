@@ -6,6 +6,33 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-FIT-001-B1-B — Initial tempo suppression + landscape padding floor.
+ * Builds on C-B's tray-safe host (does not revert it).
+ * ✅ Landscape initial tempo suppression via the new, format-agnostic
+ *        runAlphaTabInitialTempoSuppression() helper (src/lib/alphaTab/
+ *        alphaTabInitialTempoSuppression.ts) — leftmost-SVG-x classifier,
+ *        at most one suppression per render, score.tempo used as a sanity
+ *        assertion only (never the selector). Mounted in the unconditional
+ *        patch pipeline next to runUniversalLayoutPatches, outside the
+ *        isGP8 block, called only when horizontal/landscape strip is
+ *        active. Not part of gp8OverlaySuppression.ts — different element
+ *        class (engraving font, not italic Georgia FX/comment text), and
+ *        that pipeline is GP8-only while this glyph is format-agnostic.
+ * ✅ firstSystemPaddingTop = 0 applied at every site that flips
+ *        layoutMode to Horizontal (scheduleLandscapeMismatchRecovery,
+ *        reassertLayout's wantStrip branch) — same direct
+ *        settings-mutation pattern already used for the layoutMode flip
+ *        itself.
+ * ✅ firstSystemPaddingTop restored to 28 at every site that flips
+ *        layoutMode to Page (reassertLayout's stuckHorizontalStrip
+ *        branch and its wantStrip-false branch, and the forceHorizontal
+ *        strip-to-page preclear effect) — preserves the Scenario D
+ *        invariant that portrait staff.y returns to its ~192 baseline
+ *        with no 20px bleed.
+ * 🚫 No scale change, no Maestro tempo chip, no GP8 lane work, no
+ *        BeatCustomLoopOverlay changes, no cursor-height fix, no page
+ *        shell changes.
+ *
  * MAESTRO-LANDSCAPE-FIT-001-C-B — Landscape tray-safe content host inset.
  * Renderer-local patch (this file only).
  * ✅ .alphatab-content-host is moved/constrained, landscape-only, to the
@@ -807,6 +834,7 @@ import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
 import { runGp8ChordOverlay, type Gp8ChordOverlayHandle } from '@/lib/alphaTab/gp8ChordOverlay';
 import { runGp8ChordSuppression } from '@/lib/alphaTab/gp8ChordSuppression';
 import { runGp8OverlaySuppression } from '@/lib/alphaTab/gp8OverlaySuppression';
+import { runAlphaTabInitialTempoSuppression } from '@/lib/alphaTab/alphaTabInitialTempoSuppression';
 import { runGp8OverlayLanes, type Gp8OverlayLaneHandle } from '@/lib/alphaTab/gp8OverlayLanes';
 import { runGp8PmOverlay, type Gp8PmOverlayHandle } from '@/lib/alphaTab/gp8PmOverlay';
 import { runGp8PmSuppression } from '@/lib/alphaTab/gp8PmSuppression';
@@ -3607,6 +3635,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
                     api.settings.display.layoutMode = (at as any).LayoutMode.Horizontal;
+                    // [MAESTRO-LANDSCAPE-FIT-001-B1-B] Landscape-entry padding floor.
+                    // Restored to 28 at every Page-mode branch below.
+                    api.settings.display.firstSystemPaddingTop = 0;
                     api.settings.player.scrollMode = (at as any).ScrollMode.Continuous;
                     await api.updateSettings();
                     api.render();
@@ -3851,6 +3882,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     landscapeCursorRef.current = null;
                 }
                 api.settings.display.layoutMode = (at as any).LayoutMode.Page;
+                // [MAESTRO-LANDSCAPE-FIT-001-B1-B] Page-mode restore — preserves the
+                // Scenario D invariant (portrait staff.y ~192, no 20px bleed).
+                api.settings.display.firstSystemPaddingTop = 28;
                 if ((at as any).SystemsLayoutMode) {
                     (api.settings.display as any).systemsLayoutMode =
                         (at as any).SystemsLayoutMode.Automatic;
@@ -3863,6 +3897,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             // ── Normal flip / collapse recovery ──────────────────────────────
             api.settings.display.layoutMode = wantLayout;
+            // [MAESTRO-LANDSCAPE-FIT-001-B1-B] wantLayout covers both directions —
+            // 0 entering strip mode, restored to 28 entering Page/portrait.
+            api.settings.display.firstSystemPaddingTop = wantStrip ? 0 : 28;
             if (!wantStrip && (at as any).SystemsLayoutMode) {
                 (api.settings.display as any).systemsLayoutMode =
                     (at as any).SystemsLayoutMode.Automatic;
@@ -3945,6 +3982,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (api && at && el) {
                     removeLandscapeTrailingPadding('forceHorizontal-strip-to-page');
                     api.settings.display.layoutMode = (at as any).LayoutMode.Page;
+                    // [MAESTRO-LANDSCAPE-FIT-001-B1-B] Page-mode restore on this
+                    // strip→page transition path too — see the two reassertLayout
+                    // sites for the other Page-mode branches.
+                    api.settings.display.firstSystemPaddingTop = 28;
                     if ((at as any).SystemsLayoutMode) {
                         (api.settings.display as any).systemsLayoutMode =
                             (at as any).SystemsLayoutMode.Automatic;
@@ -5018,6 +5059,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                     await withPatchTimeout(runUniversalLayoutPatches(h), 'universalLayoutPatches');
                     if (renderTokenRef.current !== tokenAtFinish) return;
+                    // [MAESTRO-LANDSCAPE-FIT-001-B1-B] Format-agnostic, landscape-only —
+                    // gated here, not inside the helper (same convention the gp8* helpers
+                    // below use for their own isGP8 gating).
+                    if (forceHorizontalRef.current || api?.settings?.display?.layoutMode === 1) {
+                        await withPatchTimeout(runAlphaTabInitialTempoSuppression(h, api), 'initialTempoSuppression');
+                        if (renderTokenRef.current !== tokenAtFinish) return;
+                    }
                     await withPatchTimeout(runGp8VibratoSuppression(h), 'gp8VibratoSuppression');
                     if (renderTokenRef.current !== tokenAtFinish) return;
                     gp8VibratoOverlayHandleRef.current?.destroy();
