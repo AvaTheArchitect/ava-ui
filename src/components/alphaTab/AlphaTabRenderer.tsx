@@ -6,6 +6,31 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-FIT-001-E-B — Readable-top alignment, clamp ceiling.
+ * Refines D-B2's optical scan (does not replace its fallback chain).
+ * ✅ Selects E-A2 Candidate C: top-aligns the first readable row[0] payload
+ *        against the top tray, using the existing Math.max(0, ...) clamp as
+ *        the safety ceiling — no hardcoded shift/hostTop constant.
+ * ✅ scanOpticalTopRel() gains a physical tiny-artifact filter: rect/line/
+ *        path bbox excluded when both width<5 AND height<5 (e.g. the
+ *        ~4.3x1.4px dash). Physical-size exclusion only — no exclusion by
+ *        position, string match, or element identity. Text elements are
+ *        exempt (already gated by the printable-text check).
+ * ✅ Formula changes from D-B2's visible-payload centering to direct
+ *        readable-top alignment: requestedShift = readableTopRel (the
+ *        filtered scan's minY), replacing the targetTopClearance/rawShift
+ *        centering math for the valid-scan case only.
+ * ✅ Dash ruled expendable (may sit ~3px under the top tray); N.B., Intro,
+ *        fx/tuning/P.M. chips, and staff strings remain protected — the
+ *        tiny-artifact filter is precisely what keeps N.B. as the chosen
+ *        anchor instead of the dash.
+ * ✅ Fallback ladder preserved: readable scan invalid/empty/ambiguous →
+ *        D-B2 payload centering (unchanged formula); staff bounds invalid →
+ *        C-B shift=0. Bottom-pin invariant (height = bottomTrayTop - top)
+ *        unchanged.
+ * 🚫 No transform, no scale, no negative host top, no overlay/cursor/GP8
+ *        changes.
+ *
  * MAESTRO-LANDSCAPE-FIT-001-D-B2 — Row[0] optical payload centering.
  * Refines D-B (does not replace its fallback chain).
  * ✅ Prefers the row[0] optical payload top (real printable text, rects,
@@ -2826,6 +2851,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // -14 to 148.2 across the 14 chunk rows, and one row carries a real,
                 // un-suppressed mid-song tempo mark) — must never depend on scroll
                 // position or which row/chunk is currently visible.
+                // [MAESTRO-LANDSCAPE-FIT-001-E-B] Tiny-artifact filter added below:
+                // rect/line/path ink is excluded when both dimensions are under 5px
+                // (e.g. the ~4.3x1.4px dash) so it can't win the top-most reading.
+                // Physical-size exclusion only — no exclusion by position, string
+                // match, or element identity. Text is exempt (already gated by the
+                // printable-text check).
                 const scanOpticalTopRel = (): number | null => {
                     const row0 = document.querySelector('.alphatab-container svg.at-surface-svg');
                     if (!row0) return null;
@@ -2833,7 +2864,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     for (const el of Array.from(row0.querySelectorAll('text, rect, line, path'))) {
                         const cs = getComputedStyle(el);
                         if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) continue;
-                        if (el.tagName.toLowerCase() === 'text') {
+                        const tag = el.tagName.toLowerCase();
+                        if (tag === 'text') {
                             const txt = (el.textContent ?? '').trim();
                             // Real printable text only — excludes empty/non-printable
                             // music-font glyph icons (unreliable bbox, e.g. y:-72/h:144).
@@ -2842,6 +2874,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         let bbox: DOMRect;
                         try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
                         if (!bbox || bbox.width <= 0 || bbox.height <= 0) continue;
+                        // [MAESTRO-LANDSCAPE-FIT-001-E-B] Tiny physical ink (e.g. the
+                        // dash) excluded — both dimensions under 5px. Text is exempt.
+                        if (tag !== 'text' && bbox.width < 5 && bbox.height < 5) continue;
                         // Excludes non-score track labels (e.g. "s.guit.") sitting
                         // outside the staff/system payload above y=0.
                         if (bbox.y < 0) continue;
@@ -2855,23 +2890,30 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // sits comfortably inside this bound, so no separate bottom scan needed.
                 const visibleBottomRel = (currentTopClearance as number) + (systemHeight as number);
                 const opticalTopRel = scanOpticalTopRel();
-                // Fallback: optical scan invalid/empty/ambiguous → D-B visualBounds
-                // centering (using currentTopClearance as visibleTopRel reduces this
-                // formula to exactly D-B's original one).
-                const visibleTopRel = (opticalTopRel != null && opticalTopRel < visibleBottomRel)
-                    ? opticalTopRel
-                    : (currentTopClearance as number);
-                const visibleHeight = visibleBottomRel - visibleTopRel;
+                const opticalScanValid = opticalTopRel != null && opticalTopRel < visibleBottomRel;
 
-                const targetTopClearance = Math.max(0, (bandHeight - visibleHeight) / 2);
-                const rawShift = visibleTopRel - targetTopClearance;
-                const shift = Math.max(0, Math.min(visibleTopRel, rawShift));
+                // [MAESTRO-LANDSCAPE-FIT-001-E-B] requestedShift replaces D-B2's
+                // targetTopClearance/rawShift centering math for the valid-scan case:
+                // the first readable payload top is aligned directly against the top
+                // tray (via the Math.max(0, ...) clamp below), not centered in the
+                // band. Fallback (scan invalid/empty/ambiguous) keeps the original
+                // D-B2 centering formula unchanged.
+                let requestedShift: number;
+                if (opticalScanValid) {
+                    requestedShift = opticalTopRel as number;
+                } else {
+                    const visibleTopRel = currentTopClearance as number;
+                    const visibleHeight = visibleBottomRel - visibleTopRel;
+                    const targetTopClearance = Math.max(0, (bandHeight - visibleHeight) / 2);
+                    const rawShift = visibleTopRel - targetTopClearance;
+                    requestedShift = Math.max(0, Math.min(visibleTopRel, rawShift));
+                }
 
                 // [MAESTRO-LANDSCAPE-FIT-001-D-B2] Bottom-pin invariant fix: height is
                 // derived from the already-clamped top, not computed independently from
                 // an unclamped shift (D-B's latent bug — reachable once shift exceeds
                 // topTrayBottom) — top + height always equals bottomTrayTop.
-                top = Math.max(0, Math.round(topTrayBottom - shift));
+                top = Math.max(0, Math.round(topTrayBottom - requestedShift));
                 height = Math.max(0, Math.round(bottomTrayTop - top));
             }
 
