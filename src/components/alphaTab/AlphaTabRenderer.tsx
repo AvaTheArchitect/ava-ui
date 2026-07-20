@@ -6,6 +6,25 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-STRIP-001-B1 — Detect + recover stuck page layouts in landscape.
+ * ✅ stuckPageLayoutInLandscape no longer requires firstBars <= 2 (a threshold tuned
+ *        against Van Halen alone). STRIP-001-A/A0 audits measured firstBars/svgRowCount
+ *        across 6 real states and found a wide, non-overlapping gap on both signals —
+ *        healthy firstBars 97-188 / svgRowCount 11-19, stuck firstBars 4-8 / svgRowCount
+ *        43-54 (Poison, Cinderella, Warrant). New detector requires firstBars <= 20 AND
+ *        svgRowCount >= 25 together, so a single borderline signal can't false-positive
+ *        alone — not a single re-tuned magic number.
+ * ✅ Fixes the actual no-op: stuckPageLayoutInLandscape was previously only returned/
+ *        logged — its one consumer (post-render strip check) unconditionally set
+ *        layoutMode = Page regardless of which stuck reason fired, so even a correct
+ *        detector would have done nothing for this failure class. Consumer now branches:
+ *        stuckPageLayoutInLandscape → recover TO Horizontal (mirroring
+ *        scheduleLandscapeMismatchRecovery's own padding-floor + continuous-scroll entry
+ *        pattern); the pre-existing !wantStrip disjunct → unchanged Page recovery.
+ * 🚫 No change to reassertLayout's own w1/w3 width-stability check or
+ *        forceHorizontalRef race (tracked separately as STRIP-001-B2), no tempo/header/
+ *        cursor/loop/gp8 changes.
+ *
  * MAESTRO-LANDSCAPE-FIT-001-E-B — Readable-top alignment, clamp ceiling.
  * Refines D-B2's optical scan (does not replace its fallback chain).
  * ✅ Selects E-A2 Candidate C: top-aligns the first readable row[0] payload
@@ -3664,12 +3683,20 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     }, [scrollContainer]);
 
     // ── Stuck horizontal strip helper ─────────────────────────────────────────
+    // [MAESTRO-LANDSCAPE-STRIP-001-B1] stuckPageLayoutInLandscape previously required
+    // firstBars <= 2 — a threshold tuned against Van Halen alone. STRIP-001-A/A0 audits
+    // measured firstBars/svgRowCount across 6 real states (2 healthy songs + 1 recovered
+    // Poison + 3 stuck songs) and found a wide, non-overlapping gap on BOTH signals:
+    // healthy firstBars 97-188 / svgRowCount 11-19, stuck firstBars 4-8 / svgRowCount 43-54.
+    // Requiring both signals to agree (not just a single widened magic number) keeps the
+    // detector structural rather than re-tuning it to one more song's specific bar count.
     const checkStuckHorizontalStrip = useCallback((api: any, el: HTMLElement) => {
         const containerW = el.clientWidth || (window.visualViewport?.width ?? window.innerWidth);
         const systems = api?.renderer?.boundsLookup?.staffSystems ?? [];
         const firstBars = (systems?.[0] as any)?.bars?.length ?? 0;
         const surface = el.querySelector('.at-surface') as HTMLElement | null;
         const surfaceW = surface?.scrollWidth ?? 0;
+        const svgRowCount = el.querySelectorAll('svg.at-surface-svg').length;
         const vv = window.visualViewport;
         const viewportW = vv?.width ?? window.innerWidth;
         const viewportH = vv?.height ?? window.innerHeight;
@@ -3677,17 +3704,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const isSmallMobileViewport = Math.min(viewportW, viewportH) <= 600;
         const isMobileLandscapeCandidate = isTouchDevice && isSmallMobileViewport && isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W;
         const wantStrip = forceHorizontalRef.current || isMobileLandscapeCandidate;
+        // [MAESTRO-LANDSCAPE-STRIP-001-B1] Dual-signal page-layout detector: a horizontal
+        // strip render partitions the score into few, bar-dense systems (firstBars/
+        // svgRowCount both low-count in the row axis but firstBars is the bar tally of
+        // the FIRST system, which is large for strip and small for page); a page render
+        // wraps at fixed width into many narrow systems. Both conditions must agree
+        // (AND, not OR) before flagging stuck, so a single borderline signal can't
+        // false-positive on its own.
+        const looksLikePageLayoutInLandscape = firstBars <= 20 && svgRowCount >= 25;
         const stuckPageLayoutInLandscape =
             wantStrip &&
             isDeviceLandscape() &&
             forceHorizontalRef.current &&
-            firstBars != null &&
-            firstBars <= 2 &&
+            looksLikePageLayoutInLandscape &&
             surfaceW <= containerW * 2;
         return {
             stuck: (!wantStrip && (firstBars > 40 || surfaceW > containerW * 3)) || stuckPageLayoutInLandscape,
             stuckPageLayoutInLandscape,
-            wantStrip, firstBars, containerW, surfaceW,
+            wantStrip, firstBars, containerW, surfaceW, svgRowCount,
         };
     }, []);
 
@@ -5506,17 +5540,29 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
                             });
                             if (strip.stuck) {
-                                console.warn('[V117] stuckHorizontalStrip recovery — post-render');
                                 stopLandscapeScrollLoop();
                                 landscapeScrollStateRef.current = null;
                                 if (landscapeCursorRef.current) {
                                     landscapeCursorRef.current.destroy();
                                     landscapeCursorRef.current = null;
                                 }
-                                _api.settings.display.layoutMode = (_at as any).LayoutMode.Page;
-                                if ((_at as any).SystemsLayoutMode) {
-                                    (_api.settings.display as any).systemsLayoutMode =
-                                        (_at as any).SystemsLayoutMode.Automatic;
+                                if (strip.stuckPageLayoutInLandscape) {
+                                    // [MAESTRO-LANDSCAPE-STRIP-001-B1] Recover TO horizontal
+                                    // strip — mirrors scheduleLandscapeMismatchRecovery's own
+                                    // Horizontal-entry settings (padding floor + continuous
+                                    // scroll) instead of only flipping layoutMode, which left
+                                    // Page-mode padding/scroll settings stale underneath it.
+                                    console.warn('[V117] stuckPageLayoutInLandscape recovery — post-render');
+                                    _api.settings.display.layoutMode = (_at as any).LayoutMode.Horizontal;
+                                    _api.settings.display.firstSystemPaddingTop = 0;
+                                    _api.settings.player.scrollMode = (_at as any).ScrollMode.Continuous;
+                                } else {
+                                    console.warn('[V117] stuckHorizontalStrip recovery — post-render');
+                                    _api.settings.display.layoutMode = (_at as any).LayoutMode.Page;
+                                    if ((_at as any).SystemsLayoutMode) {
+                                        (_api.settings.display as any).systemsLayoutMode =
+                                            (_at as any).SystemsLayoutMode.Automatic;
+                                    }
                                 }
                                 await _api.updateSettings();
                                 _api.render();
