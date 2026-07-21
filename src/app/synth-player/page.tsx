@@ -8,6 +8,12 @@
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-AUTH-LOG-SANITIZE-001 closed: the session-bootstrap effect logged full
+ *        Supabase session/user objects (access_token, refresh_token, JWT claims,
+ *        email) to the browser console on every load. Replaced with boolean/metadata
+ *        diagnostics only (hasSession, hasUser, userEmailPresent, role, hasError) —
+ *        getSession()/getUser() calls and all auth/RLS/MyTabs/song-loading behavior
+ *        are unchanged.
  * ✅ MAESTRO-VIDEO-004 closed: No-video empty-state panel is a gateway, not an inline
  *        editor — removed the disabled paste/sync controls; "Add Main / Full Mix Video"
  *        opens MetadataEditorPanel on Media & Sync with the Main / Full Mix row scrolled
@@ -1052,11 +1058,23 @@ export default function SynthPlayerPage() {
     }, [setHeaderVisible, markManualHeaderRevealIntent, markManualHeaderHideIntent, markRecentTouchActivity]);
 
     useEffect(() => {
+        // [MAESTRO-AUTH-LOG-SANITIZE-001] Redacted — this previously logged the full
+        // session/user objects (access_token, refresh_token, JWT claims, email) to the
+        // browser console. Boolean/metadata-only diagnostic now; getSession()/getUser()
+        // calls themselves are unchanged, so auth/session behavior is untouched.
         supabase.auth.getSession().then(({ data, error }) => {
-            console.log('APP SESSION', data, error);
+            console.log('APP AUTH STATE (session)', {
+                hasSession: Boolean(data?.session),
+                hasError: Boolean(error),
+            });
         });
         supabase.auth.getUser().then(({ data, error }) => {
-            console.log('APP USER', data, error);
+            console.log('APP AUTH STATE (user)', {
+                hasUser: Boolean(data?.user),
+                userEmailPresent: Boolean(data?.user?.email),
+                role: data?.user?.role ?? null,
+                hasError: Boolean(error),
+            });
         });
     }, []);
 
