@@ -6,6 +6,18 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-DRUMS-001-B — Drum/percussion track render crash guard.
+ * ✅ AlphaTab 1.8.1 can throw deep inside its own Horizontal-layout code
+ *        (StaffSystem.addBars) rendering certain percussion staves, blanking the
+ *        score. Second, independent guard added right before renderTracks(): any
+ *        track with isPercussion === true (AlphaTab's own field) or a drum/perc
+ *        name-keyword fallback is refused — renderTracks() is skipped entirely,
+ *        leaving whatever was previously rendered untouched instead of blanking.
+ * ✅ Primary guard lives in page.tsx (handleTrackChange / default-track picker),
+ *        which should keep trackIndices from ever containing a percussion index
+ *        in normal use; this is defense-in-depth, not the only gate.
+ * 🚫 No centerline/loop-handle/cursor/lyrics/header/tempo changes.
+ *
  * MAESTRO-LANDSCAPE-STRIP-001-B1 — Detect + recover stuck page layouts in landscape.
  * ✅ stuckPageLayoutInLandscape no longer requires firstBars <= 2 (a threshold tuned
  *        against Van Halen alone). STRIP-001-A/A0 audits measured firstBars/svgRowCount
@@ -8071,6 +8083,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const bad = tr.find(t => !(t as any)?.staves);
             if (bad) {
                 console.warn('[V117] renderTracks skipped: track missing staves');
+                return;
+            }
+
+            // [MAESTRO-DRUMS-001-B] Second, independent guard: AlphaTab 1.8.1 can
+            // throw deep inside its own Horizontal-layout code (StaffSystem.addBars)
+            // when rendering certain percussion staves, blanking the score. The
+            // primary guard is page.tsx's track-selection gate (handleTrackChange),
+            // which should keep trackIndices from ever containing a percussion index
+            // in normal use — this refuses to call renderTracks() at all if one still
+            // arrives here, leaving whatever was previously rendered untouched
+            // instead of blanking. Drum tracks are temporarily unavailable.
+            const DRUM_NAME_FALLBACK = /(drum|drums|percussion|perc|kit|hh|hi-hat|hihat|snare|kick|cymbal|tom)/i;
+            const drumTrack = tr.find(t => (t as any)?.isPercussion === true || DRUM_NAME_FALLBACK.test((t as any)?.name ?? ''));
+            if (drumTrack) {
+                console.warn('[V117] renderTracks skipped: drum/percussion track blocked (temporarily unavailable)', { name: (drumTrack as any)?.name });
                 return;
             }
 

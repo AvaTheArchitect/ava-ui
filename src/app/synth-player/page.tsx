@@ -8,6 +8,14 @@
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-DRUMS-001-B closed: drum/percussion track selection could reach
+ *        AlphaTab's renderTracks() and crash its internal Horizontal-layout code
+ *        (StaffSystem.addBars), blanking the score — worst for tracks named after
+ *        the drummer (e.g. Cinderella's "Fred Courey") that carried no drum-related
+ *        keyword. Track selection and the default-track picker now check AlphaTab's
+ *        own track.isPercussion field first (keywords are a fallback only); a second,
+ *        independent guard in AlphaTabRenderer.tsx also blocks renderTracks() itself
+ *        from ever receiving a percussion track.
  * ✅ MAESTRO-AUTH-LOG-SANITIZE-001 closed: the session-bootstrap effect logged full
  *        Supabase session/user objects (access_token, refresh_token, JWT claims,
  *        email) to the browser console on every load. Replaced with boolean/metadata
@@ -124,6 +132,24 @@ const SCROLL_THRESHOLD = 50;
 // ── V102.6: Cursor A/B toggle ─────────────────────────────────────────────────
 const CURSOR_V2_ACTIVE = true;
 // ─────────────────────────────────────────────────────────────────────────────
+
+// [MAESTRO-DRUMS-001-B] Reliable drum/percussion detection. AlphaTab 1.8.1 can
+// throw deep inside its own Horizontal-layout code (StaffSystem.addBars) when
+// rendering certain percussion staves, blanking the score. track.isPercussion
+// (AlphaTab's own field, backed by staff.isPercussion / MIDI channel 10) is
+// the primary signal — name keywords are a fallback only, since some catalog
+// tracks are named after the drummer and carry no drum-related keyword at all
+// (e.g. Cinderella's percussion track displays as "Fred Courey").
+const DRUM_GUARD_KEYWORDS = [
+    'drum', 'drums', 'percussion', 'perc', 'kit', 'hh', 'hi-hat', 'hihat',
+    'snare', 'kick', 'cymbal', 'tom',
+];
+function isDrumOrPercussionTrack(t: Track | null | undefined): boolean {
+    if (!t) return false;
+    if ((t as any).isPercussion === true) return true;
+    const n = (t.name ?? '').toLowerCase();
+    return DRUM_GUARD_KEYWORDS.some(kw => n.includes(kw));
+}
 
 export default function SynthPlayerPage() {
     // ==================== API & CORE STATE ====================
@@ -1125,10 +1151,11 @@ export default function SynthPlayerPage() {
         const normalize = (s: string) =>
             s.toLowerCase().trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ');
 
-        const isDrumTrack = (t: Track) => {
-            const n = normalize(t.name ?? '');
-            return ['drum', 'perc', 'kit', 'hh', 'snare', 'kick'].some(kw => n.includes(kw));
-        };
+        // [MAESTRO-DRUMS-001-B] Delegates to the shared isPercussion-primary
+        // detector (see module scope above) instead of a local keyword-only
+        // check, so the default-track picker never scores a drum/percussion
+        // track above 0 even when its name carries no drum keyword.
+        const isDrumTrack = isDrumOrPercussionTrack;
 
         const isBassTrack = (t: Track) => normalize(t.name ?? '').includes('bass');
 
@@ -1218,11 +1245,10 @@ export default function SynthPlayerPage() {
     }, [api]);
 
     // ==================== TRACK CHANGE ====================
-    const DRUM_GUARD_KEYWORDS = ['drum', 'perc', 'kit', 'hh', 'snare', 'kick'];
     const handleTrackChange = useCallback((trackIndex: number) => {
-        const trackName = (tracks[trackIndex]?.name ?? '').toLowerCase();
-        if (DRUM_GUARD_KEYWORDS.some(kw => trackName.includes(kw))) {
-            console.warn(`🥁 Phase 3: Drum track selection ignored (index ${trackIndex} — "${tracks[trackIndex]?.name}"). Restore in Phase 4.`);
+        const track = tracks[trackIndex];
+        if (isDrumOrPercussionTrack(track)) {
+            console.warn(`🥁 Drum tracks are temporarily unavailable — selection blocked (index ${trackIndex} — "${track?.name}").`);
             return;
         }
         setSelectedTrack(trackIndex);
