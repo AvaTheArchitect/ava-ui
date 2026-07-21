@@ -6,6 +6,15 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-DRUMS-001-C — Hotfix: drum-guard false positives on artist names.
+ * ✅ 001-B's bare "tom" fallback keyword substring-matched any track name
+ *        CONTAINING "tom" ("...Custom", "Tommy Shannon", "Tom Keifer"), wrongly
+ *        blocking legitimate non-drum tracks. Narrowed to whole-word/whole-
+ *        phrase drum terms only (drum, drums, percussion, percussions, "drum
+ *        kit", snare, kick, cymbal, hi-hat/hihat) — no artist/person-name
+ *        filtering. track.isPercussion (AND-corroborated with staff.isPercussion
+ *        when present) remains primary; audit found zero false positives on it.
+ *
  * MAESTRO-DRUMS-001-B — Drum/percussion track render crash guard.
  * ✅ AlphaTab 1.8.1 can throw deep inside its own Horizontal-layout code
  *        (StaffSystem.addBars) rendering certain percussion staves, blanking the
@@ -8094,10 +8103,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // in normal use — this refuses to call renderTracks() at all if one still
             // arrives here, leaving whatever was previously rendered untouched
             // instead of blanking. Drum tracks are temporarily unavailable.
-            const DRUM_NAME_FALLBACK = /(drum|drums|percussion|perc|kit|hh|hi-hat|hihat|snare|kick|cymbal|tom)/i;
-            const drumTrack = tr.find(t => (t as any)?.isPercussion === true || DRUM_NAME_FALLBACK.test((t as any)?.name ?? ''));
+            // [MAESTRO-DRUMS-001-C hotfix] Bare "tom" here false-positived on any
+            // name CONTAINING "tom" ("...Custom", "Tommy Shannon", "Tom Keifer"),
+            // wrongly blocking legitimate tracks. Narrowed to whole-word/whole-
+            // phrase drum terms only — no artist/person-name filtering — mirroring
+            // the same fix in page.tsx's isDrumOrPercussionTrack.
+            const DRUM_NAME_FALLBACK = /\b(drums?|percussions?|drum\s*kit|snare|kick|cymbal|hi-?hat)\b/i;
+            const drumTrack = tr.find(t => {
+                const anyT = t as any;
+                if (anyT?.isPercussion === true) {
+                    const staves = anyT.staves as { isPercussion?: boolean }[] | undefined;
+                    return !staves || staves.length === 0 || staves.some(s => s.isPercussion === true);
+                }
+                return DRUM_NAME_FALLBACK.test(anyT?.name ?? '');
+            });
             if (drumTrack) {
-                console.warn('[V117] renderTracks skipped: drum/percussion track blocked (temporarily unavailable)', { name: (drumTrack as any)?.name });
+                console.warn('[V117] renderTracks skipped: drum/percussion track blocked (temporarily unavailable)', { name: (drumTrack as any)?.name, isPercussion: (drumTrack as any)?.isPercussion });
                 return;
             }
 

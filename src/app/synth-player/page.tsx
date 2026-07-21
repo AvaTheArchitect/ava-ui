@@ -8,6 +8,16 @@
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ MAESTRO-DRUMS-001-C closed (hotfix on 001-B): the bare "tom" fallback
+ *        keyword substring-matched any track name CONTAINING "tom" — "'78
+ *        Frankenstrat Custom" (Van Halen guitar), "Tommy Shannon" (SRV bass),
+ *        "Tom Keifer" (Cinderella guitar) — wrongly blocking legitimate tracks
+ *        and skewing the default-track picker (e.g. Van Halen falling back to
+ *        Bass). Keyword fallback narrowed to whole-word/whole-phrase drum terms
+ *        only (drum, drums, percussion, percussions, "drum kit", snare, kick,
+ *        cymbal, hi-hat/hihat) — no artist/person-name filtering of any kind.
+ *        track.isPercussion (now AND-corroborated with staff.isPercussion when
+ *        present) remains the primary, audit-confirmed-zero-false-positive check.
  * ✅ MAESTRO-DRUMS-001-B closed: drum/percussion track selection could reach
  *        AlphaTab's renderTracks() and crash its internal Horizontal-layout code
  *        (StaffSystem.addBars), blanking the score — worst for tracks named after
@@ -140,15 +150,34 @@ const CURSOR_V2_ACTIVE = true;
 // the primary signal — name keywords are a fallback only, since some catalog
 // tracks are named after the drummer and carry no drum-related keyword at all
 // (e.g. Cinderella's percussion track displays as "Fred Courey").
-const DRUM_GUARD_KEYWORDS = [
-    'drum', 'drums', 'percussion', 'perc', 'kit', 'hh', 'hi-hat', 'hihat',
-    'snare', 'kick', 'cymbal', 'tom',
-];
+//
+// [MAESTRO-DRUMS-001-C hotfix] The original fallback keyword list included a
+// bare "tom" substring match, which false-positived on any track name merely
+// CONTAINING "tom" — "'78 Frankenstrat Custom" (Van Halen guitar tracks),
+// "Tommy Shannon" (SRV bass), "Tom Keifer" (Cinderella guitar) — none of which
+// are percussion, wrongly blocking them and skewing the default-track picker
+// (e.g. Van Halen falling back to Bass once its Guitar track was wrongly
+// zeroed out). Audit confirmed track.isPercussion + staff.isPercussion have
+// ZERO false positives across the full 10-song catalog, so they're combined
+// as the primary check. The keyword fallback is now whole-word/whole-phrase
+// only, deliberately narrowed to unambiguous drum terms with no artist/person
+// name filtering of any kind — "tom", "custom", "Tommy", "Tom", "kit", "perc",
+// and "hh" are all deliberately excluded since they collide with ordinary
+// words/names; only these exact terms remain: drum, drums, percussion,
+// percussions, "drum kit" (as a phrase, not bare "kit"), snare, kick, cymbal,
+// hi-hat, hihat.
+const DRUM_GUARD_KEYWORDS_RE = /\b(drums?|percussions?|drum\s*kit|snare|kick|cymbal|hi-?hat)\b/i;
 function isDrumOrPercussionTrack(t: Track | null | undefined): boolean {
     if (!t) return false;
-    if ((t as any).isPercussion === true) return true;
-    const n = (t.name ?? '').toLowerCase();
-    return DRUM_GUARD_KEYWORDS.some(kw => n.includes(kw));
+    const anyT = t as any;
+    if (anyT.isPercussion === true) {
+        const staves = anyT.staves as { isPercussion?: boolean }[] | undefined;
+        // Corroborate with staff-level metadata when present; track.isPercussion
+        // alone has shown zero false positives in audit, so its absence isn't
+        // treated as disqualifying — only an explicit staff-level mismatch would.
+        return !staves || staves.length === 0 || staves.some(s => s.isPercussion === true);
+    }
+    return DRUM_GUARD_KEYWORDS_RE.test(t.name ?? '');
 }
 
 export default function SynthPlayerPage() {
