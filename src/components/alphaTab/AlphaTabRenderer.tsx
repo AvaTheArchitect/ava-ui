@@ -6,6 +6,29 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * MAESTRO-LANDSCAPE-CENTERLINE-C-001-B — Fixed staff-centerline Candidate C.
+ * ✅ Replaces "pin first readable ink to the tray" as the primary Candidate C
+ *        anchor with a staff-line-centered one. CENTERLINE-C-001-A proved the
+ *        old anchor is track-dependent: tracks sharing an identical host.top
+ *        showed up to 82px of real painted staff-center drift (Van Halen:
+ *        221.5 / 221.5 / 151.5 / 139.5, all host.top=0) because "first
+ *        readable ink" is often a chord/technique annotation whose distance
+ *        above the actual staff varies per track. staffSystems[0].visualBounds
+ *        was also proven unusable (stable local y=35 regardless of track, no
+ *        correlation to real visible placement).
+ * ✅ scanStaffLineCenterRel() detects the real painted TAB/staff string-line
+ *        rects (neutral grey, thin, wide horizontal segments — same physical-
+ *        size signature the tiny-artifact filter already excludes as noise,
+ *        used here to POSITIVELY select staff-line ink) and pins their center
+ *        to CANDIDATE_C_TARGET_STAFF_CENTER (206px, the 205–207 historical
+ *        band), independent of whatever annotation sits above them.
+ * ✅ Safe fallback: fewer than 2 line candidates (or an implausible span) →
+ *        falls through to the pre-001-B scanOpticalTopRel behavior, completely
+ *        unchanged. Never blanks or crashes on a failed scan.
+ * 🚫 No change to Page/Portrait, firstSystemPaddingTop restore-to-28, STRIP-
+ *        001-B1 recovery, tempo/glyph suppression, cursor, lyrics, loop, or
+ *        drum-guard logic. Landscape-only; bottom-pin invariant unchanged.
+ *
  * MAESTRO-DRUMS-001-C — Hotfix: drum-guard false positives on artist names.
  * ✅ 001-B's bare "tom" fallback keyword substring-matched any track name
  *        CONTAINING "tom" ("...Custom", "Tommy Shannon", "Tom Keifer"), wrongly
@@ -1068,6 +1091,29 @@ if (TOUCH_SEEK_PROBE) {
 // their questions are answered and their code paths are now the only paths.
 const SCORE_TITLE_CYAN = '#38bdf8';   // [colorPatch] A/B — brighter cyan score title
 const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle blue
+
+// [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Historical Candidate C staff-center
+// target (205–207px band, measured at 932×430) — see landscapeHostInset's
+// scanStaffLineCenterRel() for the anchor this pins.
+const CANDIDATE_C_TARGET_STAFF_CENTER = 206;
+
+// [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Neutral (R≈G≈B) mid-brightness grey
+// check for real painted TAB/staff string-line rects. Tolerant of minor shade
+// variance rather than one exact hardcoded hex, so nearby greys still match —
+// verified against light theme (#999999) only; dark theme's staff-line color
+// was not directly measured for this patch, so this is a best-effort net, not
+// a hardcoded per-theme branch. If it ever fails to match on dark theme, the
+// caller (scanStaffLineCenterRel) simply finds <2 candidates and returns null,
+// falling through to the existing scanOpticalTopRel anchor — no crash/blank.
+function isNeutralStaffLineGrey(fill: string): boolean {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(fill.trim());
+    if (!m) return false;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    const maxDelta = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+    if (maxDelta > 12) return false;
+    const brightness = (r + g + b) / 3;
+    return brightness > 90 && brightness < 210;
+}
 
 // ── [F1] Unified orientation helper — 40px hysteresis ────────────────────────
 function isDeviceLandscape(): boolean {
@@ -2925,35 +2971,100 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     return Number.isFinite(minY) ? minY : null;
                 };
 
+                // [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Staff-line-centered anchor —
+                // now the primary anchor for Candidate C, replacing "pin first readable
+                // ink to the tray" as the default path. CENTERLINE-C-001-A proved that
+                // rule is track-dependent: tracks sharing an identical host.top under
+                // the old anchor showed up to 82px of real painted staff-center drift
+                // (Van Halen: 221.5 / 221.5 / 151.5 / 139.5, all at host.top=0), because
+                // "first readable ink" is often a chord name/technique annotation whose
+                // distance above the actual staff varies per track — not the staff
+                // itself. staffSystems[0].visualBounds was also proven unusable as a
+                // proxy (stable local y=35 regardless of track, no correlation to real
+                // visible placement). This scan instead detects the real painted TAB/
+                // staff string-line rects directly and pins THEIR center to a fixed
+                // target, independent of whatever annotation content sits above them.
+                const scanStaffLineCenterRel = (): number | null => {
+                    const row0 = document.querySelector('.alphatab-container svg.at-surface-svg');
+                    if (!row0) return null;
+                    const yBuckets = new Map<number, number>();
+                    for (const el of Array.from(row0.querySelectorAll('rect'))) {
+                        // Neutral (R≈G≈B) mid-brightness grey, tolerant of minor shade
+                        // differences rather than one exact hardcoded hex — verified
+                        // against light theme (#999999) only; if dark theme's staff-line
+                        // color falls outside this band, this scan simply finds fewer
+                        // than 2 candidates and returns null, falling through to
+                        // scanOpticalTopRel below (no blank/crash risk either way — see
+                        // dark-theme note in the class changelog above).
+                        if (!isNeutralStaffLineGrey(el.getAttribute('fill') ?? '')) continue;
+                        let bbox: DOMRect;
+                        try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
+                        // Real staff/TAB string lines are thin (<=3px tall) horizontal
+                        // segments reasonably wide (>=15px) — same physical-size
+                        // signature the tiny-artifact filter above excludes as noise,
+                        // used here instead to POSITIVELY select staff-line ink.
+                        if (!bbox || bbox.width < 15 || bbox.height <= 0 || bbox.height > 3) continue;
+                        const key = Math.round(bbox.y * 2) / 2;
+                        yBuckets.set(key, (yBuckets.get(key) ?? 0) + 1);
+                    }
+                    const ys = Array.from(yBuckets.keys()).sort((a, b) => a - b);
+                    // Require at least 2 distinct line candidates spanning a plausible
+                    // staff height — guards against stray grey ink being mistaken for a
+                    // real staff/TAB line grid (a real grid is 5-6 lines, ~15-70px tall).
+                    if (ys.length < 2) return null;
+                    const staffTop = ys[0];
+                    const staffBottom = ys[ys.length - 1];
+                    const span = staffBottom - staffTop;
+                    if (span <= 0 || span > 150) return null;
+                    return (staffTop + staffBottom) / 2;
+                };
+
                 // visibleBottomRel reuses staffSystem's own bottom — D-B2-A confirmed
                 // the phantom reservation is top-heavy; real payload's bottom already
                 // sits comfortably inside this bound, so no separate bottom scan needed.
                 const visibleBottomRel = (currentTopClearance as number) + (systemHeight as number);
-                const opticalTopRel = scanOpticalTopRel();
-                const opticalScanValid = opticalTopRel != null && opticalTopRel < visibleBottomRel;
+                const staffCenterRel = scanStaffLineCenterRel();
+                const staffCenterValid = staffCenterRel != null && staffCenterRel > 0 && staffCenterRel < visibleBottomRel;
 
-                // [MAESTRO-LANDSCAPE-FIT-001-E-B] requestedShift replaces D-B2's
-                // targetTopClearance/rawShift centering math for the valid-scan case:
-                // the first readable payload top is aligned directly against the top
-                // tray (via the Math.max(0, ...) clamp below), not centered in the
-                // band. Fallback (scan invalid/empty/ambiguous) keeps the original
-                // D-B2 centering formula unchanged.
-                let requestedShift: number;
-                if (opticalScanValid) {
-                    requestedShift = opticalTopRel as number;
+                let requestedTop: number;
+                if (staffCenterValid) {
+                    // [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Pin the real painted
+                    // staff-line center to the fixed historical Candidate C target
+                    // (205–207px band at 932×430), independent of annotation content.
+                    requestedTop = CANDIDATE_C_TARGET_STAFF_CENTER - (staffCenterRel as number);
                 } else {
-                    const visibleTopRel = currentTopClearance as number;
-                    const visibleHeight = visibleBottomRel - visibleTopRel;
-                    const targetTopClearance = Math.max(0, (bandHeight - visibleHeight) / 2);
-                    const rawShift = visibleTopRel - targetTopClearance;
-                    requestedShift = Math.max(0, Math.min(visibleTopRel, rawShift));
+                    // [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Safe fallback — staff-line
+                    // detection found fewer than 2 line candidates (or an implausible
+                    // span). Falls through to the pre-001-B "pin first readable ink to
+                    // the tray" behavior, completely unchanged, rather than blanking or
+                    // guessing at a staff position that couldn't be confirmed.
+                    const opticalTopRel = scanOpticalTopRel();
+                    const opticalScanValid = opticalTopRel != null && opticalTopRel < visibleBottomRel;
+
+                    // [MAESTRO-LANDSCAPE-FIT-001-E-B] requestedShift replaces D-B2's
+                    // targetTopClearance/rawShift centering math for the valid-scan case:
+                    // the first readable payload top is aligned directly against the top
+                    // tray (via the Math.max(0, ...) clamp below), not centered in the
+                    // band. Fallback (scan invalid/empty/ambiguous) keeps the original
+                    // D-B2 centering formula unchanged.
+                    let requestedShift: number;
+                    if (opticalScanValid) {
+                        requestedShift = opticalTopRel as number;
+                    } else {
+                        const visibleTopRel = currentTopClearance as number;
+                        const visibleHeight = visibleBottomRel - visibleTopRel;
+                        const targetTopClearance = Math.max(0, (bandHeight - visibleHeight) / 2);
+                        const rawShift = visibleTopRel - targetTopClearance;
+                        requestedShift = Math.max(0, Math.min(visibleTopRel, rawShift));
+                    }
+                    requestedTop = topTrayBottom - requestedShift;
                 }
 
                 // [MAESTRO-LANDSCAPE-FIT-001-D-B2] Bottom-pin invariant fix: height is
                 // derived from the already-clamped top, not computed independently from
                 // an unclamped shift (D-B's latent bug — reachable once shift exceeds
                 // topTrayBottom) — top + height always equals bottomTrayTop.
-                top = Math.max(0, Math.round(topTrayBottom - requestedShift));
+                top = Math.max(0, Math.round(requestedTop));
                 height = Math.max(0, Math.round(bottomTrayTop - top));
             }
 
