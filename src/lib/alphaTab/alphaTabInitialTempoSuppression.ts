@@ -3,6 +3,33 @@
 /**
  * alphaTabInitialTempoSuppression.ts
  * MAESTRO-LANDSCAPE-FIT-001-B1-B + MAESTRO-LANDSCAPE-FIT-001-B1-C
+ * + MAESTRO-TEMPO-SUPPRESS-002-B
+ *
+ * MAESTRO-TEMPO-SUPPRESS-002-B — Row[0] scoping + coincident duplicate fix.
+ * TEMPO-SUPPRESS-002-A audited why Poison/Cinderella/Extreme showed visible
+ * tempo residue after suppression while Van Halen suppressed cleanly, and why
+ * Ozzy suppressed the wrong element entirely.
+ * ✅ Candidate pool restricted to svg.at-surface-svg row[0] only. bbox.x is
+ *        local to each row's own coordinate space — pooling candidates
+ *        across rows before sorting by x compared incommensurable values
+ *        (Ozzy: a row[9] candidate's local x read smaller than row[0]'s
+ *        real initial mark, so the wrong row got suppressed). The initial
+ *        tempo mark is by definition at the start of the score.
+ * ✅ Coincident-duplicate suppression: after selecting and suppressing the
+ *        leftmost row[0] candidate, any other row[0] tempo-pattern text at
+ *        the same x/y SVG attributes (within a small epsilon) is suppressed
+ *        too — Poison/Cinderella/Extreme each render the initial tempo mark
+ *        as two separate DOM text nodes at identical attribute positions;
+ *        one logical mark, two nodes. Position-matched only — not a sweep
+ *        of every row[0] candidate.
+ * ✅ Van Halen's row[12]-style legitimate mid-song tempo marks remain
+ *        protected by construction: row[0]-only scoping removes them from
+ *        the pool entirely, and they don't share the suppressed mark's x/y
+ *        attributes regardless.
+ * 🚫 No change to the paired glyph classifier's own logic (still runs only
+ *        after a text candidate is suppressed, same SVG, attribute-space
+ *        positions), no broad glyph sweep, no AlphaTabRenderer.tsx change —
+ *        B1 strip recovery is unrelated to this classifier.
  *
  * Hides the initial/pre-system tempo mark that AlphaTab renders above the
  * first system, as a pair: the numeric text ("= 139" or equivalent) and its
@@ -75,11 +102,18 @@ const TEMPO_GLYPH_PATTERN = /=\s*\d/;
 const SANITY_LOG_PREFIX = "[alphaTabInitialTempoSuppression]";
 const GLYPH_FONT_SIZE_PATTERN = /font-size:\s*70%/;
 const GLYPH_MAX_LEFT_DISTANCE = 100;
+// [MAESTRO-TEMPO-SUPPRESS-002-B] Attribute-space epsilon for recognizing a
+// coincident duplicate of the just-suppressed initial tempo text — see file
+// header. Audit measurements found exact attribute matches (e.g.
+// 118.30640000000001 on both nodes); this tolerance is generous headroom,
+// not a re-tuned magic number.
+const DUPLICATE_POSITION_EPSILON = 0.5;
 
 export interface AlphaTabInitialTempoSuppressionDiagnostics {
   tempoTextCandidateCount: number;
   tempoTextSuppressedCount: number;
   suppressedTempoText: string | null;
+  duplicateTempoTextSuppressedCount: number;
   tempoGlyphCandidateCount: number;
   tempoGlyphSuppressedCount: number;
   suppressedGlyphAnchor: { x: number; y: number } | null;
@@ -98,11 +132,19 @@ export function runAlphaTabInitialTempoSuppression(
 ): Promise<void> {
   return new Promise<void>((resolve) => {
     const run = () => {
-      const svgRows = Array.from(
-        containerEl.querySelectorAll<SVGSVGElement>("svg.at-surface-svg"),
+      // [MAESTRO-TEMPO-SUPPRESS-002-B] Row[0] only — see file header. bbox.x
+      // is local to each svg.at-surface-svg row's own coordinate space, so
+      // pooling candidates across rows before sorting by x compared
+      // incommensurable values (TEMPO-SUPPRESS-002-A's Ozzy finding: a row[9]
+      // candidate's local x could read smaller than row[0]'s real initial
+      // mark, causing the wrong row to be suppressed). The initial tempo
+      // mark is by definition at the start of the score.
+      const row0 = containerEl.querySelector<SVGSVGElement>(
+        "svg.at-surface-svg",
       );
+      const svgRows = row0 ? [row0] : [];
 
-      // ── Text classifier (unchanged from B1-B) ───────────────────────────
+      // ── Text classifier (unchanged selection logic from B1-B, row[0]-scoped) ──
       const textCandidates: Array<{ el: SVGTextElement; x: number; svg: SVGSVGElement }> = [];
       for (const svg of svgRows) {
         for (const el of Array.from(
@@ -122,6 +164,7 @@ export function runAlphaTabInitialTempoSuppression(
       let leftmostText: string | null = null;
       let suppressedTextEl: SVGTextElement | null = null;
       let suppressedTextSvg: SVGSVGElement | null = null;
+      let duplicateTempoTextSuppressedCount = 0;
       if (textCandidates.length) {
         textCandidates.sort((a, b) => a.x - b.x);
         const leftmost = textCandidates[0];
@@ -133,6 +176,37 @@ export function runAlphaTabInitialTempoSuppression(
         leftmostText = leftmost.el.textContent ?? null;
         suppressedTextEl = leftmost.el;
         suppressedTextSvg = leftmost.svg;
+
+        // [MAESTRO-TEMPO-SUPPRESS-002-B] Coincident duplicate suppression —
+        // see file header. TEMPO-SUPPRESS-002-A found Poison/Cinderella/
+        // Extreme each render the initial tempo mark as two separate <text>
+        // DOM nodes at identical x/y attributes (one logical mark, two
+        // nodes) — the "at most one suppression" rule then left an
+        // untouched, visible twin. This suppresses position-matched twins of
+        // the already-selected mark only — not a broader sweep, and not a
+        // second independent candidate selection.
+        const leftmostX = parseFloat(leftmost.el.getAttribute("x") ?? "NaN");
+        const leftmostY = parseFloat(leftmost.el.getAttribute("y") ?? "NaN");
+        if (Number.isFinite(leftmostX) && Number.isFinite(leftmostY)) {
+          for (const candidate of textCandidates) {
+            if (candidate.el === leftmost.el) continue;
+            const cx = parseFloat(candidate.el.getAttribute("x") ?? "NaN");
+            const cy = parseFloat(candidate.el.getAttribute("y") ?? "NaN");
+            if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+            if (
+              Math.abs(cx - leftmostX) > DUPLICATE_POSITION_EPSILON ||
+              Math.abs(cy - leftmostY) > DUPLICATE_POSITION_EPSILON
+            ) {
+              continue;
+            }
+            candidate.el.setAttribute("display", "none");
+            candidate.el.setAttribute(
+              "data-maestro-initial-tempo-suppressed",
+              "1",
+            );
+            duplicateTempoTextSuppressedCount += 1;
+          }
+        }
       }
 
       // Sanity-only — see file header. Never used to pick the candidate.
@@ -219,6 +293,7 @@ export function runAlphaTabInitialTempoSuppression(
         tempoTextCandidateCount: textCandidates.length,
         tempoTextSuppressedCount: suppressedTextEl ? 1 : 0,
         suppressedTempoText: leftmostText,
+        duplicateTempoTextSuppressedCount,
         tempoGlyphCandidateCount: glyphCandidateCount,
         tempoGlyphSuppressedCount: glyphSuppressedCount,
         suppressedGlyphAnchor,
