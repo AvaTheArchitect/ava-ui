@@ -3,7 +3,37 @@
 /**
  * alphaTabInitialTempoSuppression.ts
  * MAESTRO-LANDSCAPE-FIT-001-B1-B + MAESTRO-LANDSCAPE-FIT-001-B1-C
- * + MAESTRO-TEMPO-SUPPRESS-002-B
+ * + MAESTRO-TEMPO-SUPPRESS-002-B + MAESTRO-TEMPO-GLYPH-SUPPRESS-001-B
+ *
+ * MAESTRO-TEMPO-GLYPH-SUPPRESS-001-B — Duplicate glyph twins + equivalence
+ * clusters. GLYPH-SUPPRESS-001-A audited why Poison/Cinderella/Extreme still
+ * showed a visible glyph residue after 002-B fixed the numeric-text
+ * duplicate, and why Pride and Joy's swing/feel marking survived entirely.
+ * ✅ Coincident duplicate glyph suppression: the paired-glyph classifier's
+ *        "one glyph suppressed" rule left an untouched, position-matched
+ *        twin visible on Poison/Cinderella/Extreme — same shape of bug
+ *        002-B fixed for numeric text, same DUPLICATE_POSITION_EPSILON
+ *        reused. Position-matched twins of the already-selected glyph only.
+ * ✅ Compound note-equivalence cluster detector: some songs (Pride and Joy)
+ *        render the initial tempo as "(<glyph> = <glyph>)" using italic
+ *        Georgia punctuation fragments for the parens/equals — no fragment
+ *        contains a digit, so the numeric classifier never anchors here and
+ *        the paired-glyph search (which only runs relative to an
+ *        already-suppressed numeric text) never engages with it. New,
+ *        independent row[0]-only detector: requires a complete left-to-right
+ *        "(" → "=" → ")" triplet, compact (span/y-delta bounded), before
+ *        suppressing the three punctuation fragments plus any glyph-pattern
+ *        note icons whose x falls within the paren span. Does not touch
+ *        isolated "(" / ")" characters embedded in longer strings (e.g.
+ *        "R.I.P. ... (1954-1990)") — the exact-trim match requires the
+ *        fragment be its own whole text node.
+ * ✅ Both extensions stay row[0]-only (inherited from 002-B), protecting
+ *        Van Halen's row[12] and Ozzy's rows 8/9/9/10/10/12 legitimate
+ *        mid-song tempo marks by construction — they're never in the pool.
+ * 🚫 No global italic-Georgia sweep — P.H./P.M./LetRing/R.I.P./N.B./pick-
+ *        slide/s.guit. and other gp8Overlay/annotation text is untouched;
+ *        that's gp8OverlaySuppression.ts's territory, not this file's. No
+ *        AlphaTabRenderer.tsx change.
  *
  * MAESTRO-TEMPO-SUPPRESS-002-B — Row[0] scoping + coincident duplicate fix.
  * TEMPO-SUPPRESS-002-A audited why Poison/Cinderella/Extreme showed visible
@@ -106,8 +136,16 @@ const GLYPH_MAX_LEFT_DISTANCE = 100;
 // coincident duplicate of the just-suppressed initial tempo text — see file
 // header. Audit measurements found exact attribute matches (e.g.
 // 118.30640000000001 on both nodes); this tolerance is generous headroom,
-// not a re-tuned magic number.
+// not a re-tuned magic number. Reused by GLYPH-SUPPRESS-001-B for the
+// analogous coincident-duplicate-glyph case.
 const DUPLICATE_POSITION_EPSILON = 0.5;
+// [MAESTRO-TEMPO-GLYPH-SUPPRESS-001-B] Compound note-equivalence cluster
+// (e.g. Pride and Joy's "(<glyph> = <glyph>)" swing/feel marking) — see file
+// header. Audit measured the punctuation span at ~80px (115.9 to 196.3);
+// this is generous headroom, not a re-tuned magic number.
+const ITALIC_GEORGIA_PATTERN = /font:\s*italic\s*12px\s*Georgia/i;
+const EQUIVALENCE_CLUSTER_MAX_SPAN = 250;
+const EQUIVALENCE_CLUSTER_MAX_Y_DELTA = 12;
 
 export interface AlphaTabInitialTempoSuppressionDiagnostics {
   tempoTextCandidateCount: number;
@@ -117,6 +155,8 @@ export interface AlphaTabInitialTempoSuppressionDiagnostics {
   tempoGlyphCandidateCount: number;
   tempoGlyphSuppressedCount: number;
   suppressedGlyphAnchor: { x: number; y: number } | null;
+  duplicateTempoGlyphSuppressedCount: number;
+  equivalenceTempoClusterSuppressedCount: number;
 }
 
 let lastDiagnostics: AlphaTabInitialTempoSuppressionDiagnostics | null = null;
@@ -228,6 +268,7 @@ export function runAlphaTabInitialTempoSuppression(
       let glyphCandidateCount = 0;
       let glyphSuppressedCount = 0;
       let suppressedGlyphAnchor: { x: number; y: number } | null = null;
+      let duplicateTempoGlyphSuppressedCount = 0;
 
       if (suppressedTextEl && suppressedTextSvg) {
         const tempoTextX = parseFloat(
@@ -285,6 +326,126 @@ export function runAlphaTabInitialTempoSuppression(
             );
             glyphSuppressedCount = 1;
             suppressedGlyphAnchor = { x: nearest.x, y: nearest.y };
+
+            // [MAESTRO-TEMPO-GLYPH-SUPPRESS-001-B] Coincident duplicate glyph
+            // suppression — see file header. Poison/Cinderella/Extreme each
+            // render the paired glyph as two coincident DOM nodes (one
+            // logical glyph, two nodes); the "one glyph suppressed" rule
+            // above left an untouched, visible twin. Suppresses
+            // position-matched twins of the already-selected glyph only.
+            for (const candidate of glyphCandidates) {
+              if (candidate.el === nearest.el) continue;
+              if (
+                Math.abs(candidate.x - nearest.x) > DUPLICATE_POSITION_EPSILON ||
+                Math.abs(candidate.y - nearest.y) > DUPLICATE_POSITION_EPSILON
+              ) {
+                continue;
+              }
+              candidate.el.setAttribute("display", "none");
+              candidate.el.setAttribute(
+                "data-maestro-initial-tempo-glyph-suppressed",
+                "1",
+              );
+              duplicateTempoGlyphSuppressedCount += 1;
+            }
+          }
+        }
+      }
+
+      // ── Compound note-equivalence cluster (new in GLYPH-SUPPRESS-001-B) ──
+      // Row[0]-only — see file header. Some songs (e.g. Pride and Joy) render
+      // the initial tempo as a swing/feel equivalence marking —
+      // "(<glyph> = <glyph>)" — using italic Georgia punctuation fragments
+      // for the parens/equals and separate glyph-pattern text nodes for the
+      // note icons. No fragment contains a digit, so the numeric classifier
+      // above never anchors here and the paired-glyph search (which only
+      // runs relative to an already-suppressed numeric text) never engages
+      // with this cluster. Detected and suppressed independently, still
+      // row[0]-only, still leftmost-first (at most one cluster per render).
+      let equivalenceTempoClusterSuppressedCount = 0;
+      if (row0) {
+        const openParens: Array<{ el: SVGTextElement; x: number; y: number }> = [];
+        const equalsSigns: Array<{ el: SVGTextElement; x: number; y: number }> = [];
+        const closeParens: Array<{ el: SVGTextElement; x: number; y: number }> = [];
+        for (const el of Array.from(
+          row0.querySelectorAll<SVGTextElement>("text"),
+        )) {
+          const style = el.getAttribute("style") ?? "";
+          if (!ITALIC_GEORGIA_PATTERN.test(style)) continue;
+          const trimmed = (el.textContent ?? "").trim();
+          if (trimmed !== "(" && trimmed !== "=" && trimmed !== ")") continue;
+          let bbox: SVGRect;
+          try {
+            bbox = el.getBBox();
+          } catch {
+            continue;
+          }
+          const entry = { el, x: bbox.x, y: bbox.y };
+          if (trimmed === "(") openParens.push(entry);
+          else if (trimmed === "=") equalsSigns.push(entry);
+          else closeParens.push(entry);
+        }
+
+        if (openParens.length && equalsSigns.length && closeParens.length) {
+          openParens.sort((a, b) => a.x - b.x);
+          const openParen = openParens[0];
+          const equalsCandidate = equalsSigns
+            .filter((e) => e.x > openParen.x)
+            .sort((a, b) => a.x - b.x)[0];
+          const closeParen = equalsCandidate
+            ? closeParens
+                .filter((e) => e.x > equalsCandidate.x)
+                .sort((a, b) => a.x - b.x)[0]
+            : undefined;
+          if (
+            equalsCandidate &&
+            closeParen &&
+            closeParen.x - openParen.x <= EQUIVALENCE_CLUSTER_MAX_SPAN &&
+            Math.abs(equalsCandidate.y - openParen.y) <= EQUIVALENCE_CLUSTER_MAX_Y_DELTA &&
+            Math.abs(closeParen.y - openParen.y) <= EQUIVALENCE_CLUSTER_MAX_Y_DELTA
+          ) {
+            for (const frag of [openParen, equalsCandidate, closeParen]) {
+              frag.el.setAttribute("display", "none");
+              frag.el.setAttribute(
+                "data-maestro-initial-tempo-equivalence-suppressed",
+                "1",
+              );
+              equivalenceTempoClusterSuppressedCount += 1;
+            }
+
+            // Note-icon glyphs inside the parenthetical span.
+            for (const el of Array.from(
+              row0.querySelectorAll<SVGTextElement>("text"),
+            )) {
+              if (
+                el === openParen.el ||
+                el === equalsCandidate.el ||
+                el === closeParen.el
+              ) {
+                continue;
+              }
+              const txt = el.textContent ?? "";
+              if (txt && /^[\x20-\x7E]+$/.test(txt)) continue;
+              const style = el.getAttribute("style") ?? "";
+              if (!GLYPH_FONT_SIZE_PATTERN.test(style)) continue;
+              const parentG = el.closest("g.at");
+              if (!parentG) continue;
+              let gx = parseFloat(el.getAttribute("x") ?? "NaN");
+              if (!Number.isFinite(gx)) {
+                const transform = parentG.getAttribute("transform") ?? "";
+                const m = transform.match(/translate\(\s*(-?[\d.]+)/);
+                if (!m) continue;
+                gx = parseFloat(m[1]);
+              }
+              if (!Number.isFinite(gx)) continue;
+              if (gx < openParen.x || gx > closeParen.x) continue;
+              el.setAttribute("display", "none");
+              el.setAttribute(
+                "data-maestro-initial-tempo-equivalence-suppressed",
+                "1",
+              );
+              equivalenceTempoClusterSuppressedCount += 1;
+            }
           }
         }
       }
@@ -297,6 +458,8 @@ export function runAlphaTabInitialTempoSuppression(
         tempoGlyphCandidateCount: glyphCandidateCount,
         tempoGlyphSuppressedCount: glyphSuppressedCount,
         suppressedGlyphAnchor,
+        duplicateTempoGlyphSuppressedCount,
+        equivalenceTempoClusterSuppressedCount,
       };
 
       resolve();
