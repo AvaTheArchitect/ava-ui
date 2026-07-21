@@ -6,6 +6,20 @@
  * Date: July 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
+ * DARK-THEME-CENTERLINE-001 — Dark-theme staff-line detection support.
+ * ✅ isNeutralStaffLineGrey() previously required brightness >90, rejecting
+ *        dark theme's actual staff-line color (#555555, brightness 85) by a
+ *        5-unit margin — CENTERLINE-C-001-B's pre-push gate measured this
+ *        directly and confirmed dark theme was safely falling back to the old
+ *        scanOpticalTopRel anchor rather than crashing, but without the fixed-
+ *        centerline improvement. Now checks a ±12 tolerance band around each
+ *        theme's actual measured staff-line brightness (dark 85, light 153)
+ *        instead of one wide continuous range, so it can't drift into
+ *        matching unrelated neutral-grey UI chrome between the two real values.
+ * 🚫 No change to Candidate C target, the staff-line-center algorithm itself,
+ *        STRIP-001-B1, firstSystemPaddingTop restore, drum guard, cursor, loop
+ *        overlay, or lyrics.
+ *
  * MAESTRO-LANDSCAPE-CENTERLINE-C-001-B — Fixed staff-centerline Candidate C.
  * ✅ Replaces "pin first readable ink to the tray" as the primary Candidate C
  *        anchor with a staff-line-centered one. CENTERLINE-C-001-A proved the
@@ -1097,14 +1111,20 @@ const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle bl
 // scanStaffLineCenterRel() for the anchor this pins.
 const CANDIDATE_C_TARGET_STAFF_CENTER = 206;
 
-// [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Neutral (R≈G≈B) mid-brightness grey
-// check for real painted TAB/staff string-line rects. Tolerant of minor shade
-// variance rather than one exact hardcoded hex, so nearby greys still match —
-// verified against light theme (#999999) only; dark theme's staff-line color
-// was not directly measured for this patch, so this is a best-effort net, not
-// a hardcoded per-theme branch. If it ever fails to match on dark theme, the
-// caller (scanStaffLineCenterRel) simply finds <2 candidates and returns null,
-// falling through to the existing scanOpticalTopRel anchor — no crash/blank.
+// [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Neutral (R≈G≈B) staff-line-color
+// check for real painted TAB/staff string-line rects.
+// [DARK-THEME-CENTERLINE-001] Verified directly against both themes' actual
+// rendered staff-line fill (AlphaTabRenderer's theme-resource block, ~line
+// 9600ish: resources.staffLineColor): light theme #999999 (brightness 153),
+// dark theme #555555 (brightness 85). Rather than one broad continuous
+// brightness range (which risks matching unrelated neutral-grey UI chrome in
+// the gap between the two real values), this checks a narrow ±12 tolerance
+// band around each KNOWN value — tight enough to reject other neutral greys,
+// wide enough to absorb minor rendering/rounding variance. If a future theme
+// uses a staff-line color outside both bands, this scan simply finds <2
+// candidates and returns null, falling through to the existing
+// scanOpticalTopRel anchor — no crash/blank either way.
+const KNOWN_STAFF_LINE_BRIGHTNESS = [85, 153]; // dark #555555, light #999999
 function isNeutralStaffLineGrey(fill: string): boolean {
     const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(fill.trim());
     if (!m) return false;
@@ -1112,7 +1132,7 @@ function isNeutralStaffLineGrey(fill: string): boolean {
     const maxDelta = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
     if (maxDelta > 12) return false;
     const brightness = (r + g + b) / 3;
-    return brightness > 90 && brightness < 210;
+    return KNOWN_STAFF_LINE_BRIGHTNESS.some(known => Math.abs(brightness - known) <= 12);
 }
 
 // ── [F1] Unified orientation helper — 40px hysteresis ────────────────────────
@@ -2989,13 +3009,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     if (!row0) return null;
                     const yBuckets = new Map<number, number>();
                     for (const el of Array.from(row0.querySelectorAll('rect'))) {
-                        // Neutral (R≈G≈B) mid-brightness grey, tolerant of minor shade
-                        // differences rather than one exact hardcoded hex — verified
-                        // against light theme (#999999) only; if dark theme's staff-line
-                        // color falls outside this band, this scan simply finds fewer
-                        // than 2 candidates and returns null, falling through to
-                        // scanOpticalTopRel below (no blank/crash risk either way — see
-                        // dark-theme note in the class changelog above).
+                        // Neutral (R≈G≈B) staff-line grey, verified against both themes'
+                        // actual rendered color (light #999999, dark #555555 — see
+                        // isNeutralStaffLineGrey's DARK-THEME-CENTERLINE-001 comment). If
+                        // a future theme's staff-line color falls outside both known
+                        // bands, this scan simply finds fewer than 2 candidates and
+                        // returns null, falling through to scanOpticalTopRel below (no
+                        // blank/crash risk either way).
                         if (!isNeutralStaffLineGrey(el.getAttribute('fill') ?? '')) continue;
                         let bbox: DOMRect;
                         try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
