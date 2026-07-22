@@ -1,8 +1,8 @@
 "use client";
 /**
  * alphaTabLyricsOverlay.ts
- * Version: v1.2
- * Date: June 2nd, 2026
+ * Version: v1.3
+ * Date: July 21st, 2026
  *
  * Universal Maestro lyric overlay — works across GP3, GP5, GP7, GP8, and any
  * AlphaTab-supported format with lyric data in the score model.
@@ -23,7 +23,13 @@
  *   - Uses boundsLookup.findBeat(beat) for x/y placement.
  *   - Uses bb.onNotesX for horizontal centering (falls back to vb.x + vb.w/2).
  *   - Renders one <span> chip per lyric syllable, absolutely positioned.
- *   - Root div sits inside the alphatab-content-host, same layer as other overlays.
+ *   - Root div sits inside .alphatab-container itself (MAESTRO-LANDSCAPE-LYRICS-001-B) —
+ *     the actual internally-scrolling element in landscape's horizontal continuous
+ *     strip — not the outer, non-scrolling .alphatab-content-host. Chip x/y stay raw
+ *     boundsLookup canvas coordinates (unchanged); native scroll of the containing
+ *     element is what keeps them aligned with the score as it scrolls/seeks. Do not
+ *     add manual scrollLeft/scrollTop subtraction here — that would double-compensate
+ *     on top of the native scroll this mount point already provides.
  *   - Returns { update, destroy } matching the handle pattern of other overlays.
  *
  * CARRY QUEUE (v1.2):

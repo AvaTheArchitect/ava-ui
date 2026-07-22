@@ -5777,15 +5777,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
 
                     // ── Maestro lyric overlay ─────────────────────────────────
+                    // [MAESTRO-LANDSCAPE-LYRICS-001-B] Mounted inside containerRef
+                    // (.alphatab-container) itself — the actual internally-scrolling
+                    // element in landscape — instead of the outer, non-scrolling
+                    // .alphatab-content-host. Chips are absolutely positioned relative
+                    // to this scrolling ancestor, so native scroll carries them along
+                    // with the score strip; no manual scrollLeft/scrollTop compensation.
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
-                            const contentHost =
-                                containerRef.current?.closest('.alphatab-content-host') as HTMLElement | null
-                                ?? containerRef.current;
-                            if (contentHost) {
+                            const lyricsMountHost = containerRef.current;
+                            if (lyricsMountHost) {
                                 lyricsOverlayHandleRef.current?.destroy();
                                 lyricsOverlayHandleRef.current = runAlphaTabLyricsOverlay(
-                                    contentHost,
+                                    lyricsMountHost,
                                     api,
                                     theme,
                                 );
