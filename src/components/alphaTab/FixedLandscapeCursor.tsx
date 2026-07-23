@@ -1,7 +1,23 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v2.0-recovery+bass-height-overhang-fix
+ * Version: v2.0-recovery+bass-height-overhang-fix+style-tokens
  * Date: July 23rd, 2026
+ *
+ * CURSOR-STYLE-UNIFICATION-001-B — wire to shared cursor tokens:
+ * ✅ SPINE_COLOR/CAP_FILL/DOT_FILL and the drop-shadow filter now reference the
+ *        --maestro-cursor-* CSS custom properties added to globals.css (commit
+ *        451f53c) instead of hardcoding their own rgba()/hex literals. Values are
+ *        unchanged (the tokens were seeded from these exact constants), so this is
+ *        a source-of-truth change only — zero intended visual difference.
+ * ✅ capPath/dotPath fills switched from .setAttribute('fill', ...) to
+ *        .style.fill = ... — SVG presentation attributes aren't guaranteed to
+ *        parse CSS var(), the style property always does. The shadow filter and
+ *        spine <div> background were already set via .style, so those needed no
+ *        mechanism change, only a value change.
+ * 🚫 --maestro-cursor-accent is not wired here — this file has no independent
+ *        solid-accent visual element to attach it to (cap/spine/dot/shadow already
+ *        cover 100% of the rendered surface); left unused rather than inventing a
+ *        place for it. No geometry, sizing, positioning, z-index, or path changed.
  *
  * CURSOR-BASS-HEIGHT-001 correction — bass top overhang:
  * ✅ The first CURSOR-BASS-HEIGHT-001 patch computed reduced-line-count height as just
@@ -140,9 +156,13 @@ const TIP_TAPER_PX = 8;
 //   Target post-fix: tip at top of notation staff, ~top of high-E string area.
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Colors ────────────────────────────────────────────────────────────────────
-const SPINE_COLOR = 'rgba(168, 85, 247, 0)'; // alpha 0 — spine hidden per Brett's manual baseline, node kept (not deleted)
-const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
-const DOT_FILL = 'white';
+// [CURSOR-STYLE-UNIFICATION-001-B] Sourced from the shared --maestro-cursor-* tokens
+// (src/app/globals.css) instead of local rgba()/hex literals. Values are unchanged —
+// the tokens were seeded from these exact constants — so this is a source-of-truth
+// swap only, not a color change. Spine stays alpha 0 (hidden, node kept, not deleted).
+const SPINE_COLOR = 'var(--maestro-cursor-spine)';
+const CAP_FILL = 'var(--maestro-cursor-fill)';
+const DOT_FILL = 'var(--maestro-cursor-dot)';
 
 export interface FixedLandscapeCursorOptions {
     spineColor?: string;
@@ -401,14 +421,17 @@ export class FixedLandscapeCursor {
             left: '0',
             overflow: 'visible',
             zIndex: '1',
-            filter: 'drop-shadow(0px 3px 6px rgba(0,0,0,0.7))', // strengthened — old 4px/0.5 was barely visible
+            filter: 'drop-shadow(var(--maestro-cursor-shadow))', // value unchanged, now token-sourced
             pointerEvents: 'none',
         });
 
         // Teardrop body — 'd' attribute filled in by applyCapArtwork() below, same as
         // every subsequent updateLayout() call; not hardcoded here.
         const capPath = document.createElementNS(ns, 'path');
-        capPath.setAttribute('fill', this.opts.capFill);
+        // [CURSOR-STYLE-UNIFICATION-001-B] .style.fill, not setAttribute('fill', ...) —
+        // SVG presentation attributes aren't guaranteed to parse CSS var(); the style
+        // property always does.
+        capPath.style.fill = this.opts.capFill;
 
         // White dot — MaestroCursor v4.6 geometry + transform. Fixed regardless of total
         // height (part of "the fixed head"), so authored once here and never touched again.
@@ -419,7 +442,8 @@ export class FixedLandscapeCursor {
         dotPath.setAttribute('d',
             `M ${mid - 3.5} 6 C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3 C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6 C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12 C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z`
         );
-        dotPath.setAttribute('fill', this.opts.dotFill);
+        // [CURSOR-STYLE-UNIFICATION-001-B] .style.fill, not setAttribute — same reason.
+        dotPath.style.fill = this.opts.dotFill;
         dotPath.setAttribute('transform',
             `translate(${dotCenterX} ${dotCenterY}) scale(${dotScale}) translate(${-dotCenterX} ${-dotCenterY})`
         );

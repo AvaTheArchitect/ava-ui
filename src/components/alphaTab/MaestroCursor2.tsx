@@ -98,8 +98,13 @@ const HARD_SNAP_REASONS = new Set([
 ]);
 const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
-const BAR_COLOR = 'rgba(0, 204, 170, 0.42)';
-const SPINE_COLOR = 'rgba(0, 220, 185, 0.85)';
+// [CURSOR-STYLE-UNIFICATION-001-B] Sourced from the shared --maestro-cursor-legacy-*
+// tokens (src/app/globals.css) instead of local rgba() literals. Values unchanged —
+// tokens were seeded from these exact constants — so this is a source-of-truth swap
+// only. Cursor2 stays teal/cyan with a visible spine; no purple, per product decision
+// to defer full cursor-theme unification to a separate, explicitly-approved turn.
+const BAR_COLOR = 'var(--maestro-cursor-legacy-fill)';
+const SPINE_COLOR = 'var(--maestro-cursor-legacy-spine)';
 function cursor2DiagEnabled(): boolean {
     if (typeof window === 'undefined') return false;
     return (
@@ -1136,16 +1141,19 @@ export class MaestroCursorV2 {
         const w = BAR_WIDTH;
         const spineX = w / 2;
 
+        // [CURSOR-STYLE-UNIFICATION-001-B] fill/stroke set via the style= attribute
+        // (real CSS, parses var() reliably), not the fill=/stroke= presentation
+        // attributes — those aren't guaranteed to parse CSS custom properties.
         this.element.innerHTML = `
             <svg width="${w}" height="${h}"
                  viewBox="0 0 ${w} ${h}"
                  style="display:block;overflow:visible;">
                 <rect x="0" y="0" width="${w}" height="${h}"
-                      fill="${BAR_COLOR}"
+                      style="fill:${BAR_COLOR}"
                       rx="2" ry="2"/>
                 <line x1="${spineX}" y1="0"
                       x2="${spineX}" y2="${h}"
-                      stroke="${SPINE_COLOR}"
+                      style="stroke:${SPINE_COLOR}"
                       stroke-width="1.5"
                       stroke-linecap="round"/>
             </svg>`;
