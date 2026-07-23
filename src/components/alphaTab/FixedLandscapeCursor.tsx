@@ -1,7 +1,44 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v2.0-recovery
- * Date: July 22nd, 2026
+ * Version: v2.0-recovery+bass-height-overhang-fix
+ * Date: July 23rd, 2026
+ *
+ * CURSOR-BASS-HEIGHT-001 correction — bass top overhang:
+ * ✅ The first CURSOR-BASS-HEIGHT-001 patch computed reduced-line-count height as just
+ *        span + CURSOR_TIP_GAP_PX, which correctly anchored the bottom tip but left ZERO
+ *        clearance above the top staff line — the head sat inside/below the top string
+ *        instead of above it (caught in Brett's Chrome Emulator smoke). Guitar's own
+ *        ~20px top overhang was never an explicit term; it fell out incidentally from the
+ *        CAP_HEIGHT floor (99 - 65 - 14 ≈ 20) that only guitar-scale staves hit.
+ * ✅ Reduced-line-count staves now compute an explicit topOverhang term from the staff's
+ *        own line spacing (lineGap = span/(lineCount-1), overhang = 1.5*lineGap) instead of
+ *        relying on a floor that guitar happens to hit but bass never did. The 1.5
+ *        multiplier reproduces guitar's own already-accepted overhang almost exactly when
+ *        applied to guitar's numbers, so it's the same proportion, not a new tuning value.
+ * 🚫 Guitar-scale branch (lineCount >= threshold) untouched — byte-identical formula to the
+ *        prior patch and to the original CURSOR-STAFF-ANCHOR-001-B recovery.
+ *
+ * CURSOR-BASS-HEIGHT-001 — adaptive height for reduced-line-count staves:
+ * ✅ CAP_HEIGHT was doing double duty: the artwork's own authored canvas size AND the
+ *        height floor in updateLayout(). Guitar's real need (span+gap≈79) and bass's real
+ *        need (span+gap≈53) were BOTH under CAP_HEIGHT(99), so the floor always won for
+ *        both — height was always exactly 99 regardless of instrument, and the artwork was
+ *        never actually redrawn relative to its own size. That's why bass rendered
+ *        identically to guitar despite correctly detecting a 4-line staff.
+ * ✅ Floor is now conditional on the detected lineCount (already returned by
+ *        detectStaffLineGeometry() — no new helper/file needed): staves with
+ *        REDUCED_HEIGHT_LINE_THRESHOLD or more lines (guitar's 6 and up) keep the exact
+ *        CAP_HEIGHT floor Brett accepted, unchanged. Staves with fewer lines (bass, etc.)
+ *        drop to a small artwork-minimum floor and let the real detected span drive the
+ *        height down instead — geometry-driven, not song/artist/track-name-driven.
+ * ✅ The artwork itself is now redrawn (not scaled) per updateLayout() call via
+ *        applyCapArtwork(): same single teardrop <path> formula as always, just
+ *        parametrized by the current total height instead of the hardcoded CAP_HEIGHT.
+ *        TOP_RADIUS and TIP_TAPER_PX (the head rounding and the tip's taper length) stay
+ *        fixed constants regardless of height — only the straight-sided middle "shaft"
+ *        portion of the SAME path shrinks. No new SVG pieces, no CSS transform/scaleY.
+ * 🚫 Fallback path unchanged: still the exact CAP_HEIGHT-sized artwork, top-anchored via
+ *        CAP_OVERHANG_PX, exactly as before.
  *
  * CURSOR-STAFF-ANCHOR-001-B — clean visual reset:
  * ✅ v2.1 (uniform scaleY of the whole cap) and v2.2 (three-piece head/shaft/tip redraw)
@@ -74,6 +111,26 @@ const CURSOR_TOP_OFFSET = 100;
 // bottom-most detected staff line so they don't visually overlap. A UI offset, not a
 // layout calibration — not derived from Van Halen, Keith Urban, or any specific song.
 const CURSOR_TIP_GAP_PX = 14;
+// [CURSOR-BASS-HEIGHT-001] Geometry-driven height floor split — not song/artist/track
+// specific. A staff with this many detected lines or more (guitar's standard 6) keeps the
+// exact CAP_HEIGHT floor Brett accepted; fewer lines (bass, etc.) uses the smaller floor
+// below and lets the real detected span drive the height down instead.
+const REDUCED_HEIGHT_LINE_THRESHOLD = 6;
+// Small artwork-minimum floor for reduced-line-count staves — just enough for the fixed
+// head + tip taper to render recognizably even in a pathological near-zero-span case.
+// Well below a real bass's computed height (~72px observed) so it never interferes.
+const MIN_REDUCED_HEIGHT_PX = 40;
+// [CURSOR-BASS-HEIGHT-001 correction] Multiplier applied to a staff's own line spacing
+// (span / (lineCount-1)) to derive the top overhang for reduced-line-count staves. Chosen
+// because it reproduces guitar's own already-accepted overhang almost exactly when applied
+// to guitar's numbers (span 65, lineCount 6 → lineGap 13 → 1.5*13=19.5 ≈ the ~20px guitar
+// gets from CAP_HEIGHT - span - CURSOR_TIP_GAP_PX) — the same visual proportion carried to
+// any line count/spacing, not a new arbitrary constant.
+const TOP_OVERHANG_LINE_GAP_MULTIPLIER = 1.5;
+// Fixed taper length (bottom point), extracted from the historical hardcoded "capH - 8".
+// Stays constant regardless of total height — the tip's own proportions never change,
+// only the straight-sided shaft above it does.
+const TIP_TAPER_PX = 8;
 // ── CALIBRATION LOG (historical — fallback path only) ────────────────────────────────────
 // Measured April 21, 2026 on iPhone landscape (Dynamic Island device):
 //   headerBottom = 80px (TopMenuTray)
@@ -99,6 +156,7 @@ export class FixedLandscapeCursor {
     private getCursorBoxX: () => number;
     private opts: Required<FixedLandscapeCursorOptions>;
     private capSvg: SVGSVGElement | null = null;  // [S20] ref for overhang update
+    private capPathEl: SVGPathElement | null = null;  // [CURSOR-BASS-HEIGHT-001] ref for in-place redraw
 
     constructor(
         wrapper: HTMLElement,
@@ -169,8 +227,30 @@ export class FixedLandscapeCursor {
 
         if (geometry) {
             const tipY = geometry.staffBottomViewport + CURSOR_TIP_GAP_PX;
-            const spineTopY = geometry.staffTopViewport;
-            const height = Math.max(CAP_HEIGHT, tipY - spineTopY);
+            let height: number;
+            if (geometry.lineCount >= REDUCED_HEIGHT_LINE_THRESHOLD) {
+                // Guitar-scale staves (>= threshold lines): exact pre-existing formula,
+                // byte-for-byte unchanged. CAP_HEIGHT floor supplies the ~20px top
+                // overhang above the staff (99 - 65 - 14 ≈ 20 for a typical guitar span) —
+                // this branch is untouched by CURSOR-BASS-HEIGHT-001.
+                const spineTopY = geometry.staffTopViewport;
+                height = Math.max(CAP_HEIGHT, tipY - spineTopY);
+            } else {
+                // [CURSOR-BASS-HEIGHT-001 correction] Reduced-line-count staves (bass,
+                // etc.) need an explicit top overhang term too — span + tip gap alone
+                // (the original bass-height patch) left zero clearance above the top
+                // string, so the head sat inside/below the top line instead of above it.
+                // topOverhang is derived from the staff's own line spacing, not a fixed
+                // px value: lineGap = span / (lineCount-1), overhang ≈ 1.5 * lineGap —
+                // this ratio reproduces guitar's own accepted ~20px overhang almost
+                // exactly (65/5=13 * 1.5≈19.5) when applied to guitar's numbers, so it's
+                // the same visual proportion, not a new made-up constant, and it scales
+                // naturally to whatever line count/spacing a given staff actually has.
+                const lineGap = geometry.span / Math.max(1, geometry.lineCount - 1);
+                const topOverhang = TOP_OVERHANG_LINE_GAP_MULTIPLIER * lineGap;
+                const rawHeight = geometry.span + CURSOR_TIP_GAP_PX + topOverhang;
+                height = Math.max(MIN_REDUCED_HEIGHT_PX, rawHeight);
+            }
             const topY = tipY - height;
 
             Object.assign(this.el.style, {
@@ -181,10 +261,11 @@ export class FixedLandscapeCursor {
                 visibility: 'visible',
                 opacity: '1',
             });
-            // Cap's own tip (its bottom vertex, CAP_HEIGHT down from the cap svg's own top)
-            // must land at this element's bottom edge (= tipY) regardless of how much taller
-            // than CAP_HEIGHT the overall element is.
-            if (this.capSvg) this.capSvg.style.top = `${height - CAP_HEIGHT}px`;
+            // [CURSOR-BASS-HEIGHT-001] Artwork is redrawn to fill the element exactly (not
+            // scaled, not offset) — capSvg.style.top can stay 0 unconditionally now, since
+            // the artwork's own canvas size always matches `height` by construction.
+            this.applyCapArtwork(height);
+            if (this.capSvg) this.capSvg.style.top = '0px';
             return;
         }
 
@@ -209,6 +290,11 @@ export class FixedLandscapeCursor {
             opacity: '1',
         });
 
+        // [CURSOR-BASS-HEIGHT-001] Restore the artwork to its original authored size —
+        // a prior call may have taken the primary (geometry) branch above and left it
+        // redrawn smaller (bass) or larger; this is the exact pre-001 fallback look,
+        // unconditionally, regardless of which branch ran last.
+        this.applyCapArtwork(CAP_HEIGHT);
         // CAP_OVERHANG_PX = 0: cap starts flush at notation area top.
         // Set to 26 once staff is in final position to re-enable Maestro overhang.
         if (this.capSvg) this.capSvg.style.top = `${-CAP_OVERHANG_PX}px`;
@@ -290,10 +376,7 @@ export class FixedLandscapeCursor {
 
         const w = CURSOR_WIDTH;
         const mid = w / 2;
-        const topR = Math.min(TOP_RADIUS, mid);
-        const capH = CAP_HEIGHT;
         const spineLeft = mid - SPINE_WIDTH / 2;
-        const baseY = capH - 8;
 
         // Spine — fills notation area (top:0/bottom:0 relative to cursor el)
         const spineDiv = document.createElement('div');
@@ -311,9 +394,6 @@ export class FixedLandscapeCursor {
         // Cap — top overridden to -26px in updateLayout() for Maestro overhang [S20]
         const ns = 'http://www.w3.org/2000/svg';
         const capSvg = document.createElementNS(ns, 'svg');
-        capSvg.setAttribute('width', `${w}`);
-        capSvg.setAttribute('height', `${capH}`);
-        capSvg.setAttribute('viewBox', `0 0 ${w} ${capH}`);
         Object.assign(capSvg.style, {
             display: 'block',
             position: 'absolute',
@@ -325,14 +405,13 @@ export class FixedLandscapeCursor {
             pointerEvents: 'none',
         });
 
-        // Teardrop body
+        // Teardrop body — 'd' attribute filled in by applyCapArtwork() below, same as
+        // every subsequent updateLayout() call; not hardcoded here.
         const capPath = document.createElementNS(ns, 'path');
-        capPath.setAttribute('d',
-            `M 0,${topR} Q 0,0 ${topR},0 L ${w - topR},0 Q ${w},0 ${w},${topR} V ${baseY} L ${mid} ${capH} L 0 ${baseY} Z`
-        );
         capPath.setAttribute('fill', this.opts.capFill);
 
-        // White dot — MaestroCursor v4.6 geometry + transform
+        // White dot — MaestroCursor v4.6 geometry + transform. Fixed regardless of total
+        // height (part of "the fixed head"), so authored once here and never touched again.
         const dotCenterX = mid;
         const dotCenterY = 6.5;
         const dotScale = 1.28;
@@ -353,5 +432,32 @@ export class FixedLandscapeCursor {
         this.el.appendChild(capSvg);
 
         this.capSvg = capSvg;  // [S20] store ref for overhang update
+        this.capPathEl = capPath;  // [CURSOR-BASS-HEIGHT-001] store ref for in-place redraw
+        this.applyCapArtwork(CAP_HEIGHT);  // initial size before the first updateLayout()
+    }
+
+    /**
+     * [CURSOR-BASS-HEIGHT-001] Redraws (does not scale) the SAME single teardrop path at
+     * the given total height. TOP_RADIUS (head rounding) and TIP_TAPER_PX (tip taper
+     * length) are fixed constants regardless of totalHeight — only the straight-sided
+     * middle "shaft" between them (from the head's rounded corner down to where the taper
+     * begins) grows or shrinks. This is what lets a reduced-line-count staff (bass) render
+     * genuinely shorter while a guitar-scale staff keeps the exact accepted proportions.
+     */
+    private applyCapArtwork(totalHeight: number): void {
+        if (!this.capSvg || !this.capPathEl) return;
+        const w = CURSOR_WIDTH;
+        const mid = w / 2;
+        const topR = Math.min(TOP_RADIUS, mid);
+        // Clamp so an extreme (pathological) small totalHeight can't invert the taper —
+        // not reachable in normal use since MIN_REDUCED_HEIGHT_PX already exceeds this.
+        const baseY = Math.max(topR, totalHeight - TIP_TAPER_PX);
+
+        this.capSvg.setAttribute('width', `${w}`);
+        this.capSvg.setAttribute('height', `${totalHeight}`);
+        this.capSvg.setAttribute('viewBox', `0 0 ${w} ${totalHeight}`);
+        this.capPathEl.setAttribute('d',
+            `M 0,${topR} Q 0,0 ${topR},0 L ${w - topR},0 Q ${w},0 ${w},${topR} V ${baseY} L ${mid} ${totalHeight} L 0 ${baseY} Z`
+        );
     }
 }
