@@ -996,6 +996,7 @@ import { runGp8VibratoSuppression } from '@/lib/alphaTab/gp8VibratoSuppression';
 import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 import { runAlphaTabLyricsOverlay, type AlphaTabLyricsOverlayHandle } from '@/lib/alphaTab/alphaTabLyricsOverlay';
+import { detectStaffLineGeometry } from '@/lib/alphaTab/staffLineGeometry';
 
 // ─── [P1] Props interface ─────────────────────────────────────────────────────
 export interface AlphaTabRendererV102Props {
@@ -1111,29 +1112,12 @@ const SCORE_ARTIST_BLUE = '#60a5fa';  // [colorPatch] A/B — artist/subtitle bl
 // scanStaffLineCenterRel() for the anchor this pins.
 const CANDIDATE_C_TARGET_STAFF_CENTER = 206;
 
-// [MAESTRO-LANDSCAPE-CENTERLINE-C-001-B] Neutral (R≈G≈B) staff-line-color
-// check for real painted TAB/staff string-line rects.
-// [DARK-THEME-CENTERLINE-001] Verified directly against both themes' actual
-// rendered staff-line fill (AlphaTabRenderer's theme-resource block, ~line
-// 9600ish: resources.staffLineColor): light theme #999999 (brightness 153),
-// dark theme #555555 (brightness 85). Rather than one broad continuous
-// brightness range (which risks matching unrelated neutral-grey UI chrome in
-// the gap between the two real values), this checks a narrow ±12 tolerance
-// band around each KNOWN value — tight enough to reject other neutral greys,
-// wide enough to absorb minor rendering/rounding variance. If a future theme
-// uses a staff-line color outside both bands, this scan simply finds <2
-// candidates and returns null, falling through to the existing
-// scanOpticalTopRel anchor — no crash/blank either way.
-const KNOWN_STAFF_LINE_BRIGHTNESS = [85, 153]; // dark #555555, light #999999
-function isNeutralStaffLineGrey(fill: string): boolean {
-    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(fill.trim());
-    if (!m) return false;
-    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
-    const maxDelta = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
-    if (maxDelta > 12) return false;
-    const brightness = (r + g + b) / 3;
-    return KNOWN_STAFF_LINE_BRIGHTNESS.some(known => Math.abs(brightness - known) <= 12);
-}
+// [CURSOR-STAFF-ANCHOR-001-B] isNeutralStaffLineGrey/KNOWN_STAFF_LINE_BRIGHTNESS and the
+// staff/TAB line rect scan formerly inlined here (scanStaffLineCenterRel) now live in
+// src/lib/alphaTab/staffLineGeometry.ts as detectStaffLineGeometry(), shared with
+// FixedLandscapeCursor so the two consumers can't silently drift onto different detectors
+// (see MAESTRO-DRUMS-001-B for what happens when that's allowed to happen). Detection
+// tolerances/tags are unchanged — this is a relocation, not a re-tune.
 
 // ── [F1] Unified orientation helper — 40px hysteresis ────────────────────────
 function isDeviceLandscape(): boolean {
@@ -3004,46 +2988,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // visible placement). This scan instead detects the real painted TAB/
                 // staff string-line rects directly and pins THEIR center to a fixed
                 // target, independent of whatever annotation content sits above them.
-                const scanStaffLineCenterRel = (): number | null => {
-                    const row0 = document.querySelector('.alphatab-container svg.at-surface-svg');
-                    if (!row0) return null;
-                    const yBuckets = new Map<number, number>();
-                    for (const el of Array.from(row0.querySelectorAll('rect'))) {
-                        // Neutral (R≈G≈B) staff-line grey, verified against both themes'
-                        // actual rendered color (light #999999, dark #555555 — see
-                        // isNeutralStaffLineGrey's DARK-THEME-CENTERLINE-001 comment). If
-                        // a future theme's staff-line color falls outside both known
-                        // bands, this scan simply finds fewer than 2 candidates and
-                        // returns null, falling through to scanOpticalTopRel below (no
-                        // blank/crash risk either way).
-                        if (!isNeutralStaffLineGrey(el.getAttribute('fill') ?? '')) continue;
-                        let bbox: DOMRect;
-                        try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
-                        // Real staff/TAB string lines are thin (<=3px tall) horizontal
-                        // segments reasonably wide (>=15px) — same physical-size
-                        // signature the tiny-artifact filter above excludes as noise,
-                        // used here instead to POSITIVELY select staff-line ink.
-                        if (!bbox || bbox.width < 15 || bbox.height <= 0 || bbox.height > 3) continue;
-                        const key = Math.round(bbox.y * 2) / 2;
-                        yBuckets.set(key, (yBuckets.get(key) ?? 0) + 1);
-                    }
-                    const ys = Array.from(yBuckets.keys()).sort((a, b) => a - b);
-                    // Require at least 2 distinct line candidates spanning a plausible
-                    // staff height — guards against stray grey ink being mistaken for a
-                    // real staff/TAB line grid (a real grid is 5-6 lines, ~15-70px tall).
-                    if (ys.length < 2) return null;
-                    const staffTop = ys[0];
-                    const staffBottom = ys[ys.length - 1];
-                    const span = staffBottom - staffTop;
-                    if (span <= 0 || span > 150) return null;
-                    return (staffTop + staffBottom) / 2;
-                };
+                // [CURSOR-STAFF-ANCHOR-001-B] Detection itself now lives in the shared
+                // detectStaffLineGeometry() helper (src/lib/alphaTab/staffLineGeometry.ts),
+                // reused by FixedLandscapeCursor — same tolerances/null-conditions as the
+                // scan formerly inlined here, so this branch's behavior is unchanged.
+                const staffGeometry = detectStaffLineGeometry(document.querySelector('.alphatab-container'));
+                const staffCenterRel = staffGeometry ? staffGeometry.staffCenterLocal : null;
 
                 // visibleBottomRel reuses staffSystem's own bottom — D-B2-A confirmed
                 // the phantom reservation is top-heavy; real payload's bottom already
                 // sits comfortably inside this bound, so no separate bottom scan needed.
                 const visibleBottomRel = (currentTopClearance as number) + (systemHeight as number);
-                const staffCenterRel = scanStaffLineCenterRel();
                 const staffCenterValid = staffCenterRel != null && staffCenterRel > 0 && staffCenterRel < visibleBottomRel;
 
                 let requestedTop: number;
@@ -5411,6 +5366,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         // [MAESTRO-LANDSCAPE-FIT-001-D-B] staffSystem bounds may have just
                         // settled — recompute the centering shift. No-op outside landscape.
                         landscapeHostInsetMeasureRef.current?.();
+                        // [CURSOR-STAFF-ANCHOR-001-B] Track switches (and any other render
+                        // that reaches this settle point) previously left the landscape
+                        // cursor showing stale pre-switch geometry — a synthetic resize event
+                        // fixed it instantly during runtime validation, proving this was a
+                        // missing refresh trigger, not a bad anchor formula. The immediate
+                        // call below is enough for song loads (already fully settled by the
+                        // time this callback fires); the rAF-deferred follow-up is needed for
+                        // plain track switches, where this callback's own paintable-surface
+                        // check can still fire a few frames before the new track's staff
+                        // geometry finishes settling (measured ~1-3 frames in practice). Both
+                        // calls are null-safe no-ops when the landscape cursor doesn't exist
+                        // (portrait, or destroyed).
+                        landscapeCursorRef.current?.updateLayout();
+                        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+                            landscapeCursorRef.current?.updateLayout();
+                        })));
                         onRendered?.();
                         onBoundsReady?.();
                         isApplyingProfileRef.current = false;
@@ -5761,6 +5732,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     // [MAESTRO-LANDSCAPE-FIT-001-D-B] staffSystem bounds may have just
                     // settled — recompute the centering shift. No-op outside landscape.
                     landscapeHostInsetMeasureRef.current?.();
+                    // [CURSOR-STAFF-ANCHOR-001-B] Same settle point and same two-stage
+                    // recompute (immediate + rAF-deferred follow-up) as the collapse-recovery
+                    // branch above — see that branch's comment for why both calls are needed.
+                    // Null-safe; no-op when the landscape cursor doesn't exist.
+                    landscapeCursorRef.current?.updateLayout();
+                    requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+                        landscapeCursorRef.current?.updateLayout();
+                    })));
                     onRendered?.();
                     onBoundsReady?.();
                     isApplyingProfileRef.current = false;

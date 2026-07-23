@@ -1,7 +1,23 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v1.9
- * Date: April 21st, 2026
+ * Version: v2.0-recovery
+ * Date: July 22nd, 2026
+ *
+ * CURSOR-STAFF-ANCHOR-001-B — clean visual reset:
+ * ✅ v2.1 (uniform scaleY of the whole cap) and v2.2 (three-piece head/shaft/tip redraw)
+ *        both failed manual Chrome Emulator smoke — the scaled version squashed the
+ *        teardrop into the staff, and the three-piece version produced an unrecognizable
+ *        "arrow" tip. Both are fully reverted here.
+ * ✅ Restored: the original HEAD artwork below (spine <div>, single fixed-CAP_HEIGHT
+ *        teardrop <svg> with its dot) is byte-for-byte the same rendering v1.9 shipped —
+ *        no new path, no decomposition, no CSS scaling.
+ * ✅ Kept: updateLayout()'s primary branch still anchors to detectStaffLineGeometry()'s
+ *        live staff geometry instead of the flat CURSOR_TOP_OFFSET calibration constant —
+ *        this is the one part of 001-B that was validated (mathematically and against six
+ *        real songs) before the visual experiments went wrong, so it stays. Fallback path
+ *        (detectStaffLineGeometry() returns null) is exactly the original v1.9 behavior.
+ * 🚫 No new constants beyond CURSOR_TIP_GAP_PX (the only thing the validated positioning
+ *        logic needs beyond what v1.9 already had). No song/artist/track-specific values.
  *
  * v1.9 CHANGES:
  * ✅ [S17] getHeaderBottomFloor() — geometry-based scan (r.top <= 1) instead of
@@ -29,6 +45,8 @@
  *   ResizeObserver + visualViewport already call updateLayout() via updateX() alias.
  */
 
+import { detectStaffLineGeometry } from '@/lib/alphaTab/staffLineGeometry';
+
 // [MAESTRO-CURSOR-004] Diagnostic-only, false-by-default lifecycle probe. Identifies who
 // destroys this class's DOM element and why it may not be recreated (observed: the
 // element disappears from the DOM entirely in Chrome Emulator after the tab/window loses
@@ -43,13 +61,20 @@ if (CURSOR_LIFECYCLE_PROBE) {
     });
 }
 
-const CURSOR_WIDTH = 12;
-const SPINE_WIDTH = 2;
-const CAP_HEIGHT = 90;   // landscape — do not tune until GP8 lanes are normalized
+const CURSOR_WIDTH = 14;
+const SPINE_WIDTH = 1;
+const CAP_HEIGHT = 99;   // landscape — do not tune until GP8 lanes are normalized
 const CAP_OVERHANG_PX = 0;    // set to 26 to re-enable Maestro "peeks into gutter" feel
 const TOP_RADIUS = 6;
+// CURSOR_TOP_OFFSET — legacy calibration constant, used only by the fallback path below
+// (detectStaffLineGeometry() returned null). Kept exactly as-is for that safety-net case;
+// no longer used when live staff geometry is available.
 const CURSOR_TOP_OFFSET = 100;
-// ── CALIBRATION LOG ──────────────────────────────────────────────────────────
+// [CURSOR-STAFF-ANCHOR-001-B] Small, cosmetic-only clearance between the cap's tip and the
+// bottom-most detected staff line so they don't visually overlap. A UI offset, not a
+// layout calibration — not derived from Van Halen, Keith Urban, or any specific song.
+const CURSOR_TIP_GAP_PX = 14;
+// ── CALIBRATION LOG (historical — fallback path only) ────────────────────────────────────
 // Measured April 21, 2026 on iPhone landscape (Dynamic Island device):
 //   headerBottom = 80px (TopMenuTray)
 //   visualTop = 80 + 100 = 180px → cursorTop: 180 ✅
@@ -58,7 +83,7 @@ const CURSOR_TOP_OFFSET = 100;
 //   Target post-fix: tip at top of notation staff, ~top of high-E string area.
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Colors ────────────────────────────────────────────────────────────────────
-const SPINE_COLOR = 'rgba(168, 85, 247, 0.85)';
+const SPINE_COLOR = 'rgba(168, 85, 247, 0)'; // alpha 0 — spine hidden per Brett's manual baseline, node kept (not deleted)
 const CAP_FILL = 'rgba(168, 85, 247, 0.45)';
 const DOT_FILL = 'white';
 
@@ -135,9 +160,39 @@ export class FixedLandscapeCursor {
         const cursorBoxX = this.getCursorBoxX();
         const viewportX = rect.left + cursorBoxX;
 
-        // [S17] "Peace treaty" Y: use rect.top if Safari reports it correctly (> 0).
-        // If container starts at y:0 (fixed TopMenuTray is an overlay, not layout flow),
-        // fall back to the measured bottom of any top-pinned fixed element.
+        // [CURSOR-STAFF-ANCHOR-001-B] Primary anchor: the real, final painted staff/TAB
+        // line geometry — same detector CENTERLINE-C uses, read here in viewport space, so
+        // whatever compensating shift (or clamp) centerline already applied is already
+        // baked into these numbers. No song-specific constant involved. Artwork below is
+        // untouched HEAD artwork — only this positioning math changes vs. the original.
+        const geometry = detectStaffLineGeometry(this.container);
+
+        if (geometry) {
+            const tipY = geometry.staffBottomViewport + CURSOR_TIP_GAP_PX;
+            const spineTopY = geometry.staffTopViewport;
+            const height = Math.max(CAP_HEIGHT, tipY - spineTopY);
+            const topY = tipY - height;
+
+            Object.assign(this.el.style, {
+                left: `${viewportX}px`,
+                top: `${topY}px`,
+                height: `${height}px`,
+                display: 'block',
+                visibility: 'visible',
+                opacity: '1',
+            });
+            // Cap's own tip (its bottom vertex, CAP_HEIGHT down from the cap svg's own top)
+            // must land at this element's bottom edge (= tipY) regardless of how much taller
+            // than CAP_HEIGHT the overall element is.
+            if (this.capSvg) this.capSvg.style.top = `${height - CAP_HEIGHT}px`;
+            return;
+        }
+
+        // [CURSOR-STAFF-ANCHOR-001-B] Graceful fallback — staff-line detection found fewer
+        // than 2 line candidates (or an implausible span). Falls through to the exact
+        // pre-001-B container-relative placement, unchanged, rather than guessing at a
+        // staff position that couldn't be confirmed live. A slightly-off cursor here beats
+        // a blank or teleporting one.
         const headerBottom = this.getHeaderBottomFloor();
         // Math.max: rect.top is sub-pixel (~0.4) in landscape — ">" guard fails.
         // Taking the larger of the two always lands at headerBottom (80px) when
@@ -266,7 +321,7 @@ export class FixedLandscapeCursor {
             left: '0',
             overflow: 'visible',
             zIndex: '1',
-            filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))',
+            filter: 'drop-shadow(0px 3px 6px rgba(0,0,0,0.7))', // strengthened — old 4px/0.5 was barely visible
             pointerEvents: 'none',
         });
 
@@ -279,8 +334,8 @@ export class FixedLandscapeCursor {
 
         // White dot — MaestroCursor v4.6 geometry + transform
         const dotCenterX = mid;
-        const dotCenterY = 7.5;
-        const dotScale = 1.18;
+        const dotCenterY = 6.5;
+        const dotScale = 1.28;
         const dotPath = document.createElementNS(ns, 'path');
         dotPath.setAttribute('d',
             `M ${mid - 3.5} 6 C ${mid - 3.5} 4.3 ${mid - 2} 3 ${mid} 3 C ${mid + 2} 3 ${mid + 3.5} 4.3 ${mid + 3.5} 6 C ${mid + 3.5} 8.5 ${mid + 1} 12 ${mid} 12 C ${mid - 1} 12 ${mid - 3.5} 8.5 ${mid - 3.5} 6 Z`
