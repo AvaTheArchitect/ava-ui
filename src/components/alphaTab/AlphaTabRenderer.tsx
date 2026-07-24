@@ -3681,8 +3681,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             const currentTop = _snapContainerScrollable
                 ? scrollElEl.scrollTop
                 : getPageAuthorityScrollTop(_snapAuthority);
+            // [CURSOR-SCROLL-SYNC-001] Was !isDeviceLandscape() — that's a raw window
+            // aspect-ratio check (width > height), true for almost any desktop browser
+            // window regardless of AlphaTab's actual layout mode, which permanently
+            // disabled this recovery on desktop even while genuinely in Page mode.
+            // isStripMode (this function's own early-return gate above) is the correct
+            // "are we actually in AlphaTab strip/landscape layout" signal.
             const shouldRestore =
-                !isDeviceLandscape() &&
+                !isStripMode &&
                 tweenTo > 50 &&
                 currentTop < 100;
             if (isRendererDebugEnabled()) {
@@ -4704,7 +4710,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     });
                                 }
                                 // Safe paused-cursor repaint: restore cursor visibility without
-                                // running the full song-load prime stack (no requestSnap, no snapPortraitToBeatRow).
+                                // running the full song-load prime stack (no requestSnap here).
+                                // [CURSOR-SCROLL-SYNC-001] snapPortraitToBeatRow IS still called
+                                // below, purely to arm PageScrollResetRecovery — this pass never
+                                // moves the row (tick already matched within tolerance above), so
+                                // its own tweenDelta<2 fast path applies: an immediate no-visible-
+                                // movement scrollTop write plus the +250ms/+750ms reset-checks.
+                                // Without this, a render pass that reaches this branch (e.g. a
+                                // theme-triggered repaint) never arms recovery at all, so if the
+                                // repaint transiently clamps/resets scrollTop nothing restores it.
                                 requestAnimationFrame(() => {
                                     requestAnimationFrame(() => {
                                         if (renderTokenRef.current !== tok) return;
@@ -4750,6 +4764,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                                     lastStableAnchor: lastStableRotationAnchorTickRef.current,
                                                 });
                                             }
+                                            // [CURSOR-SCROLL-SYNC-001] Scroll-only recovery arm — see
+                                            // comment above requestAnimationFrame. Cursor row hasn't
+                                            // moved, so this is expected to be a same-position write
+                                            // that just schedules the reset-checks, not a visible snap.
+                                            if (isRendererDebugEnabled()) {
+                                                console.warn('[page-cursor-reset-source]', {
+                                                    reason: 'redundant-settling-scroll-recovery-armed',
+                                                    anchorTick: tick,
+                                                    beatAbsStart: r?.beat?.absolutePlaybackStart ?? null,
+                                                });
+                                            }
+                                            snapPortraitToBeatRow('redundant-settling-scroll-recovery', r.beat);
                                         } catch (err) {
                                             if (isRendererDebugEnabled()) {
                                                 console.warn('[page-cursor-reset-source]', {
