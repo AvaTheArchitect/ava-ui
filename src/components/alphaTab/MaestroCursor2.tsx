@@ -98,13 +98,17 @@ const HARD_SNAP_REASONS = new Set([
 ]);
 const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
-// [CURSOR-STYLE-UNIFICATION-001-B] Sourced from the shared --maestro-cursor-legacy-*
-// tokens (src/app/globals.css) instead of local rgba() literals. Values unchanged —
-// tokens were seeded from these exact constants — so this is a source-of-truth swap
-// only. Cursor2 stays teal/cyan with a visible spine; no purple, per product decision
-// to defer full cursor-theme unification to a separate, explicitly-approved turn.
-const BAR_COLOR = 'var(--maestro-cursor-legacy-fill)';
-const SPINE_COLOR = 'var(--maestro-cursor-legacy-spine)';
+// [CURSOR-STYLE-UNIFICATION-001-C] Cursor2's artwork is now Cursor1's purple teardrop +
+// white dot (see _renderBarSVG), sourced from the shared purple --maestro-cursor-* tokens
+// (src/app/globals.css) instead of the teal --maestro-cursor-legacy-* tokens. CAP_TOP_OVERHANG /
+// TIP_BOTTOM_OVERHANG are visual-only artwork constants — they extend the drawn shape
+// above/below the beat box via SVG overflow:visible; they do not feed _applyTransform's
+// x/y/h, which stay exactly vb.y/vb.h-derived, unchanged from the prior bar shape.
+const CAP_FILL = 'var(--maestro-cursor-fill)';
+const DOT_FILL = 'var(--maestro-cursor-dot)';
+const CAP_TOP_OVERHANG = 22;
+const TIP_BOTTOM_OVERHANG = 15;
+
 function cursor2DiagEnabled(): boolean {
     if (typeof window === 'undefined') return false;
     return (
@@ -1139,23 +1143,60 @@ export class MaestroCursorV2 {
 
     private _renderBarSVG(h: number): void {
         const w = BAR_WIDTH;
-        const spineX = w / 2;
+        const mid = w / 2;
+        const topR = Math.min(6, mid);
+        const capTop = -CAP_TOP_OVERHANG;
+        const dotCenterX = mid;
+        const dotCenterY = capTop + 7.5;
+        const dotScale = 1.18;
 
-        // [CURSOR-STYLE-UNIFICATION-001-B] fill/stroke set via the style= attribute
-        // (real CSS, parses var() reliably), not the fill=/stroke= presentation
-        // attributes — those aren't guaranteed to parse CSS custom properties.
+        // [CURSOR-STYLE-UNIFICATION-001-C] Crayon-style lower terminator: mostly-straight
+        // vertical sides, a small rounded elbow where the body begins tapering, a mostly-
+        // straight diagonal taper, and a small softened-point curve across the bottom — not
+        // a capsule/U (no flat bottom edge, no full-width sides to tipY), not a sharp V (the
+        // bottom corner is filleted), not a lipstick/tube (the taper sides are straight `L`
+        // lines, not continuous cubic curves). taperStartY/shoulderY are the two sharp
+        // corners of an "ideal" straight diagonal from (w,taperStartY) to
+        // (mid+SHOULDER,shoulderY); ELBOW/POINT_SOFTNESS fillet those two corners by backing
+        // off that distance along both adjacent edges ("corner round via Q with the sharp
+        // corner as control point" — same technique the top-corner rounding above uses).
+        // Brett-approved final values (CURSOR-STYLE-UNIFICATION-001-C tuning pass).
+        const TAPER_LENGTH = 12;
+        const ELBOW = 1.25;
+        const SHOULDER = 2.75;
+        const POINT_SOFTNESS = 5;
+
+        const tipY = h + TIP_BOTTOM_OVERHANG;
+        const taperStartY = tipY - TAPER_LENGTH;
+        const shoulderY = tipY - POINT_SOFTNESS;
+        const rightShoulderX = mid + SHOULDER;
+        const leftShoulderX = mid - SHOULDER;
+        const diagDx = rightShoulderX - w;
+        const diagDy = shoulderY - taperStartY;
+        const diagLen = Math.sqrt(diagDx * diagDx + diagDy * diagDy) || 1;
+        const elbowT = Math.min(0.45, ELBOW / diagLen);
+        const elbowRightX = w + diagDx * elbowT;
+        const elbowY = taperStartY + diagDy * elbowT;
+        const elbowLeftX = mid - (elbowRightX - mid);
+
+        // [CURSOR-STYLE-UNIFICATION-001-C] Cursor1-style teardrop + dot. fill set via the
+        // style= attribute (real CSS, parses var() reliably), not the fill= presentation
+        // attribute. The cap/tip extend above/below the beat box (capTop, tipY) purely as
+        // artwork — width/height/viewBox still track h exactly like the prior bar shape;
+        // overflow:visible (on both this.element and the svg) lets the extra artwork show
+        // without changing the box _applyTransform positions and sizes.
         this.element.innerHTML = `
             <svg width="${w}" height="${h}"
                  viewBox="0 0 ${w} ${h}"
-                 style="display:block;overflow:visible;">
-                <rect x="0" y="0" width="${w}" height="${h}"
-                      style="fill:${BAR_COLOR}"
-                      rx="2" ry="2"/>
-                <line x1="${spineX}" y1="0"
-                      x2="${spineX}" y2="${h}"
-                      style="stroke:${SPINE_COLOR}"
-                      stroke-width="1.5"
-                      stroke-linecap="round"/>
+                 style="display:block;overflow:visible;filter:drop-shadow(var(--maestro-cursor-shadow));">
+                <path d="M 0,${capTop + topR} Q 0,${capTop} ${topR},${capTop} Q ${w},${capTop} ${w},${capTop + topR} V ${taperStartY - ELBOW} Q ${w},${taperStartY} ${elbowRightX},${elbowY} L ${rightShoulderX},${shoulderY} Q ${mid},${tipY} ${leftShoulderX},${shoulderY} L ${elbowLeftX},${elbowY} Q 0,${taperStartY} 0,${taperStartY - ELBOW} Z"
+                      style="fill:${CAP_FILL}"/>
+                <path d="M ${mid - 3.5},${capTop + 6} C ${mid - 3.5},${capTop + 4.3} ${mid - 2},${capTop + 3} ${mid},${capTop + 3}
+                    C ${mid + 2},${capTop + 3} ${mid + 3.5},${capTop + 4.3} ${mid + 3.5},${capTop + 6}
+                    C ${mid + 3.5},${capTop + 8.5} ${mid + 1},${capTop + 12} ${mid},${capTop + 12}
+                    C ${mid - 1},${capTop + 12} ${mid - 3.5},${capTop + 8.5} ${mid - 3.5},${capTop + 6} Z"
+                      style="fill:${DOT_FILL}"
+                      transform="translate(${dotCenterX} ${dotCenterY}) scale(${dotScale}) translate(${-dotCenterX} ${-dotCenterY})"/>
             </svg>`;
     }
 }
