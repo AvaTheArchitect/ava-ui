@@ -2707,7 +2707,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // [RotationStableAnchorRef] Records a trusted anchor tick from stable sources only.
     // Must not be called during settling or from passive AlphaTab drift.
     const setLastStableRotationAnchorTick = useCallback((tick: number | null | undefined, source: string) => {
-        if (typeof tick !== 'number' || !Number.isFinite(tick) || tick <= 0) return;
+        if (typeof tick !== 'number' || !Number.isFinite(tick) || tick < 0) return;
         // [StableAnchorPoisonGuard] Reject tick <= 1 if a larger known-good anchor or intentional tick exists.
         const existing = lastStableRotationAnchorTickRef.current;
         const intentional = getIntentionalTick?.() ?? null;
@@ -2715,7 +2715,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             typeof window !== 'undefined'
                 ? ((window as any).__maestroLastIntentionalTick ?? null)
                 : null;
+        // [TickZeroIntentionalExemption] THEME-TOGGLE-SEEK-STATE-001: a fresh, explicit
+        // intentional seek (click-seek or manual-scroll-seek — the only two call sites
+        // that write __maestroLastIntentionalTick, both real user gestures) can legitimately
+        // target tick 0 (M1B1). getIntentionalTick() already TTL-gates staleness (30s), so
+        // reusing it here — rather than re-deriving freshness independently — keeps this
+        // check from drifting out of sync with the one getRotationAnchorTick trusts. Ordinary
+        // render-start/settling/playback-drift call sites never write that global to match
+        // their own tick, so this cannot exempt passive start-position noise.
+        const isFreshIntentionalMatch = intentional != null && intentional === tick;
         const isBeginningPoison =
+            !isFreshIntentionalMatch &&
             tick <= 1 &&
             (
                 (existing != null && existing > 1) ||
