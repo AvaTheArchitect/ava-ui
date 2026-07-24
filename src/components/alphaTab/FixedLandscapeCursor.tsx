@@ -143,10 +143,18 @@ const MIN_REDUCED_HEIGHT_PX = 40;
 // gets from CAP_HEIGHT - span - CURSOR_TIP_GAP_PX) — the same visual proportion carried to
 // any line count/spacing, not a new arbitrary constant.
 const TOP_OVERHANG_LINE_GAP_MULTIPLIER = 1.5;
-// Fixed taper length (bottom point), extracted from the historical hardcoded "capH - 8".
-// Stays constant regardless of total height — the tip's own proportions never change,
-// only the straight-sided shaft above it does.
-const TIP_TAPER_PX = 8;
+// [CURSOR-LANDSCAPE-TIP-UNIFICATION-001] Crayon-style softened taper — same shape
+// constants/technique as the Brett-approved final Cursor2/Cursor3 bottom tip
+// (CURSOR-STYLE-UNIFICATION-001-C), re-expressed in this file's own 0..totalHeight
+// coordinate system (totalHeight already includes whatever top/bottom clearance
+// updateLayout() computed; unlike Cursor2/3, nothing here draws outside the viewBox).
+// Pure shape-proportion constants (relative to CURSOR_WIDTH=14, same width Cursor2/3
+// use) — CAP_TOP_OVERHANG/TIP_BOTTOM_OVERHANG are intentionally NOT copied, since this
+// file has no equivalent "overhang beyond the box" concept to receive them.
+const TAPER_LENGTH = 12;
+const ELBOW = 1.25;
+const SHOULDER = 2.75;
+const POINT_SOFTNESS = 5;
 // ── CALIBRATION LOG (historical — fallback path only) ────────────────────────────────────
 // Measured April 21, 2026 on iPhone landscape (Dynamic Island device):
 //   headerBottom = 80px (TopMenuTray)
@@ -462,26 +470,45 @@ export class FixedLandscapeCursor {
 
     /**
      * [CURSOR-BASS-HEIGHT-001] Redraws (does not scale) the SAME single teardrop path at
-     * the given total height. TOP_RADIUS (head rounding) and TIP_TAPER_PX (tip taper
-     * length) are fixed constants regardless of totalHeight — only the straight-sided
-     * middle "shaft" between them (from the head's rounded corner down to where the taper
-     * begins) grows or shrinks. This is what lets a reduced-line-count staff (bass) render
-     * genuinely shorter while a guitar-scale staff keeps the exact accepted proportions.
+     * the given total height. TOP_RADIUS (head rounding) is a fixed constant regardless of
+     * totalHeight — only the straight-sided middle "shaft" and the bottom taper (below)
+     * grow or shrink. This is what lets a reduced-line-count staff (bass) render genuinely
+     * shorter while a guitar-scale staff keeps the exact accepted proportions.
+     *
+     * [CURSOR-LANDSCAPE-TIP-UNIFICATION-001] Bottom taper ported from the Brett-approved
+     * final Cursor2/Cursor3 crayon-style tip (CURSOR-STYLE-UNIFICATION-001-C): mostly-
+     * straight vertical sides, a small rounded elbow where the body begins tapering, a
+     * mostly-straight diagonal taper, and a small softened-point curve across the bottom —
+     * not a capsule/U, not a sharp V, not a lipstick/tube. tipY here is totalHeight itself
+     * (not totalHeight + an overhang) because this file's viewBox already spans the full
+     * box that updateLayout() sized — unlike Cursor2/3, nothing is drawn outside it.
      */
     private applyCapArtwork(totalHeight: number): void {
         if (!this.capSvg || !this.capPathEl) return;
         const w = CURSOR_WIDTH;
         const mid = w / 2;
         const topR = Math.min(TOP_RADIUS, mid);
+
+        const tipY = totalHeight;
         // Clamp so an extreme (pathological) small totalHeight can't invert the taper —
         // not reachable in normal use since MIN_REDUCED_HEIGHT_PX already exceeds this.
-        const baseY = Math.max(topR, totalHeight - TIP_TAPER_PX);
+        const taperStartY = Math.max(topR, tipY - TAPER_LENGTH);
+        const shoulderY = Math.max(taperStartY, tipY - POINT_SOFTNESS);
+        const rightShoulderX = mid + SHOULDER;
+        const leftShoulderX = mid - SHOULDER;
+        const diagDx = rightShoulderX - w;
+        const diagDy = shoulderY - taperStartY;
+        const diagLen = Math.sqrt(diagDx * diagDx + diagDy * diagDy) || 1;
+        const elbowT = Math.min(0.45, ELBOW / diagLen);
+        const elbowRightX = w + diagDx * elbowT;
+        const elbowY = taperStartY + diagDy * elbowT;
+        const elbowLeftX = mid - (elbowRightX - mid);
 
         this.capSvg.setAttribute('width', `${w}`);
         this.capSvg.setAttribute('height', `${totalHeight}`);
         this.capSvg.setAttribute('viewBox', `0 0 ${w} ${totalHeight}`);
         this.capPathEl.setAttribute('d',
-            `M 0,${topR} Q 0,0 ${topR},0 L ${w - topR},0 Q ${w},0 ${w},${topR} V ${baseY} L ${mid} ${totalHeight} L 0 ${baseY} Z`
+            `M 0,${topR} Q 0,0 ${topR},0 L ${w - topR},0 Q ${w},0 ${w},${topR} V ${taperStartY - ELBOW} Q ${w},${taperStartY} ${elbowRightX},${elbowY} L ${rightShoulderX},${shoulderY} Q ${mid},${tipY} ${leftShoulderX},${shoulderY} L ${elbowLeftX},${elbowY} Q 0,${taperStartY} 0,${taperStartY - ELBOW} Z`
         );
     }
 }
