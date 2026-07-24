@@ -75,3 +75,44 @@ This file states the trigger; the linked file states the procedure.
 
 When in doubt about whether a rule applies, ask rather than assume the
 absence of a rule means the absence of risk.
+
+## 6. Local Backup Files
+
+The repo may contain local backup files created by Brett or prior Claude
+Code sessions.
+
+Files matching patterns like:
+
+- `*.Backup-*`
+- `*.backup`
+- `*.bak`
+- `*.LOCKED*`
+- `*.old`
+- `*.tmp`
+- `*.copy`
+
+are local safety artifacts only.
+
+They must not be treated as source of truth.
+
+Rules:
+
+- Do not read backup files unless Brett explicitly asks.
+- Do not modify backup files.
+- Do not stage backup files.
+- Do not commit backup files.
+- Do not delete, reset, or clean backup files.
+- Do not compare against backup files unless Brett explicitly asks.
+- Use only live source files and HEAD/origin/main as source of truth.
+
+### Staging rule
+
+Never use:
+
+```
+git add .
+git add -A
+git add <directory>
+```
+
+Stage only explicit approved files by exact path.
