@@ -2555,6 +2555,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const playerModeRef = useRef(playerMode);
     const externalMediaHandlerRef = useRef(externalMediaHandler);
     const lastThemeRef = useRef<'light' | 'dark' | null>(null); // [TH] tracks last applied palette
+    const themeRef = useRef(theme); // [LYRICS-THEME-COLOR-001] live mirror to avoid stale closure in renderFinished
     useEffect(() => { playerModeRef.current = playerMode; }, [playerMode]);
     useEffect(() => { externalMediaHandlerRef.current = externalMediaHandler; }, [externalMediaHandler]);
 
@@ -3170,6 +3171,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     loopEnabledRef.current = loopEnabled;
     playbackRangeRef.current = playbackRange;
     isPlayingRef.current = isPlaying;
+    themeRef.current = theme; // [LYRICS-THEME-COLOR-001] unconditional — renderFinished reads this, not the closed-over prop
 
     useEffect(() => { isSettlingRef.current = isSettling; }, [isSettling]);
 
@@ -5806,7 +5808,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 lyricsOverlayHandleRef.current = runAlphaTabLyricsOverlay(
                                     lyricsMountHost,
                                     api,
-                                    theme,
+                                    themeRef.current,
                                 );
                             }
                         });
