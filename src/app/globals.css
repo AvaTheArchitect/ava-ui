@@ -166,18 +166,31 @@
    block or the OS-preference media query above unless Brett explicitly
    authorizes cursor theme-reactivity as a separate, deliberate decision.
 
+   [CURSOR-COLOR-HOVER-001] --maestro-cursor-fill/-spine/-accent now match the
+   TransportBar hover color (Tailwind text-cyan-300, #67e8f9 / rgb(103,232,249))
+   instead of purple — a live visual change to shipped UI. The prior purple
+   values are preserved verbatim as --maestro-cursor-purple-* below (not wired
+   to anything today) so a future cursor-theme toggle can restore them without
+   re-deriving the numbers.
+
    Legacy teal tokens exist so MaestroCursor2/MaestroCursor3 (the live desktop/
    portrait cursor and its dormant successor) can eventually be wired onto this
-   same token pathway WITHOUT changing their current teal appearance. They stay
-   on --maestro-cursor-legacy-* until Brett approves unifying them onto the
-   purple --maestro-cursor-* values below — that is a live visual change to
-   shipped UI and requires its own explicit sign-off, not a silent swap here. */
+   same token pathway WITHOUT changing their current teal appearance — moot
+   today since both already read --maestro-cursor-fill directly; the teal
+   tokens are left in place unchanged rather than removed. */
 :root {
-  --maestro-cursor-fill:    rgba(168, 85, 247, 0.45);
-  --maestro-cursor-spine:   rgba(168, 85, 247, 0);
+  --maestro-cursor-fill:    rgba(103, 232, 249, 0.75);
+  --maestro-cursor-spine:   rgba(103, 232, 249, 0);
   --maestro-cursor-dot:     #ffffff;
   --maestro-cursor-shadow:  0px 3px 6px rgba(0, 0, 0, 0.7);
-  --maestro-cursor-accent:  #a855f7;
+  --maestro-cursor-accent:  #67e8f9;
+
+  /* [CURSOR-COLOR-HOVER-001] Preserved reference — the exact purple values
+     --maestro-cursor-fill/-spine/-accent held before this change. Not read by
+     any component today; kept for a possible future cursor-theme toggle. */
+  --maestro-cursor-purple-fill:   rgba(168, 85, 247, 0.45);
+  --maestro-cursor-purple-spine:  rgba(168, 85, 247, 0);
+  --maestro-cursor-purple-accent: #a855f7;
 
   --maestro-cursor-legacy-fill:  rgba(0, 204, 170, 0.42);
   --maestro-cursor-legacy-spine: rgba(0, 220, 185, 0.85);
