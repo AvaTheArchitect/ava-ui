@@ -3759,6 +3759,65 @@ export default function BeatCustomLoopOverlay({
     // excludes degenerate artifact rows — real portrait/landscape rows are unaffected.
     const MIN_REAL_SVG_ROW_HEIGHT = 30;
 
+    // [D-C-STAFF-Y-001] Staff-line-derived Y geometry constants. PAD is a multiplier on the
+    // staff's own detected line spacing (lineGap = span / (lineCount - 1)) — NOT a copy of
+    // FixedLandscapeCursor's 1.5x lineGap constant, which was tuned for cursor top/bottom
+    // overhang, a different visual element with different tolerances. 1.0x was chosen here by
+    // measuring the two known-broken cases (see detectStaffLinesInRow's call site below):
+    // at 1.0x, applied symmetrically top/bottom, both the guitar-landscape/bottom-tray
+    // collision and the bass-portrait/lowest-string clip resolve to small but positive margins
+    // (+3.17px and +4px respectively, after the existing LOOP_HANDLE_INSET_Y handle-vs-
+    // highlight inset is applied downstream, unchanged). No per-string-count branch — the same
+    // single multiplier applies regardless of detected lineCount.
+    const STAFF_HIGHLIGHT_PAD_LINE_GAP_MULTIPLIER = 1.0;
+    // Defensive floor only — not reachable by any measured guitar/bass case (58.5-91px range);
+    // guards a hypothetical degenerate near-zero-span detection result the same way
+    // MIN_REAL_SVG_ROW_HEIGHT guards the row-DOM path below.
+    const MIN_STAFF_HIGHLIGHT_HEIGHT = 50;
+
+    // [D-C-STAFF-Y-001] Row-scoped staff/TAB line detector — same neutral-grey-line detection
+    // (fill/width/height thresholds) as the shared detectStaffLineGeometry
+    // (src/lib/alphaTab/staffLineGeometry.ts) FixedLandscapeCursor uses, deliberately
+    // reimplemented locally rather than imported: the shared helper always queries
+    // container.querySelector('svg.at-surface-svg') — the FIRST row in the container, which is
+    // correct for the cursor (always on the current/active row) but WRONG here, since a loop's
+    // start/end rect can sit on any row in a multi-row portrait layout. This local version scans
+    // the SPECIFIC row SVG getRowGeometryForRect has already resolved for a given rect, avoiding
+    // that cross-row mismatch. Detection thresholds are kept identical to the shared helper to
+    // avoid the duplicate-detector-drift failure mode documented there (MAESTRO-DRUMS-001-B).
+    const detectStaffLinesInRow = (
+        rowSvg: SVGSVGElement,
+    ): { top: number; bottom: number; lineCount: number; span: number } | null => {
+        const isNeutralStaffLineGrey = (fill: string | null): boolean => {
+            const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec((fill ?? '').trim());
+            if (!m) return false;
+            const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+            const maxDelta = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+            if (maxDelta > 12) return false;
+            const brightness = (r + g + b) / 3;
+            return [85, 153].some(known => Math.abs(brightness - known) <= 12);
+        };
+        const buckets = new Map<number, { n: number; sum: number }>();
+        for (const el of Array.from(rowSvg.querySelectorAll('rect'))) {
+            if (!isNeutralStaffLineGrey(el.getAttribute('fill'))) continue;
+            let bbox: DOMRect;
+            try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
+            if (!bbox || bbox.width < 15 || bbox.height <= 0 || bbox.height > 3) continue;
+            const key = Math.round(bbox.y * 2) / 2;
+            const viewportY = el.getBoundingClientRect().top;
+            const b = buckets.get(key) ?? { n: 0, sum: 0 };
+            b.n += 1; b.sum += viewportY;
+            buckets.set(key, b);
+        }
+        const ys = Array.from(buckets.keys()).sort((a, b) => a - b);
+        if (ys.length < 2) return null;
+        const top = buckets.get(ys[0])!.sum / buckets.get(ys[0])!.n;
+        const bottom = buckets.get(ys[ys.length - 1])!.sum / buckets.get(ys[ys.length - 1])!.n;
+        const span = bottom - top;
+        if (span <= 0 || span > 150) return null;
+        return { top, bottom, lineCount: ys.length, span };
+    };
+
     // ── [V1.8.5] Row-aware geometry helper — DOM-rect-based ──────────────────
     // r.y is the AlphaTab bar visual top in the same rendered surface space
     // used by the overlay divs. getBoundingClientRect() gives real DOM positions
@@ -3806,6 +3865,28 @@ export default function BeatCustomLoopOverlay({
                 height: r.h + FALLBACK_EXTEND * 2,
             };
         }
+
+        // [D-C-STAFF-Y-001] Prefer staff-line-derived Y geometry for THIS row when detection
+        // succeeds: the highlight/handle now hugs the actual TAB staff (plus a modest,
+        // staff-relative safety margin) instead of the row's full incidental DOM height
+        // (standard notation + tab + chord/text/effect lanes combined), which measured
+        // inconsistently across instruments/orientations — see the constants above for the
+        // measured guitar-landscape/bass-portrait margins this resolves. No lineCount/
+        // instrument branching: the same formula runs regardless of detected line count.
+        const staffGeom = detectStaffLinesInRow(match.svg);
+        if (staffGeom) {
+            const lineGap = staffGeom.span / Math.max(1, staffGeom.lineCount - 1);
+            const pad = STAFF_HIGHLIGHT_PAD_LINE_GAP_MULTIPLIER * lineGap;
+            const topLocal = (staffGeom.top - surfaceRect.top) + surfaceScrollTop;
+            const bottomLocal = (staffGeom.bottom - surfaceRect.top) + surfaceScrollTop;
+            const top = topLocal - pad;
+            const height = Math.max(MIN_STAFF_HIGHLIGHT_HEIGHT, (bottomLocal + pad) - top);
+            return { top, height };
+        }
+
+        // Fallback — staff-line detection unavailable/invalid for this row (e.g. no neutral-
+        // grey line ink found, or an implausible span): exact pre-existing row-DOM behavior,
+        // unchanged.
         return {
             top: match.top + LOOP_ROW_PAD_Y,
             height: Math.max(20, match.height - LOOP_ROW_PAD_Y * 2),
