@@ -3951,6 +3951,140 @@ export default function BeatCustomLoopOverlay({
 
         if (!renderRects.length) return null;
 
+        // [LANDSCAPE-LOOP-HANDLE-GEOMETRY-001C] Landscape-only Y-geometry: derives the
+        // highlight/handle vertical position from the detected TAB/notation staff span
+        // instead of the row's raw DOM height (which includes fx/text/chord/lyric lanes and
+        // clipped inconsistently across instruments/songs). Ratios below were approved after
+        // Chrome Emulator + Safari LAN visual validation on the 6-line guitar case (staff span
+        // 65px) and confirmed to scale proportionally on 4-line bass (span ~39px) and 12-string
+        // (renders as a 6-line TAB staff, same as standard 6-string). getRowGeometryForRect
+        // itself is never modified or bypassed — this only overrides its *result* within this
+        // landscape branch, and only when staff detection below succeeds; it falls back to the
+        // untouched getRowGeometryForRect row-DOM result otherwise. Portrait/desktop never call
+        // any of the functions below.
+        const LANDSCAPE_HANDLE_TOP_RATIO = -1.3846153846;
+        const LANDSCAPE_HANDLE_BOTTOM_RATIO = 0.6461538462;
+        const LANDSCAPE_HIGHLIGHT_TOP_RATIO = 1.4769230769;
+        const LANDSCAPE_HIGHLIGHT_BOTTOM_RATIO = 0.7384615385;
+        const LANDSCAPE_BOTTOM_TRAY_CLEARANCE = 8;
+        const LANDSCAPE_MIN_HANDLE_HEIGHT = 20;
+        // Same neutral-grey-line detection thresholds as the shared detectStaffLineGeometry
+        // (src/lib/alphaTab/staffLineGeometry.ts) FixedLandscapeCursor uses — reimplemented
+        // locally because that shared helper always queries the FIRST 'svg.at-surface-svg' in
+        // the container, which is correct for the cursor (always on the current/active row)
+        // but not guaranteed correct here.
+        const detectLandscapeStaffLines = (
+            rowSvg: SVGSVGElement,
+        ): { top: number; bottom: number } | null => {
+            const isNeutralStaffLineGrey = (fill: string | null): boolean => {
+                const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec((fill ?? '').trim());
+                if (!m) return false;
+                const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+                const maxDelta = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+                if (maxDelta > 12) return false;
+                const brightness = (r + g + b) / 3;
+                return [85, 153].some(known => Math.abs(brightness - known) <= 12);
+            };
+            const buckets = new Map<number, { n: number; sum: number }>();
+            for (const el of Array.from(rowSvg.querySelectorAll('rect'))) {
+                if (!isNeutralStaffLineGrey(el.getAttribute('fill'))) continue;
+                let bbox: DOMRect;
+                try { bbox = (el as unknown as SVGGraphicsElement).getBBox(); } catch { continue; }
+                if (!bbox || bbox.width < 15 || bbox.height <= 0 || bbox.height > 3) continue;
+                const key = Math.round(bbox.y * 2) / 2;
+                const viewportY = el.getBoundingClientRect().top;
+                const b = buckets.get(key) ?? { n: 0, sum: 0 };
+                b.n += 1; b.sum += viewportY;
+                buckets.set(key, b);
+            }
+            const ys = Array.from(buckets.keys()).sort((a, b) => a - b);
+            if (ys.length < 2) return null;
+            const top = buckets.get(ys[0])!.sum / buckets.get(ys[0])!.n;
+            const bottom = buckets.get(ys[ys.length - 1])!.sum / buckets.get(ys[ys.length - 1])!.n;
+            const span = bottom - top;
+            if (span <= 0 || span > 150) return null;
+            return { top, bottom };
+        };
+        // Landscape's row is one continuous strip replicated across horizontal tiles that all
+        // share identical vertical geometry (measured: every real svg.at-surface-svg tile in a
+        // landscape render reports the same staffTop/staffBottom) — any one real tile is a
+        // valid detection source, so this doesn't need r.y-based row matching the way the
+        // shared multi-row-portrait helper does.
+        const getLandscapeStaffGeom = (): { top: number; bottom: number; span: number } | null => {
+            const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+            if (!surface) return null;
+            const surfaceRect = surface.getBoundingClientRect();
+            const surfaceScrollTop = surface.scrollTop ?? 0;
+            const svgs = Array.from(surface.querySelectorAll<SVGSVGElement>('svg.at-surface-svg'))
+                .filter(svg => svg.getBoundingClientRect().height > MIN_REAL_SVG_ROW_HEIGHT);
+            for (const svg of svgs) {
+                const det = detectLandscapeStaffLines(svg);
+                if (det) {
+                    const top = (det.top - surfaceRect.top) + surfaceScrollTop;
+                    const bottom = (det.bottom - surfaceRect.top) + surfaceScrollTop;
+                    return { top, bottom, span: bottom - top };
+                }
+            }
+            return null;
+        };
+        const landscapeStaffGeom = getLandscapeStaffGeom();
+        // Bottom-tray clamp — protects both the highlight band and the handle independently
+        // (each calls this separately below). Only ever pulls `bottom` up toward the tray; the
+        // top edge is never touched here.
+        const applyLandscapeTrayClamp = (bottom: number): number => {
+            const surface = (container ?? document).querySelector('.at-surface') as HTMLElement | null;
+            const tray = document.querySelector('[data-maestro-control-panel]') as HTMLElement | null;
+            if (!surface || !tray) return bottom;
+            const surfaceRect = surface.getBoundingClientRect();
+            const surfaceScrollTop = surface.scrollTop ?? 0;
+            const bottomViewport = (bottom - surfaceScrollTop) + surfaceRect.top;
+            const trayTop = tray.getBoundingClientRect().top;
+            const maxViewportBottom = trayTop - LANDSCAPE_BOTTOM_TRAY_CLEARANCE;
+            if (bottomViewport <= maxViewportBottom) return bottom;
+            return (maxViewportBottom - surfaceRect.top) + surfaceScrollTop;
+        };
+        // role='highlight' uses HIGHLIGHT_TOP_RATIO/HIGHLIGHT_BOTTOM_RATIO (magnitude padding
+        // outward from the staff edges); role='handle' uses HANDLE_TOP_RATIO/
+        // HANDLE_BOTTOM_RATIO (signed offsets from the staff edges) — the harness's two
+        // distinct visual elements. No X/range/drag values are read or written here.
+        const getLandscapeStaffGeometry = (
+            fallback: { top: number; height: number },
+            role: 'highlight' | 'handle',
+        ): { top: number; height: number } => {
+            if (!landscapeStaffGeom) return fallback;
+            if (role === 'highlight') {
+                const top = landscapeStaffGeom.top
+                    - LANDSCAPE_HIGHLIGHT_TOP_RATIO * landscapeStaffGeom.span;
+                const bottom = applyLandscapeTrayClamp(
+                    landscapeStaffGeom.bottom
+                        + LANDSCAPE_HIGHLIGHT_BOTTOM_RATIO * landscapeStaffGeom.span,
+                );
+                const height = Math.max(LANDSCAPE_MIN_HANDLE_HEIGHT, bottom - top);
+                return { top, height };
+            }
+            // role === 'handle': the existing (untouched) downstream code derives the actual
+            // rendered handle from whatever this function returns via
+            // `+1 + LOOP_HANDLE_INSET_Y` / `- LOOP_HANDLE_INSET_Y * 2` (see
+            // startAnchorTop/startAnchorHeight and endAnchorTop/endAnchorHeight below) — the
+            // same relation portrait's own handles use relative to their row geometry. Pre-
+            // apply the inverse of that relation here so the FINAL rendered handle lands
+            // exactly at staffTop+handleTopOffset / staffBottom+handleBottomOffset regardless
+            // of LOOP_HANDLE_INSET_Y's value, without touching that downstream formula.
+            const finalHandleTop = landscapeStaffGeom.top
+                + LANDSCAPE_HANDLE_TOP_RATIO * landscapeStaffGeom.span;
+            const finalHandleBottom = applyLandscapeTrayClamp(
+                landscapeStaffGeom.bottom + LANDSCAPE_HANDLE_BOTTOM_RATIO * landscapeStaffGeom.span,
+            );
+            const finalHandleHeight = Math.max(
+                LANDSCAPE_MIN_HANDLE_HEIGHT,
+                finalHandleBottom - finalHandleTop,
+            );
+            return {
+                top: finalHandleTop - 1 - LOOP_HANDLE_INSET_Y,
+                height: finalHandleHeight + LOOP_HANDLE_INSET_Y * 2,
+            };
+        };
+
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] Start/end anchor rects — replace representativeRect/
         // handleLayerRect for handle positioning. First/last entries of the X-sorted,
         // viewport-clipped visible set, mirroring portrait's own startRect/endRect
@@ -3972,8 +4106,12 @@ export default function BeatCustomLoopOverlay({
         // rowGeom.top/height → handleTop/handleHeight relation as portrait's own
         // startHandleTop/startHandleHeight (LOOP_HANDLE_INSET_Y-inset from the row), so the
         // purple bar is shorter than the gray highlight band the same way in both modes.
-        const startRowGeom = landscapeStartRect ? getRowGeometryForRect(landscapeStartRect) : null;
-        const endRowGeom = landscapeEndRect ? getRowGeometryForRect(landscapeEndRect) : null;
+        const startRowGeom = landscapeStartRect
+            ? getLandscapeStaffGeometry(getRowGeometryForRect(landscapeStartRect), 'handle')
+            : null;
+        const endRowGeom = landscapeEndRect
+            ? getLandscapeStaffGeometry(getRowGeometryForRect(landscapeEndRect), 'handle')
+            : null;
         const startAnchorLeft = landscapeStartRect ? landscapeStartRect.x + LOOP_X_OFFSET - scrollLeft : 0;
         const startAnchorTop = startRowGeom ? startRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
         const startAnchorHeight = startRowGeom ? Math.max(20, startRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
@@ -4007,7 +4145,7 @@ export default function BeatCustomLoopOverlay({
                     // rendered row (staff/tab/text/chord lanes), not just the bar's own
                     // visualBounds. Computed per-rect (not once for the whole map) since a
                     // genuine multi-segment span's rects can belong to different rows.
-                    const rowGeom = getRowGeometryForRect(r);
+                    const rowGeom = getLandscapeStaffGeometry(getRowGeometryForRect(r), 'highlight');
                     const top = rowGeom.top;
                     // [MAESTRO-LOOP-002G] Visual-only clamp — the highlight band's true
                     // left/width (used below by markers/hit-zones/drag, untouched) can extend
