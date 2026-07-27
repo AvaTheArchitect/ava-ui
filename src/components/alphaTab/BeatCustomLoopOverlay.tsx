@@ -896,6 +896,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface HighlightRect { x: number; y: number; w: number; h: number; }
 
@@ -1099,6 +1100,42 @@ export default function BeatCustomLoopOverlay({
         };
     }, [isLandscape, api, container]);
 
+    // [LANDSCAPE-003-E] Portal host: mounts the landscape overlay INSIDE
+    // .alphatab-container (a sibling of AlphaTab's own .at-surface/.at-cursors) instead of
+    // the non-scrolling wrapper AlphaTabRenderer renders it into. This puts the overlay in
+    // the same native-scroll coordinate layer as the score, so browser/compositor scroll
+    // moves both together — eliminating the JS/React scrollLeft-chase that caused paused
+    // manual-scroll "jello" (see LANDSCAPE-003-C). Mirrors the existing
+    // alphaTabLyricsOverlay.ts pattern (manually-created sibling div, defensively
+    // recreated) — that file is the proof this DOM shape survives normal AlphaTab renders.
+    // Gated on [isLandscape, api, container] so a hardReset (which creates a new `api` and
+    // wipes container.innerHTML via api.destroy()) re-creates the host; ordinary
+    // renderFinished cycles never touch this sibling and need no re-creation.
+    const [landscapePortalHost, setLandscapePortalHost] = useState<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!isLandscape || !api) {
+            setLandscapePortalHost(null);
+            return;
+        }
+        const hostEl = container as HTMLElement | null;
+        if (!hostEl) return;
+        hostEl.querySelector(':scope > .at-loop-overlay-landscape-host')?.remove();
+        const host = document.createElement('div');
+        host.className = 'at-loop-overlay-landscape-host';
+        Object.assign(host.style, {
+            position: 'absolute',
+            inset: '0',
+            pointerEvents: 'none',
+            zIndex: '900',
+        });
+        hostEl.appendChild(host);
+        setLandscapePortalHost(host);
+        return () => {
+            host.remove();
+            setLandscapePortalHost(null);
+        };
+    }, [isLandscape, api, container]);
 
     useEffect(() => {
         if (loopEnabled) return;
@@ -3881,16 +3918,20 @@ export default function BeatCustomLoopOverlay({
         const bandTolerance = 8;
         const bandRects = sorted.filter(r => Math.abs(r.y - firstBandY) <= bandTolerance);
 
-        // Clip to visible viewport in viewport space (score x → viewport x via scrollLeft).
+        // [LANDSCAPE-003-E] Cull to the currently-scrolled window in CONTENT space (rendered
+        // `left` below is content-space now — no scrollLeft subtraction — so the window this
+        // test compares against must be translated by scrollLeft instead of fixed at
+        // [-60, containerWidth+60]). Same DOM-footprint-bounding purpose as before, just
+        // re-expressed for the new coordinate space.
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] Explicit X-sort after the clip: bandRects inherits
         // `sorted`'s Y-then-X order, but Y-band membership (±bandTolerance) doesn't
         // guarantee X stayed strictly monotonic after a Y-primary sort, so anchor selection
         // below (landscapeStartRect/landscapeEndRect) needs a real X-ascending order, not
         // incidental ordering.
         const visibleRects = bandRects.filter(r => {
-            const left = r.x + LOOP_X_OFFSET - scrollLeft;
-            const right = left + r.w;
-            return right >= -60 && left <= containerWidth + 60;
+            const contentLeft = r.x + LOOP_X_OFFSET;
+            const contentRight = contentLeft + r.w;
+            return contentRight >= scrollLeft - 60 && contentLeft <= scrollLeft + containerWidth + 60;
         }).sort((a, b) => a.x - b.x);
 
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] renderRects now iterates ALL viewport-visible
@@ -4112,10 +4153,10 @@ export default function BeatCustomLoopOverlay({
         const endRowGeom = landscapeEndRect
             ? getLandscapeStaffGeometry(getRowGeometryForRect(landscapeEndRect), 'handle')
             : null;
-        const startAnchorLeft = landscapeStartRect ? landscapeStartRect.x + LOOP_X_OFFSET - scrollLeft : 0;
+        const startAnchorLeft = landscapeStartRect ? landscapeStartRect.x + LOOP_X_OFFSET : 0;
         const startAnchorTop = startRowGeom ? startRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
         const startAnchorHeight = startRowGeom ? Math.max(20, startRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
-        const endAnchorLeft = landscapeEndRect ? landscapeEndRect.x + landscapeEndRect.w + LOOP_X_OFFSET - scrollLeft : 0;
+        const endAnchorLeft = landscapeEndRect ? landscapeEndRect.x + landscapeEndRect.w + LOOP_X_OFFSET : 0;
         const endAnchorTop = endRowGeom ? endRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
         const endAnchorHeight = endRowGeom ? Math.max(20, endRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
         const HANDLE_HIT_ZONE_WIDTH = 40;
@@ -4129,7 +4170,14 @@ export default function BeatCustomLoopOverlay({
         // directly. A separate ghost overlay computing the same position a second way would
         // be redundant and a potential drift source, not a needed feature.
 
-        return (
+        // [LANDSCAPE-003-E] Portal target not attached yet (host effect above hasn't run,
+        // or isLandscape/api/container just changed) — render nothing this frame rather
+        // than risk a null-target createPortal call. The host effect re-fires on its own
+        // deps and this component re-renders when state updates, so this is a one-frame
+        // gap at most, not a persistent failure mode.
+        if (!landscapePortalHost) return null;
+
+        return createPortal(
             <>
                 {/* [MAESTRO-LOOP-002C] Highlight band only. [MAESTRO-LOOP-LANDSCAPE-001c-d]
                     renderRects can now hold multiple viewport-visible, X-sorted segments (a
@@ -4138,7 +4186,10 @@ export default function BeatCustomLoopOverlay({
                     the stable sibling block below, keyed off landscapeStartRect/
                     landscapeEndRect, never off this map's iteration. */}
                 {renderRects.map((r, i) => {
-                    const left = r.x + LOOP_X_OFFSET - scrollLeft;
+                    // [LANDSCAPE-003-E] Content-space now (no scrollLeft subtraction) — this
+                    // div is portaled inside .alphatab-container, the same native-scrolling
+                    // coordinate box the score itself lives in.
+                    const left = r.x + LOOP_X_OFFSET;
                     // [MAESTRO-LOOP-LANDSCAPE-002-D-B] Measured row geometry (same helper
                     // portrait's highlight/handles use) replaces the raw r.y + static
                     // LANDSCAPE_HIGHLIGHT_Y_OFFSET fudge, so the gray band covers the full
@@ -4147,26 +4198,25 @@ export default function BeatCustomLoopOverlay({
                     // genuine multi-segment span's rects can belong to different rows.
                     const rowGeom = getLandscapeStaffGeometry(getRowGeometryForRect(r), 'highlight');
                     const top = rowGeom.top;
-                    // [MAESTRO-LOOP-002G] Visual-only clamp — the highlight band's true
-                    // left/width (used below by markers/hit-zones/drag, untouched) can extend
-                    // far outside the viewport on wide loops, which was inflating the outer
-                    // landscape shell's scrollWidth (see page.tsx overflow-x-clip change).
-                    // Clamping only this band's rendered rect to the visible container width
-                    // keeps its DOM footprint bounded without moving any loop-tick-derived
-                    // geometry — start/end handles, hit zones, and drag math all still use
-                    // the unclamped `left`/`r.w` below.
-                    const bandVisibleLeft = Math.max(0, left);
-                    const bandVisibleRight = Math.min(containerWidth, left + r.w);
-                    const bandVisibleWidth = Math.max(0, bandVisibleRight - bandVisibleLeft);
+                    // [LANDSCAPE-003-E] The MAESTRO-LOOP-002G viewport-space clamp (Math.max(0,
+                    // left)/Math.min(containerWidth, ...)) is retired here — it assumed `left`
+                    // was viewport-relative (0..containerWidth), which content-space `left`
+                    // (0..surfaceScrollWidth) is not; applying that clamp to content-space
+                    // coordinates would incorrectly collapse the band to zero width once
+                    // scrolled away from the origin. The scrollWidth-inflation risk it guarded
+                    // against no longer applies either: this div is now part of the same
+                    // scrollable content box the score lives in, so native `overflow: hidden`
+                    // on .alphatab-container clips it exactly like the score itself, without
+                    // affecting any outer wrapper's layout width.
                     return (
                         <div
                             key={i}
                             className="beat-loop-highlight-landscape"
                             style={{
                                 position: 'absolute',
-                                left: bandVisibleLeft,
+                                left,
                                 top,
-                                width: bandVisibleWidth,
+                                width: r.w,
                                 height: rowGeom.height,
                                 background: overlayColor,
                                 borderTop: `1px solid ${borderColor}`,
@@ -4344,7 +4394,8 @@ export default function BeatCustomLoopOverlay({
                         />
                     </React.Fragment>
                 )}
-            </>
+            </>,
+            landscapePortalHost
         );
     }
 
