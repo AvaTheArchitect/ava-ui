@@ -107,3 +107,43 @@ export function applyRocksmithFretColors(score: any, model: AlphaTabModelRefs): 
 
     return result;
 }
+
+export interface ClearRocksmithFretColorsResult {
+    clearedCount: number;
+}
+
+// Resets fret-number coloring back to classic/default. Sets the
+// GuitarTabFretNumber color entry to null wherever it was previously set —
+// null is AlphaTab's own documented "use the default color from
+// RenderingResources" signal (see ElementStyle.colors doc comment on the
+// installed AlphaTab version), not a workaround. Only touches notes that
+// already carry a style object; never creates one. Safe to call even if
+// rocksmith coloring was never applied (no-op, clearedCount stays 0).
+export function clearRocksmithFretColors(
+    score: any,
+    model: Pick<AlphaTabModelRefs, 'NoteSubElement'>,
+): ClearRocksmithFretColorsResult {
+    let clearedCount = 0;
+    if (!score?.tracks?.length) return { clearedCount };
+
+    const { NoteSubElement } = model;
+    if (!NoteSubElement) return { clearedCount };
+
+    for (const track of score.tracks) {
+        const staff = track?.staves?.[0];
+        if (!staff) continue;
+        for (const bar of staff.bars ?? []) {
+            for (const voice of bar?.voices ?? []) {
+                for (const beat of voice?.beats ?? []) {
+                    for (const note of beat?.notes ?? []) {
+                        if (!note?.style?.colors?.has?.(NoteSubElement.GuitarTabFretNumber)) continue;
+                        note.style.colors.set(NoteSubElement.GuitarTabFretNumber, null);
+                        clearedCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    return { clearedCount };
+}

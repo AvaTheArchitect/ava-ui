@@ -65,6 +65,12 @@ import { ExportPanel } from './ExportPanel';
 import { PrintPanel } from './PrintPanel';
 import type { TransportBarProps } from './MaestroControlTypes';
 import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
+import {
+  getFretColorScheme,
+  applyRocksmithFretColors,
+  clearRocksmithFretColors,
+  type FretColorScheme,
+} from '@/lib/alphaTab/applyRocksmithFretColors';
 
 interface ExtendedTransportBarProps extends TransportBarProps {
   pitchShift?: number;
@@ -117,6 +123,8 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   const [isCountInPanelOpen, setIsCountInPanelOpen] = useState(false);
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
   const [isPrintPanelOpen, setIsPrintPanelOpen] = useState(false);
+  const [fretColorScheme, setFretColorScheme] = useState<FretColorScheme>('classic');
+  useEffect(() => { setFretColorScheme(getFretColorScheme()); }, []);
 
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const trackMixerRef = useRef<HTMLDivElement>(null);
@@ -216,6 +224,33 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   const handleThemeToggleClick = useCallback(() => {
     onThemeToggle?.(); setIsMoreMenuOpen(false);
   }, [onThemeToggle]);
+  // [MAESTRO-FRET-COLOR-SCHEME-001] Live-apply: writes the diagnostic
+  // localStorage flag, then re-colors (or clears) the already-loaded score's
+  // fret numbers in place and re-renders, instead of requiring a reload.
+  // Reset uses null on the GuitarTabFretNumber color entry — AlphaTab's own
+  // documented "use the RenderingResources default" signal, not a workaround.
+  const handleFretColorSchemeChange = useCallback((scheme: FretColorScheme) => {
+    try { localStorage.setItem('maestro:fretColorScheme', scheme); } catch { /* unavailable, UI state still updates */ }
+    setFretColorScheme(scheme);
+    setIsMoreMenuOpen(false);
+
+    const score = (api as any)?.score;
+    if (!score) return;
+    (async () => {
+      const alphaTab = await import('@coderline/alphatab');
+      const model = {
+        NoteSubElement: (alphaTab as any).model.NoteSubElement,
+        NoteStyle: (alphaTab as any).model.NoteStyle,
+        Color: (alphaTab as any).model.Color,
+      };
+      if (scheme === 'rocksmith') {
+        applyRocksmithFretColors(score, model);
+      } else {
+        clearRocksmithFretColors(score, model);
+      }
+      (api as any)?.render?.();
+    })().catch(() => { /* live-apply best-effort; next scoreLoaded still picks up the stored flag */ });
+  }, [api]);
   const handlePitchShiftClick = useCallback(() => {
     if (onPitchShiftToggle && tuningButtonRef.current) {
       onPitchShiftToggle(tuningButtonRef.current.getBoundingClientRect());
@@ -597,6 +632,31 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                   </div>
                   {api && <kbd className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-400">P</kbd>}
                 </button>
+                <div className="my-2 border-t border-gray-700" />
+                <div className="px-3 py-2.5">
+                  <div className="text-sm font-medium text-white mb-1">Fret Colors</div>
+                  <div className="text-xs text-gray-300 mb-2">
+                    {fretColorScheme === 'rocksmith'
+                      ? 'Rocksmith colors fret numbers by string.'
+                      : 'Classic keeps theme-correct black/white fret numbers.'}
+                  </div>
+                  <div className="flex gap-1 rounded-lg bg-gray-900/50 p-1">
+                    <button
+                      onClick={() => handleFretColorSchemeChange('classic')}
+                      className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors
+                        ${fretColorScheme === 'classic' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                    >
+                      Classic / Maestro Default
+                    </button>
+                    <button
+                      onClick={() => handleFretColorSchemeChange('rocksmith')}
+                      className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors
+                        ${fretColorScheme === 'rocksmith' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                    >
+                      Rocksmith Colors
+                    </button>
+                  </div>
+                </div>
                 <div className="my-2 border-t border-gray-700" />
                 <div className="px-3 py-2 text-xs text-gray-500 italic">More options coming soon...</div>
               </div>
