@@ -353,12 +353,6 @@ body {
    DRAGGING: Ghost white cursor with WHITE dot visible (Songsterr feedback)
    ============================================================================ */
 
-/* V99.23: Loop surface with mix-blend-mode (Songsterr style) */
-.maestro-loop-surface {
-  mix-blend-mode: multiply !important;
-  pointer-events: none;
-}
-
 /* Default cursor — PURPLE body with WHITE dot when idle */
 .maestro-cursor-icursor path:first-child,
 .maestro-cursor path:first-child,
@@ -421,15 +415,6 @@ body {
   opacity: 0.5 !important;
   transition: none !important;
   pointer-events: none;
-}
-
-/* Loop handle drag cursor */
-.maestro-loop-handle {
-  cursor: ew-resize;
-}
-
-.maestro-loop-handle:active {
-  cursor: ew-resize;
 }
 
 /* Prevent text selection during drag */

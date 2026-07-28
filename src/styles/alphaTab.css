@@ -78,18 +78,6 @@ html[data-theme='dark'] .alphatab-container .at-selection div {
 }
 
 /* ========================================
-   LOOP HANDLE Z-INDEX
-   ======================================== */
-
-.maestro-loop-handle {
-    z-index: 1001 !important;
-}
-
-.maestro-loop-bubble {
-    z-index: 1002 !important;
-}
-
-/* ========================================
    FRET NUMBERS — permanent readable weight
    Bold tablature numbers are set via AlphaTab's own
    settings.display.resources.tablatureFont (AlphaTabRenderer.tsx,
@@ -153,8 +141,6 @@ html[data-theme='dark'] .alphatab-container .at-surface::-webkit-scrollbar-thumb
     .at-cursor-bar,
     .at-cursor-beat,
     .at-selection,
-    .maestro-loop-handle,
-    .maestro-loop-bubble,
     .maestro-landscape-cursor {
         display: none !important;
     }
