@@ -997,6 +997,7 @@ import { runUniversalLayoutPatches } from '@/lib/alphaTab/universalLayoutPatches
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 import { runAlphaTabLyricsOverlay, type AlphaTabLyricsOverlayHandle } from '@/lib/alphaTab/alphaTabLyricsOverlay';
 import { detectStaffLineGeometry } from '@/lib/alphaTab/staffLineGeometry';
+import { applyRocksmithFretColors, getFretColorScheme } from '@/lib/alphaTab/applyRocksmithFretColors';
 
 // ─── [P1] Props interface ─────────────────────────────────────────────────────
 export interface AlphaTabRendererV102Props {
@@ -4432,6 +4433,22 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             api.scoreLoaded.on(() => {
                 const score = api.score;
                 if (!score?.tracks?.length) return;
+
+                // [MAESTRO-FRET-COLOR-SCHEME-001] Diagnostic, opt-in Rocksmith-style
+                // per-string fret-number coloring. No-op unless localStorage
+                // 'maestro:fretColorScheme' === 'rocksmith'; classic/default behavior
+                // (a797e57 theme-correct black/white) is otherwise untouched.
+                if (getFretColorScheme() === 'rocksmith') {
+                    const at = alphaTabModuleRef.current;
+                    if (at) {
+                        const fretColorResult = applyRocksmithFretColors(score, {
+                            NoteSubElement: (at as any).model.NoteSubElement,
+                            NoteStyle: (at as any).model.NoteStyle,
+                            Color: (at as any).model.Color,
+                        });
+                        if (isRendererDebugEnabled()) console.log('[fretColorScheme]', fretColorResult);
+                    }
+                }
 
                 const _norm = (s: string) => (s ?? '').toLowerCase().trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ');
                 const _isVocal = (n: string) => /(voc|vocal|voice|singer|lyric|lyrics|vox|choir|backing\s*vocal)/i.test(_norm(n));
