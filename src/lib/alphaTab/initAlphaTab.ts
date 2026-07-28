@@ -312,6 +312,9 @@ export async function initAlphaTab(
     settings.player.enableUserInteraction = false;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
+    // Fret-number/notation readability is permanent (alphaTab.css), not tied to
+    // AlphaTab's active-beat highlight — that highlight fought the CSS palette.
+    settings.player.enableElementHighlighting = false;
     (settings.display as any).cursorType = 0;
     _applyScrollConfig(settings, alphaTab, container, scrollContainer);
   } else if (playerMode === "external") {
@@ -323,6 +326,7 @@ export async function initAlphaTab(
     settings.player.enableUserInteraction = false;
     settings.player.enableCursor = true;
     settings.player.enableAnimatedBeatCursor = true;
+    settings.player.enableElementHighlighting = false;
     (settings.display as any).cursorType = 0;
     _applyScrollConfig(settings, alphaTab, container, scrollContainer);
   } else {

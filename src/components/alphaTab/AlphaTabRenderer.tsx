@@ -9644,7 +9644,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const applyThemePalette = async () => {
             const alphaTab = await import('@coderline/alphatab');
             const Color = (alphaTab as any).model.Color;
+            const Font = (alphaTab as any).model.Font;
+            const FontStyle = (alphaTab as any).model.FontStyle;
+            const FontWeight = (alphaTab as any).model.FontWeight;
             const resources = api.settings.display.resources as any;
+            // Bold guitar-tablature fret numbers via AlphaTab's own resource, not CSS
+            // (theme-invariant — color still comes from mainGlyphColor below).
+            resources.tablatureFont = new Font('Arial', 13, FontStyle.Plain, FontWeight.Bold);
             if (theme === 'dark') {
                 resources.staffLineColor = new Color(85, 85, 85, 255);
                 resources.barSeparatorColor = new Color(136, 136, 136, 255);
