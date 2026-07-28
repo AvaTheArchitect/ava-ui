@@ -73,8 +73,7 @@
     visibility: hidden !important;
 }
 
-.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-selection div,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-selection div {
+html[data-theme='dark'] .alphatab-container .at-selection div {
     background: rgba(255, 255, 255, 0.15) !important;
 }
 
@@ -137,8 +136,7 @@
     z-index: 10000;
 }
 
-.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-loading,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-loading {
+html[data-theme='dark'] .alphatab-container .at-loading {
     background: rgba(26, 26, 26, 0.9);
 }
 
@@ -147,19 +145,17 @@
 .at-surface::-webkit-scrollbar-thumb { background: #888; border-radius: 6px; }
 .at-surface::-webkit-scrollbar-thumb:hover { background: #555; }
 
-.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-track,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-track { background: #2a2a2a; }
+html[data-theme='dark'] .alphatab-container .at-surface::-webkit-scrollbar-track { background: #2a2a2a; }
 
-.alphatab-container[style*="background-color: rgb(26, 26, 26)"] .at-surface::-webkit-scrollbar-thumb,
-.alphatab-container[style*="background-color:#1a1a1a"] .at-surface::-webkit-scrollbar-thumb { background: #555; }
+html[data-theme='dark'] .alphatab-container .at-surface::-webkit-scrollbar-thumb { background: #555; }
 
 @media print {
     .at-cursor-bar,
     .at-cursor-beat,
     .at-selection,
     .maestro-loop-handle,
-    .maestro-loop-bubble 
-        #maestro-landscape-cursor {   /* ← ADD: hide fixed overlay on print */
+    .maestro-loop-bubble,
+    .maestro-landscape-cursor {
         display: none !important;
     }
     .at-surface { overflow: visible !important; }
