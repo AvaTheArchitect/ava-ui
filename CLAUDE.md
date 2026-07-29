@@ -76,7 +76,28 @@ This file states the trigger; the linked file states the procedure.
 When in doubt about whether a rule applies, ask rather than assume the
 absence of a rule means the absence of risk.
 
-## 6. Local Backup Files
+## 6. Browser / Playwright availability
+
+Claude Code may not have a built-in browser tool in every session. That does
+not automatically make DOM, screenshot, or interaction validation impossible.
+
+For any turn involving live UI, DOM geometry, screenshots, panel behavior,
+cursor behavior, drag behavior, or mobile/emulator validation:
+
+1. First check whether terminal-based Playwright validation is available.
+2. Check the repo rules in `.claude/rules/playwright.md`.
+3. Check the shared Playwright harness location if referenced there.
+4. Report the active validation method, active directory, commit, port, local
+   URL, and LAN URL before claiming live validation coverage.
+
+Do not silently downgrade a requested live validation to static-only analysis
+just because no built-in browser tool is present.
+
+If Playwright or browser validation is truly unavailable after checking, state
+that limitation explicitly and ask whether to proceed with static audit only
+or pause for a validation-capable session.
+
+## 7. Local Backup Files
 
 The repo may contain local backup files created by Brett or prior Claude
 Code sessions.
