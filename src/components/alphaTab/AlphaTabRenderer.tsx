@@ -982,6 +982,10 @@ import {
 import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
 import { attachMaestroCursorV3 } from '@/components/alphaTab/MaestroCursor3';
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
+import {
+    canvasInteractionBlockingPanelOpenRef,
+    shouldSuppressCanvasInteraction,
+} from '@/lib/alphaTab/canvasDismissSuppression';
 import BeatCustomLoopOverlay from '@/components/alphaTab/BeatCustomLoopOverlay';
 import { runGp8LayoutEngineV2 } from '@/lib/alphaTab/gp8LayoutEngineV2';
 import { runGp8ChordOverlay, type Gp8ChordOverlayHandle } from '@/lib/alphaTab/gp8ChordOverlay';
@@ -9091,6 +9095,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 const dx = touchState.startX - (ev.changedTouches[0]?.clientX ?? touchState.startX);
                 const wasTap = !touchState.isDragging && Math.abs(dx) < TAP_THRESHOLD;
                 if (wasTap) {
+                    // [PANEL-DISMISS-PLAYBACK-LEAK-001] Measured live: this touchend
+                    // completes ~1.8ms BEFORE the synthetic mousedown that closes a
+                    // dismissed panel even begins, so a mousedown-set suppression
+                    // timestamp is provably too late here — only a ref that's already
+                    // true while the panel is still open (checked synchronously, not
+                    // via a render/effect) can gate this in time.
+                    if (canvasInteractionBlockingPanelOpenRef.current) return;
                     const api = apiRef.current;
                     if (!api?.isReadyForPlayback) return;
                     const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
@@ -9254,6 +9265,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const handleClick = (ev: MouseEvent) => {
                 if (ev.detail > 1) return;
+                // [PANEL-DISMISS-PLAYBACK-LEAK-001] Measured live: on desktop the
+                // dismiss-detecting mousedown fires ~14ms before this click — a
+                // short-lived timestamp token set there is in time to gate it.
+                if (shouldSuppressCanvasInteraction()) return;
                 const api = apiRef.current;
                 if (!api) return;
                 const isStrip = forceHorizontalRef.current || (api.settings?.display?.layoutMode === 1);
@@ -9337,6 +9352,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             };
 
             const handleDblClick = () => {
+                // [PANEL-DISMISS-PLAYBACK-LEAK-001] Same short-lived token as
+                // handleClick — dblclick was not independently reproduced as a
+                // leak, but it's the same class of risk and the ticket requires
+                // gating it defensively alongside handleClick/handleTouchEnd.
+                if (shouldSuppressCanvasInteraction()) return;
                 const api = apiRef.current;
                 if (!api?.isReadyForPlayback) return;
                 if (api.playerState !== 0) {

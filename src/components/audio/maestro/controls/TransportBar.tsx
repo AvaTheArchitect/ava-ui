@@ -66,6 +66,10 @@ import { PrintPanel } from './PrintPanel';
 import type { TransportBarProps } from './MaestroControlTypes';
 import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
 import {
+  canvasInteractionBlockingPanelOpenRef,
+  markCanvasDismissSuppression,
+} from '@/lib/alphaTab/canvasDismissSuppression';
+import {
   getFretColorScheme,
   applyRocksmithFretColors,
   clearRocksmithFretColors,
@@ -117,8 +121,18 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   masterVolume = 1.0, onMasterVolumeChange,
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
-  const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
+  const [isTrackMixerOpen, setIsTrackMixerOpenState] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
+  // [PANEL-DISMISS-PLAYBACK-LEAK-001] Desktop's Track Mixer state — this is the
+  // component that owns #control-mixer (confirmed via live aria-pressed check,
+  // distinct from MaestroControlPanel's own mobile-layout Track Mixer state).
+  // Same wrapper pattern as MaestroControlPanel.tsx: also writes the live,
+  // synchronous ref AlphaTabRenderer's handleTouchEnd/handleClick read.
+  const setIsTrackMixerOpen = useCallback((value: boolean) => {
+    canvasInteractionBlockingPanelOpenRef.current = value;
+    setIsTrackMixerOpenState(value);
+  }, []);
   const [isMetronomePanelOpen, setIsMetronomePanelOpen] = useState(false);
   const [isCountInPanelOpen, setIsCountInPanelOpen] = useState(false);
   const [isExportPanelOpen, setIsExportPanelOpen] = useState(false);
@@ -174,7 +188,17 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
       const isCanvas = (t as Element).closest?.('.at-surface') ||
         (t as Element).closest?.('.at-viewport') ||
         (t as Element).closest?.('#alphatab-container');
-      if (isCanvas) closeAllPanels();
+      if (isCanvas) {
+        // [PANEL-DISMISS-PLAYBACK-LEAK-001] Only mark when this click is actually
+        // dismissing Track Mixer through the canvas — not on every idle canvas
+        // click, and not for More/Speed/Metronome/Count-In/Export/Print (no
+        // confirmed leak there). Read from the ref, not the isTrackMixerOpen
+        // state variable, for the same reason as MaestroControlPanel.tsx.
+        if (canvasInteractionBlockingPanelOpenRef.current) {
+          markCanvasDismissSuppression();
+        }
+        closeAllPanels();
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -184,7 +208,10 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   useEffect(() => { if (isPlaying) closeAllPanels(); }, [isPlaying, closeAllPanels]);
 
   const handleTrackMixerToggle = useCallback(() => {
-    setIsTrackMixerOpen(p => !p);
+    // [PANEL-DISMISS-PLAYBACK-LEAK-001] Reads the live ref (already the source of
+    // truth we maintain) instead of a functional setState updater, so the ref
+    // write stays synchronous rather than deferred to React's update flush.
+    setIsTrackMixerOpen(!canvasInteractionBlockingPanelOpenRef.current);
     setIsSpeedPanelOpen(false); setIsMoreMenuOpen(false);
     setIsMetronomePanelOpen(false); setIsCountInPanelOpen(false); setIsExportPanelOpen(false);
   }, []);

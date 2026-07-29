@@ -37,6 +37,10 @@ import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
 import type { MetronomeSoundType, SubdivisionMode } from './useSmartMetronome';
+import {
+  canvasInteractionBlockingPanelOpenRef,
+  markCanvasDismissSuppression,
+} from '@/lib/alphaTab/canvasDismissSuppression';
 
 export interface MaestroControlPanelProps {
   api: AlphaTabApi | null;
@@ -108,8 +112,18 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
   const controlsReady = Boolean(props.api && props.playerReady);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isTrackMixerOpen, setIsTrackMixerOpen] = useState(false);
+  const [isTrackMixerOpen, setIsTrackMixerOpenState] = useState(false);
   const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+
+  // [PANEL-DISMISS-PLAYBACK-LEAK-001] Every call site below keeps calling
+  // setIsTrackMixerOpen(...) unchanged — this wrapper also writes the live,
+  // synchronous ref AlphaTabRenderer's handleTouchEnd reads, so it's always
+  // correct at the moment a native touchend fires, without waiting on a
+  // render/effect. Deliberately Track Mixer-only, not Drawer/Speed.
+  const setIsTrackMixerOpen = useCallback((value: boolean) => {
+    canvasInteractionBlockingPanelOpenRef.current = value;
+    setIsTrackMixerOpenState(value);
+  }, []);
 
   // Close all panels helper
   const closeAllPanels = useCallback(() => {
@@ -141,6 +155,14 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
         target.closest?.('#alphatab-container');
 
       if (isCanvasClick) {
+        // [PANEL-DISMISS-PLAYBACK-LEAK-001] Only mark when this click is actually
+        // dismissing Track Mixer through the canvas — not on every idle canvas
+        // click, and not for Drawer/Speed (no confirmed leak there). Read from
+        // the ref, not the isTrackMixerOpen state variable, so this always sees
+        // the current value regardless of this effect's own dependency array.
+        if (canvasInteractionBlockingPanelOpenRef.current) {
+          markCanvasDismissSuppression();
+        }
         closeAllPanels();
       }
     };
