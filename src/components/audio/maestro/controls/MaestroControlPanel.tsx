@@ -92,6 +92,10 @@ export interface MaestroControlPanelProps {
   onSlideoutShouldClose?: () => void;
   // 🆕 V100: Callback that page.tsx can use to close internal panels
   registerCloseAllPanels?: (closeFunc: () => void) => void;
+  // [CURSOR-ZINDEX-PANEL-001] Reports whether any of this component's own panels
+  // (Drawer/Track Mixer/Speed — the mobile-layout set) is currently open, so page.tsx
+  // can suppress the landscape cursor while one is up.
+  onAnyPanelOpenChange?: (open: boolean) => void;
   // Controls remain disabled until api is set AND AlphaTab player engine is ready
   playerReady?: boolean;
 }
@@ -116,6 +120,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
       props.registerCloseAllPanels(closeAllPanels);
     }
   }, [props.registerCloseAllPanels, closeAllPanels]);
+
+  // [CURSOR-ZINDEX-PANEL-001] Report combined open state of this component's own panels
+  // so page.tsx can suppress the landscape cursor while one of them is up.
+  useEffect(() => {
+    props.onAnyPanelOpenChange?.(isDrawerOpen || isTrackMixerOpen || isSpeedPanelOpen);
+  }, [isDrawerOpen, isTrackMixerOpen, isSpeedPanelOpen, props.onAnyPanelOpenChange]);
 
   // Canvas click detection - close panels when clicking on AlphaTab surface
   useEffect(() => {

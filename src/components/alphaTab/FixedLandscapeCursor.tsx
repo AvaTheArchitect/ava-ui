@@ -185,6 +185,12 @@ export class FixedLandscapeCursor {
     private opts: Required<FixedLandscapeCursorOptions>;
     private capSvg: SVGSVGElement | null = null;  // [S20] ref for overhang update
     private capPathEl: SVGPathElement | null = null;  // [CURSOR-BASS-HEIGHT-001] ref for in-place redraw
+    // [CURSOR-ZINDEX-PANEL-001] Visual-only suppression while an app-level panel is open in
+    // landscape (Track Mixer, My Tabs, etc.) — this body-mounted cursor otherwise paints
+    // above panel content since it escapes AlphaTabRenderer's isolation:isolate stacking
+    // context. Does not affect geometry/color/z-index; updateLayout() re-applies this on
+    // every layout pass so a live tick/resize update can't silently un-hide it.
+    private suppressed = false;
 
     constructor(
         wrapper: HTMLElement,
@@ -289,6 +295,9 @@ export class FixedLandscapeCursor {
                 visibility: 'visible',
                 opacity: '1',
             });
+            // [CURSOR-ZINDEX-PANEL-001] Re-applied every layout pass so a live tick/resize
+            // update can't silently undo an active suppression.
+            if (this.suppressed) this.el.style.visibility = 'hidden';
             // [CURSOR-BASS-HEIGHT-001] Artwork is redrawn to fill the element exactly (not
             // scaled, not offset) — capSvg.style.top can stay 0 unconditionally now, since
             // the artwork's own canvas size always matches `height` by construction.
@@ -317,6 +326,9 @@ export class FixedLandscapeCursor {
             visibility: 'visible',
             opacity: '1',
         });
+        // [CURSOR-ZINDEX-PANEL-001] Re-applied every layout pass so a live tick/resize
+        // update can't silently undo an active suppression.
+        if (this.suppressed) this.el.style.visibility = 'hidden';
 
         // [CURSOR-BASS-HEIGHT-001] Restore the artwork to its original authored size —
         // a prior call may have taken the primary (geometry) branch above and left it
@@ -330,6 +342,16 @@ export class FixedLandscapeCursor {
 
     /** Legacy alias — ResizeObserver calls this; routes to updateLayout(). */
     updateX(): void { this.updateLayout(); }
+
+    /**
+     * [CURSOR-ZINDEX-PANEL-001] Visual-only hide/show — no geometry, color, z-index, or
+     * width/head/tip math touched. Callers (AlphaTabRenderer) drive this from real
+     * app-level "is a panel open" state, not DOM polling.
+     */
+    setSuppressed(suppressed: boolean): void {
+        this.suppressed = suppressed;
+        this.el.style.visibility = suppressed ? 'hidden' : 'visible';
+    }
 
     destroy(): void {
         // [MAESTRO-CURSOR-004] Area A — destroy-path probe. Captured BEFORE removal so

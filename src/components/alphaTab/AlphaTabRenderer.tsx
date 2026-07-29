@@ -1024,6 +1024,12 @@ export interface AlphaTabRendererV102Props {
     headerVisibleRef?: React.MutableRefObject<boolean>;
     onRequestHeaderHide?: () => void;
     forceHorizontal?: boolean;
+    // [CURSOR-ZINDEX-PANEL-001] When true, hides the body-mounted landscape cursor
+    // (FixedLandscapeCursor only — portrait/desktop Cursor2/3 are unaffected) because it
+    // otherwise paints above app-level panels (Track Mixer, My Tabs, etc.) that are
+    // outside AlphaTabRenderer's own isolation:isolate stacking context. Visual-only;
+    // does not touch cursor geometry, color, or click/touch handling.
+    suppressLandscapeCursor?: boolean;
     playerMode?: 'disabled' | 'external' | 'synthesizer';
     externalMediaHandler?: any;
 }
@@ -2485,6 +2491,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     headerVisibleRef,
     onRequestHeaderHide,
     forceHorizontal = false,
+    suppressLandscapeCursor = false,
     playerMode = 'synthesizer',
     externalMediaHandler,
 }: AlphaTabRendererV102Props) {
@@ -2495,6 +2502,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const apiRef = useRef<any>(null);
     const cursorRef = useRef<MaestroCursorLike | null>(null);
     const landscapeCursorRef = useRef<LandscapeFixedCursorOverlay | null>(null);
+    // [CURSOR-ZINDEX-PANEL-001] Mirrors the suppressLandscapeCursor prop for use inside
+    // imperative cursor-creation call sites (renderFinished, the self-healing sentinel),
+    // which run in callbacks rather than reading React props directly.
+    const suppressLandscapeCursorRef = useRef<boolean>(!!suppressLandscapeCursor);
     const gp8OverlayHandleRef = useRef<Gp8OverlayLaneHandle | null>(null);
     const gp8PmOverlayHandleRef = useRef<Gp8PmOverlayHandle | null>(null);
     const gp8ChordOverlayHandleRef = useRef<Gp8ChordOverlayHandle | null>(null);
@@ -2691,6 +2702,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const wrapper = h.parentElement;
         if (!wrapper) return; // required ref missing — do not attempt
         landscapeCursorRef.current = new FixedLandscapeCursor(wrapper, h, () => getFixedCursorX(h));
+        // [CURSOR-ZINDEX-PANEL-001] Freshly (re)created cursor must pick up the current
+        // suppression state immediately, not just on the next prop change.
+        landscapeCursorRef.current.setSuppressed(suppressLandscapeCursorRef.current);
         if (CURSOR_LIFECYCLE_PROBE) {
             console.log('[CursorLifecycleProbe:sentinel-recreate]', {
                 reason,
@@ -4263,6 +4277,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         });
     }, [stopLandscapeScrollLoop, checkStuckHorizontalStrip, removeLandscapeTrailingPadding]);
 
+    // [CURSOR-ZINDEX-PANEL-001] Sync suppressLandscapeCursor into the ref (for the
+    // imperative creation sites below) and push it straight to a live cursor instance —
+    // does not wait for a recreate, so toggling a panel open/closed takes effect
+    // immediately even if the cursor object itself doesn't change.
+    useEffect(() => {
+        suppressLandscapeCursorRef.current = !!suppressLandscapeCursor;
+        landscapeCursorRef.current?.setSuppressed(!!suppressLandscapeCursor);
+    }, [suppressLandscapeCursor]);
+
     // ── forceHorizontal transition — pre-clear landscape on strip→page ────────────
     useEffect(() => {
         const previous = forceHorizontalRef.current;
@@ -5593,6 +5616,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             landscapeCursorRef.current = new FixedLandscapeCursor(
                                 wrapper, h, () => getFixedCursorX(h)
                             );
+                            // [CURSOR-ZINDEX-PANEL-001] Freshly (re)created cursor must pick up
+                            // the current suppression state immediately.
+                            landscapeCursorRef.current.setSuppressed(suppressLandscapeCursorRef.current);
                         }
                         // [MAESTRO-CURSOR-004.1] Layer 2 sentinel — redundant safety net for
                         // this render pass. No-ops in the common case (cursor created above);
