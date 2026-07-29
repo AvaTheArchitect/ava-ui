@@ -28,7 +28,14 @@
  * ✅ Accessed via Gear ⚙️ icon.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { AlphaTabApi } from '@/lib/alphaTab/types';
+import {
+  getFretColorScheme,
+  applyRocksmithFretColors,
+  clearRocksmithFretColors,
+  type FretColorScheme,
+} from '@/lib/alphaTab/applyRocksmithFretColors';
 
 export interface MobileDrawerProps {
   isOpen: boolean;
@@ -39,6 +46,7 @@ export interface MobileDrawerProps {
   onThemeToggle?: () => void;
   onPrintOpen?: () => void;
   isMobileLandscape?: boolean;
+  api?: AlphaTabApi | null;
 }
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
@@ -50,7 +58,42 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onThemeToggle,
   onPrintOpen,
   isMobileLandscape = false,
+  api = null,
 }) => {
+  const [fretColorScheme, setFretColorScheme] = useState<FretColorScheme>('classic');
+  // Re-read on every open, not just initial mount: this component stays mounted
+  // (isOpen just toggles a null return), so a mount-only effect would go stale
+  // if the setting changed elsewhere (e.g. the desktop MORE panel) while closed.
+  useEffect(() => { if (isOpen) setFretColorScheme(getFretColorScheme()); }, [isOpen]);
+
+  // [MAESTRO-FRET-COLOR-SCHEME-001] Same live-apply behavior as TransportBar's
+  // desktop MORE panel control — writes the shared 'maestro:fretColorScheme'
+  // localStorage key, then re-colors (or clears, via AlphaTab's documented
+  // null-means-default signal) the already-loaded score in place and re-renders.
+  const handleFretColorSchemeChange = useCallback((scheme: FretColorScheme) => {
+    try { localStorage.setItem('maestro:fretColorScheme', scheme); } catch { /* unavailable, UI state still updates */ }
+    setFretColorScheme(scheme);
+
+    const score = (api as any)?.score;
+    if (score) {
+      (async () => {
+        const alphaTab = await import('@coderline/alphatab');
+        const model = {
+          NoteSubElement: (alphaTab as any).model.NoteSubElement,
+          NoteStyle: (alphaTab as any).model.NoteStyle,
+          Color: (alphaTab as any).model.Color,
+        };
+        if (scheme === 'rocksmith') {
+          applyRocksmithFretColors(score, model);
+        } else {
+          clearRocksmithFretColors(score, model);
+        }
+        (api as any)?.render?.();
+      })().catch(() => { /* live-apply best-effort; next scoreLoaded still picks up the stored flag */ });
+    }
+    onClose(); // Auto-close drawer, matching Synth/Original/Theme selections
+  }, [api, onClose]);
+
   if (!isOpen) return null;
 
   const visibilityClass = isMobileLandscape ? 'block' : 'block [@media(min-width:650px)]:hidden';
@@ -184,6 +227,29 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 </button>
               </div>
             )}
+
+            {/* FRET COLORS - Minimal */}
+            <div>
+              <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                Fret Colors
+              </h3>
+              <div className="flex gap-1 rounded-lg bg-gray-800/50 border border-gray-700 p-1">
+                <button
+                  onClick={() => handleFretColorSchemeChange('classic')}
+                  className={`flex-1 px-1.5 py-1 rounded-md text-[10px] font-medium transition-colors
+                    ${fretColorScheme === 'classic' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                  Classic / Maestro Default
+                </button>
+                <button
+                  onClick={() => handleFretColorSchemeChange('rocksmith')}
+                  className={`flex-1 px-1.5 py-1 rounded-md text-[10px] font-medium transition-colors
+                    ${fretColorScheme === 'rocksmith' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                  Rocksmith Colors
+                </button>
+              </div>
+            </div>
 
             {/* UTILITIES - Minimal */}
             <div>

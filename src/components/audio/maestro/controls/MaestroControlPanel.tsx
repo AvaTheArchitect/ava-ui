@@ -461,6 +461,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
           onAudioSourceChange={props.onAudioSourceChange}
           onThemeToggle={props.onThemeToggle}
           isMobileLandscape={props.isMobileLandscape}
+          api={controlsReady ? props.api : null}
         />
       </div>
     </>
