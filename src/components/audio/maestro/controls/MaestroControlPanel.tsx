@@ -92,10 +92,14 @@ export interface MaestroControlPanelProps {
   onSlideoutShouldClose?: () => void;
   // 🆕 V100: Callback that page.tsx can use to close internal panels
   registerCloseAllPanels?: (closeFunc: () => void) => void;
-  // [CURSOR-ZINDEX-PANEL-001] Reports whether any of this component's own panels
-  // (Drawer/Track Mixer/Speed — the mobile-layout set) is currently open, so page.tsx
-  // can suppress the landscape cursor while one is up.
-  onAnyPanelOpenChange?: (open: boolean) => void;
+  // [CURSOR-ZINDEX-PANEL-001] Reports whether Track Mixer specifically is open — this is
+  // a confirmed visual-stacking conflict with the landscape cursor, not a generic "any
+  // panel is open" signal. Speed/Drawer are intentionally excluded: Brett's live
+  // Songsterr comparison and a fresh overlap test both show Speed's popup position
+  // doesn't visually conflict with the cursor, so it isn't included here. If a future
+  // panel is confirmed to have the same visual conflict, extend this deliberately rather
+  // than widening the name back to "any panel."
+  onCursorBlockingPanelOpenChange?: (open: boolean) => void;
   // Controls remain disabled until api is set AND AlphaTab player engine is ready
   playerReady?: boolean;
 }
@@ -121,11 +125,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
     }
   }, [props.registerCloseAllPanels, closeAllPanels]);
 
-  // [CURSOR-ZINDEX-PANEL-001] Report combined open state of this component's own panels
-  // so page.tsx can suppress the landscape cursor while one of them is up.
+  // [CURSOR-ZINDEX-PANEL-001] Report Track Mixer's open state only — not Drawer/Speed,
+  // which don't have a confirmed visual conflict with the landscape cursor.
   useEffect(() => {
-    props.onAnyPanelOpenChange?.(isDrawerOpen || isTrackMixerOpen || isSpeedPanelOpen);
-  }, [isDrawerOpen, isTrackMixerOpen, isSpeedPanelOpen, props.onAnyPanelOpenChange]);
+    props.onCursorBlockingPanelOpenChange?.(isTrackMixerOpen);
+  }, [isTrackMixerOpen, props.onCursorBlockingPanelOpenChange]);
 
   // Canvas click detection - close panels when clicking on AlphaTab surface
   useEffect(() => {

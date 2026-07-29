@@ -263,10 +263,12 @@ export default function SynthPlayerPage() {
     const [songState, setSongState] = useState<SongState>({ songs: [], playlists: [], currentSongId: null });
     const [isSongSelectorOpen, setIsSongSelectorOpen] = useState(false);
     const [isNewTabOpen, setIsNewTabOpen] = useState(false);
-    // [CURSOR-ZINDEX-PANEL-001] True while MaestroControlPanel's own panels (Drawer/Track
-    // Mixer/Speed — the mobile-layout set) are open. Combined with isSongSelectorOpen
-    // (My Tabs) below to drive AlphaTabRenderer's suppressLandscapeCursor prop.
-    const [isMobileControlPanelOpen, setIsMobileControlPanelOpen] = useState(false);
+    // [CURSOR-ZINDEX-PANEL-001] True while Track Mixer specifically is open (reported by
+    // MaestroControlPanel) — the one MaestroControlPanel-owned panel with a confirmed
+    // visual conflict with the landscape cursor. Combined with isSongSelectorOpen (My
+    // Tabs) below to drive AlphaTabRenderer's suppressLandscapeCursor prop. Speed/Drawer
+    // are intentionally excluded — no confirmed overlap.
+    const [isMobileTrackMixerOpen, setIsMobileTrackMixerOpen] = useState(false);
     // [MAESTRO-VIDEO-004/004A] 'novideo' source: opened via the no-video panel's
     // Add Main / Full Mix Video action — routes MetadataEditorPanel straight to
     // Media & Sync / Main / Full Mix.
@@ -1756,7 +1758,7 @@ export default function SynthPlayerPage() {
                             onLoopClear={clearLoopFully}
                             theme={theme}
                             forceHorizontal={isMobileLandscape}
-                            suppressLandscapeCursor={isMobileLandscape && (isMobileControlPanelOpen || isSongSelectorOpen)}
+                            suppressLandscapeCursor={isMobileLandscape && (isMobileTrackMixerOpen || isSongSelectorOpen)}
                         />
                     )}
                 </div>
@@ -1821,7 +1823,7 @@ export default function SynthPlayerPage() {
                     currentBPM={currentBPM}
                     onSlideoutShouldClose={() => slideoutCloseRef.current?.()}
                     registerCloseAllPanels={(fn) => { closeControlPanelsRef.current = fn; }}
-                    onAnyPanelOpenChange={setIsMobileControlPanelOpen}
+                    onCursorBlockingPanelOpenChange={setIsMobileTrackMixerOpen}
                 />
             </footer>
 
