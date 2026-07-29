@@ -1,5 +1,18 @@
 # Playwright / Verification Harness Doctrine
 
+## Shared Playwright harness path
+
+A missing built-in browser tool is not proof that browser validation is
+unavailable.
+
+Before downgrading any UI, DOM, screenshot, geometry, cursor, panel, drag, or
+mobile/emulator validation to static-only analysis, Claude Code must check the
+shared local Playwright harness:
+
+```bash
+/private/tmp/maestro-playwright-shared/
+```
+
 ## Playwright verification harness rule
 
 Claude Code may use Playwright for reproducible DOM/screenshot measurement
