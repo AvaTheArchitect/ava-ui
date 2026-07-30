@@ -52,3 +52,11 @@ invoke `setActiveHandleX`. Always grep both:
 ```
 grep -n 'activeHandleX\|setActiveHandleX' <path>
 ```
+
+## Test-methodology cross-link
+
+Automated verification of loop/handle behavior (Playwright or otherwise)
+must satisfy event-model fidelity — touch vs. mouse, real event order,
+valid hit-test coordinates — before its result is treated as proof of
+product behavior in this domain. See
+[test-methodology.md](test-methodology.md).

@@ -42,24 +42,54 @@ When a probe is ready for removal, scope the removal to its exact tag via
 grep, and verify the tag is fully gone afterward:
 
 ```
-grep -rn '\[MAESTRO-LOOP-004C6-PROBE\]' <path>   # before: locate all sites
-grep -rn '\[MAESTRO-LOOP-004C6-PROBE\]' <path>   # after: confirm zero
+grep -rn '\[MAESTRO-LOOP-004C\.6-PROBE\]' <path>   # before: locate all sites
+grep -rn '\[MAESTRO-LOOP-004C\.6-PROBE\]' <path>   # after: confirm zero
 ```
 
 Do not remove by visual inspection alone, and do not let a broad removal
 pass accidentally sweep up a different tag's probe code.
 
-## Known current probe inventory note
+## Probe baseline discipline
 
-At the time this doctrine was written, local working-tree state may include
-multiple probe families in `BeatCustomLoopOverlay.tsx`, such as:
+Probe inventory is not a fixed list maintained in this file. It is derived
+fresh, every time, from current HEAD and the live, authorized working
+tree — scoped to approved live source paths only:
 
-- `[MAESTRO-LOOP-004C.1b-PROBE]`
-- `[MAESTRO-LOOP-004C.6-PROBE]`
-- `[MAESTRO-LOOP-004D.4-PROBE]`
-- `[MAESTRO-LOOP-004D.4b-PROBE]`
+```
+git grep -n '\-PROBE\]' -- '<approved source path>'
+```
 
-This is **not** active board state and should not be treated as a current
-task list — it is a caution that any future cleanup pass must inventory all
-probe families present at that time (via grep, not memory) before removing
-any of them, since this list will go stale.
+`git grep` scopes the search to tracked files by default, which
+automatically excludes `node_modules/`, `.claude/worktrees/`, and anything
+covered by `.gitignore`. Do not run an unscoped `grep -r` against the repo
+root — that can read Local Backup Files (see
+[../../CLAUDE.md](../../CLAUDE.md) §6), environment files, or other
+forbidden paths as a side effect of the search itself, not because anyone
+meant to read them.
+
+If an untracked or `.gitignore`d probe-bearing file also needs checking
+(e.g. a working-tree-only experiment), check it as a separately named,
+explicitly approved path — never by widening the search to the repo root
+or an unscoped recursive grep:
+
+```
+grep -n '\-PROBE\]' <explicitly approved untracked path>
+```
+
+Either way, honor [security.md](security.md) and
+[../../CLAUDE.md](../../CLAUDE.md) §6 (Local Backup Files) restrictions —
+do not read a file the search happens to touch if either of those rules
+forbids reading it.
+
+Record this search's result as the probe baseline at the start of a ticket
+that touches a probe-bearing file, and again at the end, so the delta
+(what was added, what was removed) is explicit.
+
+Any historical tag list that appears in a prior chat report, handoff, or
+older revision of this file is evidence of what existed at that point in
+time — not a current baseline. Do not treat it as current without
+re-running the search.
+
+A probe-bearing file that survives into a second ticket without resolution
+is also a persistent dirty file — see
+[dirty-files.md](dirty-files.md).

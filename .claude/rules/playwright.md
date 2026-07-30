@@ -59,3 +59,35 @@ useful for fast iteration but do not reproduce actual iOS Safari/PWA
 rendering, viewport quirks, or touch behavior. A change is not considered
 device-validated until it has been checked on an actual iPhone PWA install,
 per the sequencing in [validation.md](validation.md).
+
+## Runtime identity before evidence
+
+Before any Playwright result is presented as evidence, report the browser
+used, target URL, port, dev-server PID and cwd, current HEAD commit, and
+current dirty-file status of the code under test. See
+[runtime.md](runtime.md) for how that identity is established and
+verified — this file does not duplicate that procedure.
+
+A Playwright result gathered against an unidentified, stale, or wrong-repo
+server is not valid evidence of anything.
+
+## Credential and session safety
+
+Do not create, persist, or reuse authenticated storageState, cookies, or
+session tokens in the shared harness directory, this repo, or any scratch
+script. See [security.md](security.md) for full credential-handling
+doctrine — this file does not duplicate that procedure.
+
+## Test-mechanism fidelity
+
+A Playwright interaction is not automatically equivalent to the real
+product interaction path. Event model (touch vs. mouse), coordinate
+validity, and timing must match before a result is treated as proof of
+product behavior. See [test-methodology.md](test-methodology.md).
+
+## Validation attribution
+
+A Playwright pass satisfies, at most, the emulator/Playwright stage of the
+validation sequence — never the full sequence by itself. State explicitly
+which stage(s) in [validation.md](validation.md) a given Playwright run
+actually satisfies.
