@@ -32,7 +32,7 @@
  * ✅ YouTube logo SVG
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TransportBar } from './TransportBar';
 import { MobileDrawer } from './MobileDrawer';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
@@ -113,16 +113,28 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpenState] = useState(false);
-  const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+  const [isSpeedPanelOpen, setIsSpeedPanelOpenState] = useState(false);
 
-  // [PANEL-DISMISS-PLAYBACK-LEAK-001] Every call site below keeps calling
-  // setIsTrackMixerOpen(...) unchanged — this wrapper also writes the live,
-  // synchronous ref AlphaTabRenderer's handleTouchEnd reads, so it's always
-  // correct at the moment a native touchend fires, without waiting on a
-  // render/effect. Deliberately Track Mixer-only, not Drawer/Speed.
+  // [PANEL-DISMISS-PLAYBACK-LEAK-001/002A] Every call site below keeps calling
+  // setIsTrackMixerOpen(...)/setIsSpeedPanelOpen(...) unchanged — these wrappers
+  // also write the live, synchronous ref AlphaTabRenderer's handleTouchEnd reads,
+  // so it's always correct at the moment a native touchend fires, without
+  // waiting on a render/effect. The local refs below are this component's own
+  // synchronous view of each panel's state, needed because both wrappers are
+  // memoized with an empty dependency array (reading the other panel's React
+  // state directly inside them would be permanently stale). Deliberately
+  // Track Mixer + Speed only, not Drawer.
+  const isTrackMixerOpenRef = useRef(false);
+  const isSpeedPanelOpenRef = useRef(false);
   const setIsTrackMixerOpen = useCallback((value: boolean) => {
-    canvasInteractionBlockingPanelOpenRef.current = value;
+    isTrackMixerOpenRef.current = value;
+    canvasInteractionBlockingPanelOpenRef.current = value || isSpeedPanelOpenRef.current;
     setIsTrackMixerOpenState(value);
+  }, []);
+  const setIsSpeedPanelOpen = useCallback((value: boolean) => {
+    isSpeedPanelOpenRef.current = value;
+    canvasInteractionBlockingPanelOpenRef.current = isTrackMixerOpenRef.current || value;
+    setIsSpeedPanelOpenState(value);
   }, []);
 
   // Close all panels helper
@@ -155,11 +167,12 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
         target.closest?.('#alphatab-container');
 
       if (isCanvasClick) {
-        // [PANEL-DISMISS-PLAYBACK-LEAK-001] Only mark when this click is actually
-        // dismissing Track Mixer through the canvas — not on every idle canvas
-        // click, and not for Drawer/Speed (no confirmed leak there). Read from
-        // the ref, not the isTrackMixerOpen state variable, so this always sees
-        // the current value regardless of this effect's own dependency array.
+        // [PANEL-DISMISS-PLAYBACK-LEAK-001/002A] Only mark when this click is
+        // actually dismissing Track Mixer or Speed through the canvas — not on
+        // every idle canvas click, and not for Drawer (no confirmed leak there).
+        // Read from the shared ref (now the OR of both confirmed-leaking
+        // panels), not either state variable directly, so this always sees the
+        // current value regardless of this effect's own dependency array.
         if (canvasInteractionBlockingPanelOpenRef.current) {
           markCanvasDismissSuppression();
         }

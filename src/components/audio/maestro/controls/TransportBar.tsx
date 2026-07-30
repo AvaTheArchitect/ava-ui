@@ -122,16 +122,28 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isTrackMixerOpen, setIsTrackMixerOpenState] = useState(false);
-  const [isSpeedPanelOpen, setIsSpeedPanelOpen] = useState(false);
+  const [isSpeedPanelOpen, setIsSpeedPanelOpenState] = useState(false);
 
-  // [PANEL-DISMISS-PLAYBACK-LEAK-001] Desktop's Track Mixer state — this is the
-  // component that owns #control-mixer (confirmed via live aria-pressed check,
-  // distinct from MaestroControlPanel's own mobile-layout Track Mixer state).
-  // Same wrapper pattern as MaestroControlPanel.tsx: also writes the live,
-  // synchronous ref AlphaTabRenderer's handleTouchEnd/handleClick read.
+  // [PANEL-DISMISS-PLAYBACK-LEAK-001/002A] Desktop's Track Mixer + Speed state —
+  // this is the component that owns #control-mixer/#control-speed (confirmed via
+  // live aria-pressed check, distinct from MaestroControlPanel's own mobile-layout
+  // state). These local refs are this component's own synchronous view of each
+  // panel's open state — needed because both toggle callbacks below are memoized
+  // with an empty dependency array, so reading the React state variables directly
+  // inside them would be permanently stale. canvasInteractionBlockingPanelOpenRef
+  // (shared with AlphaTabRenderer) is kept as the OR of the two: either confirmed
+  // leaking panel being open is enough to block canvas interaction.
+  const isTrackMixerOpenRef = useRef(false);
+  const isSpeedPanelOpenRef = useRef(false);
   const setIsTrackMixerOpen = useCallback((value: boolean) => {
-    canvasInteractionBlockingPanelOpenRef.current = value;
+    isTrackMixerOpenRef.current = value;
+    canvasInteractionBlockingPanelOpenRef.current = value || isSpeedPanelOpenRef.current;
     setIsTrackMixerOpenState(value);
+  }, []);
+  const setIsSpeedPanelOpen = useCallback((value: boolean) => {
+    isSpeedPanelOpenRef.current = value;
+    canvasInteractionBlockingPanelOpenRef.current = isTrackMixerOpenRef.current || value;
+    setIsSpeedPanelOpenState(value);
   }, []);
   const [isMetronomePanelOpen, setIsMetronomePanelOpen] = useState(false);
   const [isCountInPanelOpen, setIsCountInPanelOpen] = useState(false);
@@ -189,11 +201,12 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
         (t as Element).closest?.('.at-viewport') ||
         (t as Element).closest?.('#alphatab-container');
       if (isCanvas) {
-        // [PANEL-DISMISS-PLAYBACK-LEAK-001] Only mark when this click is actually
-        // dismissing Track Mixer through the canvas — not on every idle canvas
-        // click, and not for More/Speed/Metronome/Count-In/Export/Print (no
-        // confirmed leak there). Read from the ref, not the isTrackMixerOpen
-        // state variable, for the same reason as MaestroControlPanel.tsx.
+        // [PANEL-DISMISS-PLAYBACK-LEAK-001/002A] Only mark when this click is
+        // actually dismissing Track Mixer or Speed through the canvas — not on
+        // every idle canvas click, and not for More/Metronome/Count-In/Export/
+        // Print (no confirmed leak there). Read from the shared ref (now the OR
+        // of both confirmed-leaking panels), not either state variable directly,
+        // for the same reason as MaestroControlPanel.tsx.
         if (canvasInteractionBlockingPanelOpenRef.current) {
           markCanvasDismissSuppression();
         }
@@ -208,15 +221,18 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   useEffect(() => { if (isPlaying) closeAllPanels(); }, [isPlaying, closeAllPanels]);
 
   const handleTrackMixerToggle = useCallback(() => {
-    // [PANEL-DISMISS-PLAYBACK-LEAK-001] Reads the live ref (already the source of
-    // truth we maintain) instead of a functional setState updater, so the ref
-    // write stays synchronous rather than deferred to React's update flush.
-    setIsTrackMixerOpen(!canvasInteractionBlockingPanelOpenRef.current);
+    // [PANEL-DISMISS-PLAYBACK-LEAK-001] Reads this panel's own local ref (not the
+    // shared canvasInteractionBlockingPanelOpenRef, which since 002A can also be
+    // true because of Speed) instead of a functional setState updater, so the
+    // ref write stays synchronous rather than deferred to React's update flush.
+    setIsTrackMixerOpen(!isTrackMixerOpenRef.current);
     setIsSpeedPanelOpen(false); setIsMoreMenuOpen(false);
     setIsMetronomePanelOpen(false); setIsCountInPanelOpen(false); setIsExportPanelOpen(false);
   }, []);
   const handleSpeedToggle = useCallback(() => {
-    setIsSpeedPanelOpen(p => !p);
+    // [PANEL-DISMISS-PLAYBACK-LEAK-002A] Same reasoning as handleTrackMixerToggle
+    // above — reads this panel's own local ref, not the shared combined one.
+    setIsSpeedPanelOpen(!isSpeedPanelOpenRef.current);
     setIsTrackMixerOpen(false); setIsMoreMenuOpen(false);
     setIsMetronomePanelOpen(false); setIsCountInPanelOpen(false); setIsExportPanelOpen(false);
   }, []);
