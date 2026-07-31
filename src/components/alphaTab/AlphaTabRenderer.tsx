@@ -2,9 +2,38 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.27-PLAYER006
- * Date: July 13th, 2026
+ * Current version: V145.28-LOOPBOUNDARY001
+ * Date: July 30th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001 — Loop-aware landscape scroll-follow target.
+ * ✅ Near an active Loop's endTick, tickCache.findBeat() is scoped to playbackRange and can
+ *        never resolve the excluded beat, so the zero-delta fallback branch in the landscape
+ *        playerPositionChanged handler always fell through to a cached "last good" beat-to-
+ *        beat pixel delta — a generic distance disconnected from where BeatCustomLoopOverlay
+ *        actually renders the right Loop handle. New isFinalIncludedLoopBeat() first proves
+ *        (via the same endTick-1 "exclusive-end-safe" probe BeatCustomLoopOverlay itself
+ *        uses) that the current beat is genuinely the final included Loop beat; only then
+ *        does resolveLoopAwareBoundaryX() derive the SAME non-bar-boundary boundary X
+ *        BeatCustomLoopOverlay's buildRects() renders — (last-included-beat center +
+ *        next-beat center) / 2, matching its isLastBeatInBar()/beatCenter() exactly — via
+ *        beat.nextBeat, a direct AlphaTab model-graph reference. beat.nextBeat's
+ *        accessibility under active playbackRange scoping was empirically confirmed for the
+ *        measured build and Loop case (FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001
+ *        measurement matrix, 2026-07-30: content-space cursor/handle gap measured 415.56 vs
+ *        417.00 [-1.44px] at a bar boundary, 545.12 vs 527.95 [+17.17px] at an internal
+ *        beat) — this is not a documented AlphaTab API guarantee, and invalid or unavailable
+ *        geometry (missing next beat, row transition, zero-width bounds, etc.) falls back
+ *        safely to the exact pre-existing cached-delta behavior.
+ * ✅ Only engages for a proven final-included, non-bar-boundary Loop end. Ordinary mid-Loop
+ *        beats remain on the existing general (successful) next-beat interpolation path when
+ *        that resolution succeeds, or on the existing cached-delta fallback when a collapse
+ *        is encountered for a reason unrelated to the Loop endpoint. Bar-boundary endings
+ *        remain on that same unchanged cached-delta path (already measured within ~1.5px of
+ *        BeatCustomLoopOverlay's own bar-edge boundary).
+ * 🚫 No change to resolveNextBeatExpanded(), the general (non-fallback) next-beat resolution,
+ *        the RAF scroll-follow loop's easing, the native-wrap hard-snap, BeatCustomLoopOverlay.tsx,
+ *        or Cursor2/Cursor3.
  *
  * DARK-THEME-CENTERLINE-001 — Dark-theme staff-line detection support.
  * ✅ isNeutralStaffLineGrey() previously required brightness >90, rejecting
@@ -1592,6 +1621,90 @@ function resolveNextBeatExpanded(api: any, trackSet: Set<number>, expandedStart:
         return { nextBeat: b, nextStart: t };
     }
     return { nextBeat: null, nextStart: null };
+}
+
+// [FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001] Proves whether `beat` is the final beat
+// included in the active Loop range [startTick, endTick) — i.e. the beat containing
+// endTick - 1 — using the exact same "exclusive-end-safe probe" BeatCustomLoopOverlay.tsx
+// itself uses to resolve its own "final included beat" (tickCache.findBeat(trackSet,
+// endTick - 1) — see e.g. BeatCustomLoopOverlay.tsx's rebuildFromPlaybackRange). endTick - 1
+// is strictly inside the active half-open range, so — unlike a lookup for a tick at/beyond
+// endTick — this call is not blocked by playbackRange scoping. Caller must already have
+// proven endTick is a finite, non-negative, properly-ordered range boundary before calling
+// this (see the call site) — this function trusts that precondition and does not re-clamp.
+// Beat identity is compared by absolutePlaybackStart + bar index (the same dual comparison
+// resolveNextBeatExpanded already uses above to dedupe tied/duplicate-tick beats), not object
+// reference, since a fresh lookup is not guaranteed to return the same instance. Both calls
+// share the same `trackSet`, so both resolve via AlphaTab's identical track-priority rule for
+// that fixed set — this handler already relies on that same consistency for `beat` itself
+// (resolveNextBeatExpanded's own dedup check above uses the identical comparison).
+function isFinalIncludedLoopBeat(
+    tickCache: any,
+    trackSet: Set<number>,
+    beat: any,
+    endTick: number,
+): boolean {
+    if (!tickCache?.findBeat || !beat) return false;
+    const probe = tickCache.findBeat(trackSet, endTick - 1);
+    const finalBeat = probe?.beat;
+    if (!finalBeat) return false;
+
+    const curBarIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+    const finalBarIdx = finalBeat?.voice?.bar?.index ?? finalBeat?.voice?.bar?.masterBar?.index;
+
+    return finalBeat.absolutePlaybackStart === beat.absolutePlaybackStart &&
+        curBarIdx != null && finalBarIdx != null && curBarIdx === finalBarIdx;
+}
+
+// [FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001] Derives the same non-bar-boundary right-
+// Loop-boundary content X that BeatCustomLoopOverlay.tsx's buildRects() renders the end
+// handle at — (last included beat visualBounds center + next beat visualBounds center) / 2
+// — using beat.nextBeat (a direct AlphaTab model-graph reference), which was empirically
+// confirmed accessible for the measured AlphaTab build and Loop case even while
+// tickCache.findBeat() is scoped to the active playbackRange
+// (FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001 measurement matrix, 2026-07-30:
+// BeatCustomLoopOverlay's buildRects resolved hi.nextBeat's visualBounds successfully for a
+// tick tickCache.findBeat could not reach). This is an empirical observation for that build
+// and case, not a documented AlphaTab API guarantee, and is not assumed to hold unaffected by
+// playbackRange in every AlphaTab version — every failure mode below falls back to the
+// caller's existing cached-delta behavior. Caller must already have proven (via
+// isFinalIncludedLoopBeat) that `beat` is the final included beat of the active Loop range
+// before calling this — this helper only decides bar-boundary vs. non-bar-boundary and
+// geometry validity, matching BeatCustomLoopOverlay.tsx's isLastBeatInBar()/beatCenter()
+// exactly (same beat.voice.bar.index ?? beat.voice.bar.masterBar.index comparison, same
+// box-center formula), not an approximate or third convention. Returns null (safe fallback
+// to the existing cached-delta path at the call site) whenever exact boundary geometry cannot
+// be proven: a bar-boundary endpoint (out of scope here by design), no beat.nextBeat, a next
+// beat on a different rendered row/system, or missing/zero-width bounds.
+function resolveLoopAwareBoundaryX(
+    beat: any,
+    curVisualBounds: { x: number; y: number; w: number; h: number },
+    bounds: any,
+): number | null {
+    const nextBeat = beat?.nextBeat;
+    if (!nextBeat) return null; // isLastBeatInBar()-equivalent: no next beat = bar/score boundary
+
+    // Exact match to BeatCustomLoopOverlay.tsx's isLastBeatInBar() — same primitives, same
+    // comparison. A bar-boundary endpoint is out of scope for this helper by design.
+    const curBarIdx = beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index;
+    const nextBarIdx = nextBeat?.voice?.bar?.index ?? nextBeat?.voice?.bar?.masterBar?.index;
+    if (curBarIdx == null || nextBarIdx == null || curBarIdx !== nextBarIdx) return null;
+
+    const nbb = bounds?.findBeat?.(nextBeat);
+    if (!nbb?.visualBounds || nbb.visualBounds.w <= 0) return null;
+
+    // Same-row guard — mirrors resolveNextBeatExpanded's own tolerance above; a next beat
+    // that wrapped to a different rendered row/system would produce a nonsensical midpoint.
+    if (Math.abs(nbb.visualBounds.y - curVisualBounds.y) >= 5) return null;
+
+    // Exact match to BeatCustomLoopOverlay.tsx's beatCenter() — box-center, not onNotesX, on
+    // both sides, so this reproduces the SAME x2Global value buildRects() renders.
+    const curCenterX = curVisualBounds.x + curVisualBounds.w / 2;
+    const nextCenterX = nbb.visualBounds.x + nbb.visualBounds.w / 2;
+    if (!Number.isFinite(curCenterX) || !Number.isFinite(nextCenterX)) return null;
+
+    const midpoint = (curCenterX + nextCenterX) / 2;
+    return midpoint > curCenterX ? midpoint : null;
 }
 
 function getVisualKeyForBeat(api: any, beat: any): string | null {
@@ -6574,7 +6687,40 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         api?.playbackRange &&
                         nextBeatX <= curBeatX + 1
                     ) {
-                        effectiveNextBeatX = curBeatX + lastGoodLandscapeVisualDeltaXRef.current;
+                        // [FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001] tickCache.findBeat()
+                        // is scoped to the active playbackRange near an active Loop's endTick,
+                        // so resolveNextBeatExpanded() above can never resolve the excluded
+                        // beat here and this branch always used to fall straight through to the
+                        // cached last-good-delta — a generic beat-to-beat distance disconnected
+                        // from where BeatCustomLoopOverlay actually renders the right Loop
+                        // handle. Guard order matters: only prove the Loop-aware boundary when
+                        // the range itself is valid AND `beat` is actually the final included
+                        // beat of that range (isFinalIncludedLoopBeat, using the same
+                        // endTick-1 probe BeatCustomLoopOverlay itself uses) — this keeps the
+                        // midpoint from being derived for an ordinary internal beat unrelated
+                        // to the Loop endpoint, and keeps the extra
+                        // bounds.findBeat(beat.nextBeat) lookup (inside
+                        // resolveLoopAwareBoundaryX) limited to that one beat rather than every
+                        // occurrence of this fallback branch. Falls back to the existing
+                        // cached-delta behavior — unchanged — whenever the range is invalid,
+                        // the final-beat proof fails, or exact boundary geometry can't be
+                        // proven (bar-boundary end, missing next beat, row transition, etc. —
+                        // see resolveLoopAwareBoundaryX).
+                        const range = api.playbackRange as { startTick: number; endTick: number };
+                        const isValidRange =
+                            Number.isFinite(range.startTick) &&
+                            Number.isFinite(range.endTick) &&
+                            range.startTick >= 0 &&
+                            range.endTick > range.startTick;
+                        const isFinalBeat = isValidRange
+                            ? isFinalIncludedLoopBeat(tickCache, trackSet, beat, range.endTick)
+                            : false;
+                        const loopAwareNextBeatX = isFinalBeat
+                            ? resolveLoopAwareBoundaryX(beat, bb.visualBounds, bounds)
+                            : null;
+                        effectiveNextBeatX = loopAwareNextBeatX != null
+                            ? loopAwareNextBeatX
+                            : curBeatX + lastGoodLandscapeVisualDeltaXRef.current;
 
                         if (isRendererDebugEnabled()) {
                             console.log('[landscape-zero-delta-fallback]', {
@@ -6588,6 +6734,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 originalNextBeatX: nextBeatX,
                                 effectiveNextBeatX,
                                 fallbackDeltaX: lastGoodLandscapeVisualDeltaXRef.current,
+                                isFinalIncludedLoopBeat: isFinalBeat,
+                                usedLoopAwareBoundary: loopAwareNextBeatX != null,
                             });
                         }
                     }
