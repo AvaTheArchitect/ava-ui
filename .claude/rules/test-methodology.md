@@ -2,7 +2,11 @@
 
 Governs when an automated or manual test/verification mechanism is valid
 evidence of real product behavior, as opposed to an artifact of the test
-mechanism itself.
+mechanism itself. This file owns *mechanism fidelity* — whether a test
+mechanism is trustworthy at all. It does not own *result classification* —
+see [validation-and-evidence.md](validation-and-evidence.md) for the
+canonical evidence taxonomy a result is classified into once its mechanism
+has passed the fidelity questions below.
 
 ## Test mechanism must match the product path
 
@@ -49,7 +53,10 @@ Pair a test with:
   prove a passing positive result isn't just the mechanism matching
   something unrelated (e.g. a selector that matches the whole page).
 
-A result without both is weaker evidence and should be reported as such.
+A result without both is weaker evidence and should be reported as such —
+see [validation-and-evidence.md](validation-and-evidence.md) for how to
+label a result obtained without both controls (typically PARTIAL or
+INFERRED, not PROVEN).
 
 ## Beat/target verification
 
@@ -149,25 +156,25 @@ Pair environment-fidelity claims with the runtime identity report in
 [runtime.md](runtime.md) — a device test against the wrong server/HEAD
 isn't evidence of anything about the intended change.
 
-## Classifying a surprising result
+## Classifying a result
 
-When a test produces a result that contradicts expectation, classify it
-before acting on it:
-
-- **confirmed product behavior** — reproduced through a mechanism with
-  verified fidelity to the real product path.
-- **confirmed test artifact** — traced to a specific fidelity gap in the
-  test mechanism itself (wrong event model, stale coordinates, timing
-  contamination, etc.).
-- **likely product behavior requiring stronger measurement** — plausible,
-  but the current mechanism's fidelity isn't strong enough to confirm; state
-  what stronger measurement would resolve it.
-- **inconclusive** — neither confirmed nor ruled out; say so rather than
-  picking one to move forward with.
+A test result's *classification* (PROVEN, OBSERVED, INFERRED, THEORETICAL
+RISK, PARTIAL, BLOCKED, NOT RUN, INVALID CAPTURE, NOT REPRODUCED,
+SUPERSEDED, or WATCH) is governed by
+[validation-and-evidence.md](validation-and-evidence.md), not by this
+file. This file's job ends at the fidelity question: is the mechanism that
+produced this result trustworthy for the claim being made, and if not,
+what specific gap (wrong event model, stale coordinates, timing
+contamination, wrong server/HEAD, missing control) explains why not. A
+mechanism found to have a fidelity gap routes its result to INVALID
+CAPTURE in validation-and-evidence.md's taxonomy; a mechanism with no
+identified fidelity gap has its result classified using the rest of that
+taxonomy based on what was actually established.
 
 ## Methodology report requirements
 
 A test result is not reported as evidence without stating: the mechanism
 used, its fidelity to the real product path (and known gaps), whether
 positive/negative controls were used, which fresh-state category applied,
-and the classification above if the result was unexpected.
+and — per the section above — the resulting classification from
+[validation-and-evidence.md](validation-and-evidence.md).

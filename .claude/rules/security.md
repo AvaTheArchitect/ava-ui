@@ -135,7 +135,7 @@ redacted-looking, in the report.
 Finding a credential-shaped artifact does not authorize deleting or
 sanitizing it. Report it and its classification; wait for explicit
 authorization for that specific deletion/sanitization, per
-[../../CLAUDE.md](../../CLAUDE.md) §1.
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
 
 ## Old scratch artifacts are contaminated until classified
 
@@ -156,5 +156,6 @@ redaction of secrets is not reliably safe.
 
 Nothing in this file authorizes a source change. If closing a security
 finding requires a code change, that change follows the normal
-authorization rule in [../../CLAUDE.md](../../CLAUDE.md) §1 like any other
-patch.
+authorization rule in
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries)
+like any other patch.

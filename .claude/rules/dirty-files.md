@@ -1,13 +1,22 @@
 # Dirty-File Doctrine
 
 Governs any file that is locally modified (dirty) relative to HEAD and is
-not the direct, current subject of the active ticket.
+not the direct, current subject of the active ticket. This includes, in
+particular, a **persistent dirty file** — one that survives from one
+ticket into a second ticket without resolution. A persistent dirty file
+may not remain semantically unknown across those tickets; it must be
+classified per this file, not merely re-noted.
 
 ## Persistent dirty-file classification
 
 A dirty file that survives from one ticket into a second ticket must be
-classified, not just noted. Re-noting "M path/to/file" without
-classification is not sufficient — see [../../CLAUDE.md](../../CLAUDE.md) §9.
+classified, not just noted. Re-noting `M path/to/file` alone, with no
+further content, is not sufficient. At minimum, also report:
+
+- what the dirty diff changes semantically, not just which lines moved
+  (see "Semantic diff summary" below);
+- whether it shadows currently committed runtime behavior;
+- which classification below it has been assigned.
 
 Classify each persistent dirty file as one of:
 
@@ -20,6 +29,14 @@ Classify each persistent dirty file as one of:
 - **mixed historical reversion and new WIP** — partially reverts committed
   behavior while also carrying new, apparently intentional changes.
 
+If a restoration decision might follow the classification, an external
+forensic copy is created before that decision — but only after separate
+authorization for that specific external write; classification and audit
+do not by themselves authorize it (see "External forensic diff
+preservation" below). Do not restore, discard, stage, or commit a
+persistent dirty file based on classification alone — see "No action
+without separate authorization" below.
+
 ## Protected-file handling
 
 A file classified as required protected WIP, or any file Brett has marked
@@ -31,9 +48,9 @@ file governs dirty-file handling — it is allowed only when the current
 turn's scope permits it and no stronger rule forbids it. In particular:
 
 - If the file matches a Local Backup File pattern (see
-  [../../CLAUDE.md](../../CLAUDE.md) §6), the backup-file rule's "do not
-  read unless Brett explicitly asks" restriction overrides this file's
-  general audit allowance.
+  [../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries)),
+  the backup-file rule's "do not read unless Brett explicitly asks"
+  restriction overrides this file's general audit allowance.
 - If the file plausibly contains credential or session material,
   [security.md](security.md)'s restrictions override this file's general
   audit allowance.
@@ -54,7 +71,8 @@ For every persistent dirty file, summarize in plain language:
 
 Creating an external forensic snapshot is a file write, even though it
 lands outside the repository — it requires the same turn-specific
-authorization as any other write, per [../../CLAUDE.md](../../CLAUDE.md) §1.
+authorization as any other write, per
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
 It is not implied by permission to audit or classify the file.
 
 Once authorized, before any restoration, discard, or recovery decision
@@ -77,7 +95,7 @@ tree changed again between preservation and any subsequent action.
 Do not restore, discard, stage, or commit a persistent dirty file based on
 its classification alone. Classification informs the recommendation;
 authorization for the actual state-changing operation is separate, per
-[../../CLAUDE.md](../../CLAUDE.md) §1.
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
 
 ## Historical partial-revert fingerprinting
 

@@ -63,9 +63,9 @@ git grep -n '\-PROBE\]' -- '<approved source path>'
 automatically excludes `node_modules/`, `.claude/worktrees/`, and anything
 covered by `.gitignore`. Do not run an unscoped `grep -r` against the repo
 root — that can read Local Backup Files (see
-[../../CLAUDE.md](../../CLAUDE.md) §6), environment files, or other
-forbidden paths as a side effect of the search itself, not because anyone
-meant to read them.
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries)),
+environment files, or other forbidden paths as a side effect of the search
+itself, not because anyone meant to read them.
 
 If an untracked or `.gitignore`d probe-bearing file also needs checking
 (e.g. a working-tree-only experiment), check it as a separately named,
@@ -77,9 +77,9 @@ grep -n '\-PROBE\]' <explicitly approved untracked path>
 ```
 
 Either way, honor [security.md](security.md) and
-[../../CLAUDE.md](../../CLAUDE.md) §6 (Local Backup Files) restrictions —
-do not read a file the search happens to touch if either of those rules
-forbids reading it.
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries)
+(Local Backup Files) restrictions — do not read a file the search happens
+to touch if either of those rules forbids reading it.
 
 Record this search's result as the probe baseline at the start of a ticket
 that touches a probe-bearing file, and again at the end, so the delta

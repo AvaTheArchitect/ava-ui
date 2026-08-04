@@ -218,7 +218,23 @@ authorization before writing anything — do not reconcile it unilaterally.
 An unreconciled header is a latent bug (the next scratch-build from HEAD
 will silently drop whatever the working tree had that HEAD doesn't), but
 fixing it is itself a write and follows the same authorization rule as any
-other patch.
+other patch. If the divergence concerns a source-header date/version field
+specifically, resolve it per
+[source-header-versioning.md](source-header-versioning.md)'s evidence
+standard, not by guessing.
+
+## Git fetch requires its own explicit authorization
+
+`git fetch` changes remote-tracking refs (`.git/refs/remotes/...`) and is a
+repository-state write, per
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries) —
+it is not a read-only inspection step, even when it is being run only to
+refresh state before evaluating a push gate. Do not run `git fetch` as an
+implicit or assumed part of another authorized operation; it requires its
+own explicit, current-turn authorization, named as such, before it runs.
+The "before any push gate is evaluated, run `git fetch origin main`" step
+below describes *when* a fetch is needed, not a standing authorization to
+run it — that authorization is separate and must be obtained each time.
 
 ## Local commit first; push only after explicit push handoff
 
@@ -227,14 +243,18 @@ Do not push until the user gives an explicit, separate push handoff for that
 push. See [validation.md](validation.md) for what should be true before a
 push handoff is reasonable to grant.
 
-Before any push gate is evaluated, run `git fetch origin main` to refresh
-remote-tracking state — do not evaluate ahead/behind against a stale
-`origin/main`.
+Before any push gate is evaluated, an authorized `git fetch origin main` is
+required to refresh remote-tracking state — do not evaluate ahead/behind
+against a stale `origin/main`, and do not run the fetch itself without the
+authorization described above.
 
 ## Push synchronization
 
 Before a push, re-derive the relationship between the local branch and
-`origin/<branch>` from current state, not from an earlier report:
+`origin/<branch>` from current state, not from an earlier report. This
+sequence's first command is the authorized `git fetch` described above —
+confirm that authorization is current before running it, not just before
+running the push itself:
 
 ```
 git fetch origin main

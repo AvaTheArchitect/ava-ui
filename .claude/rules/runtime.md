@@ -13,8 +13,9 @@ authoritative instance.
 ## Starting, stopping, and restarting each require separate authorization
 
 Starting a server, stopping a server, and restarting a server are three
-distinct state-changing operations under [../../CLAUDE.md](../../CLAUDE.md)
-§1. Authorization for one does not carry over to another — e.g., being
+distinct state-changing operations under
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
+Authorization for one does not carry over to another — e.g., being
 told to "restart the dev server" authorizes a stop-then-start of that
 specific server, not a standing authorization to stop or start servers
 again later in the same turn or in a following one.
@@ -65,7 +66,8 @@ Classify each as:
   unrelated Node processes on the machine).
 - Termination targets only PIDs that were individually identified and
   classified as belonging to this repo, and only with turn-specific
-  authorization per [../../CLAUDE.md](../../CLAUDE.md) §1.
+  authorization per
+  [../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
 
 ## Graceful termination and confirmation
 
