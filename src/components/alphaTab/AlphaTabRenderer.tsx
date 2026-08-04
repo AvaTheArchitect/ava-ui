@@ -2,9 +2,19 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.28-LOOPBOUNDARY001
- * Date: July 30th, 2026
+ * Current version: V145.29-LANDSCAPETHROTTLE001
+ * Date: August 2nd, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * LANDSCAPE-LOOP-SCAN-THROTTLE-001 — Landscape-only source-resolution cache.
+ * ✅ Caches landscape beat resolution (expandedStart/expandedDur/structuralDur/
+ *        nextBeat/nextStart) per expanded occurrence so ordinary same-beat
+ *        callbacks skip the backward/forward tickCache scans while Loop is
+ *        active. Geometry (curBeatX/nextBeatX/effectiveNextBeatX) stays live.
+ * ✅ Track-switch RAF clears the landscape source cache immediately before renderTracks(), preventing stale old-track source reuse.
+ * 🚫 No change to resolveNextBeatExpanded(), RAF easing, native-wrap hard-snap,
+ *        the Loop-end midpoint formula, FixedLandscapeCursor, Cursor2/Cursor3,
+ *        or BeatCustomLoopOverlay.tsx.
  *
  * FIXED-LANDSCAPE-CURSOR-LOOP-END-OVERSHOOT-001 — Loop-aware landscape scroll-follow target.
  * ✅ Near an active Loop's endTick, tickCache.findBeat() is scoped to playbackRange and can
@@ -1525,6 +1535,55 @@ function getTrackSet(api: any): Set<number> {
         : new Set<number>([0]);
 }
 
+// [LANDSCAPE-LOOP-SCAN-THROTTLE-001] Landscape-only source-resolution cache.
+// Stores only score/tick-structure facts (never geometry) for one expanded
+// occurrence, so the landscape playerPositionChanged handler's backward and
+// forward tickCache scans run once per beat-entry instead of once per
+// callback while Loop is active. Not shared with portrait Cursor2 state.
+type LandscapeSourceCache = {
+    tickCacheRef: any;
+    trackIdentity: number;
+    absStart: number;
+    masterBarIndex: number | null;
+    playbackRangeStart: number | null;
+    playbackRangeEnd: number | null;
+    loopEnabled: boolean;
+    expandedStart: number;
+    expandedDur: number;
+    structuralDur: number;
+    nextBeat: any;
+    nextStart: number | null;
+};
+
+// O(1), allocation-free. tickRaw is checked against the cached expanded
+// occurrence's real-tick-space window, not the structural absolutePlaybackStart
+// alone, so repeat/volta passes that share an absolutePlaybackStart are not
+// mistaken for the same occurrence.
+function isLandscapeSourceCacheValid(
+    cache: LandscapeSourceCache | null,
+    tickCache: any,
+    trackIdentity: number,
+    beatAbsStart: number,
+    curMasterBarIndex: number | null,
+    rangeStart: number | null,
+    rangeEnd: number | null,
+    loopEnabled: boolean,
+    tickRaw: number,
+): boolean {
+    if (!cache) return false;
+    if (cache.tickCacheRef !== tickCache) return false;
+    if (cache.trackIdentity !== trackIdentity) return false;
+    if (cache.absStart !== beatAbsStart) return false;
+    if (cache.masterBarIndex !== curMasterBarIndex) return false;
+    if (cache.playbackRangeStart !== rangeStart) return false;
+    if (cache.playbackRangeEnd !== rangeEnd) return false;
+    if (cache.loopEnabled !== loopEnabled) return false;
+    const upperBound = cache.nextStart != null
+        ? cache.nextStart
+        : cache.expandedStart + cache.structuralDur;
+    return tickRaw >= cache.expandedStart && tickRaw < upperBound;
+}
+
 function forceRevealSurface(host: HTMLElement, cancelRef: { current: number }, maxMs = 3000): void {
     const start = performance.now();
     const cancelToken = cancelRef.current;
@@ -2642,6 +2701,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         lastTick: number;
     } | null>(null);
 
+    // [LANDSCAPE-LOOP-SCAN-THROTTLE-001] see isLandscapeSourceCacheValid() above.
+    const landscapeStableSourceCacheRef = useRef<LandscapeSourceCache | null>(null);
+
     const initTokenRef = useRef(0);
     const scoreBytesRef = useRef<Uint8Array | null>(null);
     const lastHardResetAtRef = useRef<number>(0);
@@ -2676,7 +2738,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         genDestroyedRef.current.forEach(g => { if (g < destroyedGen - 2) genDestroyedRef.current.delete(g); });
     }, []);
     const trackIndicesRef = useRef(trackIndices);
-    useEffect(() => { trackIndicesRef.current = trackIndices; }, [trackIndices]);
+    // [LANDSCAPE-LOOP-SCAN-THROTTLE-001] Cheap, allocation-free track-selection
+    // identity for the landscape source cache — a counter, not a derived
+    // signature, so nothing scans/sorts/joins the track array per callback.
+    const landscapeTrackSelectionGenRef = useRef<number>(0);
+    useEffect(() => {
+        trackIndicesRef.current = trackIndices;
+        landscapeTrackSelectionGenRef.current += 1;
+    }, [trackIndices]);
     useEffect(() => { scoreBytesRef.current = null; }, [fileUrl]);
 
     const forceHorizontalRef = useRef<boolean>(!!forceHorizontal);
@@ -4622,6 +4691,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
 
                 trackIndicesRef.current = [winnerIdx];
+                landscapeTrackSelectionGenRef.current += 1;
                 const tr = [score.tracks[winnerIdx]].filter(Boolean);
                 if (!tr.length) return;
 
@@ -6586,17 +6656,60 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const beatAbsStart = beat.absolutePlaybackStart ?? tickRaw;
                     const structuralDur = (beat.playbackDuration ?? beat.duration ?? 480) || 480;
 
-                    let expandedStart = beatAbsStart;
-                    for (let t = tickRaw - 1; t >= Math.max(tickRaw - 4096, beatAbsStart - 1); t--) {
-                        const rr = tickCache.findBeat(trackSet, t);
-                        if (!rr?.beat || rr.beat.absolutePlaybackStart !== beatAbsStart) {
-                            expandedStart = t + 1; break;
-                        }
-                    }
+                    // [LANDSCAPE-LOOP-SCAN-THROTTLE-001] Reuse the cached source resolution
+                    // when the current tick is still inside the same expanded occurrence —
+                    // see isLandscapeSourceCacheValid(). Only the backward/forward tickCache
+                    // scans are skipped; curBeatX above and all geometry below stay live.
+                    const _srcMasterBarIndex = beat?.voice?.bar?.masterBar?.index ?? null;
+                    const _srcRangeStart = _playbackRange?.startTick ?? null;
+                    const _srcRangeEnd = _playbackRange?.endTick ?? null;
+                    const _srcCache = landscapeStableSourceCacheRef.current;
+                    const _srcCacheHit = isLandscapeSourceCacheValid(
+                        _srcCache, tickCache, landscapeTrackSelectionGenRef.current,
+                        beatAbsStart, _srcMasterBarIndex, _srcRangeStart, _srcRangeEnd,
+                        loopEnabledRef.current, tickRaw,
+                    );
 
-                    const { nextBeat, nextStart } = resolveNextBeatExpanded(api, trackSet, expandedStart, beat);
-                    const expandedDur = (typeof nextStart === 'number' && nextStart > expandedStart)
-                        ? nextStart - expandedStart : structuralDur;
+                    let expandedStart: number;
+                    let expandedDur: number;
+                    let nextBeat: any;
+                    let nextStart: number | null;
+
+                    if (_srcCacheHit && _srcCache) {
+                        expandedStart = _srcCache.expandedStart;
+                        expandedDur = _srcCache.expandedDur;
+                        nextBeat = _srcCache.nextBeat;
+                        nextStart = _srcCache.nextStart;
+                    } else {
+                        expandedStart = beatAbsStart;
+                        for (let t = tickRaw - 1; t >= Math.max(tickRaw - 4096, beatAbsStart - 1); t--) {
+                            const rr = tickCache.findBeat(trackSet, t);
+                            if (!rr?.beat || rr.beat.absolutePlaybackStart !== beatAbsStart) {
+                                expandedStart = t + 1; break;
+                            }
+                        }
+
+                        const _resolvedNext = resolveNextBeatExpanded(api, trackSet, expandedStart, beat);
+                        nextBeat = _resolvedNext.nextBeat;
+                        nextStart = _resolvedNext.nextStart;
+                        expandedDur = (typeof nextStart === 'number' && nextStart > expandedStart)
+                            ? nextStart - expandedStart : structuralDur;
+
+                        landscapeStableSourceCacheRef.current = {
+                            tickCacheRef: tickCache,
+                            trackIdentity: landscapeTrackSelectionGenRef.current,
+                            absStart: beatAbsStart,
+                            masterBarIndex: _srcMasterBarIndex,
+                            playbackRangeStart: _srcRangeStart,
+                            playbackRangeEnd: _srcRangeEnd,
+                            loopEnabled: loopEnabledRef.current,
+                            expandedStart,
+                            expandedDur,
+                            structuralDur,
+                            nextBeat,
+                            nextStart,
+                        };
+                    }
 
                     let nextBeatX = curBeatX;
                     if (nextBeat) {
@@ -8537,6 +8650,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // ── END lyric detection (track change) ────────────────────────────────
 
             try {
+                landscapeStableSourceCacheRef.current = null;
                 api.renderTracks(tr);
 
             } catch (err) {
