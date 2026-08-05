@@ -4160,6 +4160,20 @@ export default function BeatCustomLoopOverlay({
         const endAnchorTop = endRowGeom ? endRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
         const endAnchorHeight = endRowGeom ? Math.max(20, endRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
         const HANDLE_HIT_ZONE_WIDTH = 40;
+        // [MAESTRO-LOOP-LANDSCAPE-HITZONE-001] Midpoint-partitioned hit zones. Each zone
+        // keeps its full outward reach away from the loop and limits its INWARD reach to
+        // half the live anchor separation, so the two zones meet at the anchor midpoint
+        // instead of overlapping. At or above HANDLE_HIT_ZONE_WIDTH of separation the
+        // inward reach saturates at that same half-width, leaving normal-width loops with
+        // the exact zones they already had; below it, neither zone can cover the other
+        // handle's visible bar, so a press always lands on the handle it belongs to.
+        const hitZoneOutwardReach = HANDLE_HIT_ZONE_WIDTH / 2;
+        const hitZoneSeparation = Math.max(0, endAnchorLeft - startAnchorLeft);
+        const hitZoneInwardReach = Math.min(hitZoneOutwardReach, hitZoneSeparation / 2);
+        const startHitZoneLeft = startAnchorLeft - hitZoneOutwardReach;
+        const startHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
+        const endHitZoneLeft = endAnchorLeft - hitZoneInwardReach;
+        const endHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] The old ghost/forecast span + resolvePreviewEdgeX
         // (bar-index-based) overlay is RETIRED. Before this lane, `rects` only updated on
         // release, so a separate live-preview overlay was needed to show the moving handle
@@ -4347,9 +4361,9 @@ export default function BeatCustomLoopOverlay({
                             onMouseDown={ev => landscapeHandleDragStart(ev, 'start')}
                             style={{
                                 position: 'absolute',
-                                left: startAnchorLeft - HANDLE_HIT_ZONE_WIDTH / 2,
+                                left: startHitZoneLeft,
                                 top: startAnchorTop,
-                                width: HANDLE_HIT_ZONE_WIDTH,
+                                width: startHitZoneWidth,
                                 height: startAnchorHeight,
                                 background: 'transparent',
                                 pointerEvents: 'auto',
@@ -4376,9 +4390,9 @@ export default function BeatCustomLoopOverlay({
                             onMouseDown={ev => landscapeHandleDragStart(ev, 'end')}
                             style={{
                                 position: 'absolute',
-                                left: endAnchorLeft - HANDLE_HIT_ZONE_WIDTH / 2,
+                                left: endHitZoneLeft,
                                 top: endAnchorTop,
-                                width: HANDLE_HIT_ZONE_WIDTH,
+                                width: endHitZoneWidth,
                                 height: endAnchorHeight,
                                 background: 'transparent',
                                 pointerEvents: 'auto',
