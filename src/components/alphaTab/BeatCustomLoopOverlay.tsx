@@ -1,8 +1,189 @@
 'use client';
 
 /**
- * BeatCustomLoopOverlay v1.8.39 — Landscape Vertical Overlay/Handle Height Parity
- * Date: July 18th, 2026
+ * BeatCustomLoopOverlay v1.8.42 — Page/Desktop Handle-Wall Parity
+ * Date: August 6th, 2026
+ *
+ * 🔥 V1.8.42 CHANGES (MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001 / PAGE-DESKTOP
+ * WALL-PARITY):
+ * ✅ Replaces the V1.8.41 Landscape-derived 7px mutual-wall centre gap with a fixed 27px
+ *    centre-separation parity target, matching the measured Mobile Page View / Desktop
+ *    contract (HANDLE_W=27, via wallMax/wallMin) confirmed live via Playwright on Mobile
+ *    Page View (Phase 7 audit): minimum box-center separation exactly 27.000px, minimum
+ *    visible bar-edge gap exactly 24.000px, zero contact frames, in every dense and
+ *    spacious sample measured. Desktop's live fixture could not be established through
+ *    normal product interaction (Phase 7, BLOCKED after four genuine attempts); its 27px
+ *    target instead rests on direct source-code identity with Page View — both render
+ *    through the exact same unconditional, non-isLandscape branch of this file, with no
+ *    further branching by viewport or device anywhere in the wall/handle geometry.
+ * ✅ LANDSCAPE_ACTIVE_BAR_HALF_W/LANDSCAPE_IDLE_BAR_HALF_W/LANDSCAPE_HANDLE_MIN_VISUAL_GAP_PX
+ *    and their landscapeMutualWallCenterGap derivation are removed. One new constant,
+ *    LANDSCAPE_HANDLE_PARITY_CENTER_GAP_PX = 27, replaces them. landscapeStartWallMaxCenter/
+ *    landscapeEndWallMinCenter (both variable names UNCHANGED) now derive directly from
+ *    this constant instead of the retired sum.
+ * ✅ A Landscape-specific constant is used rather than referencing portrait's own inline
+ *    HANDLE_W literal directly — preserves branch separation (no new coupling between the
+ *    two render branches' source ordering), and documents the parity contract explicitly
+ *    as a deliberate cross-mode invariant, not an accidental shared value.
+ * ✅ Composition is UNCHANGED: own-rect self-clamp first, then the mutual wall
+ *    (landscapeStartWallMaxCenter/landscapeEndWallMinCenter), then the existing own-anchor
+ *    safety clamp last. On a dense loop where accepted anchor separation is below 27px, the
+ *    wall bound falls behind the active handle's own accepted anchor exactly as it did at
+ *    7px — the own-anchor safety clamp (unchanged, not touched by this patch) is what then
+ *    pins the glyph at its own accepted anchor, producing zero inward raw-glyph travel on
+ *    those loops. This is the same "pin at own anchor" behavior V1.8.41 already documented
+ *    for the rarer case where its own 7px bound crossed the own-rect span — V1.8.42 simply
+ *    makes that the common case on any loop under 27px, by design, in exchange for visual
+ *    parity with Page/Desktop.
+ * ✅ Geometry only — still no tick, beat-duration, MIN_LOOP_SPAN_TICKS, gesture-cap,
+ *    playbackRange, landscapePreviewRange, bar-index, or resolver arithmetic participates,
+ *    and nothing derived from the wall is written back into any of them. No new state, ref,
+ *    effect, or helper function.
+ * ⛔ [SUPERSEDED — see the V1.8.41 bullet below] V1.8.41's specific 3px-visual-gap /
+ *    7px-center-gap numeric decision, and its rationale for why portrait's 27px figure was
+ *    disqualified on dense Landscape material, are both superseded by this version — the
+ *    Phase 7 audit that produced this patch found no geometric formula that is
+ *    simultaneously exact Page/Desktop parity AND preserves dense-loop pointer-lead on
+ *    Landscape's own ~26.5px accepted-anchor geometry; V1.8.42 is Brett's explicit product
+ *    decision to prioritize Page/Desktop visual parity, accepting that dense-loop inward
+ *    pointer-lead becomes effectively zero as a direct, expected consequence — not a
+ *    regression, and not a return to the pre-V1.8.41 handles-can-touch mismatch.
+ * ⛔ Untouched: landscapeActiveHandleX publication, landscapeDragFrame, preview-rejection
+ *    independence, landscapePointerAnchorX, LOOP_X_OFFSET handling, renderRects, the
+ *    highlight band, inactive anchors, both tabs, HITZONE-001's midpoint partition and both
+ *    hit zones, event listeners, drag start/move/end, the resolver, tick logic, min-span,
+ *    the gesture cap, the release commit, playbackRange/onLoopChange, the entire
+ *    portrait/desktop branch, AlphaTabRenderer.tsx, FixedLandscapeCursor.tsx,
+ *    MaestroCursor2/3, and globals.css. CANVAS-PASSTHROUGH-001 remains a separate lane.
+ *
+ * 🔥 V1.8.41 CHANGES (MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001 / MUTUAL-WALL):
+ * ✅ Adds the visual-only mutual wall the V1.8.40 pointer-lead layer deliberately left
+ *    out. Brett's Chrome DevTools mobile-emulation gate passed continuity, forecast, and
+ *    release, but flagged one adjustment: on a minimum-span loop the ACTIVE glyph could
+ *    travel until it visually touched the INACTIVE glyph (release then snapped it back to
+ *    the accepted one-beat-separated position). Portrait has never allowed the two
+ *    visible handles to touch mid-drag; landscape now matches that contract.
+ * ✅ Geometry only, and the wall's ONLY inputs are the two already-accepted anchors
+ *    (startAnchorLeft/endAnchorLeft) plus the bars' own half-widths and one clearance
+ *    constant. No tick, beat-duration, MIN_LOOP_SPAN_TICKS, gesture-cap, playbackRange,
+ *    landscapePreviewRange, bar-index, or resolver arithmetic participates, and nothing
+ *    derived from the wall is written back into any of them. The accepted anchors already
+ *    sit a musically legal distance apart because the resolver and the min-span guard
+ *    enforced that upstream — the wall neither knows nor re-derives that; it only refuses
+ *    to let the two GLYPHS collide.
+ * ✅ Collision arithmetic: both outward tabs point AWAY from the loop interior (start tab
+ *    right:'100%', end tab left:'100%'), so only the bars can ever meet. The active bar
+ *    spans [c-2.5, c+2.5] at its 5px drag width and the idle bar spans [c-1.5, c+1.5] at
+ *    3px, so the bars touch at exactly 4px of centre separation. Clearance is 3px — equal
+ *    to the idle bar's own width, so the space left between the glyphs reads as one
+ *    bar-width of clear air rather than an invented number — giving a MINIMUM CENTRE
+ *    SEPARATION OF 7px, symmetric for both handles.
+ * ⛔ [SUPERSEDED by V1.8.42 above — Page/Desktop's 27px centre separation IS now the
+ *    Landscape parity target; see V1.8.42's rationale for why the resulting dense-loop
+ *    zero-inward-travel consequence is an accepted product trade-off, not a defect]
+ *    Portrait's own wall was NOT copied arithmetically at this version. wallMax/wallMin
+ *    enforce 27px centre separation (one full 27px handle-box width, a 24px visible gap) —
+ *    that is portrait's hit-box dimension, not a visual-gap precedent, and it was
+ *    disqualified here by measurement: on a genuine 60-tick landscape loop the accepted
+ *    anchors sit only ~26.5px apart (Playwright-measured at M24 92100-92160 and M40
+ *    153540-153600), so a 27px wall would fall LEFT of the active handle's own accepted
+ *    anchor and cancel pointer-lead on exactly the dense loops this lane exists to fix.
+ * ✅ Unconditional min/max — no sameRect/sameBar equivalent is added. Portrait gates its
+ *    walls on sameRect purely to suppress cross-ROW x comparisons, a hazard that cannot
+ *    exist here: bandRects filters every landscape rect to a single y-band (±8px of
+ *    firstBandY) and visibleRects is then X-ascending sorted, so endAnchorLeft >=
+ *    startAnchorLeft holds by construction. Where the anchors are far apart the bounds
+ *    simply never bind, so no gate is needed to keep them inert.
+ * ✅ Each wall is composed AFTER the existing own-rect self-clamp and is then re-bounded
+ *    by that same clamp, so the glyph can never be pushed outside its own accepted rect.
+ *    Portrait documents the opposite trade-off (V1.8.30: in dense geometry its wall bound
+ *    "can cross the handle's own rect-span bound" and glyphs kiss) — landscape pins at its
+ *    own accepted anchor instead of inverting.
+ * ⛔ shadowWallMin is NOT ported. Its documented purpose (V1.8.34) is protecting against
+ *    clef/time-signature METADATA incursion on same-bar spans, not handle-to-handle
+ *    separation, and it is sameBar-gated, i.e. tick-dependent via resolveBarIndexForTick —
+ *    both disqualifying for this lane.
+ * ⛔ No new state, ref, effect, or helper function. The wall reads startAnchorLeft/
+ *    endAnchorLeft, already computed in the same render from the same batched state that
+ *    produces landscapePointerAnchorX and the own-rect self-clamp, so the opposite
+ *    accepted anchor carries the identical same-frame freshness guarantee the self-clamp
+ *    already relies on.
+ * ⛔ Untouched: landscapeActiveHandleX publication, landscapeDragFrame, preview-rejection
+ *    independence, landscapePointerAnchorX, LOOP_X_OFFSET handling, renderRects, the
+ *    highlight band, inactive anchors, both tabs, HITZONE-001's midpoint partition and
+ *    both hit zones, event listeners, drag start/move/end, the resolver, tick logic,
+ *    min-span, the gesture cap, the release commit, playbackRange/onLoopChange, the entire
+ *    portrait/desktop branch, AlphaTabRenderer.tsx, FixedLandscapeCursor.tsx,
+ *    MaestroCursor2/3, and globals.css. CANVAS-PASSTHROUGH-001 remains a separate lane.
+ *
+ * 🔥 V1.8.40 CHANGES (MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001):
+ * ✅ Landscape gains the same driver/payload separation portrait has had since
+ *    MAESTRO-LOOP-004D.5: the ACTIVELY DRAGGED landscape handle bar (and its outward
+ *    tab child, which follows automatically) now renders from the latest RAW pointer/
+ *    touch clientX, while the highlight band keeps rendering exclusively from the
+ *    latest ACCEPTED snapped renderRects. The visible separation between the two IS
+ *    the forecast projection — backward for the start handle, forward for the end
+ *    handle — restoring the capability the bar-index ghost span provided before
+ *    MAESTRO-LOOP-LANDSCAPE-001c-d retired it, without restoring that obsolete
+ *    bar-index implementation. Root cause of the reported stepped/"speed bump" motion
+ *    and the missing forecast is one omission, not two: landscape had no raw-pointer
+ *    visual layer at all, so every visible landscape X was acceptance-gated and the
+ *    band and glyph were derived from the identical accepted geometry.
+ * ✅ RAF cadence is landscape-specific and deliberately NOT portrait's unthrottled
+ *    setState-per-move-event pattern. landscapeHandleDragMove still writes the raw
+ *    position to landscapeDragFinalPosRef on every move event (unchanged), but now
+ *    schedules landscapeDragFrame — a shared frame that publishes the raw visual X
+ *    FIRST and unconditionally, then calls the existing resolveLandscapePreview.
+ *    One shared frame through the existing landscapePreviewRafRef (not a second RAF
+ *    channel) keeps this at one React render per animation frame: the landscape
+ *    render branch performs unmemoized per-render DOM work (getLandscapeStaffGeom →
+ *    detectLandscapeStaffLines walks every <rect> in a tile with getBBox), so a
+ *    second independent channel would have doubled that cost during a drag.
+ * ✅ Visual publication can never be suppressed by preview acceptance. All seven of
+ *    resolveLandscapePreview's early-return gates (no target/range/pos/api, no
+ *    resolvable beat, no tickCache, min-span, no boundary beat, empty rects) are
+ *    strictly downstream of the publication, and publishLandscapeVisualHandleX reads
+ *    no preview state, performs no DOM query, and makes no API call. A rejected frame
+ *    correctly holds the band while the active glyph keeps tracking the finger.
+ * ✅ Raw pointer → anchor-space conversion is container-relative, matching landscape's
+ *    own content-space render coordinates (the overlay is portaled INSIDE
+ *    .alphatab-container per LANDSCAPE-003-E):
+ *        pointerAnchorX = clientX - containerRect.left + container.scrollLeft
+ *    getActiveHandleOverlayX is portrait-only and is NOT reused — it is .at-surface-
+ *    relative and deliberately excludes scrollLeft (see V1.8.28 below).
+ * ✅ LOOP_X_OFFSET is applied exactly once across the round trip, and therefore does
+ *    NOT appear in the formula above. resolveLandscapeBeatWithX's client→score leg
+ *    applies -LOOP_X_OFFSET; the anchor render's score→anchor leg applies
+ *    +LOOP_X_OFFSET; composing client→anchor cancels the term algebraically
+ *    (-1 + 1 = 0). Portrait's net count is +1 instead, because its own resolver
+ *    (resolveBeatWithX) applies no offset at all — which is precisely why portrait's
+ *    helper cannot be reused here.
+ * ✅ The active glyph is self-clamped to its OWN accepted rect and nothing else:
+ *    center clamped to [rect.x + LOOP_X_OFFSET, rect.x + rect.w + LOOP_X_OFFSET],
+ *    then the existing -2.5 half-width offset. Landscape's bar was already
+ *    center-anchored (-1.5 at 3px idle, -2.5 at 5px active — both exactly -width/2),
+ *    so the active-width change needs no new handling. Purely geometric: no tick, no
+ *    MIN_LOOP_SPAN_TICKS, no gesture cap, no writes to rects/preview/playbackRange.
+ * ⛔ [SUPERSEDED by V1.8.41 above — the handle-to-handle wall is now implemented;
+ *    shadowWallMin/sameBar remain correctly unported] Portrait's mutual walls
+ *    (wallMin/wallMax/shadowWallMin, sameRect/sameBar gates) are NOT ported — still
+ *    parked, as noted in V1.8.35 below. Consequence to watch
+ *    on device: for a single-segment loop landscapeStartRect === landscapeEndRect, so
+ *    an active glyph can travel to the opposite handle's anchor and visually overlap
+ *    it. Cosmetic only — the min-span guard still prevents the accepted range from
+ *    inverting, and HITZONE-001's midpoint partition still governs which handle a
+ *    press grabs. (Live-observed on Brett's Chrome emulation gate; that observation is
+ *    what V1.8.41 acts on.)
+ * ⛔ Render-path-only for the active handle's `left`. Untouched: HITZONE-001 midpoint
+ *    partition, HANDLE_HIT_ZONE_WIDTH, both hit-zone divs and their handlers/refs,
+ *    the inactive handle, the highlight band, all vertical geometry, z-index/DOM
+ *    order/pointerEvents/touchAction, resolveLandscapePreview's body,
+ *    resolveLandscapeBeatWithX, the gesture cap, min-span, buildRects,
+ *    setRectsWithReason semantics, landscapeHandleDragEnd's commit path,
+ *    api.playbackRange/onLoopChange, the entire portrait/desktop branch,
+ *    AlphaTabRenderer.tsx, FixedLandscapeCursor.tsx, MaestroCursor2/3, and
+ *    globals.css. CANVAS-PASSTHROUGH-001 (narrow-loop interior panning) is a
+ *    separate lane and is not addressed here.
  *
  * 🔥 V1.8.39 CHANGES (MAESTRO-LOOP-LANDSCAPE-002-D-B):
  * ✅ Landscape vertical overlay and handle-height parity. The gray highlight band and the
@@ -3314,6 +3495,26 @@ export default function BeatCustomLoopOverlay({
     // cleared here alongside the rest of the preview state.
     const landscapeGestureMaxDeltaTicksRef = useRef<number | null>(null);
 
+    // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Landscape raw-pointer visual
+    // driver — the ONLY new reactive source this lane introduces, and the landscape
+    // counterpart to portrait's own activeHandleX (V1.8.28/004D.5). Deliberately a
+    // separate, parallel value rather than a shared one, matching this file's existing
+    // portrait/landscape separation discipline. Holds the raw clientX of the active
+    // gesture, published at most once per animation frame by
+    // publishLandscapeVisualHandleX below; null whenever no landscape drag is active.
+    //
+    // No companion raw-position ref is added: landscapeDragFinalPosRef (declared above)
+    // already carries the latest raw { clientX, clientY }, is already written at gesture
+    // start and on every move event, and is already nulled on every drag-end path — a
+    // second raw ref would only create two values that must be kept in lockstep.
+    //
+    // Read ONLY by the landscape render branch's pointer-anchor derivation, which feeds
+    // ONLY the active handle bar's `left`. Never consulted by resolveLandscapePreview,
+    // resolveLandscapeBeatWithX, buildRects, setRectsWithReason, the gesture cap, the
+    // min-span guards, landscapeHandleDragEnd's commit, api.playbackRange, or
+    // onLoopChange — it cannot influence any committed value.
+    const [landscapeActiveHandleX, setLandscapeActiveHandleX] = useState<number | null>(null);
+
     const clearLandscapePreview = () => {
         if (landscapePreviewRafRef.current != null) {
             cancelAnimationFrame(landscapePreviewRafRef.current);
@@ -3449,6 +3650,55 @@ export default function BeatCustomLoopOverlay({
         setRectsWithReason(previewRects, 'landscapeHandleDragMove-preview');
     };
 
+    // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Raw visual publication.
+    // Deliberately trivial: one ref read plus one setState. It reads NO preview state
+    // (not landscapePreviewRange/landscapePreviewRangeRef/rects/api.playbackRange, not
+    // the gesture cap, not the min-span state, not resolver output), performs no DOM
+    // query, and makes no API call — so it can neither be gated by preview acceptance
+    // nor throw in a way that would prevent resolveLandscapePreview from running in the
+    // same frame. Guarded on landscapeDragTargetRef, the same drag-active source of
+    // truth every other landscape drag function already uses, so no second
+    // drag-active flag is introduced.
+    const publishLandscapeVisualHandleX = () => {
+        if (!landscapeDragTargetRef.current) return;
+        const clientX = landscapeDragFinalPosRef.current?.clientX;
+        if (typeof clientX !== 'number') return;
+        setLandscapeActiveHandleX(clientX);
+    };
+
+    // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] The shared landscape drag
+    // frame, scheduled by landscapeHandleDragMove through the EXISTING
+    // landscapePreviewRafRef (no second RAF ref, no second cancellation path — the
+    // cancel inside clearLandscapePreview already covers both operations, and it has
+    // exactly one call site, in landscapeHandleDragEnd).
+    //
+    // Order is load-bearing and must not be swapped: the raw visual publication runs
+    // FIRST and unconditionally, so all seven of resolveLandscapePreview's early-return
+    // gates are strictly downstream of it. A rejected preview frame therefore holds the
+    // highlight band (correct) while the active glyph keeps following the finger
+    // (required). resolveLandscapePreview itself is called unchanged — its body,
+    // including the `landscapePreviewRafRef.current = null` on entry that preserves the
+    // one-pending-frame throttle, is untouched.
+    //
+    // Both setState calls land in this single RAF call stack, so React 18's automatic
+    // batching produces ONE re-render per frame, and the render that consumes the new
+    // landscapeActiveHandleX also consumes any newly accepted rects — the glyph's
+    // clamp bound is therefore never one accepted frame stale.
+    const landscapeDragFrame = () => {
+        publishLandscapeVisualHandleX();
+        resolveLandscapePreview();
+    };
+
+    // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Clears ONLY the raw visual
+    // driver. Accepted preview state and committed range state are not touched here —
+    // clearLandscapePreview owns the former, and nothing owns the latter on a cleanup
+    // path. Called from landscapeHandleDragEnd's unconditional cleanup block, ahead of
+    // every release/cancellation return, so no stale glyph position can survive a
+    // gesture.
+    const clearLandscapeVisualDriver = () => {
+        setLandscapeActiveHandleX(null);
+    };
+
     // [MAESTRO-LOOP-002I.1c] Layer B — freezes the REAL scroller (.alphatab-container,
     // passed in as `container`) for the duration of a handle drag. A live probe found
     // scrollEventsDuringHandleDrag > 0 (37) even with the hit-zone's own touch-action:none
@@ -3518,6 +3768,12 @@ export default function BeatCustomLoopOverlay({
 
         const { clientX, clientY } = resolveEventPosition(e as any);
         landscapeDragFinalPosRef.current = { clientX, clientY };
+        // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Seed the raw visual driver
+        // at the exact gesture-start position, so the active glyph is already
+        // pointer-led on the first rendered frame rather than snapping into place once
+        // the first landscapeDragFrame lands. Render-side only — this value never
+        // reaches the resolver, the gesture cap, min-span, or the release commit.
+        setLandscapeActiveHandleX(clientX);
         setActiveLandscapeDragHandle(target);
         if (LANDSCAPE_HANDLE_DRAG_DEBUG) {
             const range = api.playbackRange;
@@ -3546,10 +3802,16 @@ export default function BeatCustomLoopOverlay({
         const { clientX, clientY } = resolveEventPosition(e);
         landscapeDragFinalPosRef.current = { clientX, clientY };
         // [MAESTRO-LOOP-002I.1] Still no rects/api writes here — commit stays release-only.
-        // Only schedules a RAF-throttled preview resolve (skipped if one is already
-        // pending this frame) from the position just recorded above.
+        // Only schedules a RAF-throttled resolve (skipped if one is already pending this
+        // frame) from the position just recorded above.
+        // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] The scheduled callback is
+        // now landscapeDragFrame (raw visual publication, then the unchanged
+        // resolveLandscapePreview) instead of resolveLandscapePreview directly. Same ref,
+        // same pending-frame guard, same at-most-one-frame scheduling, same
+        // preventDefault above, same listener architecture — only the callback target
+        // changed.
         if (landscapePreviewRafRef.current == null) {
-            landscapePreviewRafRef.current = requestAnimationFrame(resolveLandscapePreview);
+            landscapePreviewRafRef.current = requestAnimationFrame(landscapeDragFrame);
         }
     };
 
@@ -3572,6 +3834,13 @@ export default function BeatCustomLoopOverlay({
         landscapeDragOriginalRangeRef.current = null;
         landscapeDragFinalPosRef.current = null;
         setActiveLandscapeDragHandle(null);
+        // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Clear the raw visual driver
+        // here, inside the existing UNCONDITIONAL cleanup block — ahead of the
+        // rotation/missing-state cancel, the no-preview cancel, and the ordinary
+        // successful release below, and therefore also ahead of the touchcancel,
+        // pointercancel, and window-blur paths, all of which route through this same
+        // function. Guarantees no stale pointer-led glyph position can survive a gesture.
+        clearLandscapeVisualDriver();
         document.body.style.userSelect = '';
         (document.body.style as any).webkitUserSelect = '';
         setLandscapeHandleDragging(false);
@@ -4136,6 +4405,41 @@ export default function BeatCustomLoopOverlay({
         const landscapeStartRect = renderRects[0] ?? null;
         const landscapeEndRect = renderRects[renderRects.length - 1] ?? null;
 
+        // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Raw pointer → anchor-space
+        // conversion for the ACTIVE handle glyph only. Anchor space is the same
+        // content-space the rects/anchors below render in — the landscape overlay is
+        // portaled INSIDE .alphatab-container (LANDSCAPE-003-E), so `left` is measured
+        // from the container's own unscrolled padding-box origin and moves natively with
+        // the score.
+        //
+        // Container-relative, NOT .at-surface-relative: getActiveHandleOverlayX (portrait,
+        // further below) is deliberately surface-anchored and excludes scrollLeft, which
+        // is safe only because portrait's surface scrollLeft is 0. It is not reused here.
+        //
+        // LOOP_X_OFFSET is intentionally absent, and that absence IS its single correct
+        // application. resolveLandscapeBeatWithX converts client→score with
+        // `-LOOP_X_OFFSET`; startAnchorLeft/endAnchorLeft below convert score→anchor with
+        // `+LOOP_X_OFFSET`. Composing the two legs for the same physical pointer position
+        // cancels the term exactly (-1 + 1 = 0), so adding or subtracting it here would
+        // double-apply it — the same latent class of error V1.8.28/004D.5 corrected on
+        // the portrait side. (Portrait's net count is +1 rather than 0 only because its
+        // own resolver, resolveBeatWithX, applies no offset at all.)
+        //
+        // No tick conversion happens here, and no value derived from this reaches the
+        // resolver, the preview, the hit zones, or the commit. Returns null — leaving
+        // every handle on its accepted anchor — whenever no drag is publishing a raw X or
+        // the container is unavailable. One guarded getBoundingClientRect read; there is
+        // no already-computed container rect in this branch to reuse (containerWidth
+        // above comes from clientWidth, not a rect). container.scrollLeft is read live,
+        // matching resolveLandscapeBeatWithX's own live read in the same frame, and is
+        // held constant for the gesture's duration by freezeLandscapeContainerScroll.
+        const landscapePointerAnchorX: number | null = (() => {
+            if (landscapeActiveHandleX === null) return null;
+            const el = container as HTMLElement | null;
+            if (!el) return null;
+            return (landscapeActiveHandleX - el.getBoundingClientRect().left) + el.scrollLeft;
+        })();
+
         // [MAESTRO-LOOP-LANDSCAPE-001a] (retained, generalized for two anchors) Handle/
         // hit-zone DOM nodes live in a stable sibling block outside renderRects.map — same
         // 004D.4a DOM-stability precedent, now gated on landscapeStartRect/landscapeEndRect
@@ -4174,6 +4478,53 @@ export default function BeatCustomLoopOverlay({
         const startHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
         const endHitZoneLeft = endAnchorLeft - hitZoneInwardReach;
         const endHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
+
+        // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001 / MUTUAL-WALL] Visual-only
+        // mutual wall for the ACTIVE pointer-led glyph. Declared AFTER the HITZONE-001
+        // block above deliberately: it shares none of that block's values, feeds none of
+        // them, and must never be mistaken for part of it — hit-zone geometry stays
+        // exactly as HITZONE-001 left it and remains accepted-anchor-led.
+        //
+        // Geometry only. The wall's sole inputs are the two ACCEPTED anchors
+        // (startAnchorLeft/endAnchorLeft, derived above from renderRects) plus the bars'
+        // own half-widths and one clearance constant. No tick, beat-duration,
+        // MIN_LOOP_SPAN_TICKS, gesture-cap, playbackRange, landscapePreviewRange,
+        // bar-index, or resolver arithmetic participates here, and nothing derived from
+        // these values is ever written back into any of them.
+        //
+        // Collision arithmetic: both outward tabs point AWAY from the loop interior (start
+        // tab right:'100%', end tab left:'100%'), so only the bars can ever meet — same as
+        // V1.8.41. [V1.8.42 / PAGE-DESKTOP WALL-PARITY] The clearance target itself is no
+        // longer derived from Landscape's own bar half-widths; it is now Page/Desktop's own
+        // measured contract, taken directly rather than approximated: HANDLE_W=27 governs
+        // portrait's wallMax/wallMin (see the portrait branch further below), confirmed live
+        // via Playwright on Mobile Page View (Phase 7 audit) at exactly 27.000px minimum
+        // box-center separation / 24.000px minimum visible bar-edge gap. Landscape's active
+        // bar is 5px wide (not 27px like portrait's whole draggable box), and Landscape has
+        // no interactive-box concept separate from the visible bar (HITZONE-001 already
+        // separates hit-testing from the bar independently) — so this constant is a
+        // CENTRE-SEPARATION invariant taken from portrait's box-center contract, not a
+        // literal reuse of portrait's box width as a Landscape edge/gap value.
+        //
+        // On a dense loop (Landscape's own accepted anchors commonly sit ~26.5px apart —
+        // Playwright-measured at M24 92100-92160 and M40 153540-153600), this 27px bound
+        // falls LEFT of the active handle's own accepted anchor, exactly as portrait's own
+        // 27px figure would. Unlike V1.8.41, this is no longer treated as disqualifying:
+        // the existing own-anchor safety clamp (unchanged, applied after this wall at each
+        // call site below) pins the glyph at its own accepted anchor in that case, so the
+        // active glyph simply stops travelling inward — matching Page/Desktop's own
+        // observed behavior at minimum span, not a broken clamp.
+        const LANDSCAPE_HANDLE_PARITY_CENTER_GAP_PX = 27;
+        // Unconditional min/max — no sameRect/sameBar equivalent is added or needed.
+        // Portrait gates its walls on sameRect purely to suppress cross-ROW x comparisons,
+        // a hazard that cannot exist here: bandRects filters every landscape rect to one
+        // y-band (±bandTolerance of firstBandY) and visibleRects is then X-ascending
+        // sorted, so endAnchorLeft >= startAnchorLeft holds by construction. Where the
+        // anchors are far apart these bounds simply never bind, so no gate is required to
+        // keep them inert on ordinary wide loops.
+        const landscapeStartWallMaxCenter = endAnchorLeft - LANDSCAPE_HANDLE_PARITY_CENTER_GAP_PX;
+        const landscapeEndWallMinCenter = startAnchorLeft + LANDSCAPE_HANDLE_PARITY_CENTER_GAP_PX;
+
         // [MAESTRO-LOOP-LANDSCAPE-001c-d] The old ghost/forecast span + resolvePreviewEdgeX
         // (bar-index-based) overlay is RETIRED. Before this lane, `rects` only updated on
         // release, so a separate live-preview overlay was needed to show the moving handle
@@ -4264,8 +4615,38 @@ export default function BeatCustomLoopOverlay({
                             className="beat-loop-handle-landscape beat-loop-handle-landscape-start"
                             style={{
                                 position: 'absolute',
+                                // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] The
+                                // ACTIVE start bar is pointer-led, self-clamped to its own
+                                // accepted rect; the INACTIVE branch below is the unchanged
+                                // accepted-anchor expression. Landscape's bar is already
+                                // center-anchored (-1.5 at 3px idle, -2.5 at 5px active —
+                                // each exactly -width/2), so the clamp operates on the bar's
+                                // CENTER and the existing -2.5 half-width offset is reused
+                                // unchanged; the 3px→5px active-width change needs no new
+                                // handling. Purely geometric — no tick, no min-span, no
+                                // gesture cap, and no write back to rects/preview/range.
+                                // [V1.8.41 / MUTUAL-WALL] The own-rect self-clamp below is
+                                // unchanged; the wall is composed AFTER it, then the result
+                                // is re-bounded by that same clamp's lower edge so the glyph
+                                // can never be pushed behind its own accepted anchor (the
+                                // degenerate case portrait accepts as glyph-kissing per
+                                // V1.8.30). landscapeStartWallMaxCenter derives solely from
+                                // the opposite ACCEPTED anchor — never from the opposite
+                                // pointer, and never from any tick value.
                                 left: activeLandscapeDragHandle === 'start'
-                                    ? startAnchorLeft - 2.5
+                                    ? (() => {
+                                        if (landscapePointerAnchorX === null) return startAnchorLeft - 2.5;
+                                        const rawCenterX = landscapePointerAnchorX;
+                                        const clampMinCenter = landscapeStartRect.x + LOOP_X_OFFSET;
+                                        const clampMaxCenter = landscapeStartRect.x + landscapeStartRect.w + LOOP_X_OFFSET;
+                                        const clampedCenterX = Math.min(
+                                            Math.max(rawCenterX, clampMinCenter),
+                                            clampMaxCenter,
+                                        );
+                                        const walledCenterX = Math.min(clampedCenterX, landscapeStartWallMaxCenter);
+                                        const finalCenterX = Math.max(walledCenterX, clampMinCenter);
+                                        return finalCenterX - 2.5;
+                                    })()
                                     : startAnchorLeft - 1.5,
                                 top: startAnchorTop,
                                 width: activeLandscapeDragHandle === 'start' ? '5px' : '3px',
@@ -4311,8 +4692,35 @@ export default function BeatCustomLoopOverlay({
                             className="beat-loop-handle-landscape beat-loop-handle-landscape-end"
                             style={{
                                 position: 'absolute',
+                                // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001] Mirror
+                                // of the start bar above: the ACTIVE end bar is pointer-led,
+                                // self-clamped to its own accepted rect (landscapeEndRect),
+                                // while the INACTIVE branch keeps the unchanged
+                                // accepted-anchor expression. Same center-clamp semantics and
+                                // the same reused -2.5 half-width offset.
+                                // [V1.8.41 / MUTUAL-WALL] Mirror of the start bar's wall:
+                                // composed after the unchanged own-rect self-clamp, then
+                                // re-bounded by that clamp's upper edge so the glyph can
+                                // never be pushed past its own accepted anchor.
+                                // landscapeEndWallMinCenter derives solely from the opposite
+                                // ACCEPTED anchor. shadowWallMin is deliberately NOT ported —
+                                // it guards clef/time-signature metadata incursion, not
+                                // handle-to-handle separation, and is tick-dependent via its
+                                // sameBar gate (see the V1.8.41 header note).
                                 left: activeLandscapeDragHandle === 'end'
-                                    ? endAnchorLeft - 2.5
+                                    ? (() => {
+                                        if (landscapePointerAnchorX === null) return endAnchorLeft - 2.5;
+                                        const rawCenterX = landscapePointerAnchorX;
+                                        const clampMinCenter = landscapeEndRect.x + LOOP_X_OFFSET;
+                                        const clampMaxCenter = landscapeEndRect.x + landscapeEndRect.w + LOOP_X_OFFSET;
+                                        const clampedCenterX = Math.min(
+                                            Math.max(rawCenterX, clampMinCenter),
+                                            clampMaxCenter,
+                                        );
+                                        const walledCenterX = Math.max(clampedCenterX, landscapeEndWallMinCenter);
+                                        const finalCenterX = Math.min(walledCenterX, clampMaxCenter);
+                                        return finalCenterX - 2.5;
+                                    })()
                                     : endAnchorLeft - 1.5,
                                 top: endAnchorTop,
                                 width: activeLandscapeDragHandle === 'end' ? '5px' : '3px',
