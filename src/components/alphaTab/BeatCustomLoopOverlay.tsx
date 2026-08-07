@@ -1318,6 +1318,33 @@ export default function BeatCustomLoopOverlay({
         };
     }, [isLandscape, api, container]);
 
+    // [MAESTRO-LOOP-LANDSCAPE-CANVAS-PASSTHROUGH-001] Minimal paused/playing mirror for the
+    // Landscape interior guard, and nothing else. api.playerState is the same source
+    // AlphaTabRenderer's own tap/click handlers read (PlayerState.Playing === 1), but it is a
+    // plain property, so a render-time read alone would never re-render this component when
+    // playback starts or stops. api.playerStateChanged is alphaTab's public emitter and `api`
+    // is already a prop, so no new prop plumbing is introduced. Seeded synchronously from the
+    // current state so the very first render is correct rather than optimistically "paused".
+    //
+    // Subscribe/unsubscribe follows the contract in alphaTab's own IEventEmitterOfT: `off`
+    // takes the ORIGINAL handler reference, not the unregister function `on` returns — the
+    // same named-handler + `?.off(handler)` shape AlphaTabRenderer already uses for
+    // api.playerReady. The handler is a stable local const per effect run, so React Strict
+    // Mode's mount → cleanup → remount cycle unsubscribes the first handler before the second
+    // subscribes: no duplicate listener can survive. No timer, no polling, no RAF.
+    const [landscapePlaybackPaused, setLandscapePlaybackPaused] = useState(true);
+    useEffect(() => {
+        if (!api) return;
+        setLandscapePlaybackPaused((api.playerState ?? 0) !== 1);
+        const onLandscapePlayerStateChanged = (e: any) => {
+            setLandscapePlaybackPaused((e?.state ?? api.playerState ?? 0) !== 1);
+        };
+        api.playerStateChanged?.on(onLandscapePlayerStateChanged);
+        return () => {
+            api.playerStateChanged?.off(onLandscapePlayerStateChanged);
+        };
+    }, [api]);
+
     useEffect(() => {
         if (loopEnabled) return;
         // Tray Loop OFF (or any external disable) → clear all overlay state.
@@ -4464,20 +4491,41 @@ export default function BeatCustomLoopOverlay({
         const endAnchorTop = endRowGeom ? endRowGeom.top + 1 + LOOP_HANDLE_INSET_Y : 0;
         const endAnchorHeight = endRowGeom ? Math.max(20, endRowGeom.height - LOOP_HANDLE_INSET_Y * 2) : 0;
         const HANDLE_HIT_ZONE_WIDTH = 40;
-        // [MAESTRO-LOOP-LANDSCAPE-HITZONE-001] Midpoint-partitioned hit zones. Each zone
-        // keeps its full outward reach away from the loop and limits its INWARD reach to
-        // half the live anchor separation, so the two zones meet at the anchor midpoint
-        // instead of overlapping. At or above HANDLE_HIT_ZONE_WIDTH of separation the
-        // inward reach saturates at that same half-width, leaving normal-width loops with
-        // the exact zones they already had; below it, neither zone can cover the other
-        // handle's visible bar, so a press always lands on the handle it belongs to.
+        // [MAESTRO-LOOP-LANDSCAPE-HITZONE-001 / CANVAS-PASSTHROUGH-001] Bounded inward
+        // handle-intent reach. HITZONE-001's midpoint partition is UNCHANGED and still
+        // binds whenever the live anchor separation is below 2 * HANDLE_HIT_ZONE_INWARD_REACH
+        // — that half-separation term is what still guarantees zero wrong-boundary
+        // actuation and zero zone overlap on the densest loops, exactly as before.
+        // What changes is only the saturation ceiling: the inward reach now saturates at
+        // HANDLE_HIT_ZONE_INWARD_REACH instead of at the full outward half-width, so on any
+        // loop wider than 2 * that constant the two zones deliberately STOP meeting and
+        // leave an intentional score/canvas interaction region between them. Per the
+        // revised product contract that interior gap IS the desired canvas region, not a
+        // dead band. The OUTWARD reach is deliberately untouched at HANDLE_HIT_ZONE_WIDTH / 2,
+        // so the visible bar and the outward arrow tab keep exactly the acquisition they
+        // already had.
+        const HANDLE_HIT_ZONE_INWARD_REACH = 8;
         const hitZoneOutwardReach = HANDLE_HIT_ZONE_WIDTH / 2;
         const hitZoneSeparation = Math.max(0, endAnchorLeft - startAnchorLeft);
-        const hitZoneInwardReach = Math.min(hitZoneOutwardReach, hitZoneSeparation / 2);
+        const hitZoneInwardReach = Math.min(HANDLE_HIT_ZONE_INWARD_REACH, hitZoneSeparation / 2);
         const startHitZoneLeft = startAnchorLeft - hitZoneOutwardReach;
         const startHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
         const endHitZoneLeft = endAnchorLeft - hitZoneInwardReach;
         const endHitZoneWidth = hitZoneOutwardReach + hitZoneInwardReach;
+
+        // [MAESTRO-LOOP-LANDSCAPE-CANVAS-PASSTHROUGH-001] Interior guard geometry. The
+        // SINGLE source of truth is hitZoneInwardReach immediately above — never the
+        // constant directly — so the guard can never disagree with the zones it abuts.
+        // The guard occupies exactly the region neither hit zone owns: it starts where the
+        // start zone ends and ends where the end zone begins, so start zone / guard / end
+        // zone tile the inter-anchor span with no overlap and no gap. Width is floored at
+        // 0, so the dense case (separation <= 2 * HANDLE_HIT_ZONE_INWARD_REACH, where the
+        // midpoint partition makes the two zones meet) yields a zero-width guard that is
+        // simply not rendered. Geometry only — no tick, resolver, preview, wall, or
+        // playbackRange value participates, and nothing here is written back into any.
+        const landscapeGuardLeft = startAnchorLeft + hitZoneInwardReach;
+        const landscapeGuardRight = endAnchorLeft - hitZoneInwardReach;
+        const landscapeGuardWidth = Math.max(0, landscapeGuardRight - landscapeGuardLeft);
 
         // [MAESTRO-LOOP-LANDSCAPE-GHOST-FORECAST-RESTORE-001 / MUTUAL-WALL] Visual-only
         // mutual wall for the ACTIVE pointer-led glyph. Declared AFTER the HITZONE-001
@@ -4762,6 +4810,44 @@ export default function BeatCustomLoopOverlay({
                                 pointerEvents: 'none',
                             }}>‹</div>
                         </div>
+                        {/* [MAESTRO-LOOP-LANDSCAPE-CANVAS-PASSTHROUGH-001] Paused Loop-interior
+                            guard. Rendered BEFORE both hit zones and at zIndex 901 so the 902
+                            zones stay above it in both DOM order and stacking order — the guard
+                            can never shadow handle acquisition.
+
+                            Tap neutrality comes from DOM ownership alone, not from suppression:
+                            AlphaTab's tap-to-play lives on a touchend listener attached to
+                            .at-surface, and this portal host is a SIBLING of .at-surface inside
+                            .alphatab-container, not a descendant. A touch whose target is this
+                            guard therefore never traverses .at-surface in either phase, so that
+                            listener simply never runs. No handler, no preventDefault, and no
+                            stopPropagation is added here, and no synthetic event is ever
+                            forwarded to AlphaTab.
+
+                            touchAction:'pan-x' (never 'none' — that is precisely what makes the
+                            hit zones block panning) leaves the browser free to keep driving
+                            .alphatab-container's own native horizontal scroll even though the
+                            guard is the initial hit target.
+
+                            pointerEvents is 'auto' ONLY while Loop is on and playback is paused.
+                            While playing it is 'none', so the guard is fully inert and existing
+                            AlphaTab score interaction is untouched. */}
+                        {landscapeGuardWidth > 0 && (
+                            <div
+                                className="beat-loop-landscape-interior-guard"
+                                style={{
+                                    position: 'absolute',
+                                    left: landscapeGuardLeft,
+                                    top: startAnchorTop,
+                                    width: landscapeGuardWidth,
+                                    height: startAnchorHeight,
+                                    background: 'transparent',
+                                    pointerEvents: (loopEnabled && landscapePlaybackPaused) ? 'auto' : 'none',
+                                    touchAction: 'pan-x',
+                                    zIndex: 901,
+                                }}
+                            />
+                        )}
                         {/* [MAESTRO-LOOP-002D.1] Start handle hit zone — interactive only here. */}
                         <div
                             className="beat-loop-handle-landscape-hitzone beat-loop-handle-landscape-hitzone-start"
