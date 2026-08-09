@@ -4444,6 +4444,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             // [MAESTRO-LANDSCAPE-FIT-001-B1-B] wantLayout covers both directions —
             // 0 entering strip mode, restored to 28 entering Page/portrait.
             api.settings.display.firstSystemPaddingTop = wantStrip ? 0 : 28;
+            api.settings.player.scrollMode = wantStrip
+                ? (at as any).ScrollMode.Continuous
+                : (at as any).ScrollMode.Off;
             if (!wantStrip && (at as any).SystemsLayoutMode) {
                 (api.settings.display as any).systemsLayoutMode =
                     (at as any).SystemsLayoutMode.Automatic;
@@ -4477,6 +4480,12 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         const previous = forceHorizontalRef.current;
         const next = !!forceHorizontal;
         forceHorizontalRef.current = next;
+        if (previous === false && next === true) {
+            showCurtain(curtainRef.current);
+            reassertLayout();
+            return;
+        }
+
         if (previous === true && next === false) {
             console.warn('[V117] forceHorizontal strip-to-page preclear');
             // [RotationStableAnchorRef] forceHorizontal flip — same stable-first priority.
@@ -4597,6 +4606,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const containerW = containerRef.current?.clientWidth ?? (window.visualViewport?.width ?? window.innerWidth);
             const useHorizontal = forceHorizontal || (isDeviceLandscape() && containerW < MOBILE_LANDSCAPE_MAX_W);
+            const initialHorizontal = !!forceHorizontal;
             const base = 'songBookPageDense' as LayoutProfileName;
             const initProfile = resolveProfileByWidth(containerW, base, useHorizontal);
             activeProfileRef.current = initProfile;
@@ -4605,13 +4615,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 container,
                 playerMode: playerModeRef.current,
                 soundFontPath,
-                layoutMode: 'page',
-                scrollMode: 'off',
+                layoutMode: initialHorizontal ? 'horizontal' : 'page',
+                isMobile: initialHorizontal,
+                scrollMode: initialHorizontal ? 'continuous' : 'off',
                 scrollContainer: scrollContainer ?? undefined,
                 layoutProfile: initProfile,
                 hasLyrics: false,
             });
             if (destroyed || token !== initTokenRef.current) { safeDestroyAlphaTabApi(api, 'stale-init-race'); return; }
+
+            if (initialHorizontal) {
+                api.settings.display.firstSystemPaddingTop = 0;
+            }
 
             apiRef.current = api;
             if (typeof window !== 'undefined') {

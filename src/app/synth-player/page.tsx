@@ -486,7 +486,8 @@ export default function SynthPlayerPage() {
                 const touch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                 const land = typeof window !== 'undefined' && window.matchMedia('(orientation: landscape)').matches;
                 const compact = typeof window !== 'undefined' && window.innerHeight < 600;
-                const v = touch && land && compact;
+                const narrowResponsive = typeof window !== 'undefined' && window.innerWidth < 1024;
+                const v = land && compact && (touch || narrowResponsive);
                 if (last !== v) { last = v; setIsMobileLandscape(v); }
             }, 150);
         };
