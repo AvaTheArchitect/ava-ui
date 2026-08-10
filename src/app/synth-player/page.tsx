@@ -193,6 +193,7 @@ export default function SynthPlayerPage() {
     const isPlayingRef = useRef<boolean>(false);
     const [playerReady, setPlayerReady] = useState<boolean>(false);
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+    const playbackSpeedRef = useRef<number>(1.0);
     // [C5] audioSource is now state — was 'synth' as const
     const [audioSource, setAudioSource] = useState<'synth' | 'original'>('synth');
 
@@ -1158,6 +1159,7 @@ export default function SynthPlayerPage() {
         console.log('✅ Phase 3: API ready');
         setApi(alphaTabApi);
         alphaTabApi.masterVolume = masterVolumeRef.current;
+        alphaTabApi.playbackSpeed = playbackSpeedRef.current;
         if (alphaTabApi.playerPositionChanged) {
             alphaTabApi.playerPositionChanged.on((e: any) => {
                 currentTimeRef.current = e.currentTime;
@@ -1419,6 +1421,7 @@ export default function SynthPlayerPage() {
 
     // ==================== SPEED / VOLUME ====================
     const handleSpeedChange = useCallback((speed: number) => {
+        playbackSpeedRef.current = speed;
         setPlaybackSpeed(speed);
         if (api) api.playbackSpeed = speed;
     }, [api]);
