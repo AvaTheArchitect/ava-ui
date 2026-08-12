@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Last Updated July 10th, 2026
+ * Last Updated August 12th, 2026
  * Version V1.7.2
  * File: components/alphaTab/MaestroCursor2.tsx
  *
@@ -217,14 +217,16 @@ export class MaestroCursorV2 {
         nextExpandedBeatStart: number | null = null,
         expandedBeatStart: number | null = null,
     ): void {
-        console.warn('[maestro-cursor2-reset-source]', {
-            method: 'setBeat',
-            beatStart: beat?.absolutePlaybackStart ?? null,
-            beatBarIdx: beat?.voice?.bar?.masterBar?.index ?? beat?.voice?.bar?.index ?? null,
-            nextBeatStart: preScannedNextBeat?.absolutePlaybackStart ?? null,
-            guardedStart: expandedBeatStart,
-            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-        });
+        if (cursor2DiagEnabled()) {
+            console.warn('[maestro-cursor2-reset-source]', {
+                method: 'setBeat',
+                beatStart: beat?.absolutePlaybackStart ?? null,
+                beatBarIdx: beat?.voice?.bar?.masterBar?.index ?? beat?.voice?.bar?.index ?? null,
+                nextBeatStart: preScannedNextBeat?.absolutePlaybackStart ?? null,
+                guardedStart: expandedBeatStart,
+                callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+            });
+        }
         if (!beat) { this._hide(); return; }
 
         const _incomingScanStart =
@@ -303,19 +305,21 @@ export class MaestroCursorV2 {
             this.terminalSameRowNoAdvanceMode = false;
             this.terminalSustainedLoopGlideMode = false;
             this.forceHardSnapNextSetBeat = false;
-            console.warn('[maestro-cursor2-hard-snap]', {
-                reason: 'forceHardSnapNextSetBeat',
-                phase: 'setBeat',
-                scanStart: beat?.absolutePlaybackStart ?? null,
-                currentNoteX: _prevX,
-                currentY: _prevY,
-                previousRenderX: this.lastX,
-                previousTargetX,
-                previousStayPutMode,
-                forceHardSnapNextSetBeat: false,
-                nextNoteXAfterReset: this.nextNoteX,
-                stayPutModeAfterReset: this.stayPutMode,
-            });
+            if (cursor2DiagEnabled()) {
+                console.warn('[maestro-cursor2-hard-snap]', {
+                    reason: 'forceHardSnapNextSetBeat',
+                    phase: 'setBeat',
+                    scanStart: beat?.absolutePlaybackStart ?? null,
+                    currentNoteX: _prevX,
+                    currentY: _prevY,
+                    previousRenderX: this.lastX,
+                    previousTargetX,
+                    previousStayPutMode,
+                    forceHardSnapNextSetBeat: false,
+                    nextNoteXAfterReset: this.nextNoteX,
+                    stayPutModeAfterReset: this.stayPutMode,
+                });
+            }
         }
         const vb = bb.visualBounds;
 
@@ -358,7 +362,9 @@ export class MaestroCursorV2 {
         const isOutOfOrder = sameRowAsLast && this.lastBeatX > -9000
             && newNoteX < this.lastBeatX - BACKSTEP_PX;
         if (isOutOfOrder) {
-            console.log('[CursorV2] out-of-order beat discarded', { scanStart, newNoteX: newNoteX.toFixed(1) });
+            if (cursor2DiagEnabled()) {
+                console.log('[CursorV2] out-of-order beat discarded', { scanStart, newNoteX: newNoteX.toFixed(1) });
+            }
             return;
         }
 
@@ -721,15 +727,17 @@ export class MaestroCursorV2 {
         this.lastBeatY = this.currentY;
         this._show();
 
-        console.log('[CursorV2] setBeat', {
-            scanStart,
-            expandedDur: this.expandedBeatDuration,
-            ratio: dur > 0 ? (this.expandedBeatDuration / dur).toFixed(2) : 'n/a',
-            currentNoteX: this.currentNoteX.toFixed(1),
-            currentY: Number(this.currentY.toFixed(1)),
-            nextNoteX: (this.nextNoteX as number | null)?.toFixed(1) ?? '—',
-            beatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
-        });
+        if (cursor2DiagEnabled()) {
+            console.log('[CursorV2] setBeat', {
+                scanStart,
+                expandedDur: this.expandedBeatDuration,
+                ratio: dur > 0 ? (this.expandedBeatDuration / dur).toFixed(2) : 'n/a',
+                currentNoteX: this.currentNoteX.toFixed(1),
+                currentY: Number(this.currentY.toFixed(1)),
+                nextNoteX: (this.nextNoteX as number | null)?.toFixed(1) ?? '—',
+                beatBarIdx: beat?.voice?.bar?.index ?? beat?.voice?.bar?.masterBar?.index ?? null,
+            });
+        }
     }
 
     setLoopEndX(x: number | null): void {
@@ -939,11 +947,13 @@ export class MaestroCursorV2 {
      * visible between loop passes rather than flickering hidden.
      */
     public requestSnap(_reason?: string): void {
-        console.warn('[maestro-cursor2-reset-source]', {
-            method: 'requestSnap',
-            reason: _reason ?? 'unknown',
-            callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
-        });
+        if (cursor2DiagEnabled()) {
+            console.warn('[maestro-cursor2-reset-source]', {
+                method: 'requestSnap',
+                reason: _reason ?? 'unknown',
+                callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
+            });
+        }
         if (cursor2DiagEnabled()) {
             console.warn('[cursor2-interpolation-probe]', {
                 phase: 'requestSnap',
@@ -1029,17 +1039,21 @@ export class MaestroCursorV2 {
             if (_reason !== 'play-start-hard-snap') {
                 this.expandedBeatDuration = 0;
             }
-            console.warn('[maestro-cursor2-hard-snap]', {
-                reason: _reason,
-                phase: 'requestSnap',
-                currentNoteX: this.currentNoteX,
-                currentY: this.currentY,
-                previousRenderX: this.lastX,
-                previousTargetX: this.nextNoteX,
-                forceHardSnapNextSetBeat: true,
-            });
+            if (cursor2DiagEnabled()) {
+                console.warn('[maestro-cursor2-hard-snap]', {
+                    reason: _reason,
+                    phase: 'requestSnap',
+                    currentNoteX: this.currentNoteX,
+                    currentY: this.currentY,
+                    previousRenderX: this.lastX,
+                    previousTargetX: this.nextNoteX,
+                    forceHardSnapNextSetBeat: true,
+                });
+            }
         }
-        console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
+        if (cursor2DiagEnabled()) {
+            console.log('[CursorV2] requestSnap', { reason: _reason ?? 'unknown' });
+        }
     }
 
     public hasPendingHardSnap(): boolean {

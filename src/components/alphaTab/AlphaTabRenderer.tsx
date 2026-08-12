@@ -3,7 +3,7 @@
 /**
  * AlphaTabRenderer.tsx
  * Current version: V145.29-LANDSCAPETHROTTLE001
- * Date: August 2nd, 2026
+ * Date: August 12th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
  * LANDSCAPE-LOOP-SCAN-THROTTLE-001 — Landscape-only source-resolution cache.
@@ -5935,16 +5935,18 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             if (!_api || !_at || !_el) return;
                             if (activeRendersRef.current !== 0) return;
                             const strip = checkStuckHorizontalStrip(_api, _el);
-                            console.warn('[V117] post-render strip check', {
-                                ...strip,
-                                forceHorizontal: forceHorizontalRef.current,
-                                isDeviceLandscape: isDeviceLandscape(),
-                                windowInnerWidth: window.innerWidth,
-                                windowInnerHeight: window.innerHeight,
-                                visualViewportWidth: window.visualViewport?.width,
-                                visualViewportHeight: window.visualViewport?.height,
-                                mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
-                            });
+                            if (isRendererDebugEnabled()) {
+                                console.warn('[V117] post-render strip check', {
+                                    ...strip,
+                                    forceHorizontal: forceHorizontalRef.current,
+                                    isDeviceLandscape: isDeviceLandscape(),
+                                    windowInnerWidth: window.innerWidth,
+                                    windowInnerHeight: window.innerHeight,
+                                    visualViewportWidth: window.visualViewport?.width,
+                                    visualViewportHeight: window.visualViewport?.height,
+                                    mobileLandscapeMaxW: MOBILE_LANDSCAPE_MAX_W,
+                                });
+                            }
                             if (strip.stuck) {
                                 stopLandscapeScrollLoop();
                                 landscapeScrollStateRef.current = null;

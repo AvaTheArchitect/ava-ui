@@ -2,7 +2,7 @@
 
 /**
  * TransportBar.tsx - V100.1: Full-cell hover state + Simon tray color polish
- * Date: June 26th, 2026
+ * Date: August 12th, 2026
  *
  * 🆕 V100.1 TRAY CHROME / HOVER POLISH:
  * ✅ Resting transport controls aligned to blue-300.
@@ -103,6 +103,14 @@ interface ExtendedTransportBarProps extends TransportBarProps {
 
 const LABEL_CLS = 'text-[10px] font-medium uppercase tracking-[0.3px] whitespace-nowrap text-blue-300 leading-[14px] group-hover:text-cyan-300 [@media(max-width:999px)]:hidden';
 
+// Diagnostic-only gate for the BPM/volume/metronome-callback trace logs below.
+// Default OFF; enable with localStorage.setItem('MAESTRO_TRANSPORT_DEBUG', '1')
+// and reload. Gating only — no transport, metronome, volume, or UI behavior is
+// affected by this flag.
+const TRANSPORT_DEBUG =
+  typeof window !== 'undefined' &&
+  window.localStorage?.getItem('MAESTRO_TRANSPORT_DEBUG') === '1';
+
 export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   api, isPlaying, playbackSpeed, isLooping, hasLoopSelection, audioSource,
   tracks, selectedTrack, songInfo, trackMuteState, trackSoloState, theme,
@@ -162,10 +170,12 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
   const tuningButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    console.log('currentBPM prop:', currentBPM);
-    console.log('songInfo tempo:', songInfo?.tempo);
-    console.log('Calculated BPM:', currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120));
-    console.log('🔊 masterVolume:', masterVolume);
+    if (TRANSPORT_DEBUG) {
+      console.log('currentBPM prop:', currentBPM);
+      console.log('songInfo tempo:', songInfo?.tempo);
+      console.log('Calculated BPM:', currentBPM ?? (songInfo ? Math.round(songInfo.tempo * playbackSpeed) : 120));
+      console.log('🔊 masterVolume:', masterVolume);
+    }
     const missingCallbacks: string[] = [];
     if (!onMetronomeToggle) missingCallbacks.push('onMetronomeToggle');
     if (!onMetronomeVolumeChange) missingCallbacks.push('onMetronomeVolumeChange');
@@ -175,7 +185,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
     if (!onMetronomeAccentToggle) missingCallbacks.push('onMetronomeAccentToggle');
     if (missingCallbacks.length > 0) {
       console.warn('⚠️ Missing metronome callbacks:', missingCallbacks);
-    } else {
+    } else if (TRANSPORT_DEBUG) {
       console.log('✅ All metronome callbacks present');
     }
   }, [currentBPM, songInfo, playbackSpeed, masterVolume, onMetronomeToggle, onMetronomeVolumeChange,
