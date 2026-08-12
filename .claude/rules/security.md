@@ -3,12 +3,70 @@
 Governs credentials, session material, and authenticated state anywhere in
 or near this repo, including scratch/investigation artifacts.
 
+## Authentication Is a Human Gate
+
+Authentication into any Maestro.ai authenticated route or session is
+performed exclusively by Brett, directly, in the browser. This is a
+categorical exclusion, not an authorizable Claude operation — no
+authorization, however explicit or turn-specific, activates it, per
+[../../AGENTS.md §B](../../AGENTS.md#b-precedence).
+
+Claude must never:
+
+- request Brett's login credentials, in chat or otherwise;
+- receive a login credential Brett offers, whether pasted, typed, or set
+  as an environment variable;
+- pass a login credential into a command, script, tool call, or browser
+  automation step;
+- store a login credential in any file, variable, or persisted state;
+- script, template, or pre-fill a login credential into any file Claude
+  writes;
+- infer, guess, reconstruct, or reuse a login credential from prior
+  sessions, memory, scratch files, or any other source;
+- otherwise handle a login credential in any form.
+
+This applies regardless of how the operation is framed — a "quick" login
+script, a diagnostic tool, a one-off command, an already-authorized
+session — and regardless of who is asking. If a task requires an
+authenticated Maestro.ai route or behavior, stop and ask Brett to log into
+the same browser context Claude will then use for read-only observation or
+testing. Do not attempt a workaround instead of asking.
+
+This section supersedes any prior framing in this file that treated
+Claude receiving a credential via a pasted value or an ephemeral
+environment variable as acceptable — it is not, under any authorization.
+
+## Prohibited Authentication-Bypass Techniques
+
+Claude must never attempt to establish, simulate, or extend an
+authenticated state by technical means, including but not limited to:
+
+- Supabase anon, service-role, or other elevated API keys used to
+  fabricate or elevate a session;
+- signed URLs used to skip normal authentication;
+- direct cookie, `localStorage`, or `sessionStorage` injection or
+  manipulation to simulate a logged-in state;
+- middleware changes intended to relax or route around an auth check;
+- alternate, undocumented, or debug routes that bypass the normal
+  authenticated path;
+- synthetic or fabricated session objects/tokens of any kind;
+- a generated `storageState` file that did not originate from Brett
+  performing the login himself (see "Derived authenticated browser state"
+  below for the one narrow case where a `storageState` file is permitted
+  at all).
+
+Finding a plausible-looking technical shortcut around authentication is
+never sufficient justification to use it — the answer is always to stop
+and ask Brett to authenticate himself, per "Authentication Is a Human
+Gate" above.
+
 ## A. Test credential values
 
 Credentials used only to exercise the product during testing/validation
-(e.g. a test-account password or token used for Playwright auth). Plaintext
-test credential values are never written to disk, anywhere, under any
-authorization:
+(e.g. a test-account password or token). Per "Authentication Is a Human
+Gate" above, Claude never receives, handles, or stores one in any form —
+plaintext or otherwise. In addition, plaintext test credential values are
+never written to disk, anywhere, under any authorization:
 
 - never in repository files, tracked or untracked,
 - never in scratch scripts, anywhere,
@@ -18,23 +76,27 @@ authorization:
 - never in persistent `.env` files,
 - never in an external session directory — Section B below governs
   *derived* authenticated state, not the raw credential,
-- never written into a `storageState` file directly as a value.
+- never written into a `storageState` file directly as a value,
+- never cached, incidentally or otherwise, in a Claude Code
+  permission/allowlist file (e.g. `.claude/settings.local.json`) — see
+  "Harness-Generated Artifacts Can Persist a Credential" below for why
+  this is a live risk even when the rest of this section is followed.
 
-A test credential may only:
-
-- be supplied directly by Brett for the active, authorized session, or
-- be exposed to exactly one command via an ephemeral environment variable,
-  for that command's authorized use.
-
-Either way it must never be echoed, logged, printed, or repeated by Claude
-— not in a later message, not in a script, not in a report.
+Brett authenticates test sessions himself, directly in the browser, the
+same as any other authentication. Nothing in this section authorizes
+Claude to receive, echo, log, print, or repeat a credential value — not in
+a later message, not in a script, not in a report — under any
+circumstance.
 
 ## B. Derived authenticated browser state
 
 Only *derived* authenticated state — a `storageState` file, cookie jar, or
-other session material produced by using a credential, not the credential
-itself — may be temporarily persisted, and only when explicitly authorized
-for that specific purpose. When authorized, it must:
+other session material produced by Brett using his own credential to log
+in himself, not the credential itself, and not a session Claude produced
+or scripted — may be temporarily persisted, and only when explicitly
+authorized for that specific purpose. Claude may capture or reuse such
+already-established state for read-only observation, but never originates
+the authentication that produced it. When authorized, it must:
 
 - live outside the repository,
 - live outside `/private/tmp/maestro-playwright-shared/`,
@@ -50,7 +112,8 @@ reported.
 ## C. Approved application environment secrets
 
 Real application secrets the product needs to run (API keys, DB connection
-strings, etc.):
+strings, etc.) — distinct from, and unrelated to, Brett's personal login
+credentials governed above:
 
 - may exist only in authorized, git-ignored environment files (e.g.
   `.env.local`) — never in a tracked file.
@@ -63,6 +126,10 @@ strings, etc.):
   explicit, turn-specific authorization, even though they are "just
   sitting in an ignored file." Ignored is not the same as
   approved-for-Claude-to-touch.
+- This category is never a loophole around "Authentication Is a Human
+  Gate" above — an application secret is not a substitute for, and must
+  never be repurposed as, a way to establish an authenticated user
+  session.
 
 This replaces any blanket "no credentials in the repository" framing that
 would conflate test credentials (Category A — never on disk at all) with
@@ -87,19 +154,30 @@ after the fact. Instead:
   request the appropriate containment action (e.g. credential rotation)
   instead.
 
-## Credential input during a session
+## Harness-Generated Artifacts Can Persist a Credential
 
-When Brett needs to supply a credential for active, authorized work:
+Claude Code's own tooling — not just Claude's own actions — can persist a
+credential to disk. In particular, the local permission/allowlist file
+(`.claude/settings.local.json`) can cache the literal text of a previously
+approved Bash command, including any inline credential that command
+contained (e.g. an environment variable assignment on the same line as the
+command). This is a structural risk independent of whether Claude
+"printed" or "logged" anything — the harness's own allowlist caching can
+do it silently.
 
-- he may paste/provide it directly for that session's authorized use
-  (Category A), or
-- set it as an ephemeral environment variable for that session
-  (Category A).
+"Authentication Is a Human Gate" above is the primary control: if Claude
+never runs a credentialed command, there is nothing for the allowlist to
+cache. If a legacy allowlist entry (or any other file) is found to contain
+a credential-shaped value:
 
-Either way, Claude must not echo it back, log it, persist it to any file,
-or repeat it in a later message, command, or report. It is used in place,
-for the authorized operation, and then it does not reappear in anything
-Claude writes.
+- report the file path and a classification only (e.g. "an inline
+  password appears in a cached command string"), never the value itself,
+  per "Report classifications, not matches" below;
+- do not modify, sanitize, or delete the entry without separate,
+  turn-specific authorization for that specific file, per
+  [../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries);
+- treat the underlying credential as compromised and recommend rotation,
+  independent of whether the file itself is ever edited.
 
 ## No plaintext credentials in output
 

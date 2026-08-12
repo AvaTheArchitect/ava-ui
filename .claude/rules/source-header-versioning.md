@@ -120,3 +120,24 @@ itself authorize removing or simplifying any header.
   report the uncertainty explicitly and leave the header unchanged pending
   Brett's decision, rather than writing an unverified date to close the
   question.
+
+## K. Scope — Governance Files Carry No Header
+
+This file's date-field doctrine (§C–§J) governs source headers in
+production source files — files that already carry, or could carry, a
+hand-maintained version/date marker at the top of the file. It does not
+require, and does not apply to, `AGENTS.md`, `CLAUDE.md`, or any
+`.claude/rules/*.md` governance file.
+
+Governance files intentionally carry no version or date header field.
+`git log -- <path>` and `git blame -- <path>` are the system of record for
+when a governance file's content last changed, who changed it, and what
+changed — the same authoritative-records principle §F already applies to
+production source, extended here explicitly to governance files so the
+absence of a header on those files is not mistaken for an oversight.
+
+If a future doctrine turn decides governance files should carry a
+lightweight human-readable marker for skimmability (distinct from, and
+never a substitute for, the Git record above), that is itself a doctrine
+change requiring the same authorization as any other amendment to this
+file — it is not authorized by this section.

@@ -131,6 +131,16 @@ results for the same change:
   measurement overhead relative to an unobserved real user session — treat
   suspiciously-precise or suspiciously-flaky timing-dependent results with
   that in mind.
+- **DevTools/Web Inspector open is timing contamination.** A performance,
+  timing, or playback-behavior result gathered while Chrome DevTools or
+  Safari Web Inspector is open is not valid evidence of production
+  behavior — the inspector itself alters JS engine behavior, rendering,
+  and scheduling. Treat it the same as any other timing-contamination
+  fidelity gap (routes to INVALID CAPTURE per
+  [validation-and-evidence.md](validation-and-evidence.md)), unless the
+  test's explicitly stated target is DevTools/Web-Inspector-open behavior
+  itself, in which case that scope must be stated plainly rather than
+  presented as a general production-performance result.
 - Render, scroll, momentum, and component-lifecycle effects need to settle
   before a measurement is meaningful. Use a pollable readiness condition
   (an expected attribute, rect, or class appearing/stabilizing) — not an
@@ -144,13 +154,22 @@ results for the same change:
   rendering quirks, or real-device performance. See
   [playwright.md](playwright.md) — emulation never substitutes for physical
   device validation of touch/mobile-specific behavior.
+- **Production/performance validation requires a production-equivalent
+  runtime with the inspector closed.** Chrome mobile emulation and
+  Playwright remain useful diagnostic tools, but neither replaces real
+  iPhone/PWA acceptance for touch, mobile-specific, or performance
+  behavior — see [playwright.md](playwright.md)'s emulation boundary and
+  [validation.md](validation.md)'s validation sequence. A performance or
+  playback claim gathered against a non-production-equivalent runtime, or
+  with the inspector open, is not a valid production-performance result
+  regardless of which validation-sequence stage it otherwise resembles.
 - **Safari LAN versus installed PWA**: Safari over LAN and an installed PWA
   are different runtime contexts (service worker scope, standalone display
   mode, viewport handling). A pass in one is not automatically a pass in
   the other — see [validation.md](validation.md)'s validation sequence.
-- **Cursor2 versus Fixed Landscape Cursor**: these are separate mechanisms
-  with separate failure modes. A test result about one is not evidence
-  about the other unless the test specifically exercised both.
+- **MaestroCursor2 versus Fixed Landscape Cursor**: these are separate
+  mechanisms with separate failure modes. A test result about one is not
+  evidence about the other unless the test specifically exercised both.
 
 Pair environment-fidelity claims with the runtime identity report in
 [runtime.md](runtime.md) — a device test against the wrong server/HEAD

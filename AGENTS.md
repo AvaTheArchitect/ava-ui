@@ -100,8 +100,12 @@ Brett's current-turn authorization **activates** an operation that this
 doctrine already permits, given authorization — e.g., it turns "staging
 requires authorization" into "staging may now proceed." It does **not**:
 
-- waive a security requirement (e.g. the plaintext-credential prohibition,
-  which is stated as non-overridable regardless of authorization);
+- waive a security requirement — including, non-overridably regardless of
+  authorization, the plaintext-credential prohibition and the rule that
+  authentication is a human gate: Claude must never request, receive,
+  pass, store, script, infer, or handle Brett's login credentials, or
+  bypass authentication by technical means. Full procedure:
+  [security.md](.claude/rules/security.md);
 - waive a truthfulness or evidence requirement (§G, §H) — authorization to
   perform an operation is never authorization to misreport what happened
   during it;
@@ -215,6 +219,7 @@ for one never implies authorization for another:
 - modifying dependencies
 - modifying documentation
 - database writes
+- external ticket/database-system writes (e.g. Notion)
 - branch or ref changes, including restore/reset/stash/clean/checkout
 - deployment changes
 
@@ -260,6 +265,20 @@ local safety artifacts only and are never source of truth:
 -u`, or directory staging. Stage only explicit, individually authorized
 files by exact path. Full procedure is scoped-rule territory (staging).
 
+**Authentication boundary.** Authentication into any Maestro.ai
+authenticated route is a human gate, never an authorizable Claude
+operation — Claude must never request, receive, pass, store, script,
+infer, or handle a login credential, or bypass authentication by
+technical means. Full procedure is scoped-rule territory
+([security.md](.claude/rules/security.md)).
+
+**External ticket-system mutation boundary.** Claude has no default
+authority to write to Notion or any other external ticket/database
+system; access, where it exists, is read-only unless a turn's
+authorization supplies exact ticket ID(s), exact field(s), and explicit
+write authorization. Full procedure is scoped-rule territory
+([notion-governance.md](.claude/rules/notion-governance.md)).
+
 ## E. Required Preamble
 
 Before tools, code, file work, or any state-changing operation:
@@ -280,8 +299,8 @@ Preserve strict separation among distinct product modules, including at
 minimum:
 
 - `AlphaTabRenderer`
-- `Cursor2`
-- `Cursor3`
+- `MaestroCursor2`
+- `MaestroCursor3`
 - `FixedLandscapeCursor`
 - `BeatCustomLoopOverlay`
 - handlers
@@ -383,8 +402,10 @@ domains:
 | `validation.md` | Deciding whether a change is validated or release-ready |
 | `dirty-files.md` | A protected or persistent dirty file; restore/recovery investigation |
 | `runtime.md` | Local dev-server, port, LAN, or process questions |
-| `security.md` | Credentials, storageState, cookies, sessions, scratch auth scripts |
+| `security.md` | Credentials, authentication, storageState, cookies, sessions, scratch auth scripts |
 | `test-methodology.md` | Test-mechanism fidelity (event model, controls, timing, fresh-state, environment fidelity) — evidence classification itself is `validation-and-evidence.md`'s domain, not this file's |
+| `nextjs-shell-strategy.md` | Player-shell architecture choice between route-owned `page.tsx` hoisting/flattening and `layout.tsx` migration |
+| `notion-governance.md` | Notion or other external ticket/database-system read/write boundary |
 
 Claude Code additionally maintains an expanded, Claude-specific
 trigger table in `CLAUDE.md` for turn-by-turn routing; the table above is

@@ -61,6 +61,37 @@ that is a stable naming convention, not proof the ticket is currently open.
   authorization and evidence requirements. See
   [AGENTS.md §I](./AGENTS.md#i-external-repository-governance) and
   [alphatab-upstream-contributions.md](.claude/rules/alphatab-upstream-contributions.md).
+- **Authentication is a human gate.** Claude must never request, receive,
+  pass, store, script, infer, or handle Brett's login credentials, and must
+  never bypass authentication by any technical means — session/cookie
+  manipulation, localStorage/sessionStorage injection, signed URLs,
+  Supabase service-role or other elevated keys, generated `storageState`,
+  middleware changes, or alternate/undocumented routes. When an
+  authenticated Maestro.ai route is required, stop and ask Brett to log
+  into the same browser context himself. See
+  [AGENTS.md §B](./AGENTS.md#b-precedence) and
+  [AGENTS.md §D](./AGENTS.md#d-write-and-state-change-boundaries) for the
+  constitutional statement, and [security.md](.claude/rules/security.md)
+  for full procedure.
+- **No default Notion/ticket-system mutation authority.** Claude may read
+  an external ticket/database system if access exists, but a write to one
+  requires exact ticket/page ID(s), exact field(s), and explicit
+  turn-by-turn authorization for that specific write — never a standing or
+  implied grant. See
+  [AGENTS.md §D](./AGENTS.md#d-write-and-state-change-boundaries) for the
+  constitutional statement, and
+  [notion-governance.md](.claude/rules/notion-governance.md) for full
+  procedure.
+- **DevTools/Web Inspector contaminates performance evidence.**
+  Performance, timing, and playback-related test results gathered with
+  DevTools/Web Inspector open are not valid evidence of production
+  behavior unless the test is explicitly about DevTools-open behavior
+  itself; production/performance validation requires a
+  production-equivalent runtime with the inspector closed, and Chrome
+  mobile emulation/Playwright remain diagnostic tools that do not replace
+  real iPhone/PWA acceptance. See
+  [test-methodology.md](.claude/rules/test-methodology.md) and
+  [playwright.md](.claude/rules/playwright.md).
 
 ## Persistent dirty-file trigger
 
@@ -100,11 +131,13 @@ procedure.
   ownership, PID/cwd verification, port normalization, duplicate-server
   cleanup, runtime identity reporting, cold-load/song-context checks.
 - [security.md](.claude/rules/security.md) — credential hygiene,
-  scratch-artifact safety, authenticated browser-state handling,
-  secret-safe reporting.
+  authentication-is-a-human-gate, prohibited authentication-bypass
+  techniques, scratch-artifact safety, authenticated browser-state
+  handling, secret-safe reporting.
 - [test-methodology.md](.claude/rules/test-methodology.md) — test-mechanism
   fidelity to the real product interaction path, positive/negative
-  controls, environment fidelity; evidence classification itself is
+  controls, environment fidelity, DevTools/Web-Inspector timing
+  contamination; evidence classification itself is
   `validation-and-evidence.md`'s domain.
 - [full-file-integrity.md](.claude/rules/full-file-integrity.md) — full-file
   workflow, new-file workflow, case-specific extraordinary verification and
@@ -119,7 +152,15 @@ procedure.
   internal-vs-public record separation.
 - [source-header-versioning.md](.claude/rules/source-header-versioning.md)
   — what a source-header date means, when it does and does not change,
-  authoritative records for validation/commit/deploy/release events.
+  authoritative records for validation/commit/deploy/release events, and
+  why governance files themselves carry no such header.
+- [nextjs-shell-strategy.md](.claude/rules/nextjs-shell-strategy.md) —
+  player-shell architecture choice between the active route-owned
+  `page.tsx` hoisting/flattening (preferred) and `layout.tsx` migration
+  (fallback, requires explicit architecture authorization).
+- [notion-governance.md](.claude/rules/notion-governance.md) — Notion/
+  external ticket-system read-vs-write boundary, exact-ID/exact-field
+  authorization requirement for any write.
 
 ## Quick-reference trigger table
 
@@ -141,6 +182,10 @@ procedure.
 | Any test, validation, or evidence claim | `validation-and-evidence.md` |
 | Drafting or submitting an alphaTab issue, PR, comment, or review | `alphatab-upstream-contributions.md` |
 | Changing or evaluating a source-header date/version field | `source-header-versioning.md` |
+| An authenticated Maestro.ai route is needed for a task | `security.md` |
+| A performance, timing, or playback claim, or deciding whether DevTools/emulator evidence is valid | `test-methodology.md`, `playwright.md` |
+| A player-shell architecture choice (route-owned `page.tsx` vs. `layout.tsx`) | `nextjs-shell-strategy.md` |
+| A Notion or other external ticket-system read or write | `notion-governance.md` |
 
 When uncertain whether a rule applies, stop and ask. The absence of a rule
 does not imply the absence of risk.
