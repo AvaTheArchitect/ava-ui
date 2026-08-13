@@ -9,21 +9,72 @@ anything Git or another system-of-record already answers definitively.
 This file defines what a header's fields mean so they stop drifting
 against the events people informally associate them with.
 
-## B. Version Field
+## B. Header Hydration Is Part of an Authorized Source Edit
 
-A source-header version field, where a file already carries one, changes
-only when Brett authorizes a version bump for that file, following
-whatever versioning convention that specific file already uses. Do not
-invent a new version-numbering format for a file that doesn't already have
-one — if a file has no existing version-header convention, do not add one
-speculatively; that is a documentation change requiring its own
-authorization per [../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries).
+When a source file that already carries a version/date header is
+intentionally modified under a current-turn source-modification
+authorization for that specific file, updating that header is part of the
+same authorized patch — not a separate operation requiring its own
+authorization. This is source modification to the file already being
+edited, not "modifying documentation" under
+[../../AGENTS.md §D](../../AGENTS.md#d-write-and-state-change-boundaries)'s
+separate enumerated category, which refers to standalone documentation
+files. Brett may explicitly exempt a specific turn from hydration by
+saying so.
+
+### B1. Minor/Trailing-Component Bumps
+
+For a small-to-moderate source change — the normal shape of an authorized
+edit — bump the file's existing version label's final numeric/trailing
+component, following that file's own established convention exactly:
+
+- `V102.22` → `V102.23`
+- `V145.29-DESCRIPTOR` → `V145.30-NEWDESCRIPTOR` (choosing a short,
+  accurate descriptor mirroring the file's existing style)
+- `V1.8.1` → `V1.8.2`
+
+This is an autonomous choice within the scope of an already-authorized
+edit — Claude does not need to ask Brett to confirm the exact trailing
+number for a minor bump.
+
+### B2. Major Bumps Require Brett's Explicit Approval
+
+A major version-component bump, a phase reset, a `2.0.0`-style change, or
+any bump that is not a simple trailing-component increment requires
+Brett's explicit, current-turn approval of the exact new version label
+before it is written. This is not autonomous.
+
+### B3. New Source/Test Files
+
+A genuinely new source or test file should receive a compact header as
+part of its creation, unless excluded under B4. Format:
+
+```
+/**
+ * <FileName> — <one-line purpose>
+ * Version: V1.0.0
+ * Date: <Month D, YYYY>
+ */
+```
+
+Match the nearest established local convention if sibling files in the
+same module already have one; if no clear convention exists to follow,
+state that explicitly rather than guessing at a style.
+
+### B4. Excluded File Types
+
+Do not add headers to generated files, JSON, lockfiles, package files
+(`package.json`, `package-lock.json`), or governance Markdown files (see
+§K) unless Brett explicitly changes this policy.
 
 ## C. Date Field
 
 A source-header date means exactly one thing:
 
 **The date the production source content was last intentionally modified.**
+
+See §B for when this update is mandatory versus requires separate
+authorization.
 
 ## D. Date Does Not Change For
 
@@ -81,14 +132,29 @@ above, and should not be read as answering them.
 Do not silently change a source-header date during a commit or push
 operation just because the operation is happening. If a header's date
 appears stale, wrong, or ambiguous relative to what the file's content
-actually shows:
+actually shows, the required response depends on whether the file is
+already in scope for this turn's authorized source modification.
+
+### G1. In-Scope Mismatch (Same File, Same Turn)
+
+If a file already being intentionally source-modified this turn under
+current authorization carries a stale header, hydrate it in the same
+patch per §B — no separate authorization step is needed.
+
+### G2. Out-of-Scope Mismatch (Different File, or Not Otherwise Being
+Edited This Turn)
+
+If a stale or missing header is discovered in a file that is not
+otherwise authorized for source modification this turn:
 
 1. Report the apparent mismatch.
 2. Determine whether the production source was actually modified (check
    `git log`/`git diff` for the file, not just the header's own claim).
 3. Request authorization before changing the header — a stale header is a
    latent inaccuracy, not an emergency that justifies an unauthorized
-   correction.
+   correction. Treat any correction as its own separate, header-only
+   change requiring its own authorization and its own commit — never
+   silently folded into the current turn's unrelated patch.
 
 ## H. History Discipline
 
@@ -141,3 +207,11 @@ lightweight human-readable marker for skimmability (distinct from, and
 never a substitute for, the Git record above), that is itself a doctrine
 change requiring the same authorization as any other amendment to this
 file — it is not authorized by this section.
+
+## L. Reporting Requirement
+
+Every final diff review before staging or commit must explicitly state
+whether any header in the changed-file set is stale, and if so, whether
+it was hydrated (§G1) or flagged for separate follow-up (§G2). Silence on
+this point is not acceptable — state it explicitly even when the answer
+is "no stale headers found."
