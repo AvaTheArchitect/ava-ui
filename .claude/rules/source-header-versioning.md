@@ -61,7 +61,35 @@ Match the nearest established local convention if sibling files in the
 same module already have one; if no clear convention exists to follow,
 state that explicitly rather than guessing at a style.
 
-### B4. Excluded File Types
+### B4. Existing Source/Test Files Missing Headers
+
+When an existing source or test file is intentionally modified under
+current-turn authorization and does not yet carry a version/date header,
+add a compact Maestro header in the same patch unless Brett explicitly
+exempts that file.
+
+Use the same compact format as new files:
+
+```
+/**
+ * Maestro.ai — <File Purpose>
+ * Version: V1.0.0
+ * Date: <Month D, YYYY>
+ * Ticket: <Ticket ID if known>
+ *
+ * <One-line purpose>
+ */
+```
+
+This is part of the already-authorized source modification to that file.
+It is not a separate standalone documentation operation.
+
+If the missing header is discovered in a file that is not otherwise
+authorized for source modification this turn, do not add it. Report the
+missing header and treat any correction as a separate header-only change
+requiring separate authorization.
+
+### B5. Excluded File Types
 
 Do not add headers to generated files, JSON, lockfiles, package files
 (`package.json`, `package-lock.json`), or governance Markdown files (see
