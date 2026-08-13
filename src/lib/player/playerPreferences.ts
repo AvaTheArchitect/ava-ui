@@ -1,5 +1,10 @@
 /**
- * Browser-local player preferences (PLAYER-PREF-001 Phase 1).
+ * Maestro.ai — Player Preferences
+ * Version: V1.0.0
+ * Date: August 13, 2026
+ * Ticket: PLAYER-PREF-001
+ *
+ * Browser-local player preferences for last-used song and selected track.
  * No Supabase/profile sync, no AlphaTab type dependency — see ticket scope.
  */
 

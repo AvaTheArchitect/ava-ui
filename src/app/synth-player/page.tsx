@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.22
- * Date: July 11, 2026
+ * Synth Player Page — Phase 4 V102.23-PLAYERPREF001
+ * Date: August 13, 2026
  * Cloned from V102.21-isolation — MAESTRO-UI-009A closed candidate: portrait shell uses
  * h-screen with valid minmax row to avoid iOS standalone PWA cold-start h-dvh viewport
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.

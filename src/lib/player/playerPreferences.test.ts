@@ -1,3 +1,10 @@
+/**
+ * Maestro.ai — Player Preferences Tests
+ * Version: V1.0.0
+ * Date: August 13, 2026
+ * Ticket: PLAYER-PREF-001
+ */
+
 import {
     createEmptyPlayerPrefs,
     loadPlayerPrefs,

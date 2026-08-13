@@ -2,8 +2,8 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.29-LANDSCAPETHROTTLE001
- * Date: August 12th, 2026
+ * Current version: V145.30-PLAYERPREF001
+ * Date: August 13th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
  * LANDSCAPE-LOOP-SCAN-THROTTLE-001 — Landscape-only source-resolution cache.
