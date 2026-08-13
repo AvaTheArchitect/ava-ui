@@ -1046,6 +1046,14 @@ import { applyRocksmithFretColors, getFretColorScheme } from '@/lib/alphaTab/app
 export interface AlphaTabRendererV102Props {
     fileUrl: string;
     trackIndices?: number[];
+    // [PLAYER-PREF-001] Parent-owned render-request nonce. React bails out of a
+    // setState call that sets a primitive to its current value (e.g. restoring a
+    // saved track index of 0 when selectedTrack is already 0 after a song-switch
+    // reset) — trackIndices then never gets a new reference and this component's
+    // trackIndices-reactive correction effect never re-fires. Incrementing this on
+    // every parent score-load decision forces that effect to run regardless of
+    // whether the numeric index itself changed.
+    trackRenderRequestId?: number;
     isPlaying: boolean;
     onPlayStateChange: (playing: boolean) => void;
     onRendered?: () => void;
@@ -2648,6 +2656,7 @@ function computePageAuthorityTargetTop(params: {
 export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     fileUrl,
     trackIndices = [0],
+    trackRenderRequestId,
     isPlaying,
     onPlayStateChange,
     onRendered,
@@ -8679,7 +8688,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             cancelled = true;
             cancelAnimationFrame(raf);
         };
-    }, [trackIndices, stopLandscapeScrollLoop]);
+        // [PLAYER-PREF-001] trackRenderRequestId forces this effect to re-run even when
+        // trackIndices itself didn't change (see the prop's doc comment above).
+    }, [trackIndices, trackRenderRequestId, stopLandscapeScrollLoop]);
 
     useEffect(() => {
         if (isSettling) return;

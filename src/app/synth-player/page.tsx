@@ -136,6 +136,16 @@ import {
 import { fetchSongs } from '@/lib/song-data/queries';
 import { getSongById, type SongState } from '@/lib/song-data';
 import type { AlphaTabApi, Track, SongInfo } from '@/lib/alphaTab/types';
+import {
+    loadPlayerPrefs,
+    savePlayerPrefs,
+    recordRecentSong,
+    getMostRecentAvailableSongId,
+    recordSelectedTrack,
+    removeSelectedTrackPref,
+    resolveSavedTrack,
+    type TrackPreferenceCandidate,
+} from '@/lib/player/playerPreferences';
 
 const SCROLL_THRESHOLD = 50;
 
@@ -185,6 +195,11 @@ export default function SynthPlayerPage() {
     const [api, setApi] = useState<AlphaTabApi | null>(null);
     const [tracks, setTracks] = useState<Track[]>([]);
     const [selectedTrack, setSelectedTrack] = useState<number>(0);
+    // [PLAYER-PREF-001] Forces AlphaTabRenderer's trackIndices-reactive correction
+    // effect to re-run even when a restored track index is 0 — setSelectedTrack(0)
+    // is a React no-op when selectedTrack is already 0 (post song-switch reset), so
+    // trackIndices alone wouldn't change and the correction effect would never fire.
+    const [trackRenderRequestId, setTrackRenderRequestId] = useState<number>(0);
     const [songInfo, setSongInfo] = useState<SongInfo | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -302,10 +317,14 @@ export default function SynthPlayerPage() {
         const sortedSongs = songs
             .slice()
             .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', undefined, { sensitivity: 'base' }));
+        // [PLAYER-PREF-001] prev.currentSongId ?? ... only ever fires on first hydration
+        // (currentSongId is non-null on every later refetchSongs call), so this restoration
+        // never re-fires on upload/metadata-save-triggered refetches.
+        const savedSongId = getMostRecentAvailableSongId(loadPlayerPrefs(), new Set(sortedSongs.map(s => s.id)));
         setSongState(prev => ({
             ...prev,
             songs: sortedSongs,
-            currentSongId: prev.currentSongId ?? sortedSongs[0]?.id ?? null,
+            currentSongId: prev.currentSongId ?? savedSongId ?? sortedSongs[0]?.id ?? null,
         }));
     }, []);
     useEffect(() => { refetchSongs(); }, [refetchSongs]);
@@ -336,6 +355,10 @@ export default function SynthPlayerPage() {
     // score reparse (which can land the track heuristic on a different/rest-only track).
     // These primitives only change on an actual song switch or a tab-file replacement.
     const currentSongId = currentSong?.id ?? null;
+    // [PLAYER-PREF-001] Lets handleScoreLoaded/handleTrackChange read the current song id
+    // without adding currentSongId to their own dependency arrays.
+    const currentSongIdRef = useRef<string | null>(null);
+    useEffect(() => { currentSongIdRef.current = currentSongId; }, [currentSongId]);
     const currentSongFilePath = currentSong?.file_path ?? null;
     const currentSongFileName = currentSong?.file_name ?? null;
     const currentSongFileExtension = currentSong?.file_extension ?? null;
@@ -1250,9 +1273,37 @@ export default function SynthPlayerPage() {
             });
         });
 
-        const trackIndex = pickDefaultTrackIndex(trackList);
+        // [PLAYER-PREF-001] Restore a saved track only if it's still valid against this
+        // load's live track list; an invalid saved entry is explicitly removed (not left
+        // as unrepaired garbage) and the deterministic heuristic above is used instead —
+        // the heuristic result itself is never written back as a manual preference.
+        const candidates: TrackPreferenceCandidate[] = trackList.map((t, i) => ({
+            index: i,
+            name: t.name ?? '',
+            selectable: !isDrumTrack(t),
+        }));
+        const songIdForRestore = currentSongIdRef.current;
+        let trackIndex: number;
+        if (songIdForRestore) {
+            const prefs = loadPlayerPrefs();
+            const result = resolveSavedTrack(prefs, songIdForRestore, candidates);
+            if (result.status === 'valid') {
+                trackIndex = result.trackIndex;
+            } else {
+                trackIndex = pickDefaultTrackIndex(trackList);
+                if (result.status === 'invalid') {
+                    savePlayerPrefs(removeSelectedTrackPref(prefs, songIdForRestore));
+                }
+            }
+        } else {
+            trackIndex = pickDefaultTrackIndex(trackList);
+        }
         console.log(`🎸 V102.7: Default track → ${trackIndex} (raw="${trackList[trackIndex]?.name ?? 'Unnamed'}")`);
         setSelectedTrack(trackIndex);
+        // [PLAYER-PREF-001] Unconditional — must fire even when trackIndex equals the
+        // current selectedTrack (the index-0 restore case) so AlphaTabRenderer's
+        // correction effect still re-applies the final track choice.
+        setTrackRenderRequestId(prev => prev + 1);
     }, []);
 
     const handleRenderFinished = useCallback(() => {
@@ -1290,6 +1341,12 @@ export default function SynthPlayerPage() {
             return;
         }
         setSelectedTrack(trackIndex);
+        // [PLAYER-PREF-001] Only an explicit manual selection is persisted as a preference —
+        // the default-track heuristic never reaches this function.
+        const songId = currentSongIdRef.current;
+        if (songId) {
+            savePlayerPrefs(recordSelectedTrack(loadPlayerPrefs(), songId, trackIndex, track?.name ?? ''));
+        }
     }, [tracks]);
 
     // ==================== LOOP ====================
@@ -1488,6 +1545,9 @@ export default function SynthPlayerPage() {
         setHasLoopSelection(false);
         setPlaybackRange(null);
         setSongState(prev => ({ ...prev, currentSongId: songId }));
+        // [PLAYER-PREF-001] Recency is recorded only on explicit manual song choice — the
+        // automatic first-song fallback in refetchSongs never calls this.
+        savePlayerPrefs(recordRecentSong(loadPlayerPrefs(), songId));
         setIsSongSelectorOpen(false);
         if (mainScrollContainerRef.current) mainScrollContainerRef.current.scrollTop = 0;
     }, [songState.currentSongId, api]);
@@ -1739,6 +1799,7 @@ export default function SynthPlayerPage() {
                             key={signedUrl}
                             fileUrl={signedUrl}
                             trackIndices={trackIndices}
+                            trackRenderRequestId={trackRenderRequestId}
                             scrollContainer={mainScrollContainerRef.current}
                             headerVisibleRef={headerIntentRef}
                             onRequestHeaderHide={requestHeaderHide}
