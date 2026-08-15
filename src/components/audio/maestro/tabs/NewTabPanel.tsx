@@ -1,8 +1,19 @@
 'use client';
 
 /**
- * NewTabPanel.tsx — V5.6
+ * NewTabPanel.tsx — V5.7
  * Date: August 15th, 2026
+ *
+ * V5.7 CHANGES (NEWTAB-DUPLICATE-UPLOAD-GUARD-001):
+ * ✅ Stable staged-file id (crypto.randomUUID, with fallback) replaces
+ *    key={f.name} — fixes React duplicate-key warnings for same-named files
+ * ✅ In-panel duplicate staging guard — a file already staged, or repeated
+ *    within the same drop/select batch (matched by name+size+lastModified),
+ *    is skipped with a friendly "Duplicate skipped" uploadLog line instead
+ *    of being staged twice
+ * ✅ Friendly handling for Supabase 23505 / unique_song_version — no longer
+ *    surfaces raw database JSON; shows a friendly duplicate-song message and
+ *    continues processing remaining files
  *
  * V5.6 CHANGES (UPLOAD-HARDENING-001 patch 4):
  * ✅ Batch metadata note styling aligned with the main helper text above it
@@ -52,7 +63,7 @@ export interface NewTabPanelProps {
 type FileStatus = 'validating' | 'valid' | 'invalid';
 
 interface TabFile {
-    file: File; name: string; status: FileStatus;
+    id: string; file: File; name: string; status: FileStatus;
     title: string; artist: string; error: string;
 }
 
@@ -75,6 +86,30 @@ const MAX_FILES = 10;
  *  so a filename can never alter the intended Supabase Storage path structure. */
 function sanitizeFileName(name: string): string {
     return name.replace(/[\\/]/g, '_').replace(/\.\./g, '_').replace(/[^\w.-]/g, '_');
+}
+
+/** Identity signature for duplicate-staging detection — not a storage path,
+ *  so raw name/size/lastModified are fine here (no sanitization needed). */
+function fileSignature(f: { name: string; size: number; lastModified: number }): string {
+    return `${f.name.trim().toLowerCase()}|${f.size}|${f.lastModified}`;
+}
+
+/** Stable per-staged-file id for React keys and state matching — independent
+ *  of filename, so two different files sharing a name never collide. */
+function makeStagedId(f: File): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `${f.name}-${f.size}-${f.lastModified}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** Detects Supabase's unique_song_version constraint violation (23505) so it
+ *  can be shown as a friendly message instead of raw database JSON. */
+function isDuplicateSongVersionError(err: unknown): boolean {
+    const e = err as { code?: string; message?: string; details?: string } | null;
+    if (!e) return false;
+    if (e.code === '23505') return true;
+    return /unique_song_version/i.test(`${e.message ?? ''} ${e.details ?? ''}`);
 }
 
 const DEFAULT_SETTINGS: AISettings = {
@@ -239,7 +274,7 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
     const hasValidFiles = files.some(f => f.status === 'valid');
     const setSetting = useCallback(<K extends keyof AISettings>(k: K, v: AISettings[K]) => setSettings(s => ({ ...s, [k]: v })), []);
 
-    const validateFile = useCallback(async (file: File): Promise<Omit<TabFile, 'file' | 'name'>> => {
+    const validateFile = useCallback(async (file: File): Promise<Omit<TabFile, 'id' | 'file' | 'name'>> => {
         try {
             const at = await getAlphaTab();
             const score = at.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(await file.arrayBuffer()), new at.Settings());
@@ -250,17 +285,42 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
     }, [getAlphaTab]);
 
     const processFiles = useCallback(async (raw: FileList | File[]) => {
+        const incoming = Array.from(raw);
+
+        // Duplicate guard: skip a file already staged, or repeated within
+        // this same drop/select batch, before it ever reaches state.
+        const existingSigs = new Set(files.map(f => fileSignature(f.file)));
+        const seenBatchSigs = new Set<string>();
+        const duplicateNames: string[] = [];
+        const deduped: File[] = [];
+        for (const f of incoming) {
+            const sig = fileSignature(f);
+            if (existingSigs.has(sig) || seenBatchSigs.has(sig)) {
+                duplicateNames.push(f.name);
+                continue;
+            }
+            seenBatchSigs.add(sig);
+            deduped.push(f);
+        }
+
         const remaining = Math.max(0, MAX_FILES - files.length);
-        const list = Array.from(raw).slice(0, remaining);
+        const list = deduped.slice(0, remaining);
+
+        if (duplicateNames.length) {
+            setUploadLog(prev => [...prev, ...duplicateNames.map(n => `Duplicate skipped: ${n} is already staged.`)]);
+        }
+
         if (!list.length) {
-            setUploadLog([`✗ Limit reached — up to ${MAX_FILES} files per upload.`]);
+            if (!duplicateNames.length) {
+                setUploadLog([`✗ Limit reached — up to ${MAX_FILES} files per upload.`]);
+            }
             return;
         }
-        const entries = list.map<TabFile>(f => ({ file: f, name: f.name, status: 'validating', title: '', artist: '', error: '' }));
+        const entries = list.map<TabFile>(f => ({ id: makeStagedId(f), file: f, name: f.name, status: 'validating', title: '', artist: '', error: '' }));
         setFiles(prev => [...prev, ...entries]);
         for (const entry of entries) {
             const result = await validateFile(entry.file);
-            setFiles(prev => prev.map(p => p.name === entry.name ? { ...p, ...result } : p));
+            setFiles(prev => prev.map(p => p.id === entry.id ? { ...p, ...result } : p));
         }
     }, [validateFile, files]);
 
@@ -323,7 +383,11 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
                     const { error: cleanupErr } = await supabase.from('tabs').delete().eq('id', insertedRowId);
                     if (cleanupErr) console.error('[NewTabPanel] orphan-row cleanup failed', insertedRowId, cleanupErr);
                 }
-                setUploadLog(p => [...p, `✗ ${f.name}: ${err instanceof Error ? err.message : JSON.stringify(err)}`]);
+                if (isDuplicateSongVersionError(err)) {
+                    setUploadLog(p => [...p, `Duplicate skipped: ${f.name} — this song/version already exists in My Tabs.`]);
+                } else {
+                    setUploadLog(p => [...p, `✗ ${f.name}: ${err instanceof Error ? err.message : JSON.stringify(err)}`]);
+                }
             }
         }
 
@@ -530,12 +594,12 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
                     {files.length > 0 && (
                         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {files.map(f => (
-                                <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 6, padding: '8px 12px', border: `1px solid ${C.uploadBdr}`, background: dark ? 'rgb(15,23,42)' : 'white' }}>
+                                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 6, padding: '8px 12px', border: `1px solid ${C.uploadBdr}`, background: dark ? 'rgb(15,23,42)' : 'white' }}>
                                     <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.text }}>{f.name}</span>
                                     {f.status === 'valid' && <span style={{ fontSize: 11, flexShrink: 0, color: C.textSub }}>{f.artist} — {f.title}</span>}
                                     <StatusBadge status={f.status} />
                                     {f.error && <span style={{ fontSize: 10, color: 'rgb(185,28,28)', flexShrink: 0 }}>{f.error}</span>}
-                                    <button onClick={() => setFiles(p => p.filter(x => x.name !== f.name))}
+                                    <button onClick={() => setFiles(p => p.filter(x => x.id !== f.id))}
                                         style={{ fontSize: 16, lineHeight: 1, padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: C.textMuted }}>×</button>
                                 </div>
                             ))}
