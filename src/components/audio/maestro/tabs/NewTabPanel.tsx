@@ -1,8 +1,31 @@
 'use client';
 
 /**
- * NewTabPanel.tsx — V5.2
- * Date: April 29th, 2026
+ * NewTabPanel.tsx — V5.6
+ * Date: August 15th, 2026
+ *
+ * V5.6 CHANGES (UPLOAD-HARDENING-001 patch 4):
+ * ✅ Batch metadata note styling aligned with the main helper text above it
+ *    (same font size/color) for readability — was too muted/small
+ *
+ * V5.5 CHANGES (UPLOAD-HARDENING-001 patch 3):
+ * ✅ Batch upload metadata note added below the upload section's helper
+ *    text — clarifies that MetadataEditor opens for one uploaded tab and
+ *    remaining uploaded tabs are edited from My Tabs
+ *
+ * V5.4 CHANGES (UPLOAD-HARDENING-001 patch 2):
+ * ✅ Reset staged upload files/log/done state whenever the panel opens
+ *    (isOpen useEffect) — fixes a previously uploaded GP file remaining
+ *    visible in the file list/log after closing and reopening NewTab
+ *
+ * V5.3 CHANGES (beta hardening — UPLOAD-HARDENING-001):
+ * ✅ DEV_USER_ID bypass removed entirely — effectiveUserId is userId only
+ * ✅ Filenames sanitized (sanitizeFileName) before entering any storage path;
+ *    file_name/file_extension now derived from the sanitized name
+ * ✅ Orphan-row rollback — a failed storage upload or metadata update after
+ *    the tabs insert now deletes the just-inserted row instead of leaving
+ *    an orphaned draft
+ * ✅ MAX_FILES enforced cumulatively across drop/select events, not per batch
  *
  * V5.2 CHANGES (all upload bugs fixed):
  * ✅ effectiveUserId used everywhere (insert, path, storage) — never raw userId
@@ -11,7 +34,6 @@
  * ✅ onClose() + onTabUploaded?.(firstId) replaces router.push — no 404
  * ✅ onClick={handleUpload} on Upload button — was missing in V4/early V5
  * ✅ useRouter removed — no longer needed
- * 🔧 DEV BYPASS active — remove DEV_USER_ID block before production
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
@@ -48,6 +70,12 @@ const TRIPLET_OPTIONS: TripletFeel[] = ['8th', 'Dotted 8th', '16th', 'No'];
 const ACCEPTED_EXTS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5', '.gp8', '.musicxml', '.capx'] as const;
 const ACCEPTED_EXTENSIONS = ACCEPTED_EXTS.join(',');
 const MAX_FILES = 10;
+
+/** Strips path separators, ".." sequences, and non-word/dot/hyphen characters
+ *  so a filename can never alter the intended Supabase Storage path structure. */
+function sanitizeFileName(name: string): string {
+    return name.replace(/[\\/]/g, '_').replace(/\.\./g, '_').replace(/[^\w.-]/g, '_');
+}
 
 const DEFAULT_SETTINGS: AISettings = {
     tsAuto: true, tsNum: 4, tsDen: 4,
@@ -178,6 +206,16 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
         return () => { mounted = false; sub.subscription.unsubscribe(); };
     }, []);
 
+    // Reset staged upload state every time the panel opens — covers auto-close
+    // after a successful upload, backdrop close, and any future close path.
+    useEffect(() => {
+        if (isOpen) {
+            setFiles([]);
+            setUploadLog([]);
+            setUploadDone(false);
+        }
+    }, [isOpen]);
+
     // ── AlphaTab lazy cache ───────────────────────────────────────────────────
     const alphaTabRef = useRef<any>(null);
     const getAlphaTab = useCallback(async () => {
@@ -212,14 +250,19 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
     }, [getAlphaTab]);
 
     const processFiles = useCallback(async (raw: FileList | File[]) => {
-        const list = Array.from(raw).slice(0, MAX_FILES);
+        const remaining = Math.max(0, MAX_FILES - files.length);
+        const list = Array.from(raw).slice(0, remaining);
+        if (!list.length) {
+            setUploadLog([`✗ Limit reached — up to ${MAX_FILES} files per upload.`]);
+            return;
+        }
         const entries = list.map<TabFile>(f => ({ file: f, name: f.name, status: 'validating', title: '', artist: '', error: '' }));
         setFiles(prev => [...prev, ...entries]);
         for (const entry of entries) {
             const result = await validateFile(entry.file);
             setFiles(prev => prev.map(p => p.name === entry.name ? { ...p, ...result } : p));
         }
-    }, [validateFile]);
+    }, [validateFile, files]);
 
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault(); setDragOver(false);
@@ -229,10 +272,7 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
     const handleUpload = useCallback(async () => {
         console.log('[NewTabPanel] handleUpload fired', { userId, fileCount: files.length, hasValidFiles });
 
-        // 🔧 DEV BYPASS — remove before production.
-        // Get UUID from: Supabase Dashboard → Authentication → Users
-        const DEV_USER_ID = '3719e467-5f0c-4170-9296-e0c089ee99f0';
-        const effectiveUserId = userId ?? (process.env.NODE_ENV === 'development' ? DEV_USER_ID : null);
+        const effectiveUserId = userId;
 
         if (!effectiveUserId) {
             setUploadLog(['✗ Not signed in — please sign in to upload tabs.']);
@@ -247,6 +287,7 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
         let firstId: string | null = null;
 
         for (const f of valid) {
+            let insertedRowId: string | null = null;
             try {
                 // Step 1: Insert row with effectiveUserId
                 const { data: row, error: e1 } = await supabase
@@ -255,12 +296,14 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
                     .select('id')
                     .single();
                 if (e1) throw e1;
+                insertedRowId = row.id;
 
                 // Step 2: Upload file to storage using effectiveUserId
-                const dotIdx = f.file.name.lastIndexOf('.');
-                const fileName = dotIdx > 0 ? f.file.name.slice(0, dotIdx) : f.file.name;
-                const fileExt = dotIdx > 0 ? f.file.name.slice(dotIdx + 1) : null;
-                const path = `${effectiveUserId}/${row.id}/${f.file.name}`;
+                const safeName = sanitizeFileName(f.file.name);
+                const dotIdx = safeName.lastIndexOf('.');
+                const fileName = dotIdx > 0 ? safeName.slice(0, dotIdx) : safeName;
+                const fileExt = dotIdx > 0 ? safeName.slice(dotIdx + 1) : null;
+                const path = `${effectiveUserId}/${row.id}/${safeName}`;
 
                 const { error: e2 } = await supabase.storage.from('tabs').upload(path, f.file);
                 if (e2) throw e2;
@@ -276,6 +319,10 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
                 setUploadLog(p => [...p, `✓ ${f.artist} — ${f.title}`]);
                 if (!firstId) firstId = row.id;
             } catch (err) {
+                if (insertedRowId) {
+                    const { error: cleanupErr } = await supabase.from('tabs').delete().eq('id', insertedRowId);
+                    if (cleanupErr) console.error('[NewTabPanel] orphan-row cleanup failed', insertedRowId, cleanupErr);
+                }
                 setUploadLog(p => [...p, `✗ ${f.name}: ${err instanceof Error ? err.message : JSON.stringify(err)}`]);
             }
         }
@@ -433,8 +480,11 @@ export const NewTabPanel: React.FC<NewTabPanelProps> = ({ isOpen, onClose, theme
                     <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', color: C.text }}>
                         Upload Guitar Pro or MusicXML files
                     </h2>
-                    <p style={{ fontSize: 12, margin: '0 0 20px', color: C.textSub }}>
+                    <p style={{ fontSize: 12, margin: '0 0 6px', color: C.textSub }}>
                         Files are validated client-side with AlphaTab before upload — title &amp; artist extracted automatically.
+                    </p>
+                    <p style={{ fontSize: 12, margin: '0 0 20px', color: C.textSub }}>
+                        Batch uploads: after upload, the metadata editor opens for one new tab. Edit the remaining uploaded tabs from My Tabs.
                     </p>
 
                     <div
