@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.30-PLAYERPREF001
- * Date: August 13th, 2026
+ * Current version: V145.31-CURSORENGINE001
+ * Date: September 21st, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * CURSOR3-RAF-AB-REPLACEMENT-001 — Runtime cursor-engine selector (default stays Cursor2).
+ * ✅ ensureCursorAndAnchorOnce resolves the page-layout cursor engine through
+ *        resolveCursorEngine() (src/lib/alphaTab/cursorEngine.ts): exact-value opt-in only
+ *        (?cursorEngine=cursor3 or localStorage maestro_cursor_engine=cursor3), query wins,
+ *        resolved once per page load. MAESTRO_USE_CURSOR3 (false) remains the default engine.
+ * 🚫 No change to cursor lifecycle/destroy-recreate, FixedLandscapeCursor,
+ *        BeatCustomLoopOverlay.tsx, Cursor2, or Cursor3.
  *
  * LANDSCAPE-LOOP-SCAN-THROTTLE-001 — Landscape-only source-resolution cache.
  * ✅ Caches landscape beat resolution (expandedStart/expandedDur/structuralDur/
@@ -1020,6 +1028,7 @@ import {
 } from '@/lib/alphaTab/initAlphaTab';
 import { attachMaestroCursorV2, MaestroCursorV2 } from '@/components/alphaTab/MaestroCursor2';
 import { attachMaestroCursorV3 } from '@/components/alphaTab/MaestroCursor3';
+import { resolveCursorEngine, type CursorEngine } from '@/lib/alphaTab/cursorEngine';
 import { FixedLandscapeCursor } from '@/components/alphaTab/FixedLandscapeCursor';
 import {
     canvasInteractionBlockingPanelOpenRef,
@@ -1788,8 +1797,16 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
 const MAESTRO_USE_S1_CUSTOM_SCROLL = true;
 
 // ── Cursor engine flag ───────────────────────────────────────────────────────
-// false → Cursor2 (production default); true → Cursor3 experimental RAF-slew engine
+// DEFAULT engine only: false → Cursor2 (production default); true → Cursor3 experimental
+// RAF-slew engine. The default never changes at runtime — see the override below.
 const MAESTRO_USE_CURSOR3 = false;
+// [CURSOR3-RAF-AB-REPLACEMENT-001] Runtime opt-in override (src/lib/alphaTab/cursorEngine.ts).
+// When true, the exact values ?cursorEngine=cursor2|cursor3 (wins) or localStorage
+// maestro_cursor_engine=cursor2|cursor3 can select the page-layout cursor engine; any other
+// value is ignored. Resolved once per page load — switching engines requires a reload.
+// Set to false to ignore all overrides and always use the default engine above.
+const MAESTRO_CURSOR_ENGINE_OVERRIDE_ENABLED = true;
+const defaultCursorEngine: CursorEngine = MAESTRO_USE_CURSOR3 ? 'cursor3' : 'cursor2';
 
 // [S1] Active row focal-zone offset. Target places the active row headerH + S1_ACTIVE_ROW_COMFORT_Y
 // below the scroll container top. 280px is the first tuned focal-zone value — larger offset means
@@ -4863,7 +4880,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 new Promise(resolve => {
                     const host = containerRef.current;
                     if (!host || renderTokenRef.current !== tok) return resolve(false);
-                    const attachCursor = MAESTRO_USE_CURSOR3
+                    const cursorEngine = resolveCursorEngine(defaultCursorEngine, MAESTRO_CURSOR_ENGINE_OVERRIDE_ENABLED);
+                    const attachCursor = cursorEngine === 'cursor3'
                         ? () => attachMaestroCursorV3(api, host)
                         : () => attachMaestroCursorV2(api, host);
                     if (!cursorRef.current) {
