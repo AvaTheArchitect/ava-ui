@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.23-PLAYERPREF001
- * Date: August 13, 2026
+ * Synth Player Page — Phase 4 V102.24-PROFILENAV001
+ * Date: September 21, 2026
  * Cloned from V102.21-isolation — MAESTRO-UI-009A closed candidate: portrait shell uses
  * h-screen with valid minmax row to avoid iOS standalone PWA cold-start h-dvh viewport
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
@@ -117,6 +117,7 @@
 import React, {
     useState, useCallback, useRef, useEffect, useMemo,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/alphaTab/supabase';
 // 🔒 DEPLOYMENT ENTRYPOINT — always import from AlphaTabRenderer, never from versioned files.
 import { AlphaTabRendererV102 } from '@/components/alphaTab/AlphaTabRenderer';
@@ -191,6 +192,10 @@ function isDrumOrPercussionTrack(t: Track | null | undefined): boolean {
 }
 
 export default function SynthPlayerPage() {
+    // ==================== ROUTER ====================
+    // Used only by the TopMenuTray Profile button (onProfileOpen) → /profile.
+    const router = useRouter();
+
     // ==================== API & CORE STATE ====================
     const [api, setApi] = useState<AlphaTabApi | null>(null);
     const [tracks, setTracks] = useState<Track[]>([]);
@@ -1679,6 +1684,7 @@ export default function SynthPlayerPage() {
                     currentSong={currentSong || null}
                     onSongSelectorOpen={() => setIsSongSelectorOpen(true)}
                     onNewTabOpen={() => setIsNewTabOpen(true)}
+                    onProfileOpen={() => router.push('/profile')}
                 />
             </div>
 

@@ -2,8 +2,13 @@
 
 /**
  * TopMenuTray.tsx
- * Version v2.1.0
- * Updated: June 26th, 2026
+ * Version v2.1.1
+ * Updated: September 21st, 2026
+ *
+ * V2.1.1 CHANGES — Desktop/tablet Profile button wiring:
+ * ✅ Added optional onProfileOpen prop; the desktop/tablet Profile NavButton now calls it
+ *    (was a no-op `() => { }`). Falls back to a no-op when the prop is not supplied.
+ * ✅ Search, Help, Inbox, and every mobile-shell button (incl. More/Tuner/Tab-Chord) unchanged.
  *
  * V2.1.0 CHANGES — Maestro black chrome + purple accent lock:
  * ✅ TopMenuTray surface restored to black/neutral gradient chrome.
@@ -55,6 +60,7 @@ export interface TopMenuTrayProps {
     currentSong: SongItem | null;
     onSongSelectorOpen: () => void;
     onNewTabOpen?: () => void;
+    onProfileOpen?: () => void;
     viewMode?: TabMode;
     onViewModeChange?: (mode: TabMode) => void;
     inboxCount?: number;
@@ -351,6 +357,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
     currentSong: _currentSong,
     onSongSelectorOpen,
     onNewTabOpen,
+    onProfileOpen,
     viewMode = 'tab',
     onViewModeChange,
     inboxCount = 0,
@@ -472,7 +479,7 @@ export const TopMenuTray: React.FC<TopMenuTrayProps> = ({
                     <NavButton icon={<HelpIcon />} label="Help" width={86} compactWidth={52} onClick={() => { }} isNarrow={narrow} />
                     <FlexibleGap width={24.5} minWidth={gapMin} />
                     <NavButton icon={<InboxIcon />} label="Inbox" width={86} compactWidth={52} badge={inboxCount} onClick={() => { }} isNarrow={narrow} />
-                    <NavButton icon={<ProfileIcon />} label="Profile" width={86} compactWidth={52} onClick={() => { }} isNarrow={narrow} />
+                    <NavButton icon={<ProfileIcon />} label="Profile" width={86} compactWidth={52} onClick={onProfileOpen ?? (() => {})} isNarrow={narrow} />
                 </div>
 
             </div>
