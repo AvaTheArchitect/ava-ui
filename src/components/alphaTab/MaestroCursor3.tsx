@@ -2,15 +2,20 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.5
- * Date: June 29th, 2026
+ * Current version: V3.0.6
+ * Date: September 21st, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
+ * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
+ * MaestroCursor2 V1.7.2 (commit 6576c32)
  *
  * Status:
- * V3.0.0 is the isolated Cursor3 baseline clone.
- * RAF-slewed movement and SRV/triplet/slide/rest handling are planned additions,
- * not active behavior unless explicitly implemented behind Cursor3 wiring.
+ * V3.0.0 was the isolated Cursor3 baseline clone.
+ * RAF-slewed movement (targetTick/renderTick, RAF loop, deadband snap, expanded
+ * bar-window gate) is implemented in this file, but Cursor3 is only reachable when
+ * MAESTRO_USE_CURSOR3 is true in AlphaTabRenderer.tsx (currently false — Cursor2
+ * remains the production cursor). SRV/triplet/slide/rest handling remains planned,
+ * not active behavior.
  *
  * Goal:
  * Build RAF-slewed cursor movement for SRV/triplet/slide/rest edge cases
@@ -26,7 +31,7 @@
  * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
  * [x] Deadband snap: absDelta <= 48 → instant
  * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
- * [ ] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately
+ * [x] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately ([C3-002] in startRaf; source-implemented, not runtime-validated)
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
@@ -52,6 +57,13 @@
  *    Adds CURSOR3_SLIDE_DIAG-gated probes around Cursor3 stayPut/terminal
  *    slide parking branches to inspect nextCandidate, voice scan, tie-destination,
  *    slide flags, and bounds data without changing cursor behavior.
+ * ✅ [MAESTRO-CURSOR-005-Parity]
+ *    Ports Cursor2 V1.7.2 (commit 6576c32) terminal sustained/vibrato loop-boundary
+ *    glide. terminalSustainedLoopGlideMode is classified in setBeat from the current
+ *    beat's own span reaching the active loop endTick (no nextCandidate required),
+ *    guards the no-candidate stayPut branch, and shifts tickToX's bar-right target to
+ *    loopEndX + BAR_WIDTH / 2 for this mode only. Behavior parity only — Cursor3 RAF
+ *    slew, targetTick/renderTick routing, and MAESTRO_USE_CURSOR3 (false) are unchanged.
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -151,6 +163,14 @@ export class MaestroCursorV3 {
     private stayPutMode = false;
     private barEndGapMode = false;
     private terminalSameRowNoAdvanceMode = false;
+    // [MAESTRO-CURSOR-005] Terminal sustained/vibrato note whose OWN duration span
+    // (scanStart + expandedBeatDuration) reaches/crosses an active loop's endTick —
+    // no nextCandidate required. Drives two things: (1) tickToX's branch selection,
+    // via stayPutMode staying false for this case (see the `if (!nextCandidate ...)`
+    // guard in setBeat), and (2) tickToX's terminal visual target, which shifts to
+    // loopEndX + BAR_WIDTH / 2 for this mode so the cursor body's left edge — not just
+    // its center spine — clears the note by loop wrap. Ported from Cursor2 V1.7.2.
+    private terminalSustainedLoopGlideMode = false;
     // [LoopEndXClamp] Visual-only interpolation ceiling for mid-bar loop endings.
     // Set by AlphaTabRenderer via setLoopEndX(). Must be null for barline-to-barline
     // loops and intermediate rows — see LoopEndXClamp lock in AlphaTabRenderer.tsx.
@@ -330,6 +350,7 @@ export class MaestroCursorV3 {
             this.stayPutMode = false;
             this.barEndGapMode = false;
             this.terminalSameRowNoAdvanceMode = false;
+            this.terminalSustainedLoopGlideMode = false;
             this.forceHardSnapNextSetBeat = false;
             console.warn('[maestro-cursor3-hard-snap]', {
                 reason: 'forceHardSnapNextSetBeat',
@@ -481,9 +502,58 @@ export class MaestroCursorV3 {
         this.stayPutMode = false;
         this.barEndGapMode = false;
         this.terminalSameRowNoAdvanceMode = false;
+        this.terminalSustainedLoopGlideMode = false;
         const nextCandidate = preScannedNextBeat ?? null;
 
-        if (nextCandidate) {
+        // ── [MAESTRO-CURSOR-005] Candidate-independent terminal sustained/vibrato
+        // loop-boundary glide, ported from Cursor2 V1.7.2 (commit 6576c32). Cursor2's live
+        // diagnostics showed the founding repro resolves nextCandidate to null, so this
+        // signal cannot depend on a next candidate. The correct signal is the CURRENT
+        // beat's own span: when scanStart..scanStart+expandedBeatDuration already
+        // reaches/crosses the loop's endTick, the note is musically the terminal
+        // sustained/vibrato note for this loop pass regardless of what (if anything)
+        // resolveNextBeatExpanded handed back as "next". This block only decides whether
+        // stayPutMode is entered for this one narrow case: it deliberately leaves
+        // stayPutMode false and nextNoteX null so tickToX's existing fallback branch
+        // (bar-right, clamped by loopEndX) runs, exactly as it does for the
+        // barEndGapMode/terminalSameRowNoAdvanceMode cases below. See the guard on the
+        // `if (!nextCandidate ...)` block below: without it, that separate (non-chained)
+        // branch would still unconditionally re-set stayPutMode = true right after this
+        // one runs. Cursor3 RAF note: this is setBeat-side classification only — the RAF
+        // slew (targetTick/renderTick) is unchanged and still decides how fast renderTick
+        // reaches the terminal target.
+        const loopRangeForGlide = this.api?.playbackRange ?? null;
+        const loopEndTickForGlide = typeof loopRangeForGlide?.endTick === 'number'
+            ? loopRangeForGlide.endTick
+            : null;
+        const nextCandidateTickForGlide = nextExpandedBeatStart
+            ?? nextCandidate?.absolutePlaybackStart
+            ?? nextCandidate?.playbackStart
+            ?? null;
+        const terminalSustainedLoopGlide =
+            loopEndTickForGlide !== null &&
+            this.loopEndX !== null &&
+            !beat?.isRest &&
+            this.expandedBeatDuration > 0 &&
+            scanStart < loopEndTickForGlide &&
+            (scanStart + this.expandedBeatDuration) >= loopEndTickForGlide;
+
+        if (terminalSustainedLoopGlide) {
+            this.terminalSustainedLoopGlideMode = true;
+            if (cursor3DiagEnabled()) {
+                console.warn('[maestro-cursor3-boundary]', {
+                    reason: 'terminal-sustained-loop-glide',
+                    currentAbsStart: beat?.absolutePlaybackStart ?? null,
+                    scanStart,
+                    nextCandidateTick: nextCandidateTickForGlide,
+                    loopEndTick: loopEndTickForGlide,
+                    expandedBeatDuration: this.expandedBeatDuration,
+                    currentNoteX: this.currentNoteX,
+                    loopEndX: this.loopEndX,
+                    stayPutMode: this.stayPutMode,
+                });
+            }
+        } else if (nextCandidate) {
             const nextDur = nextCandidate.playbackDuration ?? nextCandidate.duration ?? 0;
             if (nextDur >= MIN_PRIMARY_BEAT_TICKS) {
                 const nb = this.api?.renderer?.boundsLookup?.findBeat(nextCandidate);
@@ -584,7 +654,14 @@ export class MaestroCursorV3 {
                 }
             }
         }
-        if (!nextCandidate) {
+        // [MAESTRO-CURSOR-005] This is a separate `if`, not `else if` chained to the
+        // terminalSustainedLoopGlide check above — without this guard it would
+        // unconditionally re-enter stayPutMode = true immediately after that check ran,
+        // for every null-candidate case including the one just classified above. All
+        // other null-candidate Boundary Monster protection (barEndGapMode scan,
+        // terminalSameRowNoAdvanceMode scan) is unchanged and still runs normally
+        // whenever terminalSustainedLoopGlide is false.
+        if (!nextCandidate && !terminalSustainedLoopGlide) {
             this.stayPutMode = true;
 
             const _mb = beat?.voice?.bar?.masterBar;
@@ -931,6 +1008,7 @@ export class MaestroCursorV3 {
             this.stayPutMode = false;
             this.barEndGapMode = false;
             this.terminalSameRowNoAdvanceMode = false;
+            this.terminalSustainedLoopGlideMode = false;
         }
         this.lastValidRatio = 1.0;
         this.lastTickApplied = -1;
@@ -1122,8 +1200,24 @@ export class MaestroCursorV3 {
             const barRight = mbBounds?.visualBounds
                 ? mbBounds.visualBounds.x + mbBounds.visualBounds.w
                 : this.currentNoteX + 24;
-            const effectiveRight = this.loopEndX !== null
-                ? Math.min(barRight, this.loopEndX)
+            // [MAESTRO-CURSOR-005] Terminal sustained/vibrato loop glide only: the
+            // universal spine-centered convention (every other case below/above) targets
+            // loopEndX with the SPINE, which leaves the cursor body's left 7px (BAR_WIDTH/2)
+            // still overlapping the note at wrap (Cursor2 CURSOR-005.4 confirmed this via
+            // cursorLeftX/cursorCenterX deltas). Songsterr-like acceptance for this one
+            // mode requires the full visible body to clear the note, so the target is
+            // shifted right by BAR_WIDTH/2 here — the finalX = interpolatedX - BAR_WIDTH/2
+            // convention is untouched, so this alone makes cursorLeftX (not the spine)
+            // land on loopEndX at full progress. Every other path (mid-bar sustained
+            // notes, barEndGapMode, terminalSameRowNoAdvanceMode, ordinary loops) keeps
+            // targeting loopEndX directly — unchanged. `tick` here is renderTick under
+            // the RAF path, so full progress is reached at the slewed rate.
+            const loopEndXValue = this.loopEndX;
+            const terminalCap = this.terminalSustainedLoopGlideMode && loopEndXValue !== null
+                ? loopEndXValue + BAR_WIDTH / 2
+                : loopEndXValue;
+            const effectiveRight = terminalCap !== null
+                ? Math.min(barRight, terminalCap)
                 : barRight;
             interpolatedX = this.currentNoteX + (effectiveRight - this.currentNoteX) * progress;
         }
