@@ -1,7 +1,14 @@
 /**
- * AlphaTab Initialization Utility — V101.4-AB
- * Date: June 3rd, 2026
+ * AlphaTab Initialization Utility — V101.5-ALOGLEVEL001
+ * Date: September 21st, 2026
  * Base: V101.3-AB + lyric overlay basement spacing — LOCKED June 2026.
+ *
+ * V101.5 CHANGES (ALPHATAB-DEBUG-LOGLEVEL-DEVTOOLS-PERF-001):
+ * ✅ alphaTab core logLevel now defaults to Warning instead of Debug. Debug made alphaTab
+ *    emit console.debug on every synth position update (plus per-sample soundfont logs),
+ *    flooding the DevTools Verbose console. Exact opt-in override restores detail:
+ *    ?alphaTabLogLevel=debug|info|warn|error|none (wins) or localStorage
+ *    maestro_alphatab_log_level — see alphaTabLogLevel.ts. No other settings changed.
  *
  * V101.4 CHANGES:
  * ✅ Lyric overlay basement spacing system — Beta-ready, locked June 2026.
@@ -69,6 +76,20 @@
  */
 
 import type { AlphaTabApi } from "./types";
+import {
+  alphaTabLogLevelKey,
+  resolveAlphaTabLogLevel,
+  type AlphaTabLogLevelName,
+} from "./alphaTabLogLevel";
+
+// [ALPHATAB-DEBUG-LOGLEVEL-DEVTOOLS-PERF-001] alphaTab logs through console.debug at its Debug
+// level (a "Position changed" line on every synth position update, plus per-sample soundfont
+// logs), which floods the DevTools Verbose console during normal playback. Default to warnings
+// and errors only. With the override enabled, the exact values ?alphaTabLogLevel=<name> (wins)
+// or localStorage maestro_alphatab_log_level=<name> restore detail; an invalid query value falls
+// back to the default. Resolved once per page load — see alphaTabLogLevel.ts.
+const DEFAULT_ALPHATAB_LOG_LEVEL: AlphaTabLogLevelName = "warn";
+const ALPHATAB_LOG_LEVEL_OVERRIDE_ENABLED = true;
 
 // ── Minimal type stubs (renderer compatibility) ───────────────────────────────
 
@@ -223,7 +244,15 @@ export async function initAlphaTab(
 
   // ── Core ────────────────────────────────────────────────────────────────────
   settings.core.engine = "svg";
-  settings.core.logLevel = 1;
+  settings.core.logLevel =
+    alphaTab.LogLevel[
+      alphaTabLogLevelKey(
+        resolveAlphaTabLogLevel(
+          DEFAULT_ALPHATAB_LOG_LEVEL,
+          ALPHATAB_LOG_LEVEL_OVERRIDE_ENABLED,
+        ),
+      )
+    ];
   settings.core.fontDirectory =
     "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/";
   settings.core.enableLazyLoading = false;
