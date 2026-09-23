@@ -2,9 +2,30 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.31-CURSORENGINE001
- * Date: September 21st, 2026
+ * Current version: V145.32-PAUSERESUME001
+ * Date: September 23rd, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * PLAYBACK-PAUSE-RESUME-TICK-PULLBACK-001 — Non-loop resume tick correction.
+ * ✅ The isPlaying effect's resume branch already re-seeks to lastPausedTickRef when a
+ *        real pause armed pauseResumeArmedRef, but only inside the loop-enabled
+ *        (liveLoopRange?.startTick != null) block — a genuine pause→resume with loop OFF
+ *        called api.play() with no re-seek at all, letting alphaTab's own silent
+ *        pause-time backward normalization (see the pre-existing V142 comment below) go
+ *        uncorrected. New else-if sibling, gated on the same pauseResumeArmedRef/
+ *        lastPausedTickRef pair, re-seeks api.tickPosition/seekTicks to the captured
+ *        pre-pause tick before api.play() for the non-loop case too, then clears
+ *        pauseResumeArmedRef — mirroring the loop path's own seek call shape exactly.
+ * ✅ [Follow-up] A paused click-seek visually re-anchors the cursor to the clicked target,
+ *        but left lastPausedTickRef pointing at the original pre-pause tick, so the fix
+ *        above resumed from the stale paused location instead of the clicked one.
+ *        handleClick now updates lastPausedTickRef to its own safeTarget when the seek is
+ *        paused (!wasPlaying) and a pause is still armed — pauseResumeArmedRef is left
+ *        true so the resume correction still fires, now against the updated target. Live
+ *        (wasPlaying) click-seek is untouched; the write only happens in the paused branch.
+ * 🚫 No change to the loop-enabled block's own logic, the resume-tick-gate, play-start-
+ *        hard-snap, live click-seek's pause/timer/play choreography, cold-start play
+ *        (pauseResumeArmedRef stays false), Cursor2, or Cursor3.
  *
  * CURSOR3-RAF-AB-REPLACEMENT-001 — Runtime cursor-engine selector (default stays Cursor2).
  * ✅ ensureCursorAndAnchorOnce resolves the page-layout cursor engine through
@@ -8846,6 +8867,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     };
                     (window as any).__maestroManualSeek = Date.now();
                     (window as any).__maestroCursor?.requestSnap?.('loop-play-start');
+                } else if (
+                    pauseResumeArmedRef.current &&
+                    typeof lastPausedTickRef.current === 'number' &&
+                    Number.isFinite(lastPausedTickRef.current)
+                ) {
+                    // [NonLoopResumeTickCorrection] PLAYBACK-PAUSE-RESUME-TICK-PULLBACK-001:
+                    // liveLoopRange is null here (loop off, or no valid range), so the block
+                    // above never ran and never consumed the pause-only marker. Mirrors that
+                    // block's own seek call shape exactly — same api.tickPosition/seekTicks
+                    // pair, same ordering before api.play() below — just without the loop
+                    // range bound-check, since there's no range to bound against. Only a
+                    // genuine pause→resume reaches here: pauseResumeArmedRef is armed
+                    // exclusively by the pause branch below, so cold-start/replay (never
+                    // paused) leaves it false and this branch does not run.
+                    const resumeTick = lastPausedTickRef.current;
+                    if (api.tickPosition !== undefined) api.tickPosition = resumeTick;
+                    api.player?.seekTicks?.(resumeTick);
+                    pauseResumeArmedRef.current = false;
                 }
                 // ── END loop-start cursor re-prime ────────────────────────────────────────
 
@@ -9633,6 +9672,17 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 (window as any).__maestroLastIntentionalTickAt = Date.now();
                 preRotationAnchorTickRef.current = safeTarget;
                 const wasPlaying = (api.playerState ?? 0) === 1;
+                // [PausedClickSeekStaleTargetFix] PLAYBACK-PAUSE-RESUME-TICK-PULLBACK-001: a
+                // paused click-seek visually moves the cursor to safeTarget, but the non-loop
+                // resume correction (isPlaying effect) re-seeks to whatever tick was captured
+                // at the ORIGINAL pause (lastPausedTickRef) unless that's updated here — update
+                // it to this click's target so the next resume continues from where the user
+                // actually clicked, not where they paused. pauseResumeArmedRef is left true (not
+                // touched here) so that correction still fires. Only runs when already paused
+                // (!wasPlaying) and a pause is still armed; live click-seek is unaffected.
+                if (!wasPlaying && pauseResumeArmedRef.current) {
+                    lastPausedTickRef.current = safeTarget;
+                }
                 const tok = ++seekTokenRef.current;
                 if (resumeTimerRef.current !== null) { window.clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null; }
                 if (wasPlaying) { seekInProgressRef.current = true; api.pause(); }
