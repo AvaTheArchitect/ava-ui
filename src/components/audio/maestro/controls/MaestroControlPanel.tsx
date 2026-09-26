@@ -1,8 +1,17 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V101: Landscape Loop button re-enabled
- * Date: July 7th, 2026
+ * MaestroControlPanel.tsx - V102: Loop button no longer keeps mouse focus (LOOPSPACEFOCUS001)
+ * Date: September 26th, 2026
+ *
+ * 🔧 NEW IN V102 (PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001):
+ * ✅ The inline (narrow / mobile-landscape) Loop button gets onMouseDown preventDefault so a
+ *    mouse click no longer leaves focus on it — Space would otherwise natively re-activate it
+ *    and remove/re-add the loop set. Tab focus and keyboard activation are unchanged; Play/Pause
+ *    and every other control, aria attributes, tooltip and toggle logic are untouched. No
+ *    global key handler added.
+ *
+ * 🔧 V101: Landscape Loop button re-enabled
  *
  * 🔧 NEW IN V101:
  * ✅ MAESTRO-LOOP-002B: Loop button disabled condition simplified back to
@@ -442,7 +451,11 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
                 relaxed LandscapeToggleOnGuard creates a real bar-snapped range (BeatCustomLoopOverlay.tsx).
                 The LOOP-001A block on landscape ON (added when it was fake/inert) no longer
                 applies. Landscape click/drag/handle editing remain guarded and unaffected. */}
+            {/* [LOOPSPACEFOCUS001] onMouseDown preventDefault: a MOUSE click no longer focuses this
+                button, so Space can't natively re-activate it. Tab focus / keyboard activation
+                unaffected. Deliberately NOT applied to Play/Pause or other controls. */}
             <button
+              onMouseDown={(e) => e.preventDefault()}
               onClick={handleLoopToggle}
               disabled={!controlsReady}
               className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}

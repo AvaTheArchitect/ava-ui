@@ -1,13 +1,24 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.24-PROFILENAV001
- * Date: September 21, 2026
+ * Synth Player Page — Phase 4 V102.25-SPACEPLAYBACK001
+ * Date: September 26, 2026
  * Cloned from V102.21-isolation — MAESTRO-UI-009A closed candidate: portrait shell uses
  * h-screen with valid minmax row to avoid iOS standalone PWA cold-start h-dvh viewport
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
  *
  * RECENT CLOSED LANES (see individual patch history for detail):
+ * ✅ PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001 / SPACEPLAYBACK001: player-level Space shortcut.
+ *        There was no app-level Space handler — Space only worked while the Play button held
+ *        focus and otherwise scrolled the page (worse once the Loop button stopped taking mouse
+ *        focus, LOOPSPACEFOCUS001). A window keydown handler now routes Space to the existing
+ *        handlePlayPause (works with Loop on, after click-seeking, after clicking Loop) and
+ *        cancels the scroll. It leaves Space alone when focus/target is a text input, textarea,
+ *        select, contenteditable, textbox/slider-type role, native media control or ANY button
+ *        (so Tab-to-Loop/Play + Space still activates that control), with Meta/Ctrl/Alt held,
+ *        when the player isn't ready, or when a page panel/overlay or a dialog is open. Held
+ *        keys are scroll-cancelled but toggle only once. Renderer, overlay, Cursor2/3 and loop
+ *        boundary logic are untouched.
  * ✅ MAESTRO-DRUMS-001-C closed (hotfix on 001-B): the bare "tom" fallback
  *        keyword substring-matched any track name CONTAINING "tom" — "'78
  *        Frankenstrat Custom" (Van Halen guitar), "Tommy Shannon" (SRV bass),
@@ -1337,6 +1348,55 @@ export default function SynthPlayerPage() {
         setDisplayTime(0);
         setIsPlaying(false);
     }, [api]);
+
+    // ==================== SPACE = PLAY / PAUSE (player-level shortcut) ====================
+    // [SPACEPLAYBACK001] PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001: there was no app-level Space
+    // handler — Space only "worked" when the Play button happened to hold focus, and otherwise
+    // scrolled the page. This routes Space to the existing handlePlayPause owner (same function the
+    // Play button uses, so loop reseat / pause-resume logic in AlphaTabRenderer is untouched).
+    // Deliberately NOT handled (native behavior preserved, keyboard accessibility intact):
+    //  - already handled (defaultPrevented), IME composition, Meta/Ctrl/Alt combos
+    //  - focus/target on a text input, textarea, select, contenteditable, role=textbox/slider/
+    //    searchbox/spinbutton/combobox/listbox, or native <audio>/<video> controls
+    //  - focus/target on a button (or button-like role) — Tab to Loop/Play + Space still activates
+    //    that control natively; the Loop button's mouse-focus patch removes the mouse path
+    //  - the player isn't ready (mirrors the Play button's controlsReady = api && playerReady)
+    //  - a page-owned panel/overlay is open (song selector, new tab, metadata editor, pitch
+    //    popover, mobile track mixer) or any role=dialog / aria-modal element is in the DOM
+    // A held key (e.repeat) is still preventDefault'd (so it can't scroll) but only the first
+    // keydown toggles. keydown (not keyup) so the browser's Space-scroll default can be cancelled.
+    const isSpaceShortcutBlockedByPanel =
+        isSongSelectorOpen || isNewTabOpen || isPitchPopoverOpen || isMobileTrackMixerOpen ||
+        !!metaEditorState.tabId;
+    useEffect(() => {
+        const NATIVE_SPACE_OWNER_SELECTOR = [
+            'input', 'textarea', 'select', 'button', 'audio', 'video', 'summary',
+            '[contenteditable=""]', '[contenteditable="true"]',
+            '[role="textbox"]', '[role="searchbox"]', '[role="slider"]', '[role="spinbutton"]',
+            '[role="combobox"]', '[role="listbox"]', '[role="button"]', '[role="checkbox"]',
+            '[role="switch"]', '[role="radio"]', '[role="tab"]', '[role="menuitem"]', '[role="option"]',
+        ].join(',');
+        const ownsSpaceNatively = (el: Element | null): boolean => {
+            if (!el) return false;
+            if ((el as HTMLElement).isContentEditable) return true;
+            return typeof el.closest === 'function' && el.closest(NATIVE_SPACE_OWNER_SELECTOR) !== null;
+        };
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.code !== 'Space' && e.key !== ' ') return;
+            if (e.defaultPrevented || e.isComposing) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            if (!api || !playerReady) return;
+            if (isSpaceShortcutBlockedByPanel) return;
+            if (ownsSpaceNatively(e.target as Element | null)) return;
+            if (ownsSpaceNatively(document.activeElement)) return;
+            if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+            e.preventDefault();
+            if (e.repeat) return;
+            handlePlayPause();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [api, playerReady, handlePlayPause, isSpaceShortcutBlockedByPanel]);
 
     // ==================== TRACK CHANGE ====================
     const handleTrackChange = useCallback((trackIndex: number) => {

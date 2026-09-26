@@ -1,8 +1,16 @@
 'use client';
 
 /**
- * LoopControl.tsx - V87.6: Selection dot removed — green icon is the only active state indicator
- * Date: March 21st, 2026
+ * LoopControl.tsx - V87.7: Loop button no longer keeps focus after a mouse click (LOOPSPACEFOCUS001)
+ * Date: September 26th, 2026
+ *
+ * 🆕 V87.7 (PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001):
+ * ✅ onMouseDown preventDefault on the Loop button: a mouse click no longer leaves focus on it,
+ *    so a following Space press no longer natively re-activates Loop (removing/re-adding the
+ *    loop set instead of doing nothing). Keyboard Tab focus and Space/Enter activation are
+ *    unchanged; aria-pressed, tooltip and toggle logic untouched. No global key handler added.
+ *
+ * 🔒 V87.6: Selection dot removed — green icon is the only active state indicator
  *
  * 🆕 V87.4:
  * ✅ Selection indicator dot: [@media(max-width:960px)]:hidden
@@ -27,8 +35,12 @@ export const LoopControl: React.FC<LoopControlProps> = ({
 }) => {
     return (
         <div id="c-loop" className="relative">
+            {/* [LOOPSPACEFOCUS001] onMouseDown preventDefault below stops a MOUSE click from
+                focusing this button (Space would otherwise natively re-activate it). It does not
+                affect Tab focus or keyboard activation. */}
             <button
                 id="control-loop"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={onLoopToggle}
                 disabled={!api}
                 aria-pressed={isLooping}
