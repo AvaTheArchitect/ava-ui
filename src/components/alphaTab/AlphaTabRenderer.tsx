@@ -2,11 +2,66 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.37-CLICKSEEKFREEZE002
+ * Current version: V145.42-DBLCLICKRAPIDSEEK001
  * Date: September 26th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
- * PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001 — Seek-freeze confirmation episode key.
+ * PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001 — Temporary trace removed; the three
+ * validated behavior fixes below (V145.38 / V145.40 / V145.41) are preserved.
+ * ✅ Removed the temporary click-seek target-resolution diagnostic (opt-in trace helpers,
+ *        its post-click event counter ref, and every trace call in handleClick,
+ *        publishCursorAtTick and the playerPositionChanged handler). Runtime validation
+ *        (rapid multi-click seeks register, no slingshot, no micro-pause, playback solid)
+ *        was performed with it present; it is no longer needed. No diagnostic code remains.
+ * 🚫 No logic change in this step — comments/header and diagnostic removal only.
+ *
+ * PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001 — Rapid multi-click notation seeks (V145.41).
+ * ✅ A temporary click trace showed multi-click events (detail 2-6) reached handleClick but
+ *        never resolved a seek target — handleClick discarded them on its first line
+ *        (`if (ev.detail > 1) return;`), so rapid or close-range clicks felt unresponsive.
+ *        That early return is removed: every click seeks, like rapid-fire target reseating.
+ *        Prerequisites already in place: handleDblClick can no longer pause (V145.38) and the
+ *        seek-freeze gate blocks stale far-ahead ticks while a resume is pending (V145.40).
+ *        The other guards (shouldSuppressCanvasInteraction, strip, loop) are unchanged.
+ *        No debounce, rate limit or new timer.
+ * 🚫 handleDblClick logic (comment wording only), the seek-freeze gate, click target
+ *        resolution, pause/play choreography, spacebar, landscape/touch handlers, Cursor2
+ *        and Cursor3 unchanged.
+ *
+ * PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001 — Seek-freeze gate: far-ahead stale ticks
+ * stay blocked while the live click-seek resume is pending (V145.40).
+ * ✅ A temporary runtime click-seek trace showed target resolution is correct (safeTarget 480 =
+ *        clicked beat), but stale far-ahead worker ticks (1921 / 2401 / 9601, the OLD playback
+ *        position) passed the gate after a near-target tick (481/486) had already confirmed
+ *        forward progress — and re-anchored the cursor to a later beat (setBeat 2400 / 9600)
+ *        before the 30ms resume timer fired. The worker is still playing from the old position
+ *        until it processes pause + setTickPosition, so "a near-target tick arrived" does not
+ *        yet prove the stale stream is over.
+ * ✅ _forwardProgressConfirmed now also requires !_hasPendingLiveSeekResume
+ *        (resumeTimerRef.current !== null || seekInProgressRef.current — the same signals
+ *        handleDblClick uses). Far-behind: always dropped. Far-ahead before same-episode
+ *        confirmation: dropped. Far-ahead after confirmation but while the resume is pending:
+ *        dropped (new). Far-ahead after confirmation once the resume is no longer pending:
+ *        allowed — the V145.36/37 fix for valid forward progress is preserved.
+ * 🚫 FAR_TICKS, freeze duration, handleClick (target resolution and ev.detail handling),
+ *        handleDblClick, pause/play choreography, publishCursorAtTick, Cursor2 and Cursor3
+ *        unchanged.
+ *
+ * PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001 — Double-click no longer pauses playback (V145.38).
+ * ✅ Rapid click-seeks while playing could pause playback: the first click seeks, the second
+ *        has detail=2 and is ignored by handleClick, then dblclick fired handleDblClick,
+ *        which toggled play/pause off api.playerState and paused. handleDblClick now only
+ *        ever STARTS playback: if playerState is playing, or a click-seek is pending
+ *        (resumeTimerRef / seekInProgressRef — playerState is worker-mediated and can lag),
+ *        the dblclick is ignored (preventDefault + stopPropagation, no pause, no
+ *        onPlayStateChange). Paused/stopped dblclick still calls api.play() +
+ *        onPlayStateChange(true). Applies uniformly, including loop mode. The old pause
+ *        branch (and its debug log) is removed, so no dblclick path can pause.
+ * 🚫 handleClick (including its ev.detail > 1 early return — the second rapid click is still
+ *        not a seek; that is a separate follow-up), spacebar handling, landscape/touch
+ *        handlers, the seek-freeze gate (V145.36/37), Cursor2 and Cursor3 unchanged.
+ *
+ * PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001 — Seek-freeze confirmation episode key (V145.37).
  * ✅ Read-only audit found seekFreezeConfirmedTargetRef (V145.36 below) was written only
  *        inside the gate and never reset, and matched purely on target tick. A repeated
  *        seek to the same tick (same beat clicked again, or an A→B→A alternation) therefore
@@ -7215,14 +7270,21 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     // keyed to the episode (seekFreezeUntilRef.current) as well as the target,
                     // so a repeated seek to the same tick must re-earn it — otherwise stale
                     // far-ahead worker ticks from the previous playback position would pass
-                    // and re-anchor the cursor to a later beat.
+                    // and re-anchor the cursor to a later beat. Confirmation is also not
+                    // honored while a live click-seek's pause/resume is still pending: until
+                    // the resume timer fires, the worker may still be emitting ticks from the
+                    // OLD playback position (trace: 1921/2401/9601 after a near-target 481),
+                    // so a near-target tick alone does not yet prove the stale stream is over.
                     if (Math.abs(tickRaw - seekTargetTickRef.current) <= FAR_TICKS) {
                         seekFreezeConfirmedTargetRef.current = seekTargetTickRef.current;
                         seekFreezeConfirmedEpisodeRef.current = seekFreezeUntilRef.current;
                     }
+                    const _hasPendingLiveSeekResume =
+                        resumeTimerRef.current !== null || seekInProgressRef.current;
                     const _forwardProgressConfirmed =
                         seekFreezeConfirmedTargetRef.current === seekTargetTickRef.current &&
-                        seekFreezeConfirmedEpisodeRef.current === seekFreezeUntilRef.current;
+                        seekFreezeConfirmedEpisodeRef.current === seekFreezeUntilRef.current &&
+                        !_hasPendingLiveSeekResume;
                     const _isFarBehindTarget = tickRaw < seekTargetTickRef.current - FAR_TICKS;
                     const _isFarAheadWithoutConfirmation =
                         !_forwardProgressConfirmed && tickRaw > seekTargetTickRef.current + FAR_TICKS;
@@ -7235,6 +7297,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 diff: Math.abs(tickRaw - seekTargetTickRef.current),
                                 FAR_TICKS,
                                 forwardProgressConfirmed: _forwardProgressConfirmed,
+                                pendingLiveSeekResume: _hasPendingLiveSeekResume,
                                 isFarBehindTarget: _isFarBehindTarget,
                                 playbackRangeStartTick: (playbackRangeRef.current ?? (api?.playbackRange as any))?.startTick ?? null,
                                 manualSeekAge: (window as any).__maestroManualSeek
@@ -9689,7 +9752,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             publishCursorAtTickRef.current = publishCursorAtTick;
 
             const handleClick = (ev: MouseEvent) => {
-                if (ev.detail > 1) return;
+                // [RapidMultiClickSeek] PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001: clicks with
+                // ev.detail > 1 (the 2nd, 3rd, ... click of a rapid sequence, per the OS multi-click
+                // interval) are intentionally NOT ignored — each is a seek, so rapid clicking on
+                // notation re-seeks to every clicked target instead of feeling unresponsive. This
+                // used to be `if (ev.detail > 1) return;`. Safe now because handleDblClick can no
+                // longer pause playback, and the seek-freeze gate drops the stale far-ahead worker
+                // ticks that follow each seek until its resume is done. click events are
+                // primary-button only, so no button check is needed; the guards below still apply.
                 // [PANEL-DISMISS-PLAYBACK-LEAK-001] Measured live: on desktop the
                 // dismiss-detecting mousedown fires ~14ms before this click — a
                 // short-lived timestamp token set there is in time to gate it.
@@ -9787,7 +9857,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 }
             };
 
-            const handleDblClick = () => {
+            const handleDblClick = (ev: MouseEvent) => {
                 // [PANEL-DISMISS-PLAYBACK-LEAK-001] Same short-lived token as
                 // handleClick — dblclick was not independently reproduced as a
                 // leak, but it's the same class of risk and the ticket requires
@@ -9795,19 +9865,24 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (shouldSuppressCanvasInteraction()) return;
                 const api = apiRef.current;
                 if (!api?.isReadyForPlayback) return;
-                if (api.playerState !== 0) {
-                    if (isRendererDebugEnabled()) {
-                        console.log('[landscape-playback-state-sync]', {
-                            reason: 'onPlayStateChange-false-call',
-                            apiPlayerState: (api as any)?.playerState ?? null,
-                            apiTickPosition: (api as any)?.tickPosition ?? null,
-                            loopEnabled: loopEnabledRef.current,
-                            playbackRange: api?.playbackRange ?? null,
-                            landscapeScrollState: landscapeScrollStateRef.current,
-                        });
-                    }
-                    api.pause(); onPlayStateChange(false);
-                } else { api.play(); onPlayStateChange(true); }
+                // [DblClickNeverPauses] PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001: a
+                // dblclick may only START playback (paused/stopped). Two rapid click-seeks
+                // look identical to a double-click — this handler used to toggle, pausing
+                // playback that was playing (handleClick then ignored the 2nd click, detail > 1;
+                // since V145.41 it seeks). Spacebar remains the explicit play/pause control. api.playerState
+                // is worker-mediated and can lag a command, so a pending click-seek (its
+                // resume timer or seekInProgressRef) also counts as active — during that
+                // window playerState can briefly read paused even though playback is live.
+                const isTransportActive =
+                    (api.playerState ?? 0) === 1 ||
+                    resumeTimerRef.current !== null ||
+                    seekInProgressRef.current;
+                if (isTransportActive) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    return;
+                }
+                api.play(); onPlayStateChange(true);
             };
 
             surface.addEventListener('click', handleClick);
