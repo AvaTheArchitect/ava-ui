@@ -2,9 +2,49 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.32-PAUSERESUME001
- * Date: September 23rd, 2026
+ * Current version: V145.37-CLICKSEEKFREEZE002
+ * Date: September 26th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001 — Seek-freeze confirmation episode key.
+ * ✅ Read-only audit found seekFreezeConfirmedTargetRef (V145.36 below) was written only
+ *        inside the gate and never reset, and matched purely on target tick. A repeated
+ *        seek to the same tick (same beat clicked again, or an A→B→A alternation) therefore
+ *        started its new freeze episode already "confirmed", letting stale far-ahead
+ *        worker ticks from the previous playback position through the gate — which would
+ *        have been dropped at HEAD — and re-anchor the cursor to a later beat.
+ * ✅ New seekFreezeConfirmedEpisodeRef records seekFreezeUntilRef.current at confirmation
+ *        (every seek arm site writes a fresh Date.now()+N there). Forward progress now counts
+ *        as confirmed only when BOTH the target and the episode key match, so every newly
+ *        armed seek must earn its own near-target confirmation. No arm-site edits needed.
+ * 🚫 Directional gate logic (far-behind dropped; far-ahead dropped until confirmed;
+ *        far-ahead allowed after same-episode confirmation), handleClick, handleDblClick,
+ *        play/pause handlers, Cursor2 and Cursor3 unchanged. Double-click-to-play
+ *        interaction is a separate, unaddressed issue.
+ *
+ * PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001 — Seek-freeze gate directional fix (V145.36).
+ * ✅ PPC-TRACE001 runtime trace confirmed root cause: after a backward click-seek to tick
+ *        480, the FAR_TICKS (240) seek-freeze gate compared every incoming tick against the
+ *        static original click target for the full 250ms freeze window. Genuine forward
+ *        playback ticks 724-949 (244-469 past the target) were misclassified as stale
+ *        pre-seek events and dropped — 39 consecutive drops, no cursor-setTick calls, a
+ *        106.6ms visible cursor freeze while playback and playerState stayed active.
+ * ✅ New seekFreezeConfirmedTargetRef: once a tick close to the CURRENT seekTargetTickRef is
+ *        confirmed (genuine forward progress established for this seek), the gate stops
+ *        treating "far AHEAD of target" as stale for the rest of that freeze episode — only
+ *        "far BEHIND target" is still dropped unconditionally, which is what actually
+ *        distinguishes a stale pre-seek event (the old position) regardless of whether a
+ *        backward or forward seek put that old position ahead of or behind the new target.
+ *        Before confirmation (the first event(s) right after a click), both directions
+ *        remain guarded exactly as before — unchanged protection for that window. (V145.37
+ *        supersedes the original "matches the new target" invalidation — see above; target
+ *        equality alone was not enough across repeated same-target seeks.)
+ * ✅ Removed the temporary PPC-TRACE001 diagnostic instrumentation (ppc-entry/ppc-return/
+ *        cursor-setBeat/cursor-setTick trace, window.__maestroPlayerPositionTrace) that
+ *        produced the evidence above — reverted to clean HEAD before this fix was authored,
+ *        so no diagnostic code or [PPC-TRACE001-PROBE] tags remain.
+ * 🚫 No change to seek freeze duration, FAR_TICKS, pause/play choreography,
+ *        publishCursorAtTick, cursor.setBeat/setTick behavior, Cursor2, or Cursor3.
  *
  * PLAYBACK-PAUSE-RESUME-TICK-PULLBACK-001 — Non-loop resume tick correction.
  * ✅ The isPlaying effect's resume branch already re-seeks to lastPausedTickRef when a
@@ -3337,6 +3377,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const resumeTimerRef = useRef<number | null>(null);
     const seekFreezeUntilRef = useRef<number>(0);
     const seekTargetTickRef = useRef<number | null>(null);
+    // [SeekFreezeDirectionalGate] PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001: per-episode
+    // confirmation marker — once a tick close to the CURRENT seekTargetTickRef has been
+    // confirmed, records that target AND the episode it was confirmed in
+    // (seekFreezeUntilRef.current, freshly written by every seek arm site). Both must match
+    // for forward progress to count as confirmed, so a repeated seek to the same tick starts
+    // unconfirmed. See the FAR_TICKS gate below.
+    const seekFreezeConfirmedTargetRef = useRef<number | null>(null);
+    const seekFreezeConfirmedEpisodeRef = useRef<number | null>(null);
 
     const renderTokenRef = useRef(0);
     const activeRendersRef = useRef(0);
@@ -7150,7 +7198,35 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
                 const FAR_TICKS = 240;
                 if (seekFreezeUntilRef.current > Date.now() && seekTargetTickRef.current != null) {
-                    if (Math.abs(tickRaw - seekTargetTickRef.current) > FAR_TICKS) {
+                    // [SeekFreezeDirectionalGate] PLAYBACK-CLICK-SEEK-RESEAT-LUNGE-001: a
+                    // symmetric |delta| > FAR_TICKS check misclassifies genuine forward
+                    // playback progress as a stale pre-seek event once it has advanced more
+                    // than FAR_TICKS past the (static) click target within the same 250ms
+                    // freeze window — confirmed by runtime trace (target 480, ticks 724-949
+                    // dropped, 106ms cursor gap). Fix: once a tick close to THIS seek's target
+                    // has been confirmed (forward progress genuinely established), stop
+                    // treating "far AHEAD of target" as stale for the rest of this freeze
+                    // episode — only a tick far BEHIND the target is still dropped
+                    // unconditionally, which is what actually distinguishes a stale pre-seek
+                    // event (reporting the old position) regardless of whether that old
+                    // position was ahead of or behind the new target. Before confirmation
+                    // (the first event(s) right after the click), both directions are still
+                    // guarded — same protection as before for that window. Confirmation is
+                    // keyed to the episode (seekFreezeUntilRef.current) as well as the target,
+                    // so a repeated seek to the same tick must re-earn it — otherwise stale
+                    // far-ahead worker ticks from the previous playback position would pass
+                    // and re-anchor the cursor to a later beat.
+                    if (Math.abs(tickRaw - seekTargetTickRef.current) <= FAR_TICKS) {
+                        seekFreezeConfirmedTargetRef.current = seekTargetTickRef.current;
+                        seekFreezeConfirmedEpisodeRef.current = seekFreezeUntilRef.current;
+                    }
+                    const _forwardProgressConfirmed =
+                        seekFreezeConfirmedTargetRef.current === seekTargetTickRef.current &&
+                        seekFreezeConfirmedEpisodeRef.current === seekFreezeUntilRef.current;
+                    const _isFarBehindTarget = tickRaw < seekTargetTickRef.current - FAR_TICKS;
+                    const _isFarAheadWithoutConfirmation =
+                        !_forwardProgressConfirmed && tickRaw > seekTargetTickRef.current + FAR_TICKS;
+                    if (_isFarBehindTarget || _isFarAheadWithoutConfirmation) {
                         if (isRendererDebugEnabled()) {
                             console.log('[loop-click-reseat-probe]', {
                                 reason: 'seekFreeze-gate-return',
@@ -7158,6 +7234,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 seekTargetTick: seekTargetTickRef.current,
                                 diff: Math.abs(tickRaw - seekTargetTickRef.current),
                                 FAR_TICKS,
+                                forwardProgressConfirmed: _forwardProgressConfirmed,
+                                isFarBehindTarget: _isFarBehindTarget,
                                 playbackRangeStartTick: (playbackRangeRef.current ?? (api?.playbackRange as any))?.startTick ?? null,
                                 manualSeekAge: (window as any).__maestroManualSeek
                                     ? Date.now() - (window as any).__maestroManualSeek : null,
