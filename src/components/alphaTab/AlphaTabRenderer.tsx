@@ -2,9 +2,22 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.42-DBLCLICKRAPIDSEEK001
+ * Current version: V145.45-LOOPSEEKD1FIX001
  * Date: September 26th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * PLAYBACK-LOOP-CLICKSEEK-BOUNDARY-SLINGSHOT-001 — D1 honors the global backtrack window (V145.45).
+ * ✅ Read-only audit plus a temporary opt-in probe (LOOPSEEKPROBE001, since removed) showed that
+ *        after an overlay-inside click the API tick was written to the clicked beat, but the
+ *        renderer's D1 backtrack guard rejected the re-anchor because it only looked at the local
+ *        allowBacktrackUntilRef (expired) and ignored the global window.__maestroAllowBacktrackUntil
+ *        the overlay had just armed (positive). Cursor stayed parked on the later beat, V117 then
+ *        kept rejecting, and the loop wrapped instead. Brett's runtime validation confirmed the fix
+ *        (D1-bypass firing as expected, no slingshot) before the probe was removed.
+ * ✅ inBypassWindow in the D1 guard is now (local window active) OR (global window active).
+ *        With neither active, D1 is unchanged.
+ * 🚫 V117, the seek-freeze gate, the loop-wrap guard, click target resolution, overlay hit-zone
+ *        logic, pause/play choreography, Cursor2 and Cursor3 unchanged.
  *
  * PLAYBACK-DOUBLECLICK-SEEK-PAUSE-COLLISION-001 — Temporary trace removed; the three
  * validated behavior fixes below (V145.38 / V145.40 / V145.41) are preserved.
@@ -7981,7 +7994,19 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     const MIN_BACKTRACK_TICKS = 120;
                     const incomingStart = curBeat.absolutePlaybackStart ?? tick;
                     const isActuallyPlaying = (api.playerState ?? 0) === 1;
-                    const inBypassWindow = Date.now() < allowBacktrackUntilRef.current;
+                    // [LoopSeekD1GlobalBypass] PLAYBACK-LOOP-CLICKSEEK-BOUNDARY-SLINGSHOT-001
+                    // (LOOPSEEKD1FIX001): D1 previously honored only the LOCAL allowBacktrackUntilRef
+                    // window. Overlay seeks (inside-highlight click, bar-snap click) arm only the
+                    // GLOBAL window.__maestroAllowBacktrackUntil, which V117 below already honors, so
+                    // D1 rejected the very re-anchor the overlay had just authorized — the cursor
+                    // stayed parked at the later beat (V117 then kept rejecting) until the loop wrapped.
+                    // D1 now honors either window; with neither active its behavior is unchanged.
+                    const _d1Now = Date.now();
+                    const _d1GlobalBacktrackUntil = Number((window as any).__maestroAllowBacktrackUntil || 0);
+                    const isLocalBacktrackBypassActive = _d1Now < allowBacktrackUntilRef.current;
+                    const isGlobalBacktrackBypassActive =
+                        Number.isFinite(_d1GlobalBacktrackUntil) && _d1GlobalBacktrackUntil > _d1Now;
+                    const inBypassWindow = isLocalBacktrackBypassActive || isGlobalBacktrackBypassActive;
 
                     if (stableCurBeatRef.current) {
                         const prevAbs = stableCurBeatRef.current.absolutePlaybackStart ?? -1;
