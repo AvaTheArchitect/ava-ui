@@ -2,20 +2,24 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.0.6
- * Date: September 21st, 2026
+ * Current version: V3.1.0
+ * Date: September 29th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
  * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
  * MaestroCursor2 V1.7.2 (commit 6576c32)
  *
  * Status:
- * V3.0.0 was the isolated Cursor3 baseline clone.
- * RAF-slewed movement (targetTick/renderTick, RAF loop, deadband snap, expanded
- * bar-window gate) is implemented in this file, but Cursor3 is only reachable when
- * MAESTRO_USE_CURSOR3 is true in AlphaTabRenderer.tsx (currently false — Cursor2
- * remains the production cursor). SRV/triplet/slide/rest handling remains planned,
- * not active behavior.
+ * V3.0.0 was the isolated Cursor3 baseline clone. RAF-slewed movement (targetTick/
+ * renderTick, RAF loop, deadband snap, expanded bar-window gate) is implemented in
+ * this file. Cursor2 remains production/default; Cursor3 is experimental/opt-in
+ * through the runtime cursor-engine selector (src/lib/alphaTab/cursorEngine.ts,
+ * shipped in 226b5bb) — ?cursorEngine=cursor3 or localStorage
+ * maestro_cursor_engine=cursor3, resolved once per page load, is what actually makes
+ * this file reachable. The MAESTRO_USE_CURSOR3 constant in AlphaTabRenderer.tsx sets
+ * only the DEFAULT engine (false — Cursor2) when no override is present; it does not
+ * gate whether Cursor3 can be reached at all. SRV/triplet/slide/rest handling
+ * remains planned, not active behavior.
  *
  * Goal:
  * Build RAF-slewed cursor movement for SRV/triplet/slide/rest edge cases
@@ -32,6 +36,7 @@
  * [x] Deadband snap: absDelta <= 48 → instant
  * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
  * [x] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately ([C3-002] in startRaf; source-implemented, not runtime-validated)
+ * [x] One-shot visual re-anchor for rapid same-beat Loop click-seek ([LoopClickOneShotVisualReanchor] below)
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
@@ -40,6 +45,45 @@
 [ ] Native cursor comparison notes from LouisLam / alphaTab playground
  *
  * Patch history:
+ * ✅ [LoopClickOneShotVisualReanchor]
+ *    CURSOR3-RAF-AB-REPLACEMENT-001: rapid same-beat Loop click-seek (clicking
+ *    repeatedly inside an already-active loop's highlighted region) did not visibly
+ *    return to the clicked beat, while Cursor2 on the same shared renderer/overlay
+ *    path did. Root cause, confirmed by runtime trace: a repeat click on the beat
+ *    Cursor3 is already anchored to produces no new setBeat (same structural beat,
+ *    so the renderer's shouldReAnchor stays false) — only an ordinary setTick call
+ *    with the click's worker-confirmed tick. That tick passes the existing
+ *    lastTickApplied monotonic guard and updates targetTick normally, but RAF then
+ *    slews renderTick toward it across multiple frames while
+ *    _applyTransform's backstep clamp holds the rendered X at its prior (later,
+ *    forward) position for every one of those frames — renderTick moved, the visible
+ *    cursor did not (confirmed: a captured backward renderTick sequence with
+ *    renderedX frozen throughout). Cursor2 has no RAF step in between; it paints
+ *    every accepted tick synchronously, so it is never subject to this gap.
+ * ✅    requestSnap('loop-highlight-click-cursor') now arms a one-shot
+ *    forceNextLoopClickTickAnchorUntil deadline (performance.now() +
+ *    LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS). It does NOT hard-snap or render from
+ *    requestSnap itself — targetTick there is commonly still the stale live
+ *    playback tick, not the clicked one (confirmed via trace: targetTick ~15764 /
+ *    15657 / 15550 at requestSnap time), so snapping at that point would visibly
+ *    jump to the wrong position. The next setTick call that already passes the
+ *    existing guards above — and only that one call — consumes the one-shot: sets
+ *    targetTick/renderTick to the just-accepted tick, copies targetOverrideBeatStart
+ *    into renderOverrideBeatStart (the same field RAF itself copies every frame),
+ *    and calls renderPosition with snap=true synchronously, bypassing the backstep
+ *    clamp exactly once for this one anchor. lastTickApplied semantics,
+ *    HARD_SNAP_REASONS, expandedBeatDuration, and RAF start/stop are all otherwise
+ *    unchanged. No stopRaf()/RAF reset is needed: targetTick and renderTick are both
+ *    the same tick after the anchor, so an already-in-flight RAF frame (if any) sees
+ *    a 0 delta on its own next tick and self-terminates via its existing
+ *    renderTick === targetTick check — this call simply returns without calling
+ *    startRaf() again, and the next genuine forward tick restarts RAF normally.
+ *    Armed only for 'loop-highlight-click-cursor' — no other requestSnap reason
+ *    (click-seek, loop-wrap, loop-reseat, play-start-hard-snap, song-load,
+ *    huge-jump, repeat-jump, touch-seek, or any loop-overlay reason other than this
+ *    one) is affected. The 500ms expiry is conservative headroom against a slow
+ *    worker echo (measured click→echo latency: 0.6-7.1ms) while still guaranteeing a
+ *    stale, unconsumed flag can never anchor an unrelated later tick.
  * ✅ [RAFScaffold]
  *    Adds Cursor3 RAF lifecycle fields, start/stop stubs, and destroy cleanup
  *    without routing setTick/setBeat through RAF yet.
@@ -76,6 +120,14 @@ const RAF_SLEW_BASE_TICKS_PER_SEC = 2400;
 const _RAF_SLEW_BOOST_TICKS_PER_SEC = 4800;
 const RAF_DEADBAND_TICKS = 48;
 
+// [LoopClickOneShotVisualReanchor] CURSOR3-RAF-AB-REPLACEMENT-001: lazy expiry
+// window for forceNextLoopClickTickAnchorUntil — armed by requestSnap
+// ('loop-highlight-click-cursor'), consumed by the next accepted setTick call (see
+// both). Runtime-observed click-to-worker-echo latency was 0.6-7.1ms; 500ms is
+// conservative headroom against a slow/delayed echo while still expiring well
+// before an unrelated later tick could consume a stale flag.
+const LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS = 500;
+
 // [PageCursorPlayStartHardSnap] V145.2 — clear interpolation memory on click/touch/play-start hard snaps.
 // These reasons trigger forceHardSnapNextSetBeat so the following setBeat fully resets
 // interpolation state instead of inheriting stale tween position from a previous session.
@@ -90,8 +142,9 @@ const HARD_SNAP_REASONS = new Set([
 ]);
 const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
-// [CURSOR-STYLE-UNIFICATION-001-C] Cursor3 (dormant, MAESTRO_USE_CURSOR3=false) mirrors
-// Cursor2's artwork exactly — Cursor1's purple teardrop + white dot (see _renderBarSVG),
+// [CURSOR-STYLE-UNIFICATION-001-C] Cursor3 (experimental/opt-in via the runtime
+// cursor-engine selector; Cursor2 remains production/default) mirrors Cursor2's
+// artwork exactly — Cursor1's purple teardrop + white dot (see _renderBarSVG),
 // sourced from the shared purple --maestro-cursor-* tokens (src/app/globals.css) instead
 // of the teal --maestro-cursor-legacy-* tokens, so it can't silently drift onto a
 // different visual style than its active sibling. CAP_TOP_OVERHANG / TIP_BOTTOM_OVERHANG
@@ -216,7 +269,7 @@ export class MaestroCursorV3 {
     private rowStartOffsetBeatStart: number | null = null;
     private rowStartOffsetDuration: number | null = null;
 
-    // [RAFScaffold] Phase 3B-A: RAF lifecycle fields. Not yet wired into setTick/setBeat.
+    // [RAFScaffold] Phase 3B-A: RAF lifecycle fields, routed via [RafSetTickRouting].
     private targetTick: number = 0;
     private renderTick: number = 0;
     private targetOverrideBeatStart: number | undefined = undefined;
@@ -229,6 +282,12 @@ export class MaestroCursorV3 {
     // from setBeat arguments. Used to detect stale renderTick behind the current occurrence.
     private currentBarExpandedStart: number = 0;
     private currentBarExpandedEnd: number = 0;
+
+    // [LoopClickOneShotVisualReanchor] CURSOR3-RAF-AB-REPLACEMENT-001: one-shot
+    // deadline (performance.now()-based), 0 = disarmed. Armed only by requestSnap for
+    // reason 'loop-highlight-click-cursor'; consumed (and always cleared) by the next
+    // accepted setTick call. See both methods and the patch-history entry above.
+    private forceNextLoopClickTickAnchorUntil = 0;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -951,6 +1010,33 @@ export class MaestroCursorV3 {
             this.renderTick = tick;
             this.renderOverrideBeatStart = overrideBeatStart ?? undefined;
         }
+
+        // [LoopClickOneShotVisualReanchor] CURSOR3-RAF-AB-REPLACEMENT-001: consumed only
+        // AFTER the guards above have already accepted this tick — a stale/rejected tick
+        // never reaches here. Armed exclusively by requestSnap('loop-highlight-click-cursor'),
+        // which cannot itself hard-snap (targetTick there is still the stale live tick, not
+        // the clicked one — see requestSnap). The forced paint uses snap=true specifically
+        // to bypass _applyTransform's backstep clamp: RAF's own backward slew updates
+        // renderTick while renderedX stays frozen at the clamp (confirmed by runtime
+        // trace), which is exactly why rapid same-beat loop clicks never visibly returned.
+        // Cleared immediately (one-shot) whether or not it is still within its expiry
+        // window, so a stale expired flag can never anchor an unrelated later tick.
+        if (this.forceNextLoopClickTickAnchorUntil > 0) {
+            const armed = performance.now() <= this.forceNextLoopClickTickAnchorUntil;
+            this.forceNextLoopClickTickAnchorUntil = 0;
+            if (armed) {
+                this.renderTick = tick;
+                this.renderOverrideBeatStart = this.targetOverrideBeatStart;
+                this.renderPosition(tick, this.renderOverrideBeatStart, /* snap */ true);
+                // targetTick and renderTick are now equal — no chase remains for RAF to
+                // run. Do not call startRaf(): if RAF was already running, its own
+                // existing renderTick === targetTick check self-terminates it on its next
+                // already-scheduled frame; if it was not running, the next genuine
+                // forward tick starts it normally, exactly as on any other setTick call.
+                return;
+            }
+        }
+
         this.startRaf();
     }
 
@@ -972,6 +1058,18 @@ export class MaestroCursorV3 {
             reason: _reason ?? 'unknown',
             callStack: new Error().stack?.split('\n').slice(1, 4).join(' | ') ?? null,
         });
+        // [LoopClickOneShotVisualReanchor] CURSOR3-RAF-AB-REPLACEMENT-001: arm the
+        // one-shot forced anchor for a rapid same-beat Loop click. Deliberately does
+        // NOT render or hard-snap here — targetTick at this point is commonly still the
+        // stale live playback tick, not the clicked one (runtime trace confirmed
+        // targetTick ~15764 / 15657 / 15550 at requestSnap time), so snapping now would
+        // visibly jump to the wrong position. Consumed by the next accepted setTick call
+        // — see setTick. Scoped to this exact reason only; no other requestSnap reason
+        // is affected, and HARD_SNAP_REASONS/expandedBeatDuration/lastTickApplied below
+        // are unchanged by this block.
+        if (_reason === 'loop-highlight-click-cursor') {
+            this.forceNextLoopClickTickAnchorUntil = performance.now() + LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS;
+        }
         if (cursor3DiagEnabled()) {
             console.warn('[cursor3-interpolation-probe]', {
                 phase: 'requestSnap',
