@@ -2,8 +2,8 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.1.0
- * Date: September 29th, 2026
+ * Current version: V3.2.1
+ * Date: September 30th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
  * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
@@ -37,6 +37,7 @@
  * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
  * [x] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately ([C3-002] in startRaf; source-implemented, not runtime-validated)
  * [x] One-shot visual re-anchor for rapid same-beat Loop click-seek ([LoopClickOneShotVisualReanchor] below)
+ * [x] One-shot visual re-anchor for Loop pause/resume backstep ([LoopResumeOneShotVisualAnchor] below)
  * [ ] Slide-carrier detection
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
@@ -45,6 +46,62 @@
 [ ] Native cursor comparison notes from LouisLam / alphaTab playground
  *
  * Patch history:
+ * ✅ [LoopResumeTransientHardSnapRepaintSuppress]
+ *    CURSOR3-LOOP-RESUME-BACKSTEP-001: after the backstep fix above, a residual
+ *    transient forward/right-handle flash remained during Loop pause/resume.
+ *    Root cause, confirmed by runtime trace: requestSnap('play-start-hard-snap') —
+ *    a general per-play-start hard-snap fired by the renderer for every play
+ *    transition, not Loop-specific — clears targetOverrideBeatStart/
+ *    renderOverrideBeatStart and immediately repaints the paused tick with no
+ *    override, falling back to a stale this.beatStart anchor that doesn't match
+ *    the preserved nextNoteX/stayPutMode lerp state, producing a visible forward
+ *    flash before the structural setBeat and the accepted-tick one-shot below
+ *    restore the correct position moments later. Fix: that one transient repaint
+ *    is now suppressed specifically when 'play-start-hard-snap' arrives while a
+ *    Loop-resume one-shot is currently armed (forceNextLoopResumeTickAnchorUntil
+ *    > 0) — read-only against that field, never consumed/cleared/extended here;
+ *    the one-shot in setTick remains its sole consumer. Every other
+ *    HARD_SNAP_REASONS member, and 'play-start-hard-snap' outside an armed Loop
+ *    resume (non-loop pause/resume, non-loop cold play-start), are unaffected.
+ *    The structural reseat (setBeat) and the accepted-tick one-shot below are
+ *    unchanged by this fix. Cursor2 remains production/default; Cursor3 remains
+ *    experimental/opt-in via the runtime cursor-engine selector.
+ * ✅ [LoopResumeOneShotVisualAnchor]
+ *    CURSOR3-LOOP-RESUME-BACKSTEP-001: resuming playback from a pause inside an
+ *    active Loop visually jumped back about one beat before continuing, while
+ *    Cursor2 on the same shared renderer path resumed from the exact paused
+ *    position. Root cause, confirmed by runtime trace: on resume, the renderer's
+ *    loop-start cursor re-prime seeks to the correct paused tick and calls
+ *    requestSnap('loop-play-start') — but the setBeat that follows resolves to an
+ *    earlier structural beat anchor (e.g. the current bar's own start), which
+ *    Cursor3 renders synchronously and correctly per its own logic; the correct
+ *    paused tick then arrives moments later as an ordinary setTick call, which
+ *    Cursor3 defers to RAF — producing a real, multi-frame (~100ms) forward slew
+ *    from the earlier anchor to the true resume position. Cursor2 has no such
+ *    deferral; it paints every accepted tick synchronously, so the same sequence
+ *    is invisible on that engine.
+ * ✅    requestSnap('loop-play-start') now arms a SEPARATE one-shot,
+ *    forceNextLoopResumeTickAnchorUntil (performance.now() +
+ *    LOOP_RESUME_TICK_ANCHOR_EXPIRY_MS, also 500ms). It fires for every case that
+ *    can produce this reason — paused resume, a fresh/cold Loop start, and override
+ *    consumption — which source review confirmed is safe for all three: a fresh
+ *    start's confirming tick already resolves at or near the loop-start anchor, so
+ *    forcing it synchronously changes nothing visible there. The next setTick call
+ *    that already passes the existing guards — and only that one call — consumes
+ *    this one-shot exactly like the loop-click one-shot: sets targetTick/renderTick
+ *    to the just-accepted tick, copies targetOverrideBeatStart into
+ *    renderOverrideBeatStart, and calls renderPosition with snap=true
+ *    synchronously. No stopRaf()/RAF reset needed, for the same reason as the
+ *    loop-click fix: targetTick and renderTick are equal immediately after, so any
+ *    already-in-flight RAF frame self-terminates via its own existing
+ *    renderTick === targetTick check on its next scheduled frame.
+ * ✅    Kept fully separate from the existing loop-click one-shot
+ *    (forceNextLoopClickTickAnchorUntil, armed only by
+ *    'loop-highlight-click-cursor') — distinct field, distinct expiry constant,
+ *    distinct arming reason, distinct consumption block. Neither can consume or
+ *    clear the other. Cursor2 remains production/default; Cursor3 remains
+ *    experimental/opt-in via the runtime cursor-engine selector — this fix changes
+ *    only Cursor3's own internal timing, not which engine is reachable or default.
  * ✅ [LoopClickOneShotVisualReanchor]
  *    CURSOR3-RAF-AB-REPLACEMENT-001: rapid same-beat Loop click-seek (clicking
  *    repeatedly inside an already-active loop's highlighted region) did not visibly
@@ -127,6 +184,16 @@ const RAF_DEADBAND_TICKS = 48;
 // conservative headroom against a slow/delayed echo while still expiring well
 // before an unrelated later tick could consume a stale flag.
 const LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS = 500;
+
+// [LoopResumeOneShotVisualAnchor] CURSOR3-LOOP-RESUME-BACKSTEP-001: lazy expiry
+// window for forceNextLoopResumeTickAnchorUntil — armed by requestSnap
+// ('loop-play-start'), consumed by the next accepted setTick call (see both). Kept
+// as its own constant, separate from LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS, even though
+// the value is currently the same — the two one-shots are independently tunable.
+// Runtime-observed resume-to-worker-echo latency was ~0.2ms; 500ms is conservative
+// headroom against a slow/delayed echo while still expiring well before an
+// unrelated later tick could consume a stale flag.
+const LOOP_RESUME_TICK_ANCHOR_EXPIRY_MS = 500;
 
 // [PageCursorPlayStartHardSnap] V145.2 — clear interpolation memory on click/touch/play-start hard snaps.
 // These reasons trigger forceHardSnapNextSetBeat so the following setBeat fully resets
@@ -288,6 +355,14 @@ export class MaestroCursorV3 {
     // reason 'loop-highlight-click-cursor'; consumed (and always cleared) by the next
     // accepted setTick call. See both methods and the patch-history entry above.
     private forceNextLoopClickTickAnchorUntil = 0;
+
+    // [LoopResumeOneShotVisualAnchor] CURSOR3-LOOP-RESUME-BACKSTEP-001: one-shot
+    // deadline (performance.now()-based), 0 = disarmed. Armed only by requestSnap for
+    // reason 'loop-play-start'; consumed (and always cleared) by the next accepted
+    // setTick call. Kept entirely separate from forceNextLoopClickTickAnchorUntil
+    // above — different arming reason, different expiry constant, different
+    // consumption block. See both methods and the patch-history entry above.
+    private forceNextLoopResumeTickAnchorUntil = 0;
 
     constructor(api: any, container: HTMLElement) {
         this.api = api;
@@ -1037,6 +1112,31 @@ export class MaestroCursorV3 {
             }
         }
 
+        // [LoopResumeOneShotVisualAnchor] CURSOR3-LOOP-RESUME-BACKSTEP-001: sibling to
+        // the loop-click one-shot above — same placement rules (after the guards have
+        // already accepted this tick), separate field, separate expiry constant. Armed
+        // exclusively by requestSnap('loop-play-start'), which cannot itself hard-snap
+        // (setBeat frequently anchors to an earlier structural beat before this correct
+        // tick arrives — see requestSnap). snap=true here collapses what would otherwise
+        // be a real, multi-frame (~100ms) forward RAF slew from that earlier anchor into
+        // a single-frame jump to the true resume position. Cleared immediately (one-shot)
+        // whether or not it is still within its expiry window, so a stale expired flag
+        // can never anchor an unrelated later tick.
+        if (this.forceNextLoopResumeTickAnchorUntil > 0) {
+            const resumeArmed = performance.now() <= this.forceNextLoopResumeTickAnchorUntil;
+            this.forceNextLoopResumeTickAnchorUntil = 0;
+            if (resumeArmed) {
+                this.renderTick = tick;
+                this.renderOverrideBeatStart = this.targetOverrideBeatStart;
+                this.renderPosition(tick, this.renderOverrideBeatStart, /* snap */ true);
+                // Same reasoning as the loop-click one-shot above: targetTick and
+                // renderTick are now equal, so no stopRaf()/startRaf() call is needed —
+                // any already-in-flight RAF frame self-terminates on its own next
+                // scheduled frame via its existing renderTick === targetTick check.
+                return;
+            }
+        }
+
         this.startRaf();
     }
 
@@ -1069,6 +1169,16 @@ export class MaestroCursorV3 {
         // are unchanged by this block.
         if (_reason === 'loop-highlight-click-cursor') {
             this.forceNextLoopClickTickAnchorUntil = performance.now() + LOOP_CLICK_TICK_ANCHOR_EXPIRY_MS;
+        }
+        // [LoopResumeOneShotVisualAnchor] CURSOR3-LOOP-RESUME-BACKSTEP-001: sibling arm
+        // block, same placement, separate field. Fires for every case that produces this
+        // reason (paused resume, fresh/cold Loop start, override consumption) — source
+        // review confirmed forcing the next accepted tick synchronously is safe in all
+        // three, so no discriminator between them is needed. Deliberately does NOT render
+        // or hard-snap here, for the same reason as the loop-click block above — see
+        // setTick for the consumption point.
+        if (_reason === 'loop-play-start') {
+            this.forceNextLoopResumeTickAnchorUntil = performance.now() + LOOP_RESUME_TICK_ANCHOR_EXPIRY_MS;
         }
         if (cursor3DiagEnabled()) {
             console.warn('[cursor3-interpolation-probe]', {
@@ -1168,7 +1278,30 @@ export class MaestroCursorV3 {
         console.log('[CursorV3] requestSnap', { reason: _reason ?? 'unknown' });
         // [RafSetTickRouting] Phase 3B-C: on hard-snap, re-render the anchor position
         // immediately so the cursor doesn't drift from a stale RAF frame.
-        if (_reason && HARD_SNAP_REASONS.has(_reason)) {
+        // [LoopResumeTransientHardSnapRepaintSuppress] CURSOR3-LOOP-RESUME-BACKSTEP-001:
+        // for 'play-start-hard-snap' specifically, this block clears
+        // targetOverrideBeatStart/renderOverrideBeatStart and immediately repaints at
+        // the paused tick with no override — but during an armed Loop resume handshake
+        // that override held the correct paused-occurrence geometry the preserved
+        // nextNoteX/stayPutMode ([PlayStartHardSnapTargetPreserve] above) depend on, so
+        // this repaint falls back to the wrong (stale/unrelated) this.beatStart anchor
+        // and visibly flashes forward before the structural setBeat + the
+        // [LoopResumeOneShotVisualAnchor] one-shot restore the correct position a few
+        // ms later. Confirmed by runtime trace: ~165px and ~119px transient forward
+        // displacement measured on two captured resumes. Read-only
+        // against forceNextLoopResumeTickAnchorUntil — never clears/extends/shortens it;
+        // the one-shot in setTick remains its sole consumer. Scoped narrowly: false for
+        // every other HARD_SNAP_REASONS member, and false for 'play-start-hard-snap'
+        // outside an armed Loop-resume window (non-loop pause/resume, non-loop cold
+        // play-start), so this block's behavior there is unchanged.
+        const skipTransientHardSnapRepaint =
+            _reason === 'play-start-hard-snap' &&
+            this.forceNextLoopResumeTickAnchorUntil > 0;
+        if (
+            _reason &&
+            HARD_SNAP_REASONS.has(_reason) &&
+            !skipTransientHardSnapRepaint
+        ) {
             this.renderTick = this.targetTick;
             this.targetOverrideBeatStart = undefined;
             this.renderOverrideBeatStart = undefined;
