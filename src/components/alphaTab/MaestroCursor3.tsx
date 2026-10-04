@@ -2,8 +2,8 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.2.1
- * Date: September 30th, 2026
+ * Current version: V3.2.2
+ * Date: October 4th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
  * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
@@ -38,7 +38,7 @@
  * [x] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately ([C3-002] in startRaf; source-implemented, not runtime-validated)
  * [x] One-shot visual re-anchor for rapid same-beat Loop click-seek ([LoopClickOneShotVisualReanchor] below)
  * [x] One-shot visual re-anchor for Loop pause/resume backstep ([LoopResumeOneShotVisualAnchor] below)
- * [ ] Slide-carrier detection
+ * [ ] Slide-carrier detection (Shift/Legato types 1/2 — still open; OutDown/3/5/6 investigated and closed, see [OutDownToRestHandling] below — no change needed)
  * [ ] TripletFeel curve weighting
  * [ ] Rest/empty-beat handling improvements
  * [ ] Monotonic cursor parking guard for slide/gliss visual bucking
@@ -46,6 +46,39 @@
 [ ] Native cursor comparison notes from LouisLam / alphaTab playground
  *
  * Patch history:
+ * 🔬 [OutDownToRestHandling] — INVESTIGATED, NO PRODUCT CHANGE (KEEP CONTROL)
+ *    CURSOR3-RAF-AB-REPLACEMENT-001: investigated whether a beat whose notes
+ *    carry an explicit SlideOutType.OutDown (numeric 4), immediately
+ *    followed by a resolved nextCandidate that is a genuine AlphaTab rest
+ *    with zero notes, needed special visual handling. Per AlphaTab's own
+ *    enum semantics, OutDown (and OutUp/PickSlideDown/PickSlideUp — 3/5/6)
+ *    have no destination note, unlike Shift(1)/Legato(2) — raising the
+ *    question of whether lerping toward the rest's geometry was
+ *    semantically wrong.
+ * 🔬    An experimental stayPut/no-destination treatment was tried and
+ *    REJECTED by direct runtime observation: it caused the cursor to park
+ *    on the chord (491520, M128/M129) with a ~4px drift, then snap roughly
+ *    40px at the handoff to the rest beat (492480) — a visible
+ *    discontinuity worse than the existing behavior. A follow-up
+ *    architectural audit (read-only, no implementation) then established
+ *    the existing lerp is correct by design: tickToX has never modeled
+ *    "lerp toward a note's pitch" for any slide type — only "lerp toward
+ *    the next beat's rendered position" (BeatBounds.onNotesX, AlphaTab's
+ *    own documented "where the cursor should be" value for a beat,
+ *    populated for every beat including rests) — and both sides of the
+ *    491520→492480 handoff resolve through that identical formula, which
+ *    is exactly what keeps the motion continuous. No slide-effect-specific
+ *    geometry (slide line, slide endpoint) exists anywhere in AlphaTab's
+ *    public API to target instead.
+ * 🔬    Conclusion: KEEP CONTROL. No product change was made — setBeat's
+ *    nextCandidate resolution and tickToX remain byte-identical to their
+ *    pre-investigation form. The investigation-only diagnostics
+ *    (currentBeatNotes on the setBeat probe, isRest on summarizeSlideNotes)
+ *    have been removed now that the investigation is closed; the
+ *    pre-existing SlideParkingDiagnostics suite is unchanged. Shift(1)/
+ *    Legato(2) and the M24/M40 dense-carrier behavior were never affected
+ *    by any of this. Cursor2 remains production/default; Cursor3 remains
+ *    experimental/opt-in via the runtime cursor-engine selector.
  * ✅ [LoopResumeTransientHardSnapRepaintSuppress]
  *    CURSOR3-LOOP-RESUME-BACKSTEP-001: after the backstep fix above, a residual
  *    transient forward/right-handle flash remained during Loop pause/resume.
