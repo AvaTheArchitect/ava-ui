@@ -3,7 +3,7 @@
 /**
  * MaestroCursor3.tsx
  * Current version: V3.2.2
- * Date: October 4th, 2026
+ * Date: October 5th, 2026
  * Phase 3 experimental cursor architecture
  * Baseline cloned from MaestroCursor2 V1.7.1
  * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
@@ -12,18 +12,30 @@
  * Status:
  * V3.0.0 was the isolated Cursor3 baseline clone. RAF-slewed movement (targetTick/
  * renderTick, RAF loop, deadband snap, expanded bar-window gate) is implemented in
- * this file. Cursor2 remains production/default; Cursor3 is experimental/opt-in
- * through the runtime cursor-engine selector (src/lib/alphaTab/cursorEngine.ts,
- * shipped in 226b5bb) — ?cursorEngine=cursor3 or localStorage
- * maestro_cursor_engine=cursor3, resolved once per page load, is what actually makes
- * this file reachable. The MAESTRO_USE_CURSOR3 constant in AlphaTabRenderer.tsx sets
- * only the DEFAULT engine (false — Cursor2) when no override is present; it does not
- * gate whether Cursor3 can be reached at all. SRV/triplet/slide/rest handling
- * remains planned, not active behavior.
+ * this file, and is now substantially complete: slew calibration, slide-carrier
+ * (Shift/Legato) handling, OutDown-to-rest geometry, TripletFeel timing,
+ * rest/empty-beat positioning, monotonic slide/gliss protection, and native-
+ * AlphaTab-cursor parity have all been investigated and closed — see the
+ * Architecture additions checklist and Patch history below for the evidence
+ * behind each. Remaining differences from AlphaTab's own native cursor are
+ * intentional Maestro enhancements (RAF-based smoothing, Loop-aware glide and
+ * reanchoring, seek/click-seek reanchoring) addressing needs specific to
+ * Cursor3's own RAF-deferred architecture — not unresolved parity defects.
+ * Cursor2 remains production/default and the rollback path; Cursor3 is, and
+ * remains, experimental/opt-in through the runtime cursor-engine selector
+ * (src/lib/alphaTab/cursorEngine.ts, shipped in 226b5bb) — ?cursorEngine=cursor3
+ * or localStorage maestro_cursor_engine=cursor3, resolved once per page load, is
+ * what actually makes this file reachable. The MAESTRO_USE_CURSOR3 constant in
+ * AlphaTabRenderer.tsx sets only the DEFAULT engine (false — Cursor2) when no
+ * override is present; it does not gate whether Cursor3 can be reached at all.
  *
  * Goal:
- * Build RAF-slewed cursor movement for SRV/triplet/slide/rest edge cases
- * while preserving MaestroCursor2 as rollback.
+ * Preserve Cursor3's smooth RAF-slewed cursor behavior while maintaining
+ * geometry/timing parity with AlphaTab's native cursor contract, keeping
+ * MaestroCursor2 as the production rollback. Cursor3 remains experimental
+ * until deliberately promoted; further work on any open roadmap item should
+ * be evidence-driven (runtime-proven cases) rather than speculative roadmap
+ * coding.
  *
  * Architecture additions planned:
  * [x] targetTick / renderTick separation
@@ -32,18 +44,32 @@
  * [x] renderPosition(tick) helper added
  * [x] setTick → targetTick only, no direct DOM write
  * [x] renderPosition(renderTick) as sole DOM write path
- * [ ] Slew tiers: BASE 2400 / BOOSTED 4800 ticks/sec
+ * [x] Slew calibration audited: BASE 2400 sufficient for observed genuine RAF slew;
+ *     BOOSTED 4800 scaffold intentionally remains unwired pending a demonstrated use case
  * [x] Deadband snap: absDelta <= 48 → instant
  * [x] Expanded bar-window gate for stale cross-bar/cross-repeat renderTick
  * [x] Exact seek boundary rule: targetTick === renderTick and 0px delta must still render anchor immediately ([C3-002] in startRaf; source-implemented, not runtime-validated)
  * [x] One-shot visual re-anchor for rapid same-beat Loop click-seek ([LoopClickOneShotVisualReanchor] below)
  * [x] One-shot visual re-anchor for Loop pause/resume backstep ([LoopResumeOneShotVisualAnchor] below)
- * [ ] Slide-carrier detection (Shift/Legato types 1/2 — still open; OutDown/3/5/6 investigated and closed, see [OutDownToRestHandling] below — no change needed)
- * [ ] TripletFeel curve weighting
- * [ ] Rest/empty-beat handling improvements
- * [ ] Monotonic cursor parking guard for slide/gliss visual bucking
-
-[ ] Native cursor comparison notes from LouisLam / alphaTab playground
+ * [x] Slide-carrier audit: Shift type 1 runtime-validated healthy; Legato type 2
+ *     source/model-validated across 18 occurrences; no special carrier logic required
+ * [x] OutDown/rest audit: existing AlphaTab onNotesX interpolation retained;
+ *     attempted stayPut strategy rejected by runtime ([OutDownToRestHandling] below).
+ *     Slide types 3/5/6 were not observed in the confirmed score and were not
+ *     runtime-characterized; no current defect involving them is evidenced
+ * [x] TripletFeel audit: annotation-only; actual shuffle/tuplet timing is already
+ *     encoded directly in score ticks/durations; no Cursor3 curve weighting required
+ * [x] Rest/empty-beat positioning audit: existing AlphaTab onNotesX geometry retained;
+ *     M129 note→rest→rest→terminal flow runtime-validated PASS
+ * [x] Monotonic slide/gliss audit: existing candidate classification, monotonic
+ *     tickToX, and the same-row _applyTransform backstep clamp are sufficient;
+ *     no new slide/gliss-specific guard required
+ * [x] Native AlphaTab cursor parity audit: geometry/timing parity sufficient;
+ *     remaining differences are intentional RAF/Loop/seek enhancements, not defects
+ * [x] Native cursor comparison — superseded by the direct native AlphaTab
+ *     source/handler parity audit above (ICursorHandler, onNotesX, cursorMode); the
+ *     original LouisLam/alphaTab-playground reference comparison is deferred/
+ *     reference-only and does not block Cursor3 roadmap closure
  *
  * Patch history:
  * 🔬 [OutDownToRestHandling] — INVESTIGATED, NO PRODUCT CHANGE (KEEP CONTROL)
@@ -55,7 +81,9 @@
  *    have no destination note, unlike Shift(1)/Legato(2) — raising the
  *    question of whether lerping toward the rest's geometry was
  *    semantically wrong.
- * 🔬    An experimental stayPut/no-destination treatment was tried and
+ * 🔬    The detection predicate itself was confirmed runtime-accurate — it
+ *    correctly identified beat 491520 as the intended OutDown-to-rest case.
+ *    An experimental stayPut/no-destination treatment was tried and
  *    REJECTED by direct runtime observation: it caused the cursor to park
  *    on the chord (491520, M128/M129) with a ~4px drift, then snap roughly
  *    40px at the handoff to the rest beat (492480) — a visible
