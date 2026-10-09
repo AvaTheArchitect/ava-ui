@@ -1359,9 +1359,16 @@ type MaestroCursorLike = {
     hasPendingHardSnap: () => boolean;
 };
 
-function getIntentionalTick(): number | null {
+// [INTENTIONAL-TICK-FILE-SCOPE-001] A time-valid intentional tick is not score-valid
+// merely because it is <30s old — CURSOR3-PROMOTION-ACCEPTANCE-001 proved a Van Halen
+// click-seek tick surviving the 30s TTL and getting applied to a freshly-loaded Pride
+// and Joy. currentFileUrl must match the fileUrl stored at write time (below), or this
+// returns null — no fallback to the old unscoped behavior.
+function getIntentionalTick(currentFileUrl: string | undefined): number | null {
     const t = (window as any).__maestroLastIntentionalTick;
     const at = (window as any).__maestroLastIntentionalTickAt ?? 0;
+    const storedFileUrl = (window as any).__maestroLastIntentionalTickFileUrl;
+    if (typeof storedFileUrl !== 'string' || storedFileUrl !== currentFileUrl) return null;
     return typeof t === 'number' && Date.now() - at < 30000 ? t : null;
 }
 
@@ -1411,6 +1418,7 @@ function landscapeInitialAnchor(
     container: HTMLElement,
     api: any,
     targetScrollLeftRef: React.MutableRefObject<number>,
+    fileUrl: string | undefined,
     maxMs = 1000,
     overrideTick?: number,
 ): void {
@@ -1430,7 +1438,7 @@ function landscapeInitialAnchor(
         const reachableFloor = cursorSurfaceX + 4;
         // [RotationAnchorFreeze] overrideTick is the frozen pre-rotation anchor;
         // fall back to getIntentionalTick() then api.tickPosition if not provided.
-        let liveTick = overrideTick ?? getIntentionalTick() ?? (api as any)?.tickPosition ?? 0;
+        let liveTick = overrideTick ?? getIntentionalTick(fileUrl) ?? (api as any)?.tickPosition ?? 0;
         // [StaleStartAnchorOverride] V145: if the resolved tick is a stale far-ahead
         // anchor but the API is near song start and stopped, prefer the actual API tick.
         const _liaApiTick = Number((api as any)?.tickPosition ?? 0);
@@ -1451,7 +1459,7 @@ function landscapeInitialAnchor(
                     playerState: _liaPlayerState,
                     liveTick,
                     overrideTick: overrideTick ?? null,
-                    intentionalTick: getIntentionalTick(),
+                    intentionalTick: getIntentionalTick(fileUrl),
                 });
             } else {
                 if (isRendererDebugEnabled()) {
@@ -1460,7 +1468,7 @@ function landscapeInitialAnchor(
                         staleLiveTick: liveTick,
                         apiTickPosition: _liaApiTick,
                         overrideTick: overrideTick ?? null,
-                        intentionalTick: getIntentionalTick(),
+                        intentionalTick: getIntentionalTick(fileUrl),
                         playerState: _liaPlayerState,
                     });
                 }
@@ -2848,6 +2856,13 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     const isDraggingRef = useRef<boolean>(false);
     const trackHasLyricsRef = useRef<boolean>(false);
 
+    // [INTENTIONAL-TICK-FILE-SCOPE-001] Live mirror of the fileUrl prop, read by
+    // getIntentionalTick() callers whose own closures (useCallback with a sparse
+    // dependency array, or module-level helpers) would otherwise see a stale fileUrl
+    // from an earlier render/song. Kept current on every render, unconditionally.
+    const fileUrlRef = useRef(fileUrl);
+    fileUrlRef.current = fileUrl;
+
     const landscapeScrollStateRef = useRef<{
         curBeatX: number;
         nextBeatX: number;
@@ -2939,7 +2954,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         } else if (lastStableRotationAnchorTickRef.current != null) {
             candidateTick = lastStableRotationAnchorTickRef.current;
         } else {
-            const intentional = getIntentionalTick();
+            const intentional = getIntentionalTick(fileUrlRef.current);
             if (intentional != null) {
                 candidateTick = intentional;
             } else {
@@ -2954,7 +2969,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         // API tick. Targets the observed stale-1921-vs-real-3 regression.
         const _apiTick = Number((api as any)?.tickPosition ?? 0);
         const _playerState = Number((api as any)?.playerState ?? -1);
-        const _intentionalTick = getIntentionalTick();
+        const _intentionalTick = getIntentionalTick(fileUrlRef.current);
         const _isStoppedOrPaused = _playerState === 0 || !isPlayingRef.current;
         const _apiNearSongStart = Number.isFinite(_apiTick) && _apiTick >= 0 && _apiTick <= 24;
         const _candidateFarAhead =
@@ -3067,27 +3082,26 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
         if (typeof tick !== 'number' || !Number.isFinite(tick) || tick < 0) return;
         // [StableAnchorPoisonGuard] Reject tick <= 1 if a larger known-good anchor or intentional tick exists.
         const existing = lastStableRotationAnchorTickRef.current;
-        const intentional = getIntentionalTick?.() ?? null;
-        const manualIntentional =
-            typeof window !== 'undefined'
-                ? ((window as any).__maestroLastIntentionalTick ?? null)
-                : null;
+        const intentional = getIntentionalTick(fileUrlRef.current) ?? null;
         // [TickZeroIntentionalExemption] THEME-TOGGLE-SEEK-STATE-001: a fresh, explicit
         // intentional seek (click-seek or manual-scroll-seek — the only two call sites
         // that write __maestroLastIntentionalTick, both real user gestures) can legitimately
-        // target tick 0 (M1B1). getIntentionalTick() already TTL-gates staleness (30s), so
-        // reusing it here — rather than re-deriving freshness independently — keeps this
-        // check from drifting out of sync with the one getRotationAnchorTick trusts. Ordinary
-        // render-start/settling/playback-drift call sites never write that global to match
-        // their own tick, so this cannot exempt passive start-position noise.
+        // target tick 0 (M1B1). getIntentionalTick() already TTL-gates staleness (30s) and
+        // file-scopes it (INTENTIONAL-TICK-FILE-SCOPE-001), so reusing it here — rather than
+        // re-deriving freshness/scope independently — keeps this check from drifting out of
+        // sync with the one getRotationAnchorTick trusts. Ordinary render-start/settling/
+        // playback-drift call sites never write that global to match their own tick, so this
+        // cannot exempt passive start-position noise.
+        // [INTENTIONAL-TICK-FILE-SCOPE-001] The separate manualIntentional raw-global read
+        // formerly here bypassed both the TTL and file-scope checks in getIntentionalTick() —
+        // removed; `intentional` above is now the single, already-scoped source of truth.
         const isFreshIntentionalMatch = intentional != null && intentional === tick;
         const isBeginningPoison =
             !isFreshIntentionalMatch &&
             tick <= 1 &&
             (
                 (existing != null && existing > 1) ||
-                (intentional != null && intentional > 1) ||
-                (manualIntentional != null && manualIntentional > 1)
+                (intentional != null && intentional > 1)
             );
         if (isBeginningPoison) {
             if (LANDSCAPE_LOOP_DEBUG) {
@@ -3097,7 +3111,6 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     rejectedTick: tick,
                     existingStableTick: existing,
                     intentionalTick: intentional,
-                    manualIntentionalTick: manualIntentional,
                     apiTickPosition: apiRef.current?.tickPosition ?? null,
                     rotationGateActive: rotationGateActiveRef.current,
                     isSettling: isSettlingRef.current,
@@ -3117,7 +3130,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     source,
                     rejectedTick: tick,
                     existingStableTick: lastStableRotationAnchorTickRef.current,
-                    intentionalTick: getIntentionalTick(),
+                    intentionalTick: getIntentionalTick(fileUrlRef.current),
                     manualIntentionalTick:
                         typeof window !== 'undefined' ? ((window as any).__maestroLastIntentionalTick ?? null) : null,
                     apiTickPosition: apiRef.current?.tickPosition ?? null,
@@ -4024,7 +4037,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 isPlayingRef: isPlayingRef.current,
                 loopEnabled: loopEnabledRef.current,
                 playbackRange: apiRef.current?.playbackRange ?? null,
-                intentionalTick: getIntentionalTick(),
+                intentionalTick: getIntentionalTick(fileUrlRef.current),
                 landscapeScrollState: landscapeScrollStateRef.current ?? null,
                 containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                 containerScrollTop: (scrollElEl as HTMLElement).scrollTop,
@@ -4518,7 +4531,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 (lastStableRotationAnchorTickRef.current != null && lastStableRotationAnchorTickRef.current > 0)
                     ? lastStableRotationAnchorTickRef.current
                     : preRotationAnchorTickRef.current
-                    ?? getIntentionalTick()
+                    ?? getIntentionalTick(fileUrlRef.current)
                     ?? landscapeScrollStateRef.current?.lastTick
                     ?? landscapeScrollStateRef.current?.beatStart
                     ?? ((api as any)?.tickPosition ?? 0);
@@ -4541,7 +4554,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     isPlayingRef: isPlayingRef.current,
                     loopEnabled: loopEnabledRef.current,
                     playbackRange: api?.playbackRange ?? null,
-                    intentionalTick: getIntentionalTick(),
+                    intentionalTick: getIntentionalTick(fileUrlRef.current),
                     landscapeScrollState: landscapeScrollStateRef.current ?? null,
                     containerScrollLeft: el?.scrollLeft ?? null,
                     containerScrollTop: el?.scrollTop ?? null,
@@ -4656,7 +4669,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 (lastStableRotationAnchorTickRef.current != null && lastStableRotationAnchorTickRef.current > 0)
                     ? lastStableRotationAnchorTickRef.current
                     : preRotationAnchorTickRef.current
-                    ?? getIntentionalTick()
+                    ?? getIntentionalTick(fileUrlRef.current)
                     ?? landscapeScrollStateRef.current?.lastTick
                     ?? landscapeScrollStateRef.current?.beatStart
                     ?? ((apiRef.current as any)?.tickPosition ?? 0);
@@ -4679,7 +4692,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     isPlayingRef: isPlayingRef.current,
                     loopEnabled: loopEnabledRef.current,
                     playbackRange: apiRef.current?.playbackRange ?? null,
-                    intentionalTick: getIntentionalTick(),
+                    intentionalTick: getIntentionalTick(fileUrlRef.current),
                     landscapeScrollState: landscapeScrollStateRef.current ?? null,
                     containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                     containerScrollTop: containerRef.current?.scrollTop ?? null,
@@ -4969,7 +4982,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         isPlayingRef: isPlayingRef.current,
                         loopEnabled: loopEnabledRef.current,
                         playbackRange: api?.playbackRange ?? null,
-                        intentionalTick: getIntentionalTick(),
+                        intentionalTick: getIntentionalTick(fileUrlRef.current),
                         landscapeScrollState: landscapeScrollStateRef.current ?? null,
                         containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                         containerScrollTop: containerRef.current?.scrollTop ?? null,
@@ -5234,7 +5247,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 isPlayingRef: isPlayingRef.current,
                                 loopEnabled: loopEnabledRef.current,
                                 playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
+                                intentionalTick: getIntentionalTick(fileUrlRef.current),
                                 landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                 containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                                 containerScrollTop: containerRef.current?.scrollTop ?? null,
@@ -5327,7 +5340,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 isPlayingRef: isPlayingRef.current,
                                 loopEnabled: loopEnabledRef.current,
                                 playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
+                                intentionalTick: getIntentionalTick(fileUrlRef.current),
                                 landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                 containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                                 containerScrollTop: containerRef.current?.scrollTop ?? null,
@@ -5415,7 +5428,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 {
                     const _apiTick = Number((api as any)?.tickPosition ?? 0);
                     const _playerState = Number((api as any)?.playerState ?? -1);
-                    const _intentionalTick = getIntentionalTick?.() ?? null;
+                    const _intentionalTick = getIntentionalTick?.(fileUrlRef.current) ?? null;
                     const _isStoppedOrPaused = _playerState === 0 || isPlayingRef.current === false;
                     const _apiNearSongStart = Number.isFinite(_apiTick) && _apiTick >= 0 && _apiTick <= 24;
                     const _primeFarAhead =
@@ -5488,7 +5501,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     }
                 }
                 if (isRendererDebugEnabled()) {
-                    const intentionalT = getIntentionalTick();
+                    const intentionalT = getIntentionalTick(fileUrlRef.current);
                     const isLandscapeNow = forceHorizontalRef.current || (api?.settings?.display?.layoutMode === 1);
                     console.log('[maestro-seek-diagnostic]', {
                         reason: 'primeLandscapeState-SCROLL-NOT-A-SEEK',
@@ -5612,7 +5625,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         isPlayingRef: isPlayingRef.current,
                         loopEnabled: loopEnabledRef.current,
                         playbackRange: api?.playbackRange ?? null,
-                        intentionalTick: getIntentionalTick(),
+                        intentionalTick: getIntentionalTick(fileUrlRef.current),
                         landscapeScrollState: landscapeScrollStateRef.current ?? null,
                         containerScrollLeft: ctr?.scrollLeft ?? null,
                         containerScrollTop: ctr?.scrollTop ?? null,
@@ -5647,13 +5660,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     ctr.scrollLeft = snap;
                     // [RotationStableAnchorRef] Landscape snap resolved — record as stable anchor.
                     // [StableAnchorPoisonGuard] Only write if tick is confirmed trusted (not passive api.tickPosition drift).
+                    // [INTENTIONAL-TICK-FILE-SCOPE-001] The raw `window.__maestroLastIntentionalTick
+                    // === primeScrollTick` branch formerly here bypassed getIntentionalTick()'s TTL
+                    // and file-scope checks entirely — strictly more permissive than, and redundant
+                    // with, the already-scoped check two lines above. Removed.
                     const trustedPrimeTick =
                         primeScrollTick > 1 &&
                         (
                             preRotationAnchorTickRef.current === primeScrollTick ||
                             lastStableRotationAnchorTickRef.current === primeScrollTick ||
-                            getIntentionalTick() === primeScrollTick ||
-                            ((window as any).__maestroLastIntentionalTick === primeScrollTick) ||
+                            getIntentionalTick(fileUrlRef.current) === primeScrollTick ||
                             // [V144.6] Also trust when we repaired to stable anchor
                             _shouldReprimeLandscapeScroll
                         );
@@ -5665,7 +5681,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             tick,
                             preRotationAnchorTick: preRotationAnchorTickRef.current,
                             lastStableRotationAnchorTick: lastStableRotationAnchorTickRef.current,
-                            intentionalTick: getIntentionalTick(),
+                            intentionalTick: getIntentionalTick(fileUrlRef.current),
                             manualIntentionalTick: (window as any).__maestroLastIntentionalTick ?? null,
                             apiTickPosition: api?.tickPosition ?? null,
                             layoutMode: api?.settings?.display?.layoutMode ?? null,
@@ -5692,7 +5708,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         isPlayingRef: isPlayingRef.current,
                         loopEnabled: loopEnabledRef.current,
                         playbackRange: api?.playbackRange ?? null,
-                        intentionalTick: getIntentionalTick(),
+                        intentionalTick: getIntentionalTick(fileUrlRef.current),
                         landscapeScrollState: landscapeScrollStateRef.current ?? null,
                         containerScrollLeft: containerRef.current?.scrollLeft ?? null,
                         containerScrollTop: containerRef.current?.scrollTop ?? null,
@@ -5723,14 +5739,15 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // [LandscapePageMismatchRecoveryDiagnosticOnly] V138/V139: detect viewport/layout desync,
                 // preserve rescue tick, and schedule deferred recovery outside renderFinished.
                 if (isAlphaTabPageLayoutWhileLandscape(api)) {
-                    const manualIntentional: number | null =
-                        typeof window !== 'undefined' && typeof (window as any).__maestroLastIntentionalTick === 'number'
-                            ? (window as any).__maestroLastIntentionalTick
-                            : null;
+                    // [INTENTIONAL-TICK-FILE-SCOPE-001] The separate manualIntentional raw-global
+                    // read formerly here bypassed getIntentionalTick()'s TTL and file-scope checks
+                    // entirely — this was the proven injection path for CURSOR3-PROMOTION-
+                    // ACCEPTANCE-001's Song A -> Song B anchor leak (Van Halen's stale 147840
+                    // landing on a freshly-loaded Pride and Joy). Removed; getIntentionalTick()
+                    // below is now the single, already-scoped source of truth.
                     const rescueTick =
                         lastStableRotationAnchorTickRef.current ??
-                        getIntentionalTick() ??
-                        manualIntentional ??
+                        getIntentionalTick(fileUrlRef.current) ??
                         preRotationAnchorTickRef.current ??
                         0;
                     if (isRendererDebugEnabled()) {
@@ -6024,7 +6041,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 isPlayingRef: isPlayingRef.current,
                                 loopEnabled: loopEnabledRef.current,
                                 playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
+                                intentionalTick: getIntentionalTick(fileUrlRef.current),
                                 landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                 containerScrollLeft: h?.scrollLeft ?? null,
                                 containerScrollTop: h?.scrollTop ?? null,
@@ -6042,6 +6059,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             h,
                             api,
                             targetScrollLeftRef,
+                            fileUrlRef.current,
                             1000,
                             // [RotationAnchorFreeze] Pass frozen pre-rotation tick as override.
                             rotationGateActiveRef.current ? preRotationAnchorTickRef.current ?? undefined : undefined,
@@ -6060,7 +6078,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 isPlayingRef: isPlayingRef.current,
                                 loopEnabled: loopEnabledRef.current,
                                 playbackRange: api?.playbackRange ?? null,
-                                intentionalTick: getIntentionalTick(),
+                                intentionalTick: getIntentionalTick(fileUrlRef.current),
                                 landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                 containerScrollLeft: h?.scrollLeft ?? null,
                                 containerScrollTop: h?.scrollTop ?? null,
@@ -6244,7 +6262,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         isPlayingRef: isPlayingRef.current,
                                         loopEnabled: loopEnabledRef.current,
                                         playbackRange: api?.playbackRange ?? null,
-                                        intentionalTick: getIntentionalTick(),
+                                        intentionalTick: getIntentionalTick(fileUrlRef.current),
                                         landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                         containerScrollLeft: ctr?.scrollLeft ?? null,
                                         containerScrollTop: ctr?.scrollTop ?? null,
@@ -6286,7 +6304,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                         isPlayingRef: isPlayingRef.current,
                                         loopEnabled: loopEnabledRef.current,
                                         playbackRange: api?.playbackRange ?? null,
-                                        intentionalTick: getIntentionalTick(),
+                                        intentionalTick: getIntentionalTick(fileUrlRef.current),
                                         landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                         containerScrollLeft: ctr?.scrollLeft ?? null,
                                         containerScrollTop: ctr?.scrollTop ?? null,
@@ -6454,7 +6472,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     isPlayingRef: isPlayingRef.current,
                                     loopEnabled: loopEnabledRef.current,
                                     playbackRange: api?.playbackRange ?? null,
-                                    intentionalTick: getIntentionalTick(),
+                                    intentionalTick: getIntentionalTick(fileUrlRef.current),
                                     landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                     containerScrollLeft: ctr?.scrollLeft ?? null,
                                     containerScrollTop: ctr?.scrollTop ?? null,
@@ -6483,7 +6501,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                     isPlayingRef: isPlayingRef.current,
                                     loopEnabled: loopEnabledRef.current,
                                     playbackRange: api?.playbackRange ?? null,
-                                    intentionalTick: getIntentionalTick(),
+                                    intentionalTick: getIntentionalTick(fileUrlRef.current),
                                     landscapeScrollState: landscapeScrollStateRef.current ?? null,
                                     containerScrollLeft: ctr?.scrollLeft ?? null,
                                     containerScrollTop: ctr?.scrollTop ?? null,
@@ -7202,7 +7220,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 {
                     const _lastTick = lastTickRef.current ?? 0;
                     const _playerState = (api as any)?.playerState ?? -1;
-                    const _intentionalTick = getIntentionalTick();
+                    const _intentionalTick = getIntentionalTick(fileUrlRef.current);
                     const _recentStartSeek =
                         (seekFreezeUntilRef.current > Date.now() && (seekTargetTickRef.current ?? Infinity) <= 1) ||
                         (typeof _intentionalTick === 'number' && _intentionalTick <= 1);
@@ -7433,7 +7451,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                                 apiPlaybackRange: api?.playbackRange ?? null,
                                 liveLoopRangeRef: liveRange,
                                 loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
-                                lastIntentionalTick: getIntentionalTick(),
+                                lastIntentionalTick: getIntentionalTick(fileUrlRef.current),
                                 manualSeekAge: (window as any).__maestroManualSeek
                                     ? Date.now() - (window as any).__maestroManualSeek : null,
                                 tickRaw,
@@ -8748,6 +8766,8 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             activeLoopReseatReasonRef.current = null;
             loopPlayStartPreserveAbsRef.current = null;
             lastStableRotationAnchorTickRef.current = null;
+            preRotationAnchorTickRef.current = null;
+            rotationGateActiveRef.current = false;
             if (s1AnimRafRef.current !== null) {
                 cancelAnimationFrame(s1AnimRafRef.current);
                 s1AnimRafRef.current = null;
@@ -8998,14 +9018,14 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             apiPlaybackRange: api?.playbackRange ?? null,
                             liveLoopRangeRef: liveLoopRange,
                             loopReseatFlag: (window as any).__maestroLoopReseat ?? null,
-                            lastIntentionalTick: getIntentionalTick(),
+                            lastIntentionalTick: getIntentionalTick(fileUrlRef.current),
                             loopPlayStartOverrideTick: overrideTick,
                             hasValidOverride,
                             manualSeekAge: (window as any).__maestroManualSeek
                                 ? Date.now() - (window as any).__maestroManualSeek : null,
                             // KEY QUESTION: is primeT driven by intentional tick or loop start?
                             primeTSource: hasValidOverride ? '__maestroLoopPlayStartOverrideTick' : 'liveLoopRange.startTick',
-                            primeTMatchesIntentionalTick: primeT === getIntentionalTick(),
+                            primeTMatchesIntentionalTick: primeT === getIntentionalTick(fileUrlRef.current),
                             primeTMatchesLoopStart: primeT === liveLoopRange.startTick,
                             note: hasValidOverride && primeT !== liveLoopRange.startTick
                                 ? 'OVERRIDE ACTIVE — seekTicks will go to override, not loop start. This is the likely source of seek-to-7201.'
@@ -9843,6 +9863,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 // rotation/prime paths trust this seek over stale cached anchors.
                 (window as any).__maestroLastIntentionalTick = safeTarget;
                 (window as any).__maestroLastIntentionalTickAt = Date.now();
+                // [INTENTIONAL-TICK-FILE-SCOPE-001] Tag with the current file identity so
+                // getIntentionalTick() can reject this once a different song loads.
+                (window as any).__maestroLastIntentionalTickFileUrl = fileUrlRef.current;
                 preRotationAnchorTickRef.current = safeTarget;
                 const wasPlaying = (api.playerState ?? 0) === 1;
                 // [PausedClickSeekStaleTargetFix] PLAYBACK-PAUSE-RESUME-TICK-PULLBACK-001: a
@@ -10118,6 +10141,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 seekFreezeUntilRef.current = Date.now() + 300;
                 (window as any).__maestroLastIntentionalTick = bestTick;
                 (window as any).__maestroLastIntentionalTickAt = Date.now();
+                // [INTENTIONAL-TICK-FILE-SCOPE-001] Tag with the current file identity so
+                // getIntentionalTick() can reject this once a different song loads.
+                (window as any).__maestroLastIntentionalTickFileUrl = fileUrlRef.current;
                 preRotationAnchorTickRef.current = bestTick;
                 const seekTicks = api.player?.seekTicks?.bind(api.player) ?? api.seekTicks?.bind(api);
                 if (isRendererDebugEnabled()) {
