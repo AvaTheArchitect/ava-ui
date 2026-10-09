@@ -2,9 +2,10 @@
 
 /**
  * MaestroCursor3.tsx
- * Current version: V3.2.2
- * Date: October 5th, 2026
- * Phase 3 experimental cursor architecture
+ * Current version: V3.2.3
+ * Date: October 9th, 2026
+ * Promoted to the production/default cursor architecture by
+ * CURSOR3-PROMOTION-ACCEPTANCE-001 (formerly Phase 3 experimental)
  * Baseline cloned from MaestroCursor2 V1.7.1
  * MAESTRO-CURSOR-005 terminal sustained/vibrato loop-glide parity ported from
  * MaestroCursor2 V1.7.2 (commit 6576c32)
@@ -21,21 +22,22 @@
  * intentional Maestro enhancements (RAF-based smoothing, Loop-aware glide and
  * reanchoring, seek/click-seek reanchoring) addressing needs specific to
  * Cursor3's own RAF-deferred architecture — not unresolved parity defects.
- * Cursor2 remains production/default and the rollback path; Cursor3 is, and
- * remains, experimental/opt-in through the runtime cursor-engine selector
- * (src/lib/alphaTab/cursorEngine.ts, shipped in 226b5bb) — ?cursorEngine=cursor3
- * or localStorage maestro_cursor_engine=cursor3, resolved once per page load, is
- * what actually makes this file reachable. The MAESTRO_USE_CURSOR3 constant in
- * AlphaTabRenderer.tsx sets only the DEFAULT engine (false — Cursor2) when no
- * override is present; it does not gate whether Cursor3 can be reached at all.
+ * Cursor3 is now the production/default cursor engine, promoted by
+ * CURSOR3-PROMOTION-ACCEPTANCE-001 after its acceptance validation matrix
+ * passed in full. Cursor2 remains available as the explicit rollback path
+ * through the runtime cursor-engine selector (src/lib/alphaTab/cursorEngine.ts,
+ * shipped in 226b5bb) — ?cursorEngine=cursor2 or localStorage
+ * maestro_cursor_engine=cursor2, resolved once per page load. The
+ * MAESTRO_USE_CURSOR3 constant in AlphaTabRenderer.tsx sets the DEFAULT engine
+ * (true — Cursor3) when no override is present; it does not gate whether
+ * Cursor2 can still be reached at all.
  *
  * Goal:
  * Preserve Cursor3's smooth RAF-slewed cursor behavior while maintaining
- * geometry/timing parity with AlphaTab's native cursor contract, keeping
- * MaestroCursor2 as the production rollback. Cursor3 remains experimental
- * until deliberately promoted; further work on any open roadmap item should
- * be evidence-driven (runtime-proven cases) rather than speculative roadmap
- * coding.
+ * geometry/timing parity with AlphaTab's native cursor contract, with
+ * MaestroCursor2 retained as the rollback path. Further work on any open
+ * roadmap item should be evidence-driven (runtime-proven cases) rather than
+ * speculative roadmap coding.
  *
  * Architecture additions planned:
  * [x] targetTick / renderTick separation
@@ -105,8 +107,9 @@
  *    have been removed now that the investigation is closed; the
  *    pre-existing SlideParkingDiagnostics suite is unchanged. Shift(1)/
  *    Legato(2) and the M24/M40 dense-carrier behavior were never affected
- *    by any of this. Cursor2 remains production/default; Cursor3 remains
- *    experimental/opt-in via the runtime cursor-engine selector.
+ *    by any of this. Cursor3 is now the production/default engine (promoted
+ *    by CURSOR3-PROMOTION-ACCEPTANCE-001); Cursor2 remains available via
+ *    ?cursorEngine=cursor2.
  * ✅ [LoopResumeTransientHardSnapRepaintSuppress]
  *    CURSOR3-LOOP-RESUME-BACKSTEP-001: after the backstep fix above, a residual
  *    transient forward/right-handle flash remained during Loop pause/resume.
@@ -125,8 +128,9 @@
  *    HARD_SNAP_REASONS member, and 'play-start-hard-snap' outside an armed Loop
  *    resume (non-loop pause/resume, non-loop cold play-start), are unaffected.
  *    The structural reseat (setBeat) and the accepted-tick one-shot below are
- *    unchanged by this fix. Cursor2 remains production/default; Cursor3 remains
- *    experimental/opt-in via the runtime cursor-engine selector.
+ *    unchanged by this fix. Cursor3 is now the production/default engine
+ *    (promoted by CURSOR3-PROMOTION-ACCEPTANCE-001); Cursor2 remains
+ *    available via ?cursorEngine=cursor2.
  * ✅ [LoopResumeOneShotVisualAnchor]
  *    CURSOR3-LOOP-RESUME-BACKSTEP-001: resuming playback from a pause inside an
  *    active Loop visually jumped back about one beat before continuing, while
@@ -160,9 +164,10 @@
  *    (forceNextLoopClickTickAnchorUntil, armed only by
  *    'loop-highlight-click-cursor') — distinct field, distinct expiry constant,
  *    distinct arming reason, distinct consumption block. Neither can consume or
- *    clear the other. Cursor2 remains production/default; Cursor3 remains
- *    experimental/opt-in via the runtime cursor-engine selector — this fix changes
- *    only Cursor3's own internal timing, not which engine is reachable or default.
+ *    clear the other. Cursor3 is now the production/default engine (promoted
+ *    by CURSOR3-PROMOTION-ACCEPTANCE-001); Cursor2 remains available via
+ *    ?cursorEngine=cursor2 — this fix changed only Cursor3's own internal
+ *    timing, not which engine is reachable or default.
  * ✅ [LoopClickOneShotVisualReanchor]
  *    CURSOR3-RAF-AB-REPLACEMENT-001: rapid same-beat Loop click-seek (clicking
  *    repeatedly inside an already-active loop's highlighted region) did not visibly
@@ -225,7 +230,9 @@
  *    beat's own span reaching the active loop endTick (no nextCandidate required),
  *    guards the no-candidate stayPut branch, and shifts tickToX's bar-right target to
  *    loopEndX + BAR_WIDTH / 2 for this mode only. Behavior parity only — Cursor3 RAF
- *    slew, targetTick/renderTick routing, and MAESTRO_USE_CURSOR3 (false) are unchanged.
+ *    slew, targetTick/renderTick routing, and the MAESTRO_USE_CURSOR3 default-engine
+ *    selector were unchanged by this fix (MAESTRO_USE_CURSOR3 was later promoted to
+ *    true by CURSOR3-PROMOTION-ACCEPTANCE-001, a separate, subsequent ticket).
  */
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -270,9 +277,9 @@ const HARD_SNAP_REASONS = new Set([
 ]);
 const BACKSTEP_PX = 2;
 const BAR_WIDTH = 14;
-// [CURSOR-STYLE-UNIFICATION-001-C] Cursor3 (experimental/opt-in via the runtime
-// cursor-engine selector; Cursor2 remains production/default) mirrors Cursor2's
-// artwork exactly — Cursor1's purple teardrop + white dot (see _renderBarSVG),
+// [CURSOR-STYLE-UNIFICATION-001-C] Cursor3 (now the production/default engine via
+// the runtime cursor-engine selector; Cursor2 remains available as rollback) mirrors
+// Cursor2's artwork exactly — Cursor1's purple teardrop + white dot (see _renderBarSVG),
 // sourced from the shared purple --maestro-cursor-* tokens (src/app/globals.css) instead
 // of the teal --maestro-cursor-legacy-* tokens, so it can't silently drift onto a
 // different visual style than its active sibling. CAP_TOP_OVERHANG / TIP_BOTTOM_OVERHANG

@@ -2,8 +2,8 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.45-LOOPSEEKD1FIX001
- * Date: September 26th, 2026
+ * Current version: V145.46-CURSOR3DEFAULTPROMOTE001
+ * Date: October 9th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
  *
  * PLAYBACK-LOOP-CLICKSEEK-BOUNDARY-SLINGSHOT-001 — D1 honors the global backtrack window (V145.45).
@@ -135,11 +135,14 @@
  *        hard-snap, live click-seek's pause/timer/play choreography, cold-start play
  *        (pauseResumeArmedRef stays false), Cursor2, or Cursor3.
  *
- * CURSOR3-RAF-AB-REPLACEMENT-001 — Runtime cursor-engine selector (default stays Cursor2).
+ * CURSOR3-RAF-AB-REPLACEMENT-001 — Runtime cursor-engine selector introduced.
  * ✅ ensureCursorAndAnchorOnce resolves the page-layout cursor engine through
  *        resolveCursorEngine() (src/lib/alphaTab/cursorEngine.ts): exact-value opt-in only
- *        (?cursorEngine=cursor3 or localStorage maestro_cursor_engine=cursor3), query wins,
- *        resolved once per page load. MAESTRO_USE_CURSOR3 (false) remains the default engine.
+ *        (?cursorEngine=cursor2|cursor3 or localStorage maestro_cursor_engine=cursor2|cursor3),
+ *        query wins, resolved once per page load. At introduction, MAESTRO_USE_CURSOR3
+ *        (false) was the default engine; CURSOR3-PROMOTION-ACCEPTANCE-001 later promoted
+ *        MAESTRO_USE_CURSOR3 to true (Cursor3 default) after acceptance validation
+ *        passed — Cursor2 remains available via ?cursorEngine=cursor2.
  * 🚫 No change to cursor lifecycle/destroy-recreate, FixedLandscapeCursor,
  *        BeatCustomLoopOverlay.tsx, Cursor2, or Cursor3.
  *
@@ -1934,9 +1937,11 @@ function getVisualKeyForBeat(api: any, beat: any): string | null {
 const MAESTRO_USE_S1_CUSTOM_SCROLL = true;
 
 // ── Cursor engine flag ───────────────────────────────────────────────────────
-// DEFAULT engine only: false → Cursor2 (production default); true → Cursor3 experimental
-// RAF-slew engine. The default never changes at runtime — see the override below.
-const MAESTRO_USE_CURSOR3 = false;
+// DEFAULT engine only: false → Cursor2; true → Cursor3 (RAF-slew engine). Promoted
+// to the production default (true) by CURSOR3-PROMOTION-ACCEPTANCE-001 after
+// acceptance validation passed; Cursor2 remains the explicit rollback via
+// ?cursorEngine=cursor2. The default never changes at runtime — see the override below.
+const MAESTRO_USE_CURSOR3 = true;
 // [CURSOR3-RAF-AB-REPLACEMENT-001] Runtime opt-in override (src/lib/alphaTab/cursorEngine.ts).
 // When true, the exact values ?cursorEngine=cursor2|cursor3 (wins) or localStorage
 // maestro_cursor_engine=cursor2|cursor3 can select the page-layout cursor engine; any other
