@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.46-CURSOR3DEFAULTPROMOTE001
- * Date: October 9th, 2026
+ * Current version: V145.48-CURTAINHOOKDOC001
+ * Date: October 20th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * PLAYER-CONTROLS-PERSISTENT-SHELL-001 — Static hook and fill colour on the reveal curtain (V145.47).
+ * ✅ The curtain element carries a data-maestro-curtain attribute and an inline color equal to its fill, so
+ *        globals.css can repaint the fill with currentColor on Desktop, leaving the TransportBar footprint
+ *        unpainted. The footer-hole regression spec (tests/e2e/curtain-footer-hole.e2e.ts) is the test-side
+ *        consumer of the attribute: it identifies the curtain by the hook rather than by utility classes.
+ * 🚫 Curtain box, timing (every showCurtain/hideCurtainAtomic call site), z-index, classes, display, the
+ *        loading layer, cursor lifecycle, API disposal, setApi(null) and readiness are unchanged.
  *
  * PLAYBACK-LOOP-CLICKSEEK-BOUNDARY-SLINGSHOT-001 — D1 honors the global backtrack window (V145.45).
  * ✅ Read-only audit plus a temporary opt-in probe (LOOPSEEKPROBE001, since removed) showed that
@@ -10352,8 +10360,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 </div>
             )}
 
-            <div ref={curtainRef} className="absolute inset-0 pointer-events-none"
-                style={{ background: bgColor, display: 'block', zIndex: 5000 }} />
+            {/* [PLAYER-CONTROLS-PERSISTENT-SHELL-001] data-maestro-curtain is the hook for globals.css's Desktop
+                footer-hole rule; color mirrors the fill so that rule can repaint it with currentColor. */}
+            <div ref={curtainRef} data-maestro-curtain className="absolute inset-0 pointer-events-none"
+                style={{ background: bgColor, color: bgColor, display: 'block', zIndex: 5000 }} />
 
             <div style={{ position: 'relative', zIndex: 10, isolation: 'isolate' as any }}>
                 {/*

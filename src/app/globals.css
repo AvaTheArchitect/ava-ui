@@ -2,8 +2,8 @@
 
 /* ============================================================================
    MAESTRO.AI — globals.css
-   Version: V1.0.0
-   Updated: July 28th, 2026
+   Version: V1.0.1
+   Updated: October 18th, 2026
    Header Reviewed: August 12th, 2026
 
    SCOPE OF THIS FILE
@@ -16,6 +16,7 @@
         - Accent / brand colors
         - Tailwind @theme registration
    ✅ Player shell — TopMenuTray slide-out during playback [PS1]
+   ✅ Player shell — Desktop curtain footer hole [PLAYER-CONTROLS-PERSISTENT-SHELL-001]
 
    ❌ NOT in this file:
         - TopMenuTray chrome     → future maestro.css (fixed dark surface)
@@ -344,6 +345,51 @@ body {
 
   .maestro-tray-mobile {
     display: flex;
+  }
+}
+
+
+/* ============================================================================
+   PLAYER CURTAIN FOOTER HOLE                [PLAYER-CONTROLS-PERSISTENT-SHELL-001]
+   ============================================================================
+   AlphaTabRenderer's score-reveal curtain ([data-maestro-curtain]) is absolutely positioned
+   (inset-0) inside the renderer root with an inline z-index of 5000, so its box is the
+   root's box. The root is zero-height until the renderer applies the container's
+   min-height, then 600px, then grows to the full rendered score height (thousands of px).
+   On Desktop the curtain shares a stacking context with the fixed TransportBar footer
+   (z-50), so wherever that box reached the footer the curtain painted over the transport:
+   partially while the root is 600px, entirely once it outgrows the viewport.
+
+   page.tsx adds .maestro-curtain-band to the renderer root unless the page is in mobile
+   landscape (the JS flag that also removes the Desktop TransportBar). Within the Desktop
+   media query below the curtain keeps its box, z-index (5000), display toggling and
+   pointer-events, but its fill is repainted as two viewport-fixed layers that leave the
+   footer's footprint unpainted: the full viewport width down to 100vh - 75px (the top of
+   the TransportBar), plus a 0.9375rem column at the right edge (the footer stops that far
+   short of the viewport edge via pointer-fine:right-3.75). The painted area is therefore
+   always a subset of what the curtain painted before: nothing is newly covered, the curtain's
+   top edge and its zero-height initial state are untouched, and the footer region shows
+   through to the footer. If a browser ignored the fixed attachment the layers would fall
+   back to the box origin: still a subset, but the footer would not be cleared.
+
+   The inline background shorthand sets every background longhand, so these overrides need
+   !important. The fill colour is the inline `color` the renderer sets to the same value,
+   read here as currentColor.
+
+   Constants mirror existing source: 75px = TransportBar h-[74px] + 1px border-t
+   (TransportBar.tsx), one more mirror of the 74px height documented in TransportBar.tsx,
+   page.tsx and YouTubePlayer.tsx; 0.9375rem = Tailwind right-3.75 on the footer.
+   ============================================================================ */
+@media (min-width: 650px) and (pointer: fine) {
+  .maestro-curtain-band > [data-maestro-curtain] {
+    background-color: transparent !important;
+    background-image:
+      linear-gradient(currentColor, currentColor),
+      linear-gradient(currentColor, currentColor) !important;
+    background-repeat: no-repeat !important;
+    background-attachment: fixed !important;
+    background-position: 0 0, 100% 0 !important;
+    background-size: 100% calc(100vh - 75px), 0.9375rem 100% !important;
   }
 }
 
