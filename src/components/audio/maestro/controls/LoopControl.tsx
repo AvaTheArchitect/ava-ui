@@ -1,8 +1,13 @@
 'use client';
 
 /**
- * LoopControl.tsx - V87.7: Loop button no longer keeps focus after a mouse click (LOOPSPACEFOCUS001)
- * Date: September 26th, 2026
+ * LoopControl.tsx - V87.8: FULL-COLOR LOADING STATE (V87.7 mouse-focus behavior retained)
+ * Date: October 24th, 2026
+ *
+ * 🆕 V87.8 (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Readiness-driven opacity-50 removed — the Loop button stays full-color while loading.
+ *    disabled={!api}, cursor-not-allowed, aria-pressed, the active green icon and onMouseDown/onClick are unchanged.
+ * ✅ Hover brightness now applies only while enabled.
  *
  * 🆕 V87.7 (PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001):
  * ✅ onMouseDown preventDefault on the Loop button: a mouse click no longer leaves focus on it,
@@ -47,8 +52,8 @@ export const LoopControl: React.FC<LoopControlProps> = ({
                 className={`
                   group relative flex flex-col items-center justify-center gap-0.5
                   w-full p-0
-                  transition-all duration-200 hover:brightness-125
-                  ${!api ? 'opacity-50 cursor-not-allowed' : ''}
+                  transition-all duration-200 enabled:hover:brightness-125
+                  ${!api ? 'cursor-not-allowed' : ''}
                 `}
             >
                 {/* Loop icon — green when active */}

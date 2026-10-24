@@ -1,8 +1,13 @@
 'use client';
 
 /**
- * SpeedControl.tsx - V92.6: position:fixed viewport-anchored panel — master blueprint
- * Date: March 23rd, 2026
+ * SpeedControl.tsx - V92.7: FULL-COLOR LOADING STATE (V92.6 position:fixed viewport-anchored panel retained)
+ * Date: October 24th, 2026
+ *
+ * 🆕 V92.7 — FULL-COLOR LOADING STATE (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Readiness-driven opacity-50 removed from the trigger — it stays full-color while loading.
+ * ✅ disabled={!api}, cursor-not-allowed and handlers unchanged; hover brightness now applies only while enabled.
+ * ✅ Speed panel layout and behavior — UNTOUCHED
  *
  * 🆕 V92.6 — TRANSPORT PANEL POSITIONING BLUEPRINT:
  * ✅ Panel is position:fixed — immune to parent container height variance
@@ -91,8 +96,8 @@ export const SpeedControl: React.FC<ExtendedSpeedControlProps> = ({
         className={`
           group relative flex items-center justify-center
           w-full p-0
-          transition-all duration-200 hover:brightness-125
-          ${!api ? 'opacity-50 cursor-not-allowed' : ''}
+          transition-all duration-200 enabled:hover:brightness-125
+          ${!api ? 'cursor-not-allowed' : ''}
         `}
       >
         {/* Icon + Percentage */}

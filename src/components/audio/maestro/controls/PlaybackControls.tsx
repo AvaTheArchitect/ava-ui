@@ -1,8 +1,13 @@
 'use client';
 
 /**
- * PlaybackControls.tsx - V91: YOUTUBE LOGO + SMALLER BUTTON (Songsterr Style)
- * Date: June 26th, 2026
+ * PlaybackControls.tsx - V93: FULL-COLOR LOADING STATE (Songsterr Style)
+ * Date: October 24th, 2026
+ * 🔧 NEW IN V93 (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Readiness-driven opacity-50 removed from Play and the ORIGINAL/SYNTH toggle — they stay full-color while loading.
+ *    disabled={!api}, cursor-not-allowed and every handler are unchanged.
+ * ✅ Hover glow/outline/shadow, ring and surface highlight now apply only while enabled (enabled: variant / api gate);
+ *    hover:scale-105 was already gated on api. Hover text color and tooltips are unchanged.
  * 🔧 NEW IN V92:
  * ✅ Playbutton white ring on hover
  * 🔧 NEW IN V91:
@@ -46,10 +51,10 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
           group relative w-[56px] h-[56px] rounded-full flex items-center justify-center
           transition-all duration-200 flex-shrink-0
           ${isPlaying
-            ? 'bg-gradient-to-br from-orange-500 to-red-500 shadow-lg shadow-orange-400/40 hover:shadow-[0_0_14px_rgba(249,115,22,0.45),0_0_24px_rgba(239,68,68,0.22)]'
-            : 'bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-400/40 hover:shadow-[0_10px_22px_rgba(0,0,0,0.46)] hover:[outline:2px_solid_rgba(255,255,255,0.92)] hover:outline-offset-2'
+            ? 'bg-gradient-to-br from-orange-500 to-red-500 shadow-lg shadow-orange-400/40 enabled:hover:shadow-[0_0_14px_rgba(249,115,22,0.45),0_0_24px_rgba(239,68,68,0.22)]'
+            : 'bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-400/40 enabled:hover:shadow-[0_10px_22px_rgba(0,0,0,0.46)] enabled:hover:[outline:2px_solid_rgba(255,255,255,0.92)] enabled:hover:outline-offset-2'
           }
-          ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}
+          ${!api ? 'cursor-not-allowed' : 'hover:scale-105'}
         `}
       >
         {/* 🆕 V90: YouTube Logo when Original mode + paused (WHITE like Songsterr) */}
@@ -85,7 +90,7 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
 
       {/* 🎯 SONGSTERR EXACT: VERTICAL STACKED TOGGLE (74x44 container) */}
       {showAudioToggle && (
-        <div className="flex flex-col h-[44px] w-[74px] [@media(max-width:711px)]:w-[67px] flex-shrink-0 flex-grow-0 rounded-sm transition-all hover:ring-1 hover:ring-cyan-300/40">
+        <div className={`flex flex-col h-[44px] w-[74px] [@media(max-width:711px)]:w-[67px] flex-shrink-0 flex-grow-0 rounded-sm transition-all ${api ? 'hover:ring-1 hover:ring-cyan-300/40' : ''}`}>
 
           {/* 🔝 ORIGINAL Button (top half - 74x22) */}
           <button
@@ -99,9 +104,9 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               flex-shrink-0 flex-grow-0
               ${audioSource === 'original'
                 ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold [text-shadow:0_0_4px_rgba(251,146,60,0.65),0_0_8px_rgba(249,115,22,0.35)] shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
-                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
+                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 enabled:hover:bg-[#767f96]/75 enabled:hover:border-cyan-300/40'
               }
-              ${!api ? 'opacity-50 cursor-not-allowed' : ''}
+              ${!api ? 'cursor-not-allowed' : ''}
               rounded-t-[2px]
               border border-b-0
             `}
@@ -126,9 +131,9 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
               flex-shrink-0 flex-grow-0
               ${audioSource === 'synth'
                 ? 'bg-linear-to-b from-black/70 to-black/95 border-orange-400 text-orange-400 font-bold [text-shadow:0_0_4px_rgba(251,146,60,0.65),0_0_8px_rgba(249,115,22,0.35)] shadow-[inset_0_0_0_1px_rgba(255,237,213,0.28),inset_0_0_6px_rgba(249,115,22,0.22),0_0_10px_rgba(249,115,22,0.42),0_0_18px_rgba(251,146,60,0.18)]'
-                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 hover:bg-[#767f96]/75 hover:border-cyan-300/40'
+                : 'bg-[#60687d]/70 border-[#767f96]/40 text-white/90 hover:text-cyan-300 enabled:hover:bg-[#767f96]/75 enabled:hover:border-cyan-300/40'
               }
-              ${!api ? 'opacity-50 cursor-not-allowed' : ''}
+              ${!api ? 'cursor-not-allowed' : ''}
               rounded-b-[2px]
               border
             `}

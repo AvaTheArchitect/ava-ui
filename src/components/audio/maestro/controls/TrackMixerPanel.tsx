@@ -1,8 +1,15 @@
 'use client';
 
 /**
- * TrackMixerPanel.tsx — V102.3: TWO-STAGE BREAKPOINTS + CHEVRON FIX
- * Date: March 19th, 2026
+ * TrackMixerPanel.tsx — V102.4: FULL-COLOR LOADING STATE (V102.3 two-stage breakpoints retained)
+ * Date: October 24th, 2026
+ *
+ * 🆕 V102.4 UPDATES (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Trigger: readiness (!api) no longer dims it — it stays full-color while loading. A ready player with NO tracks
+ *    (api set, tracks.length === 0) keeps its dimmed unavailable look.
+ * ✅ disabled={!api || tracks.length === 0} and cursor-not-allowed unchanged; hover border/background highlight now
+ *    applies only while enabled.
+ * ✅ Panel popup and its inner controls (including their disabled:opacity-50) — UNTOUCHED
  *
  * 🆕 V102.3 UPDATES:
  * ✅ Compact trigger breakpoint: 960px → 1200px (collapses BEFORE label hide at 960px)
@@ -126,9 +133,10 @@ export const TrackMixerPanel: React.FC<ExtendedTrackMixerPanelProps> = ({
           gap-3 [@media(max-width:1200px)]:gap-0
           ${isPanelOpen
             ? 'bg-blue-500/10 border-2 border-blue-400/30'
-            : 'bg-blue-500/5 border border-blue-300/20 hover:border-cyan-300/40 hover:bg-cyan-300/5'
+            : 'bg-blue-500/5 border border-blue-300/20 enabled:hover:border-cyan-300/40 enabled:hover:bg-cyan-300/5'
           }
-          ${!api || tracks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+          ${!api || tracks.length === 0 ? 'cursor-not-allowed' : ''}
+          ${api && tracks.length === 0 ? 'opacity-50' : ''}
         `}
       >
         {/* ── COMPACT STATE (≤1200px): headstock icon + chevron only ── */}

@@ -1,8 +1,14 @@
 'use client';
 
 /**
- * MaestroControlPanel.tsx - V102: Loop button no longer keeps mouse focus (LOOPSPACEFOCUS001)
- * Date: September 26th, 2026
+ * MaestroControlPanel.tsx - V103: Full-color loading state on the mobile bar (V102 Loop mouse-focus behavior retained)
+ * Date: October 24th, 2026
+ *
+ * 🔧 NEW IN V103 (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Mobile Speed, Loop and Play/Pause: disabled:opacity-50 removed — full-color while loading.
+ * ✅ Mobile Track Mixer dims only when the player is ready but has no tracks (controlsReady && tracks.length === 0).
+ * ✅ controlsReady, playerReady, every disabled={...} expression, the api prop gating (TransportBar, MobileDrawer),
+ *    handlers and layout are unchanged.
  *
  * 🔧 NEW IN V102 (PLAYBACK-LOOP-SPACEBAR-FOCUS-COLLISION-001):
  * ✅ The inline (narrow / mobile-landscape) Loop button gets onMouseDown preventDefault so a
@@ -329,7 +335,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleTrackMixerToggle}
                 disabled={!controlsReady || props.tracks.length === 0}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors ${controlsReady && props.tracks.length === 0 ? 'opacity-50' : ''} ${isTrackMixerOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Track mixer"
               >
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -388,7 +394,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               <button
                 onClick={handleSpeedToggle}
                 disabled={!controlsReady}
-                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
+                className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors ${isSpeedPanelOpen ? 'text-cyan-400' : 'text-cyan-400 hover:text-cyan-300'}`}
                 title="Playback speed"
               >
                 <svg width="28" height="24" viewBox="0 0 32 24">
@@ -458,7 +464,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleLoopToggle}
               disabled={!controlsReady}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 ${props.isLooping ? 'text-green-400 hover:text-green-300' : 'text-cyan-400 hover:text-cyan-300'}`}
               title={props.isLooping ? 'Loop enabled' : 'Loop disabled'}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
@@ -470,7 +476,7 @@ export const MaestroControlPanel: React.FC<MaestroControlPanelProps> = (props) =
             <button
               onClick={props.onPlayPause}
               disabled={!controlsReady}
-              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 ${props.audioSource === 'original' && !props.isPlaying
+              className={`w-[44px] h-[44px] flex items-center justify-center rounded-lg transition-colors flex-shrink-0 ${props.audioSource === 'original' && !props.isPlaying
                 ? ''
                 : props.isPlaying
                   ? 'text-orange-400 hover:text-orange-300'

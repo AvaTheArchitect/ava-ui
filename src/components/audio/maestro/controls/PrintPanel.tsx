@@ -1,8 +1,13 @@
 'use client';
 
 /**
- * PrintPanel.tsx - V1.1: ICON-ONLY TRIGGER, LABEL OWNED BY TRANSPORTBAR
- * Date: March 19th, 2026
+ * PrintPanel.tsx - V1.2: FULL-COLOR LOADING STATE (V1.1 icon-only trigger retained)
+ * Date: October 24th, 2026
+ *
+ * 🆕 V1.2 UPDATES (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Trigger: readiness-driven opacity-50 removed — full-color while loading.
+ *    disabled={!api}, cursor-not-allowed and the hover-brightness gate are unchanged.
+ * ✅ Zoom +/- buttons (opacity-30 when at a zoom limit) — UNTOUCHED
  *
  * 🆕 V1.1 UPDATES:
  * ✅ Trigger button: px-4 + flex-col removed → w-full p-0 flex items-center justify-center
@@ -109,7 +114,7 @@ export const PrintPanel: React.FC<PrintPanelProps> = ({
                 onClick={isPanelOpen ? handleClose : onTogglePanel}
                 disabled={!api}
                 className={`group relative flex items-center justify-center w-full p-0 transition-all duration-200
-          ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'}
+          ${!api ? 'cursor-not-allowed' : 'hover:brightness-125'}
         `}
             >
                 {/* Tooltip — suppressed when panel is open */}

@@ -1,8 +1,15 @@
 'use client';
 
 /**
- * TransportBar.tsx - V100.1: Full-cell hover state + Simon tray color polish
- * Date: August 12th, 2026
+ * TransportBar.tsx - V100.2: FULL-COLOR LOADING STATE (V100.1 hover state + tray color polish retained)
+ * Date: October 24th, 2026
+ *
+ * 🆕 V100.2 LOADING STATE (PLAYER-CONTROLS-READINESS-RECOVERY-001):
+ * ✅ Readiness-driven opacity-50 removed from Solo, Mute, Count In, Metronome and the More-menu Print item.
+ *    Every disabled={...} expression, the api prop gating and cursor-not-allowed are unchanged.
+ * ✅ Unavailable states keep their dim: Solo/Mute when the player is ready but has no tracks; Metronome in Original
+ *    mode (Synth only); Pitch Shift in Original mode.
+ * ✅ Hover brightness / highlight were already gated on the same enabled conditions — unchanged.
  *
  * 🆕 V100.1 TRAY CHROME / HOVER POLISH:
  * ✅ Resting transport controls aligned to blue-300.
@@ -420,7 +427,8 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                   disabled={!soloEnabled}
                   aria-pressed={isSoloed}
                   className={`group w-full h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200
-                    ${!soloEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'}`}
+                    ${!soloEnabled ? 'cursor-not-allowed' : 'hover:brightness-125'}
+                    ${api && tracks.length === 0 ? 'opacity-50' : ''}`}
                 >
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-[12000] whitespace-nowrap">
                     <div className="bg-gray-900/95 border border-gray-700 rounded-lg shadow-2xl px-3 py-2 text-center">
@@ -459,7 +467,8 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                   disabled={!muteEnabled}
                   aria-pressed={isMuted}
                   className={`group w-full h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200
-                    ${!muteEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'}`}
+                    ${!muteEnabled ? 'cursor-not-allowed' : 'hover:brightness-125'}
+                    ${api && tracks.length === 0 ? 'opacity-50' : ''}`}
                 >
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-[12000] whitespace-nowrap">
                     <div className="bg-gray-900/95 border border-gray-700 rounded-lg shadow-2xl px-3 py-2 text-center">
@@ -492,7 +501,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               onClick={handleCountInPanelToggle}
               disabled={!api}
               className={`group w-full h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200
-                ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'}`}
+                ${!api ? 'cursor-not-allowed' : 'hover:brightness-125'}`}
             >
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-[12000] whitespace-nowrap">
                 <div className="bg-gray-900/95 border border-gray-700 rounded-lg shadow-2xl px-3 py-2 text-center">
@@ -528,7 +537,8 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
               onClick={handleMetronomePanelToggle}
               disabled={!api || !isSynthMode}
               className={`group w-full h-full p-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200
-                ${!api || !isSynthMode ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-125'}`}
+                ${!api || !isSynthMode ? 'cursor-not-allowed' : 'hover:brightness-125'}
+                ${!isSynthMode ? 'opacity-50' : ''}`}
             >
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-[12000] whitespace-nowrap">
                 <div className="bg-gray-900/95 border border-gray-700 rounded-lg shadow-2xl px-3 py-2 text-center">
@@ -674,7 +684,7 @@ export const TransportBar: React.FC<ExtendedTransportBarProps> = ({
                   onClick={handlePrintToggle}
                   disabled={!api}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left
-                    ${!api ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700/50'}`}
+                    ${!api ? 'cursor-not-allowed' : 'hover:bg-gray-700/50'}`}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-blue-300 flex-shrink-0">
                     <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" />
