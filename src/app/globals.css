@@ -2,8 +2,8 @@
 
 /* ============================================================================
    MAESTRO.AI — globals.css
-   Version: V1.0.1
-   Updated: October 18th, 2026
+   Version: V1.0.2
+   Updated: October 25th, 2026
    Header Reviewed: August 12th, 2026
 
    SCOPE OF THIS FILE
@@ -17,6 +17,7 @@
         - Tailwind @theme registration
    ✅ Player shell — TopMenuTray slide-out during playback [PS1]
    ✅ Player shell — Desktop curtain footer hole [PLAYER-CONTROLS-PERSISTENT-SHELL-001]
+   ✅ Player shell — Narrow-portrait curtain stacking [PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001]
 
    ❌ NOT in this file:
         - TopMenuTray chrome     → future maestro.css (fixed dark surface)
@@ -390,6 +391,45 @@ body {
     background-attachment: fixed !important;
     background-position: 0 0, 100% 0 !important;
     background-size: 100% calc(100vh - 75px), 0.9375rem 100% !important;
+  }
+}
+
+
+/* ============================================================================
+   PLAYER CURTAIN NARROW-PORTRAIT STACKING   [PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001]
+   ============================================================================
+   A narrow portrait correction only. On phones the bottom control tray (MaestroControlPanel's
+   mobile bar, [data-maestro-control-panel]) sits inside page.tsx's <footer>, a fixed z-50
+   layer, so the whole tray ranks at z-50 in the root stacking context. The score-reveal
+   curtain ([data-maestro-curtain], inline z-index 5000) is in that same context, so wherever
+   its box reaches the tray the curtain paints over it. The Desktop rule above is inert on
+   phones (width below 650px, coarse pointer), and its fixed-attachment repaint is deliberately
+   not reused: it would need the tray footprint, the safe-area padding and the live viewport
+   height as paint constants, none of which is established for a physical iPhone.
+
+   Within the condition below the curtain is instead ranked at 49: still above the layers it
+   exists to hide (the score layer at 10; the loading spinner and the docked video panels at
+   z-40) and just beneath the page's z-50 layers (footer and tray, header, mobile tools
+   slide-out) and its dialogs (z-109 and z-110). The curtain keeps its box, fill, display
+   toggling and pointer-events; only its rank changes. The rank is an inline style, so the
+   override needs !important. No tray dimension is hard-coded, so this depends less on the
+   tray's measured size, its safe-area padding and the live viewport height; that does not
+   establish that the tray is positioned or rendered correctly on an iPhone.
+
+   Layers that now paint above the curtain while it is displayed, and so appear over its
+   fill: the header, the footer and its tray, the slide-out's edge tab and drawer, and any
+   open dialog or panel. Not addressed here: layouts at or above 650px with a coarse pointer
+   (tablets), mobile landscape (the class below is omitted there, so the curtain keeps 5000,
+   above the body-mounted landscape cursor at 4000) and rotation.
+
+   Condition: the exact complement of min-width:650px, the query that hides the mobile tray
+   (MaestroControlPanel.tsx), so no fractional-width gap opens at the boundary; plus
+   .maestro-curtain-band, which page.tsx omits in mobile landscape. A change to the z-50
+   layers above, or to the z-40 elements this must stay above, has to revisit the 49.
+   ============================================================================ */
+@media not all and (min-width: 650px) {
+  .maestro-curtain-band > [data-maestro-curtain] {
+    z-index: 49 !important;
   }
 }
 

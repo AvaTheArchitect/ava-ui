@@ -2,9 +2,17 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.48-CURTAINHOOKDOC001
- * Date: October 20th, 2026
+ * Current version: V145.49-CURTAINHOOKDOC002
+ * Date: October 25th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001 — Hook and z-index comments only (V145.49).
+ * ✅ The curtain's inline z-index 5000 is its default rank. Below 650px, where page.tsx sets .maestro-curtain-band
+ *        (portrait), globals.css overrides it to 49 so the z-50 mobile tray stays exposed; at 650px and wider, and in
+ *        mobile landscape, it stays 5000. The V129 landscape-cursor lock below is untouched in landscape; the
+ *        landscape-to-portrait transition is not evidenced.
+ * 🚫 No logic change: curtain box, timing (every showCurtain/hideCurtainAtomic call site), classes, display, the
+ *        loading layer, cursor lifecycle, API disposal, setApi(null) and readiness are unchanged.
  *
  * PLAYER-CONTROLS-PERSISTENT-SHELL-001 — Static hook and fill colour on the reveal curtain (V145.47).
  * ✅ The curtain element carries a data-maestro-curtain attribute and an inline color equal to its fill, so
@@ -963,6 +971,9 @@
  *     showCurtain(curtainRef.current) before cursor teardown/render flip. Prevents
  *     body-mounted landscape cursor from visibly sliding/floating above the score
  *     while AlphaTab switches between HorizontalScreen and PageView. Do not remove.
+ *     [PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001] The 5000 holds except below 650px in portrait, where globals.css
+ *     ranks the curtain at 49 (under the z-50 mobile tray, hence under this cursor). The cursor exists only in strip
+ *     (landscape) mode; whether it can still be on screen during a landscape-to-portrait flip is not evidenced.
  *
  * V128 LOCKS (rotation intentional tick anchor):
  * ✅ [RotationIntentionalTickAnchor] Durable last-intentional cursor tick.
@@ -10360,8 +10371,10 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 </div>
             )}
 
-            {/* [PLAYER-CONTROLS-PERSISTENT-SHELL-001] data-maestro-curtain is the hook for globals.css's Desktop
-                footer-hole rule; color mirrors the fill so that rule can repaint it with currentColor. */}
+            {/* [PLAYER-CONTROLS-PERSISTENT-SHELL-001 / PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001] data-maestro-curtain is the
+                hook for two globals.css rules. Desktop footer hole: color mirrors the fill so the rule can repaint it with
+                currentColor. Narrow portrait (below 650px): the rule overrides the inline zIndex 5000 below with 49, so the
+                z-50 mobile tray paints above the curtain; 5000 stays the rank at 650px and wider and in mobile landscape. */}
             <div ref={curtainRef} data-maestro-curtain className="absolute inset-0 pointer-events-none"
                 style={{ background: bgColor, color: bgColor, display: 'block', zIndex: 5000 }} />
 

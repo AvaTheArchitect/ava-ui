@@ -1,20 +1,25 @@
 /**
- * Maestro.ai — Opt-in regression gate for the Desktop curtain footer hole (held-404 paint acceptance, negative controls, successful-load structural sampling)
- * Version: V1.0.1
- * Date: October 20, 2026
- * Ticket: PLAYER-CONTROLS-PERSISTENT-SHELL-001
+ * Maestro.ai — Opt-in regression gate for the Desktop curtain footer hole and the narrow-portrait curtain stacking (held-404 paint acceptance, rule-state controls, successful-load structural sampling)
+ * Version: V1.0.2
+ * Date: October 25, 2026
+ * Ticket: PLAYER-CONTROLS-PERSISTENT-SHELL-001; PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001
  *
  * Scope: /synth-player loaded with the unchanged bundled fixture through the existing test-side simulated transport
  * (helpers/fixtureBackend.ts). It checks the CSS-only footer-hole rule (globals.css, hook [data-maestro-curtain] plus the
  * .maestro-curtain-band class set by page.tsx) against the REAL app: on Desktop the curtain keeps its box but must leave the
- * TransportBar footprint unpainted. This file imports helpers/chromeObserver.ts (the test-owned observer and its
+ * TransportBar footprint unpainted. It also checks the narrow-portrait stacking rule in the same stylesheet: below 650px the
+ * curtain keeps its box and fill but ranks at 49, beneath the z-50 mobile bar (PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001; a
+ * narrow portrait correction, not a statement about wider coarse-pointer layouts or rotation). N1 and N2 establish TRAY EXPOSURE
+ * ONLY: that the bar's footprint paints above the curtain, and that the curtain paints over it without the rule. They say nothing
+ * about score or cursor concealment, about the other layers that rank above the curtain, or about a physical iPhone. This file
+ * imports helpers/chromeObserver.ts (the test-owned observer and its
  * classification) read-only and leaves its independent checks (transport removal, replacement, hiding, off-screen
  * movement, document identity) untouched; L1 re-asserts those same findings over its observation window. That observer
  * was first written for the exploratory tests/e2e/chrome-occlusion.e2e.ts investigation spec, which is not part of this
  * change and is neither imported nor required here (historical provenance only).
  *
  * THREE EVIDENCE CLASSES, kept apart and never merged or used to upgrade one another
- *   1. HELD-404 PAINT ACCEPTANCE (P1, P2, N1, N2). The deliberate-404 state holds the curtain displayed over a loaded shell, so
+ *   1. HELD-404 PAINT ACCEPTANCE (P1, P2; N1 and N2 under the narrower claim CLAIM_PHONE_TRAY_EXPOSURE). The deliberate-404 state holds the curtain displayed over a loaded shell, so
  *      one stable page yields every capture. Supports painted-pixel claims in that state only. It is not a successful load.
  *   2. SUCCESSFUL-LOAD STRUCTURAL SAMPLING (L1). Frame-sampled computed style of the curtain plus the existing observer's
  *      transport and tray findings, over a time-based window. No pixel is captured. It is not paint proof and not continuous.
@@ -29,9 +34,11 @@
  *            observation-endpoint judgement, and the real sampler source run in an isolated vm context on scripted timelines.
  *   P1       Desktop 1280x720, held 404: PARTIAL overlap (curtain box 80..680 over a footer at 645..720).
  *   P2       Desktop 1280x640, held 404: FULL overlap (the whole footer lies inside the curtain box).
- *   N1       Desktop project at 649x720 (pointer still fine): below the 650px breakpoint, so the rule must be inactive.
+ *   N1       Desktop project at 649x720 (pointer still fine): below the 650px breakpoint, so the Desktop rule must be inactive and
+ *            the phone stacking rule active (curtain rank 49); the mobile bar footprint is judged exposed (PARTIAL overlap).
  *   L1       Desktop 1280x720, SUCCESSFUL load, time-based observation window (policy below).
- *   N2       Mobile emulation project (Pixel 7, coarse pointer, touch): the rule must be inactive.
+ *   N2       Mobile emulation project (Pixel 7, coarse pointer, touch) at 412x700: the Desktop rule must be inactive and the phone
+ *            stacking rule active; the same exposed-footprint judgement (PARTIAL overlap).
  * No rotation case, no playback, no authentication, no real backend, no storage seeding.
  *
  * L1 OBSERVATION POLICY (page clock, performance.now() read at the start of each requestAnimationFrame callback)
@@ -62,13 +69,19 @@
  * PAINT CASE MECHANISM. Captures per case (viewport PNGs, scale css, animations disabled, caret hidden, the Next dev indicator
  * hidden for the capture only):
  *   rule       the page as it is.
- *   old        P1 and P2 only: the .maestro-curtain-band class is removed from the renderer root (an intervention) so the
- *              curtain paints its whole box as it did before the rule. POSITIVE CONTROL: proves the evaluator can see a covered
- *              footer in this very page. If the intervention has no effect the case is INVALID CAPTURE.
+ *   old        P1, P2, N1 and N2: the .maestro-curtain-band class is removed from the renderer root (an intervention) so the
+ *              curtain is as it was before the rules: on P1 and P2 it paints its whole box, on N1 and N2 it ranks 5000 and covers
+ *              the mobile bar. POSITIVE CONTROL: proves the evaluator can see a covered footer or bar in this very page. If the
+ *              intervention has no effect (background-image not none on P1 and P2, z-index not 5000 on N1 and N2) the case is
+ *              INVALID CAPTURE.
  *   reference  the curtain's inline display is set to none (what hideCurtainAtomic does).
  * Every intervention runs inside its own try/finally that restores the prior state even when a step throws, records whether the
  * restoration took, and the final probed state must equal the initial one. Cross-evaluation controls run on the same images:
- * the rule capture judged by the 'old' model must FAIL and the old capture judged by the 'hole' model must FAIL.
+ * on P1 and P2 the rule capture judged by the 'old' model must FAIL and the old capture judged by the 'hole' model must FAIL; on
+ * N1 and N2 the rule capture judged by the 'covered' model must FAIL and the old capture judged by the 'stack' model must FAIL.
+ * The phone cases (N1, N2) judge ONLY the mobile bar footprint (helpers/paintEvidence.ts, models 'stack' and 'covered'): shell
+ * layers that rank above the curtain by design (the header, the slide-out and its edge tab) also paint inside the curtain box,
+ * so the whole-box model of P1 and P2 does not apply to them.
  *
  * VIEWPORT AND SCREENSHOT VALIDITY. Screenshots use scale 'css', so a PNG must have exactly the CONFIGURED viewport's size
  * (page.viewportSize()). window.innerWidth/innerHeight must equal the configured viewport. Any disagreement is reported as an
@@ -81,10 +94,10 @@
  * initial or final state read) is itself a validity issue: two failed reads are never accepted as evidence that the loading
  * state was stable.
  *
- * What fails a case: a failed precondition (build lacks the hook or rule, media state or overlap kind differs from the case), a
- * validity issue, a FAIL or INVALID CAPTURE verdict, an incomplete observation endpoint, an unexpected request, or a page or
- * fatal console error. PARTIAL is reported and passes only for N1 and N2 (their painted check may have no pixel in the zone an
- * active rule would leave unpainted); for P1 and P2 PARTIAL fails the case.
+ * What fails a case: a failed precondition (build lacks the hook or either rule, media state, curtain rank or overlap kind differs
+ * from the case), a validity issue, a FAIL or INVALID CAPTURE verdict, an incomplete observation endpoint, an unexpected request,
+ * or a page or fatal console error. PARTIAL fails every held-404 case here: each of P1, P2, N1 and N2 carries a painted claim (a
+ * case with neither rule active, none today, would be the only kind to accept PARTIAL).
  *
  * Opt-in flag (default run: every test here is skipped, nothing is installed, captured or written):
  *   E2E_FOOTERHOLE=1   run this file. Unset, empty or 0 = off; any other value fails the load.
@@ -104,7 +117,10 @@
  * (measured per run), so the overlay-scrollbar branch of the rule (gutter 0) is NOT exercised in the real app; the fixture's
  * curtain root is its 600px min-height, not a real song's thousands of pixels (the rule's layers are viewport-fixed, so the
  * footer geometry is the same, which is INFERRED); no Safari, WebKit or Firefox; no physical device or installed PWA; a
- * coarse-pointer viewport at or above 650px is not covered. Browser behaviour of everything here is NOT RUN when this file is written.
+ * coarse-pointer viewport at or above 650px is not covered (neither rule applies there), nor are rotation and mobile landscape.
+ * The phone cases judge the mobile bar footprint only: other pixels inside the curtain box are not judged, and score coverage
+ * under the narrow-portrait rank is not evidenced by this file (the held 404 loads no score). That the tray is positioned and
+ * rendered correctly on an iPhone is not evidenced either. Browser behaviour of everything here is NOT RUN when this file is written.
  */
 
 import { createHash } from 'crypto';
@@ -171,8 +187,13 @@ const MOBILE_PROJECT = 'chromium-mobile-emulation';
 const OUTPUT_JSON_LABEL = '[FOOTER-HOLE-JSON]';
 const CLASSIFIED_404_PATTERN = /loadGuitarProFile: HTTP 404/;
 
-/** The rule's documented activation condition (globals.css, V1.0.1). */
+/** The Desktop footer-hole rule's documented activation condition (globals.css). */
 const RULE_MEDIA_QUERY = '(min-width: 650px) and (pointer: fine)';
+/** The narrow-portrait stacking rule's activation condition (globals.css): the exact complement of the 650px query that hides the mobile bar. */
+const PHONE_RULE_MEDIA_QUERY = 'not all and (min-width: 650px)';
+/** The curtain's computed z-index: its inline rank, and the rank the phone stacking rule sets. */
+const DEFAULT_CURTAIN_Z_INDEX = '5000';
+const PHONE_CURTAIN_Z_INDEX = '49';
 const BAND_CLASS = 'maestro-curtain-band';
 const CURTAIN_SELECTOR = '[data-maestro-curtain]';
 const HIDE_DEV_INDICATOR_CSS = 'nextjs-portal { display: none !important; }';
@@ -209,9 +230,9 @@ const footerHoleEnabled = readFlag('E2E_FOOTERHOLE');
 const TITLE_CONTROL = 'control: evaluator, viewport agreement, bracketing, finally-restoration, observation endpoint and sampler timelines discriminate';
 const TITLE_P1 = 'paint: P1 partial overlap, Desktop 1280x720, held 404';
 const TITLE_P2 = 'paint: P2 full overlap, Desktop 1280x640, held 404';
-const TITLE_N1 = 'negative: N1 below the 650px breakpoint, Desktop project at 649x720, held 404';
+const TITLE_N1 = 'phone: N1 below the 650px breakpoint, Desktop project at 649x720, Desktop rule inactive, mobile bar exposed, held 404';
 const TITLE_L1 = 'observe: L1 successful load, Desktop 1280x720, time-based window after the first curtain display';
-const TITLE_N2 = 'negative: N2 coarse pointer, mobile emulation project viewport, held 404';
+const TITLE_N2 = 'phone: N2 coarse pointer, mobile emulation project at 412x700, Desktop rule inactive, mobile bar exposed, held 404';
 
 // ── Evidence classes and standing disclosures (emitted with every result) ────────────────────────────
 
@@ -225,12 +246,31 @@ interface ClaimClass {
 const CLAIM_HELD_404_PAINT: ClaimClass = {
     class: 'held-404 paint acceptance',
     state: 'deliberate 404: the curtain stays displayed over a loaded shell; this is not a successful load',
-    supports: ['painted pixels of the real app in the held state: footer footprint exposed and the rest of the curtain box painted where the rule is active, whole box painted where it is inactive, within the stated scope'],
+    supports: ['painted pixels of the real app in the held state: footer footprint exposed and the rest of the curtain box painted where the Desktop rule is active (P1, P2), within the stated scope'],
     doesNotSupport: [
         'any claim about a successful load or the reveal',
         'continuous persistence over time',
         'Safari, WebKit, Firefox, a physical device or an installed PWA',
         'geometric overlap as a defect',
+    ],
+};
+
+/** The claim of the phone cases (N1, N2): tray exposure and nothing else. Emitted instead of CLAIM_HELD_404_PAINT for them. */
+const CLAIM_PHONE_TRAY_EXPOSURE: ClaimClass = {
+    class: 'phone tray exposure (held 404)',
+    state: 'deliberate 404: the curtain stays displayed over a loaded shell at a phone width; no score is loaded and this is not a successful load',
+    supports: [
+        'the mobile bar footprint (inset 2px) paints above the curtain where the narrow-portrait stacking rule is active, and the curtain paints over it when that rule is removed',
+        'the Desktop footer-hole rule is inactive at these widths (computed style and media state)',
+    ],
+    doesNotSupport: [
+        'tray exposure beyond the judged footprint: no other pixel inside the curtain box is judged',
+        'score or cursor concealment while the curtain is displayed (the held 404 loads no score)',
+        'the other layers that rank above the curtain under the rule (header, slide-out and its edge tab, dialogs)',
+        'the tray safe-area padding, its positioning or its rendering on a physical iPhone',
+        'landscape, rotation, or coarse-pointer layouts at or above 650px',
+        'any claim about a successful load or the reveal, or continuous persistence over time',
+        'Safari, WebKit, Firefox, a physical device or an installed PWA',
     ],
 };
 
@@ -323,6 +363,7 @@ interface ProbeArgs {
     curtainSelector: string;
     chrome: Array<{ key: ChromeKey; selector: string }>;
     ruleQuery: string;
+    phoneRuleQuery: string;
     bandClass: string;
     mainSelector: string;
     rectScale: number;
@@ -370,12 +411,16 @@ interface PaintProbe {
     devicePixelRatio: number;
     rootFontPx: number;
     ruleMediaMatches: boolean;
+    phoneRuleMediaMatches: boolean;
     pointerFine: boolean;
     pointerCoarse: boolean;
     curtainCount: number;
     curtain: ProbeCurtain | null;
     chrome: ChromeEntry[];
+    /** The Desktop footer-hole rule: the rule on the shared selector that declares a background property. */
     ruleInStylesheets: { found: boolean; mediaCondition: string | null };
+    /** The phone stacking rule: the rule on the shared selector that declares z-index. Reported separately, so it can never replace the Desktop rule here. */
+    phoneRuleInStylesheets: { found: boolean; mediaCondition: string | null };
     mainScrollTop: number | null;
     documentScrollTop: number;
 }
@@ -427,17 +472,34 @@ function probeInPage(a: ProbeArgs): PaintProbe {
         return { key: item.key, selector: item.selector, count: 1, rect: rectOf(found[0]), display: style.display, visibility: style.visibility, opacity: style.opacity };
     });
 
-    // The rule is looked up by selector text anywhere in the loaded stylesheets, so a media-query rewrite by the build
-    // pipeline cannot hide it; the enclosing media condition is reported as found.
+    // The rules are looked up by selector text anywhere in the loaded stylesheets, so a media-query rewrite by the build
+    // pipeline cannot hide them; the enclosing media condition is reported as found. The Desktop rule and the phone rule share
+    // one selector, so each is told apart by the declaration it exists for (the Desktop rule declares background properties, the
+    // phone rule declares z-index) and each keeps its own enclosing media condition: neither can replace the other in what is
+    // reported, whatever their order in the stylesheet.
     let found = false;
     let mediaCondition: string | null = null;
+    let phoneFound = false;
+    let phoneMediaCondition: string | null = null;
+    const declares = (style: CSSStyleDeclaration, prefix: string): boolean => {
+        for (let j = 0; j < style.length; j += 1) {
+            if (style[j].indexOf(prefix) === 0) return true;
+        }
+        return false;
+    };
     const scan = (rules: CSSRuleList, enclosing: string | null): void => {
         for (let i = 0; i < rules.length; i += 1) {
-            const rule = rules[i] as CSSRule & { cssRules?: CSSRuleList; selectorText?: string; conditionText?: string; media?: MediaList };
-            if (typeof rule.selectorText === 'string') {
+            const rule = rules[i] as CSSRule & { cssRules?: CSSRuleList; selectorText?: string; conditionText?: string; media?: MediaList; style?: CSSStyleDeclaration };
+            if (typeof rule.selectorText === 'string' && rule.style !== undefined) {
                 if (rule.selectorText.indexOf('maestro-curtain-band') >= 0 && rule.selectorText.indexOf('data-maestro-curtain') >= 0) {
-                    found = true;
-                    mediaCondition = enclosing;
+                    if (declares(rule.style, 'background')) {
+                        found = true;
+                        mediaCondition = enclosing;
+                    }
+                    if (declares(rule.style, 'z-index')) {
+                        phoneFound = true;
+                        phoneMediaCondition = enclosing;
+                    }
                 }
             }
             if (rule.cssRules !== undefined) {
@@ -462,12 +524,14 @@ function probeInPage(a: ProbeArgs): PaintProbe {
         devicePixelRatio: window.devicePixelRatio,
         rootFontPx: parseFloat(window.getComputedStyle(document.documentElement).fontSize),
         ruleMediaMatches: window.matchMedia(a.ruleQuery).matches,
+        phoneRuleMediaMatches: window.matchMedia(a.phoneRuleQuery).matches,
         pointerFine: window.matchMedia('(pointer: fine)').matches,
         pointerCoarse: window.matchMedia('(pointer: coarse)').matches,
         curtainCount: curtains.length,
         curtain,
         chrome,
         ruleInStylesheets: { found, mediaCondition },
+        phoneRuleInStylesheets: { found: phoneFound, mediaCondition: phoneMediaCondition },
         mainScrollTop: main === null ? null : main.scrollTop,
         documentScrollTop: scrolling === null ? 0 : scrolling.scrollTop,
     };
@@ -485,6 +549,7 @@ function buildProbeArgs(): ProbeArgs {
         curtainSelector: CURTAIN_SELECTOR,
         chrome: CHROME_PROBE_TARGETS,
         ruleQuery: RULE_MEDIA_QUERY,
+        phoneRuleQuery: PHONE_RULE_MEDIA_QUERY,
         bandClass: BAND_CLASS,
         mainSelector: selectorOf('main'),
         rectScale: RECT_SCALE,
@@ -525,6 +590,7 @@ function flattenProbe(probe: PaintProbe, load: LoadFailureState | null): Record<
     put('viewport.devicePixelRatio', probe.devicePixelRatio);
     put('viewport.rootFontPx', probe.rootFontPx);
     put('media.ruleMatches', probe.ruleMediaMatches);
+    put('media.phoneRuleMatches', probe.phoneRuleMediaMatches);
     put('curtain.count', probe.curtainCount);
     if (probe.curtain === null) {
         put('curtain', null);
@@ -713,17 +779,21 @@ interface PaintCaseSpec {
     id: 'P1' | 'P2' | 'N1' | 'N2';
     title: string;
     project: string;
-    /** Null keeps the project's own viewport (N2). */
+    /** Null keeps the project's own viewport (no case does now). */
     viewport: { width: number; height: number } | null;
+    /** The Desktop footer-hole rule: active (P1, P2) or inactive (N1, N2). */
     expectation: 'rule-active' | 'rule-inactive';
-    /** Required geometric relation of the curtain box to the footer footprint: an applicability precondition, never a failure criterion. */
+    /** The narrow-portrait stacking rule: active (N1, N2: curtain rank 49, mobile bar footprint judged) or inactive (P1, P2: rank 5000). */
+    phoneRule: 'active' | 'inactive';
+    /** Required geometric relation of the curtain box to the judged footprint (the transport bar, or the mobile bar when the phone rule is active): an applicability precondition, never a failure criterion. */
     overlap: OverlapKind | null;
 }
 
-const CASE_P1: PaintCaseSpec = { id: 'P1', title: TITLE_P1, project: DESKTOP_PROJECT, viewport: { width: 1280, height: 720 }, expectation: 'rule-active', overlap: 'partial' };
-const CASE_P2: PaintCaseSpec = { id: 'P2', title: TITLE_P2, project: DESKTOP_PROJECT, viewport: { width: 1280, height: 640 }, expectation: 'rule-active', overlap: 'full' };
-const CASE_N1: PaintCaseSpec = { id: 'N1', title: TITLE_N1, project: DESKTOP_PROJECT, viewport: { width: 649, height: 720 }, expectation: 'rule-inactive', overlap: null };
-const CASE_N2: PaintCaseSpec = { id: 'N2', title: TITLE_N2, project: MOBILE_PROJECT, viewport: null, expectation: 'rule-inactive', overlap: null };
+const CASE_P1: PaintCaseSpec = { id: 'P1', title: TITLE_P1, project: DESKTOP_PROJECT, viewport: { width: 1280, height: 720 }, expectation: 'rule-active', phoneRule: 'inactive', overlap: 'partial' };
+const CASE_P2: PaintCaseSpec = { id: 'P2', title: TITLE_P2, project: DESKTOP_PROJECT, viewport: { width: 1280, height: 640 }, expectation: 'rule-active', phoneRule: 'inactive', overlap: 'full' };
+const CASE_N1: PaintCaseSpec = { id: 'N1', title: TITLE_N1, project: DESKTOP_PROJECT, viewport: { width: 649, height: 720 }, expectation: 'rule-inactive', phoneRule: 'active', overlap: 'partial' };
+// 412 is the Pixel 7 preset width; 700 is chosen so that the 600px fixture curtain (box 80..680) overlaps the 81px mobile bar (619..700).
+const CASE_N2: PaintCaseSpec = { id: 'N2', title: TITLE_N2, project: MOBILE_PROJECT, viewport: { width: 412, height: 700 }, expectation: 'rule-inactive', phoneRule: 'active', overlap: 'partial' };
 
 type CaptureName = 'rule' | 'old' | 'reference';
 
@@ -802,11 +872,20 @@ function preconditionViolations(spec: PaintCaseSpec, probe: PaintProbe): string[
     }
     const curtain = probe.curtain;
     const transport = chromeEntry(probe, 'transportBar');
-    if (!probe.ruleInStylesheets.found) violations.push('no loaded stylesheet holds a rule for .maestro-curtain-band > [data-maestro-curtain] (the served build may predate the rule)');
+    const mobileBar = chromeEntry(probe, 'mobileBar');
+    const phone = spec.phoneRule === 'active';
+    if (!probe.ruleInStylesheets.found) violations.push('no loaded stylesheet holds the Desktop footer-hole rule for .maestro-curtain-band > [data-maestro-curtain] (a rule declaring a background property; the served build may predate it)');
+    if (!probe.phoneRuleInStylesheets.found) violations.push('no loaded stylesheet holds the phone stacking rule for .maestro-curtain-band > [data-maestro-curtain] (a rule declaring z-index; the served build may predate it)');
     if (!curtain.parentHasBandClass) violations.push(`the renderer root lacks the ${BAND_CLASS} class (the served build may predate page.tsx's className)`);
     if (curtain.display !== 'block' || curtain.visibility !== 'visible' || !(parseFloat(curtain.opacity) > 0)) violations.push('the curtain is not displayed by computed style');
-    if (curtain.position !== 'absolute' || curtain.zIndex !== '5000' || curtain.pointerEvents !== 'none') {
-        violations.push(`the curtain position/z-index/pointer-events are ${curtain.position}/${curtain.zIndex}/${curtain.pointerEvents}, expected absolute/5000/none`);
+    const expectedZIndex = phone ? PHONE_CURTAIN_Z_INDEX : DEFAULT_CURTAIN_Z_INDEX;
+    if (curtain.position !== 'absolute' || curtain.zIndex !== expectedZIndex || curtain.pointerEvents !== 'none') {
+        violations.push(
+            `the curtain position/z-index/pointer-events are ${curtain.position}/${curtain.zIndex}/${curtain.pointerEvents}, expected absolute/${expectedZIndex}/none (the phone stacking rule is ${phone ? 'active' : 'inactive'} in this case)`,
+        );
+    }
+    if (probe.phoneRuleMediaMatches !== phone) {
+        violations.push(`matchMedia('${PHONE_RULE_MEDIA_QUERY}') is ${probe.phoneRuleMediaMatches}, but this case requires it to be ${phone}`);
     }
     const fill = parseOpaqueRgb(curtain.inlineBackgroundColor);
     if (fill === null) violations.push(`the curtain inline background colour "${curtain.inlineBackgroundColor}" is not an opaque rgb value`);
@@ -837,6 +916,16 @@ function preconditionViolations(spec: PaintCaseSpec, probe: PaintProbe): string[
         if (fill !== null && (computed === null || fill.join(',') !== computed.join(','))) {
             violations.push(`the curtain background-color "${curtain.backgroundColor}" differs from its inline fill "${curtain.inlineBackgroundColor}" (rule inactive means the fill is untouched)`);
         }
+        if (phone) {
+            if (!entryDisplayed(mobileBar) || mobileBar.rect === null) {
+                violations.push('the mobile control bar is not exactly one displayed element');
+            } else if (spec.overlap !== null) {
+                const kind = overlapKind(curtain.rect, mobileBar.rect);
+                if (kind !== spec.overlap) {
+                    violations.push(`the curtain box overlaps the mobile bar footprint as '${kind}', but this case is only applicable to '${spec.overlap}' (an applicability precondition, not a paint failure)`);
+                }
+            }
+        }
     }
     return violations;
 }
@@ -857,6 +946,12 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
     const repoRoot = resolveRepoRoot(testInfo.config);
     const tracker = trackErrors(page);
     const stages: StageRecord[] = [];
+    /** The phone stacking rule is active in this case: the judged footprint is the mobile bar and the models are 'stack' and 'covered'. */
+    const phone = spec.phoneRule === 'active';
+    const ruleModel: PaintVariant = phone ? 'stack' : 'hole';
+    const oldModel: PaintVariant = phone ? 'covered' : 'old';
+    /** A case with a rule under test also takes the old-behaviour capture (class removed) as its positive control. */
+    const reverts = spec.expectation === 'rule-active' || phone;
     if (spec.viewport !== null) await page.setViewportSize(spec.viewport);
     const configured = page.viewportSize();
     await installDocStartObserver(context);
@@ -918,13 +1013,16 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
         if (preconditions.length === 0 && initialAgreement.ok && initialLoad.state !== null && initial.curtain !== null && configured !== null) {
             const fill = parseOpaqueRgb(initial.curtain.inlineBackgroundColor) as Rgb;
             const transport = chromeEntry(initial, 'transportBar');
+            const mobileBar = chromeEntry(initial, 'mobileBar');
             const chromeRects = initial.chrome.filter((entry) => entryDisplayed(entry)).map((entry) => toRect(entry.rect as ProbeRect));
             const baseInput: Omit<PaintInput, 'variant'> = {
                 viewport: { width: configured.width, height: configured.height },
                 box: toRect(initial.curtain.rect),
-                footer: spec.expectation === 'rule-active' && transport.rect !== null ? toRect(transport.rect) : null,
-                // Negative controls claim nothing about chrome pixels: displayed chrome is counted and left out.
-                ignore: spec.expectation === 'rule-inactive' ? chromeRects : [],
+                // The judged footprint: the Desktop transport bar when the Desktop rule is active, the mobile bar when the phone rule is.
+                footer: spec.expectation === 'rule-active' && transport.rect !== null ? toRect(transport.rect) : phone && mobileBar.rect !== null ? toRect(mobileBar.rect) : null,
+                // A case with neither rule claims nothing about chrome pixels: displayed chrome is counted and left out. The phone
+                // cases judge only the bar footprint, so nothing is left out there.
+                ignore: spec.expectation === 'rule-inactive' && !phone ? chromeRects : [],
                 fill,
                 rootFontPx: initial.rootFontPx,
             };
@@ -932,11 +1030,11 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
             const ruleShot = noteCapture(await captureWithBracket(page, testInfo, spec, 'rule', configured, deadline));
 
             let oldShot: CapturedImage | null = null;
-            if (spec.expectation === 'rule-active') {
+            if (reverts) {
                 oldShot = await withIntervention(bandClassRemoval(page), interventions, async (applied) => {
                     const now = await readProbe(page);
-                    if (!applied.ok || now.curtain === null || now.curtain.parentHasBandClass || now.curtain.backgroundImage !== 'none') {
-                        invalidate('the old-behaviour intervention did not take effect (class still present or background-image not none): the positive control is unavailable');
+                    if (!applied.ok || now.curtain === null || now.curtain.parentHasBandClass || (phone ? now.curtain.zIndex !== DEFAULT_CURTAIN_Z_INDEX : now.curtain.backgroundImage !== 'none')) {
+                        invalidate(`the old-behaviour intervention did not take effect (class still present or ${phone ? 'z-index not 5000' : 'background-image not none'}): the positive control is unavailable`);
                         return null;
                     }
                     return noteCapture(await captureWithBracket(page, testInfo, spec, 'old', configured, deadline));
@@ -964,12 +1062,12 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
             if (finalBracket.differences.length > 0) invalidate(`the final probed state differs from the initial one after the restorations: ${finalBracket.differences.join('; ')}`);
 
             if (invalidating.length === 0 && referenceShot !== null) {
-                const variantForRule: PaintVariant = spec.expectation === 'rule-active' ? 'hole' : 'old';
+                const variantForRule: PaintVariant = reverts ? ruleModel : 'old';
                 evaluation = { rule: evaluatePaint({ ...baseInput, variant: variantForRule }, ruleShot.png, referenceShot.png), old: null, crossRuleAsOld: null, crossOldAsHole: null };
-                if (spec.expectation === 'rule-active' && oldShot !== null) {
-                    evaluation.old = evaluatePaint({ ...baseInput, variant: 'old' }, oldShot.png, referenceShot.png);
-                    evaluation.crossRuleAsOld = evaluatePaint({ ...baseInput, variant: 'old' }, ruleShot.png, referenceShot.png);
-                    evaluation.crossOldAsHole = evaluatePaint({ ...baseInput, variant: 'hole' }, oldShot.png, referenceShot.png);
+                if (reverts && oldShot !== null) {
+                    evaluation.old = evaluatePaint({ ...baseInput, variant: oldModel }, oldShot.png, referenceShot.png);
+                    evaluation.crossRuleAsOld = evaluatePaint({ ...baseInput, variant: oldModel }, ruleShot.png, referenceShot.png);
+                    evaluation.crossOldAsHole = evaluatePaint({ ...baseInput, variant: ruleModel }, oldShot.png, referenceShot.png);
                 }
             }
         }
@@ -992,22 +1090,22 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
         for (const item of [evaluation.rule, evaluation.old, evaluation.crossRuleAsOld, evaluation.crossOldAsHole]) {
             if (item !== null) reasons.push(...item.invalidReasons, ...item.failReasons, ...item.partialReasons);
         }
-        if (spec.expectation === 'rule-active') {
+        if (reverts) {
             // The positive control and the cross-evaluations must behave as modelled, or the check cannot be trusted.
             if (evaluation.old === null) {
                 verdict = worseVerdict(verdict, 'INVALID CAPTURE');
                 reasons.push('the old-behaviour capture is missing');
             } else if (evaluation.old.verdict !== 'PASS') {
                 verdict = worseVerdict(verdict, 'INVALID CAPTURE');
-                reasons.push(`positive control: the old-behaviour capture did not match the 'old' model (${evaluation.old.verdict}); the evaluator cannot be trusted on this page`);
+                reasons.push(`positive control: the old-behaviour capture did not match the '${oldModel}' model (${evaluation.old.verdict}); the evaluator cannot be trusted on this page`);
             }
             if (evaluation.crossRuleAsOld !== null && evaluation.crossRuleAsOld.verdict !== 'FAIL') {
                 verdict = worseVerdict(verdict, 'INVALID CAPTURE');
-                reasons.push(`negative control: the rule capture judged by the 'old' model was ${evaluation.crossRuleAsOld.verdict}, expected FAIL`);
+                reasons.push(`negative control: the rule capture judged by the '${oldModel}' model was ${evaluation.crossRuleAsOld.verdict}, expected FAIL`);
             }
             if (evaluation.crossOldAsHole !== null && evaluation.crossOldAsHole.verdict !== 'FAIL') {
                 verdict = worseVerdict(verdict, 'INVALID CAPTURE');
-                reasons.push(`negative control: the old capture judged by the 'hole' model was ${evaluation.crossOldAsHole.verdict}, expected FAIL`);
+                reasons.push(`negative control: the old capture judged by the '${ruleModel}' model was ${evaluation.crossOldAsHole.verdict}, expected FAIL`);
             }
         }
     } else if (invalidating.length === 0) {
@@ -1022,11 +1120,12 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
             title: spec.title,
             project: testInfo.project.name,
             browserVersion: browser === null ? null : browser.version(),
-            evidenceClass: CLAIM_HELD_404_PAINT,
+            evidenceClass: phone ? CLAIM_PHONE_TRAY_EXPOSURE : CLAIM_HELD_404_PAINT,
             liveObservationNote: LIVE_OBSERVATION_NOTE,
             geometryNote: GEOMETRY_NOTE,
             bracketLimit: BRACKET_LIMIT,
             expectation: spec.expectation,
+            phoneRule: spec.phoneRule,
             applicableOverlap: spec.overlap,
             configuredViewport: configured,
             fixtureMode: 'not-found',
@@ -1049,8 +1148,8 @@ async function runPaintCase(page: Page, context: BrowserContext, testInfo: TestI
     expect(flowError, `the case flow completed (${flowError ?? 'no error'})`).toBeNull();
     expect(preconditions, 'the page state meets the case preconditions').toEqual([]);
     expect(invalidating, 'INVALID CAPTURE: explicit validity issues (viewport, screenshot size, bracketing, interventions)').toEqual([]);
-    if (spec.expectation === 'rule-active') {
-        expect(verdict, `${spec.id} painted verdict (must be PASS; PARTIAL does not pass an active-rule case): ${reasons.join(' | ')}`).toBe('PASS');
+    if (reverts) {
+        expect(verdict, `${spec.id} painted verdict (must be PASS; PARTIAL does not pass a case with an active rule): ${reasons.join(' | ')}`).toBe('PASS');
     } else {
         expect(['PASS', 'PARTIAL'], `${spec.id} painted verdict was ${verdict}: ${reasons.join(' | ')}`).toContain(verdict);
     }
@@ -1065,7 +1164,9 @@ const PAINT_LIMITS: readonly string[] = [
     "the fixture's curtain root is its 600px min-height; a real song's root is thousands of pixels, which is INFERRED to give the same footer geometry because the rule's layers are viewport-fixed",
     'captures use animations disabled, caret hidden and the Next dev indicator hidden for the capture only; the reference is made by setting the curtain inline display to none and restoring it',
     'PNG pixels are compared exactly outside a 2px margin around the curtain box and the right-column edge; no timing is measured',
-    'N1 and N2 prove the rule inactive by computed style and media state; their painted check may have no pixel in the zone an active rule would leave unpainted (reported as PARTIAL)',
+    'N1 and N2 prove the Desktop rule inactive and the phone stacking rule active by computed style and media state, and judge only the mobile bar footprint (inset 2px) by pixels, so they establish tray exposure only: other pixels inside the curtain box are not judged because shell layers that rank above the curtain by design also paint there (INFERRED from source, not measured)',
+    'score coverage under the phone rank is not evidenced here: the held 404 loads no score, so that the curtain still hides it follows only from the unchanged box and fill and a rank above the score layer (INFERRED)',
+    'that the mobile bar is positioned and rendered correctly on an iPhone, its safe-area padding included, is not evidenced; rotation, mobile landscape and coarse-pointer viewports at or above 650px are not covered',
     BRACKET_LIMIT,
     'a coarse-pointer viewport at or above 650px, rotation, zoom and device pixel ratio above 1 are not covered',
 ];
@@ -1528,7 +1629,15 @@ function sceneReference(pageBg: Rgb): Buffer {
     return buffer;
 }
 
-type SceneMode = 'rule' | 'old' | 'gap' | 'holeTooHigh' | 'wrongFill' | 'noCurtain';
+/** A shell layer above the curtain (an edge tab) and the bar's translucent top border composited over the curtain instead of the page. */
+const SHELL_TAB: Rgb = [249, 115, 22];
+const BORDER_OVER_FILL: Rgb = [200, 150, 255];
+
+/**
+ * 'rule' and 'old' also serve the phone stacking models, with the footer rows standing for the mobile bar: 'rule' paints the
+ * curtain beneath the bar (the footprint rows show the page), 'old' paints it over the bar. The last three modes exist only for those.
+ */
+type SceneMode = 'rule' | 'old' | 'gap' | 'holeTooHigh' | 'wrongFill' | 'noCurtain' | 'shellLayer' | 'borderRow' | 'footprintDefect';
 
 function sceneDisplayed(reference: Buffer, mode: SceneMode): Buffer {
     const out = Buffer.from(reference);
@@ -1537,6 +1646,9 @@ function sceneDisplayed(reference: Buffer, mode: SceneMode): Buffer {
     const paintedUntil = mode === 'old' ? 680 : mode === 'holeTooHigh' ? 635 : 645;
     paintRect(out, { x: 0, y: 80, width: 1265, height: paintedUntil - 80 }, fill);
     if (mode === 'gap') paintRect(out, { x: 0, y: 300, width: 1265, height: 40 }, PAGE_BG);
+    if (mode === 'shellLayer') paintRect(out, { x: 1240, y: 300, width: 12, height: 80 }, SHELL_TAB);
+    if (mode === 'borderRow') paintRect(out, { x: 0, y: 645, width: 1265, height: 1 }, BORDER_OVER_FILL);
+    if (mode === 'footprintDefect') paintRect(out, { x: 300, y: 650, width: 400, height: 3 }, [1, 2, 3]);
     return out;
 }
 
@@ -1575,6 +1687,7 @@ function makeControlProbe(mutate?: (probe: PaintProbe) => void): PaintProbe {
         devicePixelRatio: 1,
         rootFontPx: 16,
         ruleMediaMatches: true,
+        phoneRuleMediaMatches: false,
         pointerFine: true,
         pointerCoarse: false,
         curtainCount: 1,
@@ -1603,11 +1716,58 @@ function makeControlProbe(mutate?: (probe: PaintProbe) => void): PaintProbe {
             entry('mobileBar', '[data-maestro-control-panel]', null),
         ],
         ruleInStylesheets: { found: true, mediaCondition: '(min-width: 650px) and (pointer: fine)' },
+        phoneRuleInStylesheets: { found: true, mediaCondition: 'not all and (min-width: 650px)' },
         mainScrollTop: 0,
         documentScrollTop: 0,
     };
     if (mutate !== undefined) mutate(probe);
     return probe;
+}
+
+/** The same probe as a phone case sees it (N1's shape: 649x720, the Desktop rule off, the phone rule on, the mobile bar displayed). */
+function makePhoneControlProbe(mutate?: (probe: PaintProbe) => void): PaintProbe {
+    return makeControlProbe((probe) => {
+        probe.innerWidth = 649;
+        probe.ruleMediaMatches = false;
+        probe.phoneRuleMediaMatches = true;
+        if (probe.curtain !== null) {
+            probe.curtain.rect = { x: 0, y: 80, width: 634, height: 600 };
+            probe.curtain.zIndex = PHONE_CURTAIN_Z_INDEX;
+            probe.curtain.backgroundColor = 'rgb(255, 255, 255)';
+            probe.curtain.backgroundImage = 'none';
+            probe.curtain.backgroundAttachment = 'scroll';
+            probe.curtain.backgroundSize = 'auto';
+            probe.curtain.backgroundPosition = '0% 0%';
+        }
+        const transport = chromeEntry(probe, 'transportBar');
+        transport.rect = { x: 0, y: 0, width: 0, height: 0 };
+        const bar = chromeEntry(probe, 'mobileBar');
+        bar.count = 1;
+        bar.rect = { x: 0, y: 639, width: 634, height: 81 };
+        bar.display = 'block';
+        bar.visibility = 'visible';
+        bar.opacity = '1';
+        if (mutate !== undefined) mutate(probe);
+    });
+}
+
+/**
+ * Runs the REAL probeInPage source (the text Playwright serializes into the page) in an isolated vm context against scripted
+ * stylesheets. No browser is involved. Only the stylesheet scan is scripted; the curtain and the chrome resolve to nothing.
+ */
+function runProbeOverSheets(sheets: readonly unknown[]): PaintProbe {
+    const sandbox: Record<string, unknown> = {
+        document: { querySelectorAll: () => [], querySelector: () => null, styleSheets: sheets, scrollingElement: null, documentElement: {} },
+        innerWidth: 1280,
+        innerHeight: 720,
+        devicePixelRatio: 1,
+        getComputedStyle: () => ({ fontSize: '16px' }),
+        matchMedia: () => ({ matches: false }),
+    };
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    const probe = vm.runInContext(`(${probeInPage.toString()})`, sandbox) as (a: ProbeArgs) => PaintProbe;
+    return JSON.parse(JSON.stringify(probe(buildProbeArgs()))) as PaintProbe;
 }
 
 type ScenarioState = 'displayed' | 'hidden' | 'absent' | 'ambiguous';
@@ -1729,6 +1889,50 @@ test.describe('curtain footer hole regression gate (opt-in: E2E_FOOTERHOLE=1)', 
         expect(wrongSize.verdict).toBe('INVALID CAPTURE');
         expect(wrongSize.invalidReasons.join(' | ')).toContain('SCREENSHOT-DIMENSION-DISAGREEMENT');
 
+        // 3b. The phone stacking models judge only the mobile bar footprint (inset by the edge margin) inside the box. In the shared scene
+        // the footer rows 645..720 stand for the bar: 'rule' paints the curtain beneath it, 'old' paints the curtain over it.
+        expect(evalScene('stack', 'rule').verdict, 'stack model, curtain beneath the bar').toBe('PASS');
+        expect(evalScene('covered', 'old').verdict, 'covered model, curtain over the bar').toBe('PASS');
+        const stackedAsCovered = evalScene('covered', 'rule');
+        expect(stackedAsCovered.verdict, 'covered model, stacked capture').toBe('FAIL');
+        expect(stackedAsCovered.categories['painted'].mismatch, 'the bar rows beneath the curtain are the mismatches').toBeGreaterThan(0);
+        const coveredAsStack = evalScene('stack', 'old');
+        expect(coveredAsStack.verdict, 'stack model, covered capture').toBe('FAIL');
+        expect(coveredAsStack.categories['exposed'].mismatch, 'the covered bar rows are the mismatches').toBeGreaterThan(0);
+        expect(evalScene('covered', 'noCurtain').verdict, 'no curtain: nothing covers the bar, so the positive control fails').toBe('FAIL');
+        expect(evalScene('stack', 'noCurtain').verdict, 'the stack model alone cannot see a missing curtain; the covered capture is the positive control').toBe('PASS');
+        expect(evalScene('stack', 'footprintDefect').verdict, 'a defect inside the footprint').toBe('FAIL');
+        expect(evalScene('stack', 'borderRow').verdict, "the bar's top border row lies inside the 2px inset and is not judged").toBe('PASS');
+        // A shell layer that ranks above the curtain elsewhere in the box is outside the footprint models and inside the whole-box
+        // model, which is why the phone cases do not use the latter.
+        expect(evalScene('stack', 'shellLayer').verdict, 'stack model, a tab painted above the curtain elsewhere in the box').toBe('PASS');
+        expect(evalScene('hole', 'shellLayer').verdict, 'the whole-box model rejects the same capture').toBe('FAIL');
+        const noBarOverlap = evalScene('stack', 'rule', PAGE_BG, { footer: { x: 0, y: 700, width: 1265, height: 20 }, box: { x: 0, y: 80, width: 1265, height: 400 } });
+        expect(noBarOverlap.verdict).toBe('INVALID CAPTURE');
+        expect(noBarOverlap.invalidReasons.join(' | ')).toContain('not applicable');
+        const coveredNoOverlap = evalScene('covered', 'old', PAGE_BG, { footer: { x: 0, y: 700, width: 1265, height: 20 }, box: { x: 0, y: 80, width: 1265, height: 400 } });
+        expect(coveredNoOverlap.verdict).toBe('INVALID CAPTURE');
+        expect(coveredNoOverlap.invalidReasons.join(' | ')).toContain('not applicable');
+        const fillEqualsBar = evalScene('stack', 'rule', PAGE_BG, { fill: FOOTER_BG });
+        expect(fillEqualsBar.verdict, 'a fill equal to the bar cannot discriminate').toBe('PARTIAL');
+        expect(fillEqualsBar.partialReasons.join(' | ')).toContain('cannot be told from the fill');
+        expect(evalScene('stack', 'rule', PAGE_BG, { footer: null }).verdict, 'no footprint measured').toBe('INVALID CAPTURE');
+        expect(evalScene('covered', 'old', PAGE_BG, { footer: null }).verdict, 'no footprint measured').toBe('INVALID CAPTURE');
+
+        // 3c. State preconditions follow the case: the curtain rank, both media states, both rules in the stylesheets and the judged footprint.
+        const violationsOf = (spec: PaintCaseSpec, probe: PaintProbe): string => preconditionViolations(spec, probe).join(' | ');
+        expect(preconditionViolations(CASE_P1, makeControlProbe()), 'a Desktop case on a Desktop probe').toEqual([]);
+        expect(preconditionViolations(CASE_N1, makePhoneControlProbe()), 'a phone case on a phone probe').toEqual([]);
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { if (p.curtain !== null) p.curtain.zIndex = DEFAULT_CURTAIN_Z_INDEX; })), 'a phone case whose rank is still 5000').toContain('expected absolute/49/none');
+        expect(violationsOf(CASE_P1, makeControlProbe((p) => { if (p.curtain !== null) p.curtain.zIndex = PHONE_CURTAIN_Z_INDEX; })), 'a Desktop case whose rank is 49').toContain('expected absolute/5000/none');
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { p.phoneRuleMediaMatches = false; }))).toContain(`matchMedia('${PHONE_RULE_MEDIA_QUERY}') is false`);
+        expect(violationsOf(CASE_P1, makeControlProbe((p) => { p.phoneRuleMediaMatches = true; }))).toContain(`matchMedia('${PHONE_RULE_MEDIA_QUERY}') is true`);
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { p.ruleMediaMatches = true; }))).toContain('this negative control requires it to be false');
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { p.phoneRuleInStylesheets = { found: false, mediaCondition: null }; }))).toContain('phone stacking rule');
+        expect(violationsOf(CASE_P1, makeControlProbe((p) => { p.ruleInStylesheets = { found: false, mediaCondition: null }; }))).toContain('Desktop footer-hole rule');
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { chromeEntry(p, 'mobileBar').rect = null; }))).toContain('mobile control bar');
+        expect(violationsOf(CASE_N1, makePhoneControlProbe((p) => { chromeEntry(p, 'mobileBar').rect = { x: 0, y: 690, width: 634, height: 81 }; }))).toContain("only applicable to 'partial'");
+
         // 4. Bracketing: every bracketed field is compared and a difference is named; identical probes differ nowhere.
         const base = makeControlProbe();
         const baseLoad: LoadFailureState = { apiPresent: true, scoreIsNull: true, cursorElementCount: 0 };
@@ -1744,9 +1948,35 @@ test.describe('curtain footer hole regression gate (opt-in: E2E_FOOTERHOLE=1)', 
         expect(probeDiff((p) => { chromeEntry(p, 'trayDesktop').opacity = '0.5'; })).toContain('trayDesktop.style');
         expect(probeDiff((p) => { p.mainScrollTop = 10; })).toContain('scroll.main');
         expect(probeDiff((p) => { p.innerWidth = 1281; })).toContain('viewport.inner');
+        expect(probeDiff((p) => { p.phoneRuleMediaMatches = true; })).toContain('media.phoneRuleMatches');
         expect(probeDiff(() => undefined, { apiPresent: true, scoreIsNull: true, cursorElementCount: 1 })).toContain('load');
         expect(entryDisplayed(chromeEntry(base, 'transportBar'))).toBe(true);
         expect(entryDisplayed(chromeEntry(base, 'mobileBar'))).toBe(false);
+
+        // 4b. Rule discovery. The Desktop rule and the phone rule share one selector; each is found by the declaration it exists for and
+        // is reported with its own media condition, in either stylesheet order. The REAL probe source runs over scripted stylesheets.
+        const sharedSelector = '.maestro-curtain-band > [data-maestro-curtain]';
+        const styleOf = (...props: string[]): unknown => Object.assign(props.slice(), { getPropertyValue: (name: string): string => (props.indexOf(name) >= 0 ? '1' : '') });
+        const desktopRule = { selectorText: sharedSelector, style: styleOf('background-color', 'background-image', 'background-repeat', 'background-attachment', 'background-position', 'background-size') };
+        const phoneRule = { selectorText: sharedSelector, style: styleOf('z-index') };
+        const inMedia = (conditionText: string, rule: unknown): unknown => ({ conditionText, cssRules: [rule] });
+        const desktopMedia = '(min-width: 650px) and (pointer: fine)';
+        const phoneMedia = 'not all and (min-width: 650px)';
+        for (const order of ['Desktop first', 'phone first'] as const) {
+            const rules = order === 'Desktop first' ? [inMedia(desktopMedia, desktopRule), inMedia(phoneMedia, phoneRule)] : [inMedia(phoneMedia, phoneRule), inMedia(desktopMedia, desktopRule)];
+            const discovered = runProbeOverSheets([{ cssRules: rules }]);
+            expect(discovered.ruleInStylesheets, `${order}: the Desktop rule keeps its own media condition`).toEqual({ found: true, mediaCondition: desktopMedia });
+            expect(discovered.phoneRuleInStylesheets, `${order}: the phone rule keeps its own media condition`).toEqual({ found: true, mediaCondition: phoneMedia });
+        }
+        expect(runProbeOverSheets([{ cssRules: [inMedia(phoneMedia, phoneRule)] }]).ruleInStylesheets, 'the phone rule alone is not the Desktop rule').toEqual({ found: false, mediaCondition: null });
+        expect(runProbeOverSheets([{ cssRules: [inMedia(desktopMedia, desktopRule)] }]).phoneRuleInStylesheets, 'the Desktop rule alone is not the phone rule').toEqual({ found: false, mediaCondition: null });
+        const noDeclaration = { selectorText: sharedSelector, style: styleOf('color') };
+        const otherSelector = { selectorText: '.another-class > [data-other]', style: styleOf('z-index', 'background-image') };
+        const neither = runProbeOverSheets([{ cssRules: [inMedia(desktopMedia, noDeclaration), inMedia(phoneMedia, otherSelector)] }]);
+        expect(neither.ruleInStylesheets.found, 'the selector without the declaration, and the declaration without the selector, are neither rule').toBe(false);
+        expect(neither.phoneRuleInStylesheets.found).toBe(false);
+        const rewritten = runProbeOverSheets([{ cssRules: [inMedia('not all and (width >= 650px)', phoneRule)] }]);
+        expect(rewritten.phoneRuleInStylesheets, 'a media-query rewrite by the build pipeline does not hide the rule').toEqual({ found: true, mediaCondition: 'not all and (width >= 650px)' });
 
         // 5. Finally-restoration: the restoration runs when the body throws, when apply throws, and its failure is recorded.
         const okResult = (ok: boolean): InterventionResult => ({ ok, classPresent: true, priorInlineDisplay: 'block', inlineDisplay: 'block' });

@@ -1,7 +1,7 @@
 /**
  * Maestro.ai — E2E chrome observer (tray, footer and curtain observation for tray-disappearance classification)
- * Version: V1.0.2
- * Date: October 20, 2026
+ * Version: V1.0.3
+ * Date: October 25, 2026
  * Ticket: PLAYER-CONTROLS-PERSISTENT-SHELL-001
  *
  * Observation-only helper for tests/e2e/chrome-occlusion.e2e.ts (opt-in E2E_CHROME=1, Desktop project only). Browser
@@ -56,7 +56,11 @@ export const CHROME_OBSERVER_GLOBAL = '__e2eChromeObs';
 export const CHROME_OBSERVER_POST_BINDING = '__e2eChromeObsPost';
 /** Rects are rounded to 1/RECT_SCALE = 0.01 CSS px (the scoreReady.ts R4 convention). */
 export const RECT_SCALE = 100;
-/** Locator condition for the renderer's curtain: the inline z-index of an absolutely positioned, pointer-events:none sibling. */
+/**
+ * Locator condition for the renderer's curtain: the COMPUTED z-index of an absolutely positioned, pointer-events:none sibling.
+ * 5000 is the curtain's inline rank and holds at 650px and wider; below 650px in portrait globals.css ranks it at 49, where this
+ * locator finds nothing. The committed specs use the observer at Desktop width only.
+ */
 export const CURTAIN_Z_INDEX_LOCATOR = '5000';
 export const CURTAIN_SEARCH_DEPTH = 8;
 export const ANCESTOR_DEPTH = 16;

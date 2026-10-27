@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Synth Player Page — Phase 4 V102.26-CURTAINFOOTERHOLE001
- * Date: October 18, 2026
+ * Synth Player Page — Phase 4 V102.27-CURTAINHOOKDOC002
+ * Date: October 25, 2026
  * Cloned from V102.21-isolation — MAESTRO-UI-009A closed candidate: portrait shell uses
  * h-screen with valid minmax row to avoid iOS standalone PWA cold-start h-dvh viewport
  * lock; mobile landscape preserves h-dvh valid-grid UI-006C behavior.
@@ -1860,8 +1860,10 @@ export default function SynthPlayerPage() {
                 >
                     {signedUrl && (
                         <AlphaTabRendererV102
-                            // [PLAYER-CONTROLS-PERSISTENT-SHELL-001] Hook for the Desktop curtain footer-hole rule in
-                            // globals.css. Omitted in mobile landscape, so that path is left exactly as it was.
+                            // [PLAYER-CONTROLS-PERSISTENT-SHELL-001 / PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001] Hook for the
+                            // two curtain rules in globals.css: the Desktop footer hole (650px and wider, fine pointer) and the
+                            // narrow-portrait stacking rank (below 650px, curtain 49 beneath the z-50 footer). Omitted in mobile
+                            // landscape, so that path is left exactly as it was.
                             className={isMobileLandscape ? undefined : 'maestro-curtain-band'}
                             playerMode={audioSource === 'synth' ? 'synthesizer' : 'external'}
                             externalMediaHandler={audioSource === 'original' ? youTubeMediaHandlerInstance : undefined}

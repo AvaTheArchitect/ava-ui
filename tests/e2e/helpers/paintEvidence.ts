@@ -1,15 +1,15 @@
 /**
- * Maestro.ai — E2E paint evidence helper (PNG codec, viewport agreement and region-model evaluation for the Desktop curtain footer hole)
- * Version: V1.0.0
- * Date: October 18, 2026
- * Ticket: PLAYER-CONTROLS-PERSISTENT-SHELL-001
+ * Maestro.ai — E2E paint evidence helper (PNG codec, viewport agreement and region-model evaluation for the Desktop curtain footer hole and the narrow-portrait curtain stacking)
+ * Version: V1.0.1
+ * Date: October 25, 2026
+ * Ticket: PLAYER-CONTROLS-PERSISTENT-SHELL-001; PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001
  *
  * Pure Node helpers for tests/e2e/curtain-footer-hole.e2e.ts. No browser, no product import, no image library (none is
  * installed): an 8-bit non-interlaced PNG decoder and encoder built on zlib, checkViewportAgreement(), and evaluatePaint(),
  * which judges one capture taken with the curtain displayed against a matched reference capture taken with the curtain hidden
  * (same page, same scroll). The expected painted regions come from MEASURED rectangles and the rule's documented constants,
  * never from the capture under test; the reference supplies only the expected value of pixels the curtain must not paint.
- * Rectangle intersection reuses intersectRects from chromeObserver.ts (read-only import; that file is not modified).
+ * Rectangle intersection reuses intersectRects from chromeObserver.ts (read-only import; that file's code is not modified).
  *
  * Coordinate contract. Every capture is a viewport PNG taken with scale 'css', so one PNG pixel is one CSS pixel and the PNG
  * must have exactly the CONFIGURED viewport's size (page.viewportSize()). evaluatePaint takes that configured viewport, never
@@ -24,6 +24,15 @@
  *
  * Geometric overlap between the curtain box and the footer footprint is an APPLICABILITY precondition of the 'hole' model
  * (no overlap means nothing can be exposed), never a failure: it is reported as INVALID CAPTURE when absent.
+ *
+ * Two further models serve the narrow-portrait stacking rule (globals.css), under which the curtain keeps its box and fill but
+ * ranks beneath the z-50 mobile bar. They judge ONLY the bar's measured footprint where the curtain box overlaps it, inset by
+ * EDGE_MARGIN_PX on every side (the bar's translucent top border composites over a different backdrop in the two captures):
+ * 'stack' expects those pixels to equal the reference (the bar is what is painted), 'covered' expects them to equal the fill (the
+ * curtain is painted over the bar, which is what the same page does without the rule). No other pixel inside the box is judged,
+ * because shell layers that rank above the curtain by design (the header, the slide-out and its edge tab) also paint there;
+ * pixels outside the box are still compared with the reference. No tray dimension appears in either model: the footprint is
+ * measured. The same overlap precondition applies and is reported as INVALID CAPTURE when absent.
  *
  * Verdicts: PASS | FAIL | PARTIAL | INVALID CAPTURE, ranked INVALID > FAIL > PARTIAL > PASS. PARTIAL means every examined
  * pixel matched but the capture could not discriminate the claim (for example the painted region is the same colour as the
@@ -49,7 +58,7 @@ export interface DecodedPng {
     rgb: Buffer;
 }
 
-export type PaintVariant = 'hole' | 'old';
+export type PaintVariant = 'hole' | 'old' | 'stack' | 'covered';
 export type PaintVerdict = 'PASS' | 'FAIL' | 'PARTIAL' | 'INVALID CAPTURE';
 
 export const FOOTER_HEIGHT_PX = 75;
@@ -247,13 +256,16 @@ export function overlapKind(box: Rect, footer: Rect): OverlapKind {
 // ── Evaluator ───────────────────────────────────────────────────────────────────────────────────────
 
 export interface PaintInput {
-    /** 'hole': the footer-hole rule is expected active. 'old': the curtain is expected to paint its whole box. */
+    /**
+     * 'hole': the footer-hole rule is expected active. 'old': the curtain is expected to paint its whole box. 'stack': the curtain
+     * is expected beneath the bar footprint. 'covered': the curtain is expected over the bar footprint.
+     */
     variant: PaintVariant;
     /** The CONFIGURED viewport (page.viewportSize()), which the scale 'css' PNGs must match exactly. */
     viewport: { width: number; height: number };
     /** The curtain's border box as measured in the page (viewport coordinates, not clipped). */
     box: Rect;
-    /** The transport footprint as measured in the page. Required for 'hole'. */
+    /** The transport footprint (or, for 'stack' and 'covered', the mobile bar footprint) as measured in the page. Required for those three variants. */
     footer: Rect | null;
     /** Displayed chrome rectangles whose pixels are counted separately and never required to equal the fill. */
     ignore: readonly Rect[];
@@ -273,7 +285,10 @@ export interface PaintEvaluation {
     invalidReasons: string[];
     failReasons: string[];
     partialReasons: string[];
-    /** painted: inside the box where the curtain must paint; exposed: inside box and footer where it must not; outside-box. */
+    /**
+     * painted: inside the box where the curtain must paint; exposed: inside box and footer where it must not; outside-box.
+     * 'stack' and 'covered' use exposed and painted respectively, for the bar footprint only.
+     */
     categories: Record<string, CategoryResult>;
     /** Pixels of a region whose reference value differs from the fill, so that a match on the fill is evidence of paint. */
     discrimination: {
@@ -322,6 +337,7 @@ export function evaluatePaint(input: PaintInput, displayedPng: Buffer, reference
     const boxT = Math.max(0, input.box.y);
     const boxB = Math.min(vh, input.box.y + input.box.height);
     const footer = input.footer;
+    const footprintOnly = input.variant === 'stack' || input.variant === 'covered';
 
     const result: PaintEvaluation = {
         verdict: 'PASS',
@@ -358,6 +374,10 @@ export function evaluatePaint(input: PaintInput, displayedPng: Buffer, reference
     }
     if (!(boxR > boxL) || !(boxB > boxT)) {
         result.invalidReasons.push('the curtain box has no area inside the viewport');
+        return conclude();
+    }
+    if (footprintOnly && footer === null) {
+        result.invalidReasons.push(`the '${input.variant}' model needs the measured bar footprint rectangle`);
         return conclude();
     }
     if (input.variant === 'hole') {
@@ -412,6 +432,26 @@ export function evaluatePaint(input: PaintInput, displayedPng: Buffer, reference
                 bump('outside-box', sameRgb(got, ref), x, y, got, ref);
                 continue;
             }
+            if (footprintOnly) {
+                // Only the bar footprint, inset by the edge margin, is judged inside the box: shell layers that rank above the curtain by design also paint elsewhere in it.
+                const inFootprint =
+                    footer !== null &&
+                    x >= footerLeft + EDGE_MARGIN_PX &&
+                    x < footerRight - EDGE_MARGIN_PX &&
+                    y >= footer.y + EDGE_MARGIN_PX &&
+                    y < footer.y + footer.height - EDGE_MARGIN_PX;
+                if (!inFootprint) continue;
+                if (input.variant === 'stack') {
+                    bump('exposed', sameRgb(got, ref), x, y, got, ref);
+                    result.discrimination.exposed.examined += 1;
+                    if (!sameRgb(ref, input.fill)) result.discrimination.exposed.referenceDiffersFromFill += 1;
+                } else {
+                    bump('painted', sameRgb(got, input.fill), x, y, got, input.fill);
+                    result.discrimination.painted.examined += 1;
+                    if (!sameRgb(ref, input.fill)) result.discrimination.painted.referenceDiffersFromFill += 1;
+                }
+                continue;
+            }
             const inFooter = footer !== null && x >= footerLeft && x < footerRight && y >= footer.y && y < footer.y + footer.height;
             if (input.variant === 'hole' && inFooter && x < columnX) {
                 bump('exposed', sameRgb(got, ref), x, y, got, ref);
@@ -432,12 +472,20 @@ export function evaluatePaint(input: PaintInput, displayedPng: Buffer, reference
         }
     }
     const painted = result.categories['painted'];
-    if (painted === undefined || painted.total === 0) {
-        result.invalidReasons.push('no painted-region pixels were examined');
+    if (input.variant !== 'stack' && (painted === undefined || painted.total === 0)) {
+        result.invalidReasons.push(
+            input.variant === 'covered'
+                ? 'no covered-footprint pixels were examined: the bar footprint does not overlap the curtain box in this state (the model is not applicable)'
+                : 'no painted-region pixels were examined',
+        );
     }
     const exposed = result.categories['exposed'];
-    if (input.variant === 'hole' && (exposed === undefined || exposed.total === 0)) {
-        result.invalidReasons.push('no exposed-footer pixels were examined: the footer does not overlap the curtain box in this state (the model is not applicable)');
+    if ((input.variant === 'hole' || input.variant === 'stack') && (exposed === undefined || exposed.total === 0)) {
+        result.invalidReasons.push(
+            input.variant === 'stack'
+                ? 'no exposed-footprint pixels were examined: the bar footprint does not overlap the curtain box in this state (the model is not applicable)'
+                : 'no exposed-footer pixels were examined: the footer does not overlap the curtain box in this state (the model is not applicable)',
+        );
     }
     const weak = (region: { examined: number; referenceDiffersFromFill: number }): boolean =>
         region.referenceDiffersFromFill < MIN_DISCRIMINATING_PX || region.referenceDiffersFromFill < MIN_DISCRIMINATING_FRACTION * region.examined;
@@ -446,9 +494,9 @@ export function evaluatePaint(input: PaintInput, displayedPng: Buffer, reference
             `the painted region cannot be told from the page under it: only ${result.discrimination.painted.referenceDiffersFromFill} of ${result.discrimination.painted.examined} examined pixels differ from the fill in the reference`,
         );
     }
-    if (input.variant === 'hole' && result.discrimination.exposed.examined > 0 && weak(result.discrimination.exposed)) {
+    if ((input.variant === 'hole' || input.variant === 'stack') && result.discrimination.exposed.examined > 0 && weak(result.discrimination.exposed)) {
         result.partialReasons.push(
-            `the exposed footer cannot be told from the fill: only ${result.discrimination.exposed.referenceDiffersFromFill} of ${result.discrimination.exposed.examined} examined pixels differ from the fill in the reference`,
+            `the exposed ${input.variant === 'stack' ? 'bar footprint' : 'footer'} cannot be told from the fill: only ${result.discrimination.exposed.referenceDiffersFromFill} of ${result.discrimination.exposed.examined} examined pixels differ from the fill in the reference`,
         );
     }
     if (input.variant === 'old' && result.bandExamined === 0) {
