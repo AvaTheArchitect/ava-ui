@@ -2,8 +2,8 @@
 
 /* ============================================================================
    MAESTRO.AI — globals.css
-   Version: V1.0.2
-   Updated: October 25th, 2026
+   Version: V1.0.3
+   Updated: November 1st, 2026
    Header Reviewed: August 12th, 2026
 
    SCOPE OF THIS FILE
@@ -18,6 +18,7 @@
    ✅ Player shell — TopMenuTray slide-out during playback [PS1]
    ✅ Player shell — Desktop curtain footer hole [PLAYER-CONTROLS-PERSISTENT-SHELL-001]
    ✅ Player shell — Narrow-portrait curtain stacking [PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001]
+   ✅ Player shell — Landscape curtain header clearance [ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001]
 
    ❌ NOT in this file:
         - TopMenuTray chrome     → future maestro.css (fixed dark surface)
@@ -431,6 +432,31 @@ body {
   .maestro-curtain-band > [data-maestro-curtain] {
     z-index: 49 !important;
   }
+}
+
+
+/* ============================================================================
+   PLAYER CURTAIN LANDSCAPE HEADER CLEARANCE   [ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001]
+   ============================================================================
+   In mobile landscape AlphaTabRenderer moves the curtain's top edge down to the bottom of the
+   visible TopMenuTray (an inline `top`, written and removed by a layout effect together with the
+   data-header-clear mark), so the z-50 tray is no longer painted over while the curtain is
+   displayed. The curtain keeps its z-index (5000), fill, display toggling and pointer-events.
+
+   The body-mounted landscape cursor (.maestro-landscape-cursor, z-index 4000) is not clipped by
+   the curtain's box, so with the curtain's top edge moved it could show over the exposed tray.
+   While a marked curtain is displayed the cursor is therefore hidden: visibility only. Its node,
+   geometry, lifecycle and suppression state are untouched, and it is visible again in the same
+   style recalculation in which the curtain's display becomes none. Without the mark (the offset
+   is 0 because the renderer root already starts at or below the tray) nothing here applies.
+
+   The displayed state is read from the inline `display: block` that showCurtain writes (the
+   renderer's hide helper writes `display: none`); a change to how the curtain's display is
+   toggled has to revisit this selector. :has() is needed (Safari 15.4+, Chrome 105+); a browser
+   without it drops the rule, which restores the previous behaviour (cursor not hidden).
+   ============================================================================ */
+body:has([data-maestro-curtain][data-header-clear][style*="display: block"]) .maestro-landscape-cursor {
+  visibility: hidden !important;
 }
 
 

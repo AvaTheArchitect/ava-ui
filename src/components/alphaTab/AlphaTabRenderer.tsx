@@ -2,9 +2,25 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.49-CURTAINHOOKDOC002
- * Date: October 25th, 2026
+ * Current version: V145.50-CURTAINHEADERCLEAR001
+ * Date: November 1st, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001 — Landscape curtain no longer paints over the visible tray (V145.50).
+ * ✅ In mobile landscape (forceHorizontal) a layout effect moves the curtain's top edge down to the bottom of the visible
+ *        TopMenuTray, so the curtain keeps concealing the score below the tray while the tray stays exposed. The offset is
+ *        measured, not constant: the tray's bottom edge (getVisibleTopMenuTrayRect, which skips the hidden shell) minus the
+ *        top of the curtain's containing block, both in viewport space. It is 0 when that block already starts at or below
+ *        the tray, and it is cleared when forceHorizontal goes false.
+ * ✅ While that offset is in effect the same effect marks the curtain with data-header-clear. A globals.css rule hides the
+ *        body-mounted landscape cursor (visibility only) for as long as a marked curtain is displayed, because the cursor
+ *        (z-index 4000) is not clipped by the curtain's box and would otherwise show over the newly exposed tray.
+ * 🚫 The curtain's z-index (5000), show/hide timing (every showCurtain/hideCurtainAtomic call site), classes, display,
+ *        fill, readiness, API ownership, cursor lifecycle, geometry and suppression, and API disposal are unchanged. The
+ *        additions are this layout effect (no new listener, ref or state) and the attribute it writes.
+ * ⚠ Known limits: frames painted before the forceHorizontal commit are unchanged; a tray still sliding in at that commit
+ *        leaves the curtain over the header for that display; a tray or root move that coincides with no change of
+ *        forceHorizontal or landscapeHostInset is not re-measured.
  *
  * PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001 — Hook and z-index comments only (V145.49).
  * ✅ The curtain's inline z-index 5000 is its default rank. Below 650px, where page.tsx sets .maestro-curtain-band
@@ -1167,7 +1183,7 @@
  *   beat1X onNotesX=120.001 → delta=0.001 ✅ pixel-perfect alignment
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     initAlphaTab,
     loadGuitarProFile,
@@ -3460,6 +3476,44 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             window.visualViewport?.removeEventListener('resize', measure);
         };
     }, [forceHorizontal]);
+
+    // [ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001] Keep the visible landscape TopMenuTray exposed under the curtain.
+    // In mobile landscape <main> has no top padding, so until the host inset above is established the curtain's box (inset-0
+    // of this root) starts at viewport y=0 and its inline z-index 5000 paints over the z-50 tray. Moving the curtain's top
+    // edge down to the tray's bottom keeps the fill over the score area and leaves the tray's own rows unpainted. The offset
+    // is measured in viewport space as (visible tray bottom - top of the curtain's containing block, i.e. this root), so it
+    // is 0 whenever the root already starts at or below the tray (for example once the host's margin-top inset has moved it)
+    // and never a stored constant. getVisibleTopMenuTrayRect() walks both always-mounted shells and returns the rendered
+    // one; a null result (no shell rendered) leaves the curtain exactly as it was.
+    // Timing: a layout effect runs after the commit that flips forceHorizontal and before that commit paints, so the first
+    // landscape-layout frame is measured. Frames painted before that commit are not touched. If the tray was hidden
+    // (-translate-y-full) at that commit, the slide-in is expected to be measured from the hidden position (bottom ~0), in
+    // which case no offset is written and the curtain covers the header for that display exactly as before.
+    // Freshness: the effect re-runs only when forceHorizontal or landscapeHostInset changes. measure() above stores a new
+    // object on every run (window resize, visualViewport resize, render settle), so each of those re-derives the offset. A
+    // tray height change or a root move that coincides with none of them is not seen.
+    // Cursor: the body-mounted landscape cursor (z-index 4000) is not clipped by the curtain's box, so while a marked curtain
+    // is displayed a globals.css rule hides it (visibility only; its node, geometry, lifecycle and suppression are untouched).
+    // Cleanup removes the inline top and the mark, so return to portrait (and unmount) restores the className inset-0
+    // geometry. No listener, ref or state is added; display, z-index and every showCurtain/hideCurtainAtomic call are untouched.
+    useLayoutEffect(() => {
+        const curtain = curtainRef.current;
+        if (curtain && forceHorizontal) {
+            const tray = getVisibleTopMenuTrayRect();
+            const rootTop = curtain.parentElement?.getBoundingClientRect().top ?? 0;
+            const offset = tray ? Math.round(tray.bottom - rootTop) : 0;
+            if (offset > 0) {
+                curtain.style.top = `${offset}px`;
+                curtain.setAttribute('data-header-clear', '');
+            }
+        }
+        return () => {
+            if (curtain) {
+                curtain.style.top = '';
+                curtain.removeAttribute('data-header-clear');
+            }
+        };
+    }, [forceHorizontal, landscapeHostInset]);
 
     const loopEnabledRef = useRef(loopEnabled);
     const playbackRangeRef = useRef(playbackRange);
@@ -10374,7 +10428,9 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             {/* [PLAYER-CONTROLS-PERSISTENT-SHELL-001 / PLAYER-CONTROLS-MOBILE-PERSISTENT-SHELL-001] data-maestro-curtain is the
                 hook for two globals.css rules. Desktop footer hole: color mirrors the fill so the rule can repaint it with
                 currentColor. Narrow portrait (below 650px): the rule overrides the inline zIndex 5000 below with 49, so the
-                z-50 mobile tray paints above the curtain; 5000 stays the rank at 650px and wider and in mobile landscape. */}
+                z-50 mobile tray paints above the curtain; 5000 stays the rank at 650px and wider and in mobile landscape, where the
+                landscape layout effect instead moves this box's top edge to the visible tray's bottom (inline top plus
+                data-header-clear, both removed outside landscape). */}
             <div ref={curtainRef} data-maestro-curtain className="absolute inset-0 pointer-events-none"
                 style={{ background: bgColor, color: bgColor, display: 'block', zIndex: 5000 }} />
 
