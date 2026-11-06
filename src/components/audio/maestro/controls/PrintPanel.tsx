@@ -1,8 +1,13 @@
 'use client';
 
 /**
- * PrintPanel.tsx - V1.2: FULL-COLOR LOADING STATE (V1.1 icon-only trigger retained)
- * Date: October 24th, 2026
+ * PrintPanel.tsx - V1.3: SKIP NO-OP SCALE RESTORE (V1.2 full-color loading state retained)
+ * Date: November 4th, 2026
+ *
+ * 🆕 V1.3 UPDATES (ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001):
+ * ✅ Closed-panel effect: scale restore + updateSettings() + render() now run only when
+ *    display.scale !== 1.0, so a fresh mount at 1.0 no longer re-renders the score.
+ * ✅ setZoomIndex(DEFAULT_ZOOM_INDEX) still runs on every closed-panel pass — unchanged.
  *
  * 🆕 V1.2 UPDATES (PLAYER-CONTROLS-READINESS-RECOVERY-001):
  * ✅ Trigger: readiness-driven opacity-50 removed — full-color while loading.
@@ -20,7 +25,7 @@
  * ✅ isPanelOpen / onTogglePanel / onClose props
  * ✅ Zoom panel popup — UNTOUCHED
  * ✅ handleZoomOut / handleZoomIn / handlePrint logic — UNTOUCHED
- * ✅ useEffect canvas reset on close — UNTOUCHED
+ * ✅ useEffect canvas reset on close — restore behavior preserved (V1.3 skips only the no-op case)
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -50,9 +55,12 @@ export const PrintPanel: React.FC<PrintPanelProps> = ({
 
     useEffect(() => {
         if (!isPanelOpen && api) {
-            api.settings.display.scale = 1.0;
-            api.updateSettings();
-            api.render();
+            // Restore the live scale only when it differs from the default.
+            if (api.settings.display.scale !== 1.0) {
+                api.settings.display.scale = 1.0;
+                api.updateSettings();
+                api.render();
+            }
             setZoomIndex(DEFAULT_ZOOM_INDEX);
         }
     }, [isPanelOpen, api]);
