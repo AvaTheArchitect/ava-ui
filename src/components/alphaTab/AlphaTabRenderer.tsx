@@ -2,9 +2,23 @@
 
 /**
  * AlphaTabRenderer.tsx
- * Current version: V145.50-CURTAINHEADERCLEAR001
- * Date: November 1st, 2026
+ * Current version: V145.51-REVEALGEOMETRY001
+ * Date: November 6th, 2026
  * Loop/Cursor sprint locked — see V120 LOOP/CURSOR LOCKS section.
+ *
+ * ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001 — Landscape reveal commits the host inset and re-pins the cursor first (V145.51).
+ * ✅ In the landscape strip layout only, immediately before the curtain is hidden, one synchronous step recomputes the host inset from the
+ *        current geometry and commits it (flushSync). Only if the reveal is still current and landscape is still wanted does it then check
+ *        the committed host box against the derived inset and re-pin an EXISTING landscape cursor (FixedLandscapeCursor.updateLayout()
+ *        reports whether it anchored to detected staff lines). Outcomes: 'skip' (portrait or Page layout: nothing else runs, reveal exactly
+ *        as before); 'stale' (ownership lost: a newer render, a teardown or another API instance now owns the curtain; the caller returns
+ *        without hiding it or writing reveal state, like the existing stale checks); 'settled' (host committed and an existing cursor
+ *        re-pinned to staff geometry); 'host-only' (host committed, no cursor existed; none is created); 'fallback' (still the current
+ *        reveal but not settled: reveal exactly as before).
+ * 🚫 No await, timer, loop or retry is added, and later writers (landscape anchoring, the nested animation frames, the stuck-strip check,
+ *        resize listeners) are not stopped. The 206 staff-centre target and measure()'s formulas, the mount-time and resize-time measure
+ *        calls, the existing post-hide measure and cursor calls, cursor creation, suppression and visibility, the curtain's z-index,
+ *        markup and other show/hide sites, tray switching, playback, loop and print behaviour are unchanged.
  *
  * ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001 — Landscape curtain no longer paints over the visible tray (V145.50).
  * ✅ In mobile landscape (forceHorizontal) a layout effect moves the curtain's top edge down to the bottom of the visible
@@ -1184,6 +1198,7 @@
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
     initAlphaTab,
     loadGuitarProFile,
@@ -3316,7 +3331,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
     // [MAESTRO-LANDSCAPE-FIT-001-D-B] Ref-stored measure() so the renderFinished settle
     // points (deep in the init() pipeline below) can trigger a recompute — staffSystem
     // bounds can change after render/track-change/settings-change with no resize firing.
-    const landscapeHostInsetMeasureRef = useRef<(() => void) | null>(null);
+    const landscapeHostInsetMeasureRef = useRef<((commitSync?: boolean) => 'measured' | 'held' | 'inactive') | null>(null);
     useEffect(() => {
         if (!forceHorizontal) {
             setLandscapeHostInset(null);
@@ -3324,8 +3339,11 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
             landscapeHostInsetMeasureRef.current = null;
             return;
         }
-        const measure = () => {
-            if (!forceHorizontalRef.current) return;
+        // Returns what this call did: 'measured' = it reached the end of its own derivation and stored a new inset; 'held' = degenerate tray geometry, the last good inset was re-applied and
+        // nothing new was derived; 'inactive' = landscape is no longer wanted. commitSync === true is passed only by the landscape reveal step, through landscapeHostInsetMeasureRef.
+        // Every other caller uses measure() below, which ignores the result and keeps its old zero-argument void type.
+        const measureLandscapeHostInset = (commitSync?: boolean): 'measured' | 'held' | 'inactive' => {
+            if (!forceHorizontalRef.current) return 'inactive';
             const topTray = document.querySelector('[data-top-menu-tray]');
             const bottomTray = document.querySelector('[data-maestro-control-panel]');
             // Fallbacks (0 / viewport height) mean "no correction" — not made-up pixel
@@ -3340,7 +3358,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                 if (lastGoodLandscapeHostInsetRef.current) {
                     setLandscapeHostInset(lastGoodLandscapeHostInsetRef.current);
                 }
-                return;
+                return 'held';
             }
 
             // C-B baseline — the shift=0 fallback this degrades to whenever staff bounds
@@ -3465,9 +3483,16 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
 
             const next = { top, height };
             lastGoodLandscapeHostInsetRef.current = next;
-            setLandscapeHostInset(next);
+            if (commitSync === true) {
+                // [LANDSCAPE-REVEAL-GEOMETRY] Commit before the caller hides the curtain. Falls back to the ordinary update if the synchronous flush throws.
+                try { flushSync(() => { setLandscapeHostInset(next); }); } catch { setLandscapeHostInset(next); }
+            } else {
+                setLandscapeHostInset(next);
+            }
+            return 'measured';
         };
-        landscapeHostInsetMeasureRef.current = measure;
+        const measure = (): void => { measureLandscapeHostInset(); };
+        landscapeHostInsetMeasureRef.current = measureLandscapeHostInset;
         measure();
         window.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('resize', measure);
@@ -5104,6 +5129,46 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                     requestAnimationFrame(step);
                 });
 
+            // [LANDSCAPE-REVEAL-GEOMETRY] Called immediately before the curtain is hidden. Outcomes:
+            //   'skip'      landscape strip not wanted (portrait, Page layout). Checked first; nothing else runs and the caller reveals exactly as before;
+            //   'stale'     ownership lost (a newer render started, the init scope was torn down or superseded, another API instance, or a render is active): the caller must return without hiding the curtain;
+            //   'settled'   this call derived a new inset (measure reported 'measured'), the committed host box equals it, and an existing cursor reported that it anchored to detected staff lines;
+            //   'host-only' as 'settled' for the host, but no landscape cursor existed: none is created and no cursor success is claimed;
+            //   'fallback'  still the current reveal but not settled (no measure function, measure reported 'held' or 'inactive', no stored inset, host box mismatch, the cursor used its container-relative branch,
+            //               landscape intent changed during the step, or an exception): the caller reveals exactly as before.
+            // 'measured' means measure() completed its own derivation, including its baseline branch when staff bounds are not trusted; it does not mean the staff is centred on the target.
+            // The synchronous commit can run pending effects and callbacks that re-enter this component, so ownership and then intent are checked again after it and before the cursor is touched.
+            // One synchronous attempt: no await, timer, loop or retry; later writers are not stopped.
+            const isLandscapeRevealCurrent = (tok: number): boolean =>
+                !destroyed && token === initTokenRef.current && renderTokenRef.current === tok &&
+                apiRef.current === api && activeRendersRef.current === 0;
+            const wantsLandscapeStrip = (): boolean =>
+                forceHorizontalRef.current && api?.settings?.display?.layoutMode === 1;
+            const settleLandscapeGeometryBeforeReveal = (tok: number): 'skip' | 'stale' | 'settled' | 'host-only' | 'fallback' => {
+                if (!wantsLandscapeStrip()) return 'skip';
+                if (!isLandscapeRevealCurrent(tok)) return 'stale';
+                let outcome: 'settled' | 'host-only' | 'fallback' = 'fallback';
+                try {
+                    const measureNow = landscapeHostInsetMeasureRef.current;
+                    if (measureNow) {
+                        const measured = measureNow(true);
+                        if (!isLandscapeRevealCurrent(tok)) return 'stale';
+                        if (!wantsLandscapeStrip()) return 'fallback';
+                        const inset = lastGoodLandscapeHostInsetRef.current;
+                        const hostEl = containerRef.current?.parentElement;
+                        if (measured === 'measured' && inset && hostEl &&
+                            hostEl.style.marginTop === `${inset.top}px` && hostEl.style.height === `${inset.height}px`) {
+                            const cursor = landscapeCursorRef.current;
+                            if (!cursor) outcome = 'host-only';
+                            else if (cursor.updateLayout() === 'staff') outcome = 'settled';
+                        }
+                    }
+                } catch (e) {
+                    if (isRendererDebugEnabled()) console.warn('[landscape-reveal-geometry] step ended early', e);
+                }
+                return isLandscapeRevealCurrent(tok) ? outcome : 'stale';
+            };
+
             const ensureCursorAndAnchorOnce = (tok: number): Promise<boolean> =>
                 new Promise(resolve => {
                     const host = containerRef.current;
@@ -5897,6 +5962,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                             collapseFixAttemptsRef.current = 0;
                             console.warn('[V117] collapse persists after hardReset — revealing as-is');
                         }
+                        if (settleLandscapeGeometryBeforeReveal(tokenAtFinish) === 'stale') return;
                         hideCurtainAtomic(curtainRef.current);
                         hasRevealedRef.current = true;
                         isSettlingRef.current = false;
@@ -6265,6 +6331,7 @@ export const AlphaTabRendererV102 = React.memo(function AlphaTabRendererV102({
                         });
                     }
 
+                    if (settleLandscapeGeometryBeforeReveal(tokenAtFinish) === 'stale') return;
                     hideCurtainAtomic(curtainRef.current);
                     hasRevealedRef.current = true;
                     if (isRendererDebugEnabled()) console.log('🟢 V119 curtain dropped', { token: tokenAtFinish, isStripRender });

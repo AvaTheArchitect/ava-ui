@@ -1,7 +1,12 @@
 /**
  * FixedLandscapeCursor.tsx
- * Version: v2.0-recovery+bass-height-overhang-fix+style-tokens
- * Date: July 23rd, 2026
+ * Version: v2.0-recovery+bass-height-overhang-fix+style-tokens+update-layout-result
+ * Date: November 6th, 2026
+ *
+ * ALPHATAB-ORIENTATION-RELAYOUT-PRESERVATION-001 — updateLayout() reports which branch positioned the cursor:
+ * ✅ updateLayout() now returns 'staff' when it anchored the cursor to live staff-line geometry (detectStaffLineGeometry() returned a
+ *        result) and 'fallback' when it used the container-relative placement. Every existing caller ignores the result.
+ * 🚫 No geometry, sizing, positioning, artwork, z-index, suppression or lifecycle change; updateX() is unchanged and still returns void.
  *
  * CURSOR-STYLE-UNIFICATION-001-B — wire to shared cursor tokens:
  * ✅ SPINE_COLOR/CAP_FILL/DOT_FILL and the drop-shadow filter now reference the
@@ -243,8 +248,8 @@ export class FixedLandscapeCursor {
         }
     }
 
-    /** Atomic re-pin: left + top + height. Call from ResizeObserver + visualViewport. */
-    updateLayout(): void {
+    /** Atomic re-pin: left + top + height. Call from ResizeObserver + visualViewport. Returns 'staff' when anchored to live staff geometry, 'fallback' otherwise. */
+    updateLayout(): 'staff' | 'fallback' {
         const rect = this.container.getBoundingClientRect();
 
         // [S18] Convert container-space X → viewport-space X for body-mounted element.
@@ -303,7 +308,7 @@ export class FixedLandscapeCursor {
             // the artwork's own canvas size always matches `height` by construction.
             this.applyCapArtwork(height);
             if (this.capSvg) this.capSvg.style.top = '0px';
-            return;
+            return 'staff';
         }
 
         // [CURSOR-STAFF-ANCHOR-001-B] Graceful fallback — staff-line detection found fewer
@@ -338,6 +343,7 @@ export class FixedLandscapeCursor {
         // CAP_OVERHANG_PX = 0: cap starts flush at notation area top.
         // Set to 26 once staff is in final position to re-enable Maestro overhang.
         if (this.capSvg) this.capSvg.style.top = `${-CAP_OVERHANG_PX}px`;
+        return 'fallback';
     }
 
     /** Legacy alias — ResizeObserver calls this; routes to updateLayout(). */
